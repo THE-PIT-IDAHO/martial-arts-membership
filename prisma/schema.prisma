@@ -1,0 +1,246 @@
+// prisma/schema.prisma
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+//
+// CLIENT (gym owner account)
+//
+model Client {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  members         Member[]
+  programs        Program[]
+  membershipPlans MembershipPlan[]
+  classSessions   ClassSession[]
+  tasks           Task[]
+}
+
+//
+// USERS (staff/admin login)
+//
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  // Allowed values (by convention): OWNER, ADMIN, COACH, FRONTDESK
+  role         String    @default("COACH")
+
+  clientId String
+  client   Client   @relation(fields: [clientId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+//
+// MEMBERS
+//
+model Member {
+  id    String @id @default(cuid())
+
+  /// Member number – unique, starts at 10000000 and up (enforced in API logic)
+  memberNumber Int? @unique
+
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+
+  // Profile / media
+  photoUrl String?
+
+  // Styles (JSON array of style objects)
+  primaryStyle String?
+  stylesNotes  String?
+
+  // Payment / POS notes
+  paymentNotes String?
+
+  // Status: PROSPECT, ACTIVE, INACTIVE, PARENT (by convention)
+  status String @default("PROSPECT")
+
+  // Personal info
+  dateOfBirth           DateTime?
+  address               String?
+  city                  String?
+  state                 String?
+  zipCode               String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  parentGuardianName    String?
+  notes                 String?
+
+  // Martial arts info (mirrors primary style)
+  startDate    DateTime?
+  rank         String?
+  uniformSize  String?
+  medicalNotes String?
+  waiverSigned Boolean   @default(false)
+  waiverSignedAt DateTime?
+
+  // Membership label (later can link to MembershipPlan)
+  membershipType String?
+
+  // Relationships
+  relationshipsFrom MemberRelationship[] @relation("MemberRelationshipsFrom")
+  relationshipsTo   MemberRelationship[] @relation("MemberRelationshipsTo")
+
+  clientId String
+  client   Client   @relation(fields: [clientId], references: [id])
+
+  memberships Membership[]
+  attendances Attendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+//
+// MEMBER RELATIONSHIPS
+//
+model MemberRelationship {
+  id String @id @default(cuid())
+
+  fromMemberId String
+  toMemberId   String
+
+  // Allowed values:
+  // PARENT, CHILD, GUARDIAN, SPOUSE, SIGNIFICANT_OTHER,
+  // SIBLING, PAYS_FOR, PAID_FOR_BY
+  relationship String
+
+  fromMember Member @relation("MemberRelationshipsFrom", fields: [fromMemberId], references: [id])
+  toMember   Member @relation("MemberRelationshipsTo", fields: [toMemberId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+//
+// PROGRAMS (styles)
+//
+model Program {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+
+  clientId String
+  client   Client   @relation(fields: [clientId], references: [id])
+
+  classes ClassSession[]
+}
+
+//
+// MEMBERSHIP PLANS
+//
+model MembershipPlan {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  priceCents   Int?
+  // Suggested: WEEKLY, MONTHLY, YEARLY, SESSION
+  billingCycle String   @default("MONTHLY")
+  isActive     Boolean  @default(true)
+
+  clientId String
+  client   Client   @relation(fields: [clientId], references: [id])
+
+  memberships Membership[]
+}
+
+//
+// MEMBERSHIP LINK
+//
+model Membership {
+  id               String   @id @default(cuid())
+  memberId         String
+  membershipPlanId String
+
+  member         Member         @relation(fields: [memberId], references: [id])
+  membershipPlan MembershipPlan @relation(fields: [membershipPlanId], references: [id])
+
+  startDate DateTime
+  endDate   DateTime?
+
+  // Suggested: ACTIVE, PAUSED, CANCELED, EXPIRED
+  status String @default("ACTIVE")
+}
+
+//
+// CLASS SESSIONS
+//
+model ClassSession {
+  id        String   @id @default(cuid())
+  name      String
+  startsAt  DateTime
+  endsAt    DateTime
+
+  programId String?
+  program   Program? @relation(fields: [programId], references: [id])
+
+  clientId String
+  client   Client   @relation(fields: [clientId], references: [id])
+
+  attendances Attendance[]
+}
+
+//
+// ATTENDANCE
+//
+model Attendance {
+  id             String        @id @default(cuid())
+  memberId       String
+  classSessionId String?
+
+  member       Member        @relation(fields: [memberId], references: [id])
+  classSession ClassSession? @relation(fields: [classSessionId], references: [id])
+
+  checkedInAt DateTime @default(now())
+  // Suggested: KIOSK, MANUAL, IMPORT
+  source      String  @default("KIOSK")
+}
+
+//
+// TASKS
+//
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime?
+  // Suggested: OPEN, IN_PROGRESS, DONE
+  status      String   @default("OPEN")
+
+  clientId String
+  client   Client   @relation(fields: [clientId], references: [id])
+
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+}
+
+model Style {
+  id                String   @id @default(cuid())
+  name              String
+  shortName         String?
+  description       String?
+  beltSystemEnabled Boolean   @default(false)
+
+  // Store belt designer settings as JSON string
+  beltConfig        String?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
