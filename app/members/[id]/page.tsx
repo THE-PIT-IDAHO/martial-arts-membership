@@ -5,6 +5,18 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
 
+// Format phone number as user types: (123) 456-7890
+function formatPhoneNumber(value: string): string {
+  // Remove all non-digits
+  const digits = value.replace(/\D/g, "");
+
+  // Format based on length
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+}
+
 type Member = {
   id: string;
   firstName: string;
@@ -39,7 +51,23 @@ type Member = {
   photoUrl?: string | null;
   primaryStyle?: string | null;
   stylesNotes?: string | null; // JSON array of style entries
+  styleDocuments?: string | null; // JSON array of document entries
   paymentNotes?: string | null;
+
+  // Attendance data
+  attendances?: Array<{
+    id: string;
+    checkedInAt: string;
+    classSession: {
+      id: string;
+      name: string;
+      classType: string | null;
+      program: {
+        id: string;
+        name: string;
+      } | null;
+    } | null;
+  }>;
 };
 
 type StyleEntry = {
@@ -48,6 +76,20 @@ type StyleEntry = {
   beltSize?: string;
   uniformSize?: string;
   startDate?: string;
+};
+
+type StyleDocument = {
+  id: string;
+  name: string;
+  url: string;
+  uploadedAt: string;
+};
+
+type AvailableStyle = {
+  id: string;
+  name: string;
+  beltConfig?: string | null;
+  ranks: { id: string; name: string; order: number; classRequirement?: number | null; thumbnail?: string | null }[];
 };
 
 type ActivityItem = {
@@ -81,7 +123,7 @@ type MemberSummary = {
   status: string;
 };
 
-const STATUS_OPTIONS = ["PROSPECT", "ACTIVE", "INACTIVE", "PARENT"] as const;
+const STATUS_OPTIONS = ["PROSPECT", "ACTIVE", "INACTIVE", "PARENT", "BANNED"] as const;
 
 // Relationship types
 const RELATIONSHIP_OPTIONS = [
@@ -236,6 +278,11 @@ export default function MemberProfilePage() {
 
   // styles: array of { name, rank, beltSize, uniformSize, startDate }
   const [styles, setStyles] = useState<StyleEntry[]>([]);
+  const [availableStyles, setAvailableStyles] = useState<AvailableStyle[]>([]);
+
+  // style documents
+  const [styleDocuments, setStyleDocuments] = useState<StyleDocument[]>([]);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
 
   // membership
   const [membershipType, setMembershipType] = useState("");
@@ -317,6 +364,27 @@ export default function MemberProfilePage() {
       }
     }
     fetchMembers();
+  }, []);
+
+  // load available styles
+  useEffect(() => {
+    async function fetchStyles() {
+      try {
+        const res = await fetch("/api/styles");
+        if (!res.ok) return;
+        const data = await res.json();
+        const stylesList: AvailableStyle[] = (data.styles || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          beltConfig: s.beltConfig,
+          ranks: s.ranks || []
+        }));
+        setAvailableStyles(stylesList);
+      } catch (e) {
+        console.error("Failed to load styles:", e);
+      }
+    }
+    fetchStyles();
   }, []);
 
   // load relationships
@@ -466,6 +534,17 @@ export default function MemberProfilePage() {
     const parsedStyles = parseStylesFromMember(m);
     setStyles(parsedStyles);
 
+    // Parse style documents
+    let docs: StyleDocument[] = [];
+    if (m.styleDocuments) {
+      try {
+        docs = JSON.parse(m.styleDocuments);
+      } catch {
+        docs = [];
+      }
+    }
+    setStyleDocuments(docs);
+
     setMembershipType(m.membershipType || "");
     setPhotoUrl(m.photoUrl || "");
     setPaymentNotes(m.paymentNotes || "");
@@ -501,6 +580,101 @@ export default function MemberProfilePage() {
       },
       ...prev
     ]);
+  }
+
+  async function copyRankPDFsToStyleDocuments(styles: StyleEntry[], memberData: Member) {
+    if (!memberId) return;
+
+    try {
+      // Parse current style documents from the fresh member data
+      let currentDocs: StyleDocument[] = [];
+      if (memberData.styleDocuments) {
+        try {
+          currentDocs = JSON.parse(memberData.styleDocuments);
+        } catch {
+          currentDocs = [];
+        }
+      }
+
+      let updatedDocs = [...currentDocs];
+      let hasNewDocs = false;
+
+      // For each style with a rank, find the corresponding rank PDFs
+      for (const style of styles) {
+        if (!style.rank || !style.name) continue;
+
+        // Find the style in availableStyles
+        const styleData = availableStyles.find(s => s.name === style.name);
+        if (!styleData || !styleData.beltConfig) continue;
+
+        // Parse the beltConfig to get rank PDFs
+        let beltConfig: any;
+        try {
+          beltConfig = typeof styleData.beltConfig === 'string'
+            ? JSON.parse(styleData.beltConfig)
+            : styleData.beltConfig;
+        } catch {
+          continue;
+        }
+
+        if (!beltConfig.ranks || !Array.isArray(beltConfig.ranks)) continue;
+
+        // Find the current rank in beltConfig
+        const currentRank = beltConfig.ranks.find((r: any) => r.name === style.rank);
+        if (!currentRank) continue;
+
+        // Get the current rank's order number
+        const currentOrder = currentRank.order;
+
+        // Get all ranks up to and including the current rank (by order number)
+        const ranksToInclude = beltConfig.ranks.filter((r: any) => r.order <= currentOrder);
+
+        // Add PDFs from all these ranks
+        for (const rank of ranksToInclude) {
+          if (!rank.pdfDocuments || rank.pdfDocuments.length === 0) continue;
+
+          // Add each PDF to style documents if not already there
+          for (const rankPdf of rank.pdfDocuments) {
+            // Check if this PDF already exists (by name)
+            const exists = updatedDocs.some(doc => doc.name === rankPdf.name);
+            if (!exists) {
+              const newDoc: StyleDocument = {
+                id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                name: rankPdf.name,
+                url: rankPdf.url,
+                uploadedAt: new Date().toISOString()
+              };
+              updatedDocs.push(newDoc);
+              hasNewDocs = true;
+              // Small delay to ensure unique IDs
+              await new Promise(resolve => setTimeout(resolve, 1));
+            }
+          }
+        }
+      }
+
+      // If we added new documents, save them
+      if (hasNewDocs) {
+        setStyleDocuments(updatedDocs);
+
+        const res = await fetch(`/api/members/${memberId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            styleDocuments: JSON.stringify(updatedDocs)
+          })
+        });
+
+        if (res.ok) {
+          const updated = await res.json();
+          setMember(updated.member);
+          addActivityFromUpdate("Rank documents added automatically");
+        }
+      }
+    } catch (err: any) {
+      console.error("Failed to copy rank PDFs:", err);
+      // Don't throw error - this is a supplementary feature
+    }
   }
 
   async function saveSection(section: EditableSection) {
@@ -586,6 +760,11 @@ export default function MemberProfilePage() {
       const updated: Member = data.member;
       setMember(updated);
       hydrateFormFromMember(updated);
+
+      // If saving styles section and there are ranks, automatically add rank PDFs to style documents
+      if (section === "style" && normalizedStyles.length > 0) {
+        await copyRankPDFsToStyleDocuments(normalizedStyles, updated);
+      }
 
       if (section === "personal") setEditingPersonal(false);
       if (section === "style") setEditingStyle(false);
@@ -677,6 +856,33 @@ export default function MemberProfilePage() {
     router.push("/members");
   }
 
+  async function handleDeleteMember() {
+    if (!member) return;
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete ${member.firstName} ${member.lastName}? This action cannot be undone.`
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      const res = await fetch(`/api/members/${memberId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete member");
+      }
+
+      // Redirect to members list after successful deletion
+      router.push("/members");
+    } catch (err: any) {
+      console.error("Error deleting member:", err);
+      setError(err.message || "Failed to delete member");
+    }
+  }
+
   const initials =
     firstName && lastName
       ? `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase()
@@ -735,63 +941,170 @@ export default function MemberProfilePage() {
     reader.readAsDataURL(file);
   }
 
+  async function handleDocumentUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (file.type !== "application/pdf") {
+      setError("Only PDF files are allowed");
+      return;
+    }
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      setError("File size must be less than 10MB");
+      return;
+    }
+
+    setUploadingDocument(true);
+    setError(null);
+
+    try {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const result = reader.result;
+        if (typeof result === "string") {
+          // Create new document entry
+          // Remove .pdf extension from the name
+          const fileName = file.name.replace(/\.pdf$/i, '');
+          const newDoc: StyleDocument = {
+            id: `doc-${Date.now()}`,
+            name: fileName,
+            url: result, // base64 data URL
+            uploadedAt: new Date().toISOString()
+          };
+
+          const updatedDocs = [...styleDocuments, newDoc];
+          setStyleDocuments(updatedDocs);
+
+          // Save to server
+          const res = await fetch(`/api/members/${memberId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              styleDocuments: JSON.stringify(updatedDocs)
+            })
+          });
+
+          if (!res.ok) {
+            throw new Error("Failed to upload document");
+          }
+
+          const updated = await res.json();
+          setMember(updated.member);
+          addActivityFromUpdate(`Uploaded document: ${file.name}`);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setError(err.message || "Failed to upload document");
+      // Revert on error
+      if (member) {
+        hydrateFormFromMember(member);
+      }
+    } finally {
+      setUploadingDocument(false);
+      // Reset file input
+      e.target.value = "";
+    }
+  }
+
+  async function handleRemoveDocument(docId: string) {
+    const doc = styleDocuments.find((d) => d.id === docId);
+    if (!doc) return;
+
+    if (!window.confirm(`Are you sure you want to remove "${doc.name}"?`)) {
+      return;
+    }
+
+    try {
+      const updatedDocs = styleDocuments.filter((d) => d.id !== docId);
+      setStyleDocuments(updatedDocs);
+
+      const res = await fetch(`/api/members/${memberId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          styleDocuments: JSON.stringify(updatedDocs)
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to remove document");
+      }
+
+      const updated = await res.json();
+      setMember(updated.member);
+      addActivityFromUpdate(`Removed document: ${doc.name}`);
+    } catch (err: any) {
+      setError(err.message || "Failed to remove document");
+      // Revert on error
+      if (member) {
+        hydrateFormFromMember(member);
+      }
+    }
+  }
+
   return (
     <AppLayout>
       <div className="space-y-6">
         {/* Header + photo */}
         <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="relative">
+          <div className="flex items-start gap-4">
+            {/* Photo column */}
+            <div className="flex flex-col items-center gap-2">
               {photoUrl ? (
-                <img
-                  src={photoUrl}
-                  alt={`${firstName} ${lastName}`}
-                  className="h-16 w-16 rounded-full object-cover border border-gray-200"
-                />
+                <div className="relative group">
+                  <img
+                    src={photoUrl}
+                    alt={`${firstName} ${lastName}`}
+                    className="h-16 w-16 rounded-full object-cover border border-gray-200 cursor-pointer"
+                  />
+                  {/* Full-size photo popup on hover */}
+                  <div className="absolute left-20 top-0 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none">
+                    <div className="w-96 h-96 rounded-lg shadow-2xl border-4 border-white bg-white overflow-hidden">
+                      <img
+                        src={photoUrl}
+                        alt={`${firstName} ${lastName}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="h-16 w-16 rounded-full bg-gray-200 flex items-center justify-center text-lg font-semibold text-gray-700 border border-gray-300">
                   {initials}
                 </div>
               )}
-            </div>
-            <div>
-              <button
-                type="button"
-                onClick={goBackToList}
-                className="text-xs text-gray-500 hover:text-gray-700 underline mb-1"
-              >
-                ← Back to members
-              </button>
-              <h1 className="text-2xl font-bold">
-                {member
-                  ? `${member.firstName} ${member.lastName}`
-                  : "Member Profile"}
-              </h1>
-              <p className="text-sm text-gray-600">
-                Personal info, relationships, styles, payments, and activity.
-              </p>
-            </div>
-          </div>
 
-          {/* Edit photo */}
-          <div className="flex flex-col items-end">
-            {!editingPhoto ? (
-              <button
-                type="button"
-                onClick={() => setEditingPhoto(true)}
-                className="text-xs text-primary hover:text-primaryDark font-medium"
-              >
-                Edit Photo
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
+              {/* Hidden file inputs */}
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handlePhotoFileChange}
+              />
+              <input
+                ref={uploadInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoFileChange}
+              />
+
+              {/* Edit/Save button under photo */}
+              {!editingPhoto ? (
                 <button
                   type="button"
-                  onClick={() => cancelSection("photo")}
-                  className="text-xs text-gray-500 hover:text-gray-700"
+                  onClick={() => setEditingPhoto(true)}
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                 >
-                  Cancel
+                  Edit
                 </button>
+              ) : (
                 <button
                   type="button"
                   disabled={savingSection === "photo"}
@@ -800,51 +1113,58 @@ export default function MemberProfilePage() {
                 >
                   {savingSection === "photo" ? "Saving..." : "Save"}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
 
-            {editingPhoto && (
-              <div className="mt-2 space-y-2">
-                <p className="text-[11px] text-gray-600 mb-1">
-                  Add a member photo using your camera or by uploading from this
-                  device.
-                </p>
+            {/* Name and info column */}
+            <div>
+              <h1 className="text-2xl font-bold">
+                {member
+                  ? `${member.firstName} ${member.lastName}`
+                  : "Member Profile"}
+              </h1>
+              <p className="text-sm text-gray-600">
+                Personal info, relationships, styles, payments, and activity.
+              </p>
 
-                {/* Hidden file inputs */}
-                <input
-                  ref={cameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={handlePhotoFileChange}
-                />
-                <input
-                  ref={uploadInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePhotoFileChange}
-                />
-
-                <div className="flex flex-col items-end gap-2">
+              {/* Photo edit buttons - only show when editing */}
+              {editingPhoto && (
+                <div className="flex items-center gap-2" style={{ marginTop: '18px' }}>
                   <button
                     type="button"
                     onClick={() => cameraInputRef.current?.click()}
-                    className="text-xs rounded-md border border-gray-300 px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-100"
+                    className="text-xs rounded-md bg-primary px-2 py-1 font-semibold text-white hover:bg-primaryDark"
                   >
                     Use Camera
                   </button>
                   <button
                     type="button"
                     onClick={() => uploadInputRef.current?.click()}
-                    className="text-xs rounded-md border border-gray-300 px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-100"
+                    className="text-xs rounded-md bg-primary px-2 py-1 font-semibold text-white hover:bg-primaryDark"
                   >
                     Upload from Device
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => cancelSection("photo")}
+                    className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          </div>
+
+          {/* Back to Members button */}
+          <div className="flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={goBackToList}
+              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+            >
+              Back to Members
+            </button>
           </div>
         </div>
 
@@ -877,7 +1197,7 @@ export default function MemberProfilePage() {
                     <button
                       type="button"
                       onClick={() => setEditingPersonal(true)}
-                      className="text-xs text-primary hover:text-primaryDark font-medium"
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
                       Edit
                     </button>
@@ -886,7 +1206,7 @@ export default function MemberProfilePage() {
                       <button
                         type="button"
                         onClick={() => cancelSection("personal")}
-                        className="text-xs text-gray-500 hover:text-gray-700"
+                        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                       >
                         Cancel
                       </button>
@@ -993,7 +1313,7 @@ export default function MemberProfilePage() {
                           <>
                             {member.emergencyContactName}
                             {member.emergencyContactPhone &&
-                              ` (${member.emergencyContactPhone})`}
+                              ` ${member.emergencyContactPhone}`}
                           </>
                         ) : (
                           <span className="text-gray-400">—</span>
@@ -1005,7 +1325,19 @@ export default function MemberProfilePage() {
                         Status
                       </dt>
                       <dd>
-                        <span className="inline-flex items-center rounded-full border border-gray-300 px-2 py-0.5 text-xs text-gray-700">
+                        <span className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium ${
+                          member.status === "ACTIVE"
+                            ? "bg-green-100 text-green-800 border-green-300"
+                            : member.status === "PROSPECT"
+                            ? "bg-yellow-100 text-yellow-800 border-yellow-300"
+                            : member.status === "INACTIVE"
+                            ? "bg-red-100 text-red-800 border-red-300"
+                            : member.status === "PARENT"
+                            ? "bg-blue-100 text-blue-800 border-blue-300"
+                            : member.status === "BANNED"
+                            ? "bg-gray-200 text-gray-900 border-gray-400"
+                            : "bg-gray-100 text-gray-800 border-gray-300"
+                        }`}>
                           {member.status}
                         </span>
                       </dd>
@@ -1030,22 +1362,68 @@ export default function MemberProfilePage() {
                       </dd>
                     </div>
 
-                    <div className="md:col-span-2">
+                    {/* RELATIONSHIPS SECTION */}
+                    <div>
                       <dt className="text-gray-500 text-xs uppercase">
-                        Notes
+                        Relationships
                       </dt>
-                      <dd className="text-gray-900 whitespace-pre-wrap">
-                        {member.notes || (
+                      <dd className="text-gray-900">
+                        {relationshipsLoading ? (
+                          <span className="text-xs text-gray-500">
+                            Loading relationships…
+                          </span>
+                        ) : relationships.length === 0 ? (
                           <span className="text-gray-400">—</span>
+                        ) : (
+                          <div className="space-y-1">
+                            {relationships.map((rel) => (
+                              <div key={rel.id} className="text-sm">
+                                <RelationshipLabel
+                                  rel={rel}
+                                  currentMemberId={memberId}
+                                />
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </dd>
                     </div>
-                    <div className="md:col-span-2">
+
+                    {/* WAIVER SECTION */}
+                    <div>
+                      <dt className="text-gray-500 text-xs uppercase">
+                        Waiver
+                      </dt>
+                      <dd className="text-gray-900">
+                        <div className="space-y-0.5 text-sm">
+                          <div>
+                            Signed: <span>{member.waiverSigned ? "Yes" : "No"}</span>
+                          </div>
+                          {member.waiverSignedAt && (
+                            <div>
+                              Date: <span>{new Date(member.waiverSignedAt).toLocaleDateString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      </dd>
+                    </div>
+
+                    <div>
                       <dt className="text-gray-500 text-xs uppercase">
                         Medical Notes
                       </dt>
                       <dd className="text-gray-900 whitespace-pre-wrap">
                         {member.medicalNotes || (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-gray-500 text-xs uppercase">
+                        Notes
+                      </dt>
+                      <dd className="text-gray-900 whitespace-pre-wrap">
+                        {member.notes || (
                           <span className="text-gray-400">—</span>
                         )}
                       </dd>
@@ -1066,7 +1444,7 @@ export default function MemberProfilePage() {
                       <input
                         value={firstName}
                         onChange={(e) => setFirstName(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1076,7 +1454,7 @@ export default function MemberProfilePage() {
                       <input
                         value={lastName}
                         onChange={(e) => setLastName(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>
 
@@ -1087,7 +1465,7 @@ export default function MemberProfilePage() {
                       <input
                         value={memberNumber}
                         onChange={(e) => setMemberNumber(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                         placeholder="e.g. 10000001"
                       />
                     </div>
@@ -1098,7 +1476,7 @@ export default function MemberProfilePage() {
                       <select
                         value={status}
                         onChange={(e) => setStatus(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       >
                         {STATUS_OPTIONS.map((s) => (
                           <option key={s} value={s}>
@@ -1116,7 +1494,7 @@ export default function MemberProfilePage() {
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1124,9 +1502,12 @@ export default function MemberProfilePage() {
                         Phone
                       </label>
                       <input
+                        type="tel"
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
+                        placeholder="(123) 456-7890"
+                        maxLength={14}
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>
 
@@ -1138,7 +1519,7 @@ export default function MemberProfilePage() {
                         type="date"
                         value={dateOfBirth}
                         onChange={(e) => setDateOfBirth(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                       {dateOfBirth && ageFromState !== null && (
                         <p className="text-[11px] text-gray-500 mt-0.5">
@@ -1153,7 +1534,7 @@ export default function MemberProfilePage() {
                       <input
                         value={address}
                         onChange={(e) => setAddress(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>
 
@@ -1164,7 +1545,7 @@ export default function MemberProfilePage() {
                       <input
                         value={city}
                         onChange={(e) => setCity(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1174,7 +1555,7 @@ export default function MemberProfilePage() {
                       <input
                         value={stateValue}
                         onChange={(e) => setStateValue(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>
 
@@ -1185,32 +1566,7 @@ export default function MemberProfilePage() {
                       <input
                         value={zipCode}
                         onChange={(e) => setZipCode(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-700">
-                        Emergency Contact Name
-                      </label>
-                      <input
-                        value={emergencyContactNameState}
-                        onChange={(e) =>
-                          setEmergencyContactNameState(e.target.value)
-                        }
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-700">
-                        Emergency Contact Phone
-                      </label>
-                      <input
-                        value={emergencyContactPhoneState}
-                        onChange={(e) =>
-                          setEmergencyContactPhoneState(e.target.value)
-                        }
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1222,351 +1578,215 @@ export default function MemberProfilePage() {
                         onChange={(e) =>
                           setParentGuardianName(e.target.value)
                         }
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>
 
-                    <div className="space-y-1 md:col-span-2">
+                    <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-700">
-                        Notes
+                        Emergency Contact Name
                       </label>
-                      <textarea
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                        rows={2}
+                      <input
+                        value={emergencyContactNameState}
+                        onChange={(e) =>
+                          setEmergencyContactNameState(e.target.value)
+                        }
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>
-                    <div className="space-y-1 md:col-span-2">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-700">
+                        Emergency Contact Phone
+                      </label>
+                      <input
+                        type="tel"
+                        value={emergencyContactPhoneState}
+                        onChange={(e) =>
+                          setEmergencyContactPhoneState(formatPhoneNumber(e.target.value))
+                        }
+                        placeholder="(123) 456-7890"
+                        maxLength={14}
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                      />
+                    </div>
+
+                    {/* RELATIONSHIPS AND WAIVER SECTION - SIDE BY SIDE */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-medium text-gray-700">
+                          Relationships
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddingRelationship(true);
+                            setRelationshipError(null);
+                          }}
+                          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                        >
+                          Add Relationship
+                        </button>
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        {relationshipsLoading ? (
+                          <p className="text-xs text-gray-500">
+                            Loading relationships…
+                          </p>
+                        ) : relationships.length === 0 ? (
+                          <p className="text-xs text-gray-400">
+                            No relationships linked yet.
+                          </p>
+                        ) : (
+                          <div className="space-y-1">
+                            {relationships.map((rel) => (
+                              <div
+                                key={rel.id}
+                                className="flex items-center justify-between gap-2"
+                              >
+                                <span className="text-xs text-gray-900">
+                                  <RelationshipLabel
+                                    rel={rel}
+                                    currentMemberId={memberId}
+                                  />
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveRelationship(rel.id)}
+                                  className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {addingRelationship && (
+                          <div className="mt-2 rounded-md border border-gray-200 p-2 space-y-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <label className="block text-xs font-medium text-gray-700">
+                                  Relationship Type
+                                </label>
+                                <select
+                                  value={newRelationshipType}
+                                  onChange={(e) =>
+                                    setNewRelationshipType(e.target.value)
+                                  }
+                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                >
+                                  {RELATIONSHIP_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-xs font-medium text-gray-700">
+                                  Linked Member
+                                </label>
+                                <select
+                                  value={newRelationshipMemberId}
+                                  onChange={(e) =>
+                                    setNewRelationshipMemberId(e.target.value)
+                                  }
+                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                >
+                                  <option value="">Select member…</option>
+                                  {availableMembersForRelationships.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.firstName} {m.lastName} (
+                                      {m.status.toLowerCase()})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddingRelationship(false);
+                                  setNewRelationshipType("PARENT");
+                                  setNewRelationshipMemberId("");
+                                  setRelationshipError(null);
+                                }}
+                                className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleAddRelationship}
+                                className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                              >
+                                Add
+                              </button>
+                            </div>
+                            {relationshipError && (
+                              <p className="text-xs text-red-600">
+                                {relationshipError}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* WAIVER SECTION */}
+                    <div className="space-y-2">
+                      <label className="block text-xs font-medium text-gray-700">
+                        Waiver
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={waiverSigned}
+                            onChange={(e) =>
+                              setWaiverSigned(e.target.checked)
+                            }
+                            className="rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          Signed
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs font-medium text-gray-700">
+                            Date:
+                          </label>
+                          <input
+                            type="date"
+                            value={waiverSignedAt}
+                            onChange={(e) => setWaiverSignedAt(e.target.value)}
+                            className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                            style={{ width: '150px' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
                       <label className="block text-xs font-medium text-gray-700">
                         Medical Notes
                       </label>
                       <textarea
                         value={medicalNotes}
                         onChange={(e) => setMedicalNotes(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                         rows={2}
                       />
                     </div>
-                  </form>
-                )}
-              </section>
-
-              {/* RELATIONSHIPS */}
-              <section className="rounded-lg border border-gray-200 bg-white p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-semibold">Relationships</h2>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddingRelationship(true);
-                      setRelationshipError(null);
-                    }}
-                    className="text-xs text-primary hover:text-primaryDark font-medium"
-                  >
-                    Add Relationship
-                  </button>
-                </div>
-
-                <div className="space-y-2 text-sm">
-                  {relationshipsLoading ? (
-                    <p className="text-xs text-gray-500">
-                      Loading relationships…
-                    </p>
-                  ) : relationships.length === 0 ? (
-                    <p className="text-sm text-gray-400">
-                      No relationships linked yet. Use this to connect family
-                      members and payers (e.g., parents paying for multiple
-                      kids).
-                    </p>
-                  ) : (
                     <div className="space-y-1">
-                      {relationships.map((rel) => (
-                        <div
-                          key={rel.id}
-                          className="flex items-center justify-between gap-2"
-                        >
-                          <span className="text-gray-900">
-                            <RelationshipLabel
-                              rel={rel}
-                              currentMemberId={memberId}
-                            />
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveRelationship(rel.id)}
-                            className="text-[11px] text-gray-400 hover:text-red-600"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {addingRelationship && (
-                    <div className="mt-3 rounded-md border border-gray-200 p-2 space-y-2">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <label className="block text-xs font-medium text-gray-700">
-                            Relationship Type
-                          </label>
-                          <select
-                            value={newRelationshipType}
-                            onChange={(e) =>
-                              setNewRelationshipType(e.target.value)
-                            }
-                            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          >
-                            {RELATIONSHIP_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="block text-xs font-medium text-gray-700">
-                            Linked Member
-                          </label>
-                          <select
-                            value={newRelationshipMemberId}
-                            onChange={(e) =>
-                              setNewRelationshipMemberId(e.target.value)
-                            }
-                            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          >
-                            <option value="">Select member…</option>
-                            {availableMembersForRelationships.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.firstName} {m.lastName} (
-                                {m.status.toLowerCase()})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => cancelSection("relationships")}
-                          className="text-xs text-gray-500 hover:text-gray-700"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleAddRelationship}
-                          className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
-                        >
-                          Add
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              {/* STYLES */}
-              <section className="rounded-lg border border-gray-200 bg-white p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-semibold">Styles</h2>
-                  {!editingStyle ? (
-                    <button
-                      type="button"
-                      onClick={() => setEditingStyle(true)}
-                      className="text-xs text-primary hover:text-primaryDark font-medium"
-                    >
-                      Edit
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => cancelSection("style")}
-                        className="text-xs text-gray-500 hover:text-gray-700"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        disabled={savingSection === "style"}
-                        onClick={() => saveSection("style")}
-                        className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
-                      >
-                        {savingSection === "style" ? "Saving..." : "Save"}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {!editingStyle ? (
-                  <div className="space-y-3 text-sm">
-                    {styles.length === 0 ? (
-                      <span className="text-sm text-gray-400">
-                        No styles added yet.
-                      </span>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {styles.map((s, i) => (
-                          <div
-                            key={i}
-                            className="border border-gray-200 rounded-md p-2"
-                          >
-                            <div className="font-medium text-gray-900">
-                              {s.name}
-                            </div>
-                            <div className="mt-1 space-y-0.5 text-sm text-gray-700">
-                              {s.rank && (
-                                <div>
-                                  Rank: <span>{s.rank}</span>
-                                </div>
-                              )}
-                              {s.beltSize && (
-                                <div>
-                                  Belt Size: <span>{s.beltSize}</span>
-                                </div>
-                              )}
-                              {s.uniformSize && (
-                                <div>
-                                  Uniform Size: <span>{s.uniformSize}</span>
-                                </div>
-                              )}
-                              {s.startDate && (
-                                <div>
-                                  Start:{" "}
-                                  <span>
-                                    {new Date(
-                                      s.startDate
-                                    ).toLocaleDateString()}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      saveSection("style");
-                    }}
-                    className="space-y-4 text-sm"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-end">
-                        <button
-                          type="button"
-                          onClick={addStyle}
-                          className="text-xs rounded-md border border-primary px-2 py-0.5 text-primary hover:bg-primary hover:text-white"
-                        >
-                          Add Style
-                        </button>
-                      </div>
-
-                      {styles.length === 0 && (
-                        <p className="text-[11px] text-gray-500">
-                          No styles yet. Click &quot;Add Style&quot; to add one
-                          (e.g. &quot;Kids BJJ&quot;, &quot;Hawaiian Kempo&quot;,
-                          &quot;Kickboxing&quot;).
-                        </p>
-                      )}
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {styles.map((style, index) => (
-                          <div
-                            key={index}
-                            className="border border-gray-200 rounded-md p-2 space-y-2"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <input
-                                value={style.name}
-                                onChange={(e) =>
-                                  updateStyle(index, "name", e.target.value)
-                                }
-                                className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                placeholder={`Style #${index + 1} (e.g. Kids BJJ)`}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => removeStyle(index)}
-                                className="text-[11px] text-gray-500 hover:text-red-600"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-1 gap-2">
-                              <div className="space-y-1">
-                                <label className="block text-[11px] font-medium text-gray-700">
-                                  Training Start Date
-                                </label>
-                                <input
-                                  type="date"
-                                  value={style.startDate || ""}
-                                  onChange={(e) =>
-                                    updateStyle(
-                                      index,
-                                      "startDate",
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="block text-[11px] font-medium text-gray-700">
-                                  Rank / Belt Level
-                                </label>
-                                <input
-                                  value={style.rank || ""}
-                                  onChange={(e) =>
-                                    updateStyle(index, "rank", e.target.value)
-                                  }
-                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                  placeholder="e.g. Gray/White"
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="block text-[11px] font-medium text-gray-700">
-                                  Belt Size
-                                </label>
-                                <input
-                                  value={style.beltSize || ""}
-                                  onChange={(e) =>
-                                    updateStyle(
-                                      index,
-                                      "beltSize",
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                  placeholder="e.g. A2, 3, Small"
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="block text-[11px] font-medium text-gray-700">
-                                  Uniform Size
-                                </label>
-                                <input
-                                  value={style.uniformSize || ""}
-                                  onChange={(e) =>
-                                    updateStyle(
-                                      index,
-                                      "uniformSize",
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                  placeholder="e.g. A2, Youth Small"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <label className="block text-xs font-medium text-gray-700">
+                        Notes
+                      </label>
+                      <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        rows={2}
+                      />
                     </div>
                   </form>
                 )}
@@ -1580,7 +1800,7 @@ export default function MemberProfilePage() {
                     <button
                       type="button"
                       onClick={() => setEditingMembership(true)}
-                      className="text-xs text-primary hover:text-primaryDark font-medium"
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
                       Edit
                     </button>
@@ -1589,7 +1809,7 @@ export default function MemberProfilePage() {
                       <button
                         type="button"
                         onClick={() => cancelSection("membership")}
-                        className="text-xs text-gray-500 hover:text-gray-700"
+                        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                       >
                         Cancel
                       </button>
@@ -1633,7 +1853,7 @@ export default function MemberProfilePage() {
                       <input
                         value={membershipType}
                         onChange={(e) => setMembershipType(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                         placeholder="e.g. Adult Unlimited, Kids 2x/week"
                       />
                     </div>
@@ -1641,15 +1861,15 @@ export default function MemberProfilePage() {
                 )}
               </section>
 
-              {/* WAIVER SECTION */}
+              {/* STYLES */}
               <section className="rounded-lg border border-gray-200 bg-white p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-semibold">Waiver</h2>
-                  {!editingWaiver ? (
+                  <h2 className="text-sm font-semibold">Styles</h2>
+                  {!editingStyle ? (
                     <button
                       type="button"
-                      onClick={() => setEditingWaiver(true)}
-                      className="text-xs text-primary hover:text-primaryDark font-medium"
+                      onClick={() => setEditingStyle(true)}
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
                       Edit
                     </button>
@@ -1657,83 +1877,469 @@ export default function MemberProfilePage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => cancelSection("waiver")}
-                        className="text-xs text-gray-500 hover:text-gray-700"
+                        onClick={addStyle}
+                        className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
                       >
-                        Cancel
+                        Add Style
                       </button>
                       <button
                         type="button"
-                        disabled={savingSection === "waiver"}
-                        onClick={() => saveSection("waiver")}
+                        disabled={savingSection === "style"}
+                        onClick={() => saveSection("style")}
                         className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
                       >
-                        {savingSection === "waiver" ? "Saving..." : "Save"}
+                        {savingSection === "style" ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => cancelSection("style")}
+                        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                      >
+                        Cancel
                       </button>
                     </div>
                   )}
                 </div>
 
-                {!editingWaiver ? (
-                  <dl className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <dt className="text-gray-500 text-xs uppercase">
-                        Waiver Signed
-                      </dt>
-                      <dd className="text-gray-900">
-                        {member.waiverSigned ? "Yes" : "No"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-gray-500 text-xs uppercase">
-                        Waiver Signed Date
-                      </dt>
-                      <dd className="text-gray-900">
-                        {member.waiverSignedAt ? (
-                          new Date(
-                            member.waiverSignedAt
-                          ).toLocaleDateString()
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </dd>
-                    </div>
-                  </dl>
+                {!editingStyle ? (
+                  <div className="space-y-3 text-sm">
+                    {styles.length === 0 ? (
+                      <span className="text-sm text-gray-400">
+                        No styles added yet.
+                      </span>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {styles.map((s, i) => (
+                          <div
+                            key={i}
+                            className="border border-gray-200 rounded-md p-2 space-y-2"
+                            style={{ maxWidth: '280px' }}
+                          >
+                            <div>
+                              <div className="font-medium text-gray-900">
+                                {s.name}
+                              </div>
+                              <div className="mt-1 space-y-0.5 text-sm text-gray-700">
+                                {s.rank && (
+                                  <div>
+                                    Rank: <span>{s.rank}</span>
+                                  </div>
+                                )}
+                                {s.beltSize && (
+                                  <div>
+                                    Belt Size: <span>{s.beltSize}</span>
+                                  </div>
+                                )}
+                                {s.uniformSize && (
+                                  <div>
+                                    Uniform Size: <span>{s.uniformSize}</span>
+                                  </div>
+                                )}
+                                {(() => {
+                                  const selectedStyle = availableStyles.find(
+                                    (style) => style.name === s.name
+                                  );
+
+                                  if (!selectedStyle || !s.rank) return null;
+
+                                  // Try to get class requirements from beltConfig JSON
+                                  let classRequirements: Array<{ label: string; minCount: number | null }> = [];
+
+                                  if (selectedStyle.beltConfig) {
+                                    try {
+                                      const beltConfig = JSON.parse(selectedStyle.beltConfig);
+                                      const rankData = beltConfig.ranks?.find((r: any) => r.name === s.rank);
+                                      if (rankData?.classRequirements) {
+                                        classRequirements = rankData.classRequirements.filter(
+                                          (req: any) => req.label && req.minCount != null && req.minCount > 0
+                                        );
+                                      }
+                                    } catch (e) {
+                                      // Ignore JSON parse errors
+                                    }
+                                  }
+
+                                  // If we have class type requirements from beltConfig, show them
+                                  if (classRequirements.length > 0) {
+                                    return (
+                                      <div className="space-y-0.5">
+                                        {classRequirements.map((req, idx) => {
+                                          // Count attendance for this class type
+                                          const attended = (member?.attendances || []).filter(
+                                            (att) =>
+                                              att.classSession?.program?.name === s.name &&
+                                              att.classSession?.classType === req.label
+                                          ).length;
+
+                                          return (
+                                            <div key={idx}>
+                                              {req.label}: <span>{attended}/{req.minCount}</span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  }
+
+                                  // Fallback: show single requirement from Rank model if available
+                                  const selectedRank = selectedStyle.ranks?.find((r) => r.name === s.rank);
+                                  if (selectedRank?.classRequirement != null) {
+                                    const styleAttendance = (member?.attendances || []).filter(
+                                      (att) => att.classSession?.program?.name === s.name
+                                    );
+                                    return (
+                                      <div>
+                                        Classes: <span>{styleAttendance.length}/{selectedRank.classRequirement}</span>
+                                      </div>
+                                    );
+                                  }
+
+                                  return null;
+                                })()}
+                                {s.startDate && (
+                                  <div>
+                                    Start:{" "}
+                                    <span>
+                                      {new Date(
+                                        s.startDate
+                                      ).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const styleName = s.name || "this style";
+                                  if (!window.confirm(`Are you sure you want to remove ${styleName}?`)) {
+                                    return;
+                                  }
+
+                                  // Remove the style from local state
+                                  const updatedStyles = styles.filter((_, idx) => idx !== i);
+                                  setStyles(updatedStyles);
+
+                                  // Immediately save to server
+                                  try {
+                                    const body = {
+                                      stylesNotes: JSON.stringify(updatedStyles),
+                                    };
+
+                                    const res = await fetch(`/api/members/${memberId}`, {
+                                      method: "PATCH",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify(body),
+                                    });
+
+                                    if (!res.ok) {
+                                      const errText = await res.text();
+                                      throw new Error(errText || "Failed to remove style");
+                                    }
+
+                                    const updated = await res.json();
+                                    setMember(updated.member);
+                                    hydrateFormFromMember(updated.member);
+                                  } catch (err: any) {
+                                    setError(err.message || "Failed to remove style");
+                                    // Restore the style if save failed
+                                    if (member) {
+                                      hydrateFormFromMember(member);
+                                    }
+                                  }
+                                }}
+                                className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
-                      saveSection("waiver");
+                      saveSection("style");
                     }}
-                    className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 text-sm"
+                    className="space-y-4 text-sm"
                   >
-                    <div className="space-y-1">
-                      <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={waiverSigned}
-                          onChange={(e) =>
-                            setWaiverSigned(e.target.checked)
-                          }
-                          className="rounded border-gray-300 text-primary focus:ring-primary"
-                        />
-                        Waiver Signed
-                      </label>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-medium text-gray-700">
-                        Waiver Signed Date
-                      </label>
-                      <input
-                        type="date"
-                        value={waiverSignedAt}
-                        onChange={(e) => setWaiverSignedAt(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                      />
-                    </div>
+                    {styles.length === 0 ? (
+                      <p className="text-sm text-gray-400">
+                        No styles added yet. Click &quot;Add Style&quot; to add one.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {styles.map((style, index) => (
+                          <div
+                            key={index}
+                            className="border border-gray-200 rounded-md p-2 space-y-2"
+                            style={{ maxWidth: '280px' }}
+                          >
+                            <div className="space-y-1">
+                              <label className="block text-[11px] font-medium text-gray-700">
+                                Style
+                              </label>
+                              <select
+                                value={style.name}
+                                onChange={(e) =>
+                                  updateStyle(index, "name", e.target.value)
+                                }
+                                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                              >
+                                <option value="">Select Style</option>
+                                {availableStyles.map((s) => (
+                                  <option key={s.id} value={s.name}>
+                                    {s.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-1 gap-2">
+                              <div className="space-y-1">
+                                <label className="block text-[11px] font-medium text-gray-700">
+                                  Rank Level
+                                </label>
+                                <select
+                                  value={style.rank || ""}
+                                  onChange={(e) =>
+                                    updateStyle(index, "rank", e.target.value)
+                                  }
+                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                >
+                                  <option value="">Select Rank</option>
+                                  {(() => {
+                                    const selectedStyle = availableStyles.find(
+                                      (s) => s.name === style.name
+                                    );
+                                    if (!selectedStyle || !selectedStyle.ranks) {
+                                      return null;
+                                    }
+                                    return selectedStyle.ranks
+                                      .sort((a, b) => a.order - b.order)
+                                      .map((rank) => (
+                                        <option key={rank.id} value={rank.name}>
+                                          {rank.name}
+                                        </option>
+                                      ));
+                                  })()}
+                                </select>
+                              </div>
+                              {(() => {
+                                const selectedStyle = availableStyles.find(
+                                  (s) => s.name === style.name
+                                );
+                                const selectedRank = selectedStyle?.ranks?.find(
+                                  (r) => r.name === style.rank
+                                );
+                                if (selectedRank && selectedRank.classRequirement != null) {
+                                  return (
+                                    <div className="space-y-1">
+                                      <label className="block text-[11px] font-medium text-gray-700">
+                                        Class Requirement
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={`${selectedRank.classRequirement} classes`}
+                                        readOnly
+                                        className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-gray-50 text-gray-600"
+                                      />
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+                              <div className="space-y-1">
+                                <label className="block text-[11px] font-medium text-gray-700">
+                                  Training Start Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={style.startDate || ""}
+                                  onChange={(e) =>
+                                    updateStyle(
+                                      index,
+                                      "startDate",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-end justify-between gap-2">
+                              <div className="flex-1 space-y-2">
+                                <div className="space-y-1">
+                                  <label className="block text-[11px] font-medium text-gray-700">
+                                    Belt Size
+                                  </label>
+                                  <input
+                                    value={style.beltSize || ""}
+                                    onChange={(e) =>
+                                      updateStyle(
+                                        index,
+                                        "beltSize",
+                                        e.target.value
+                                      )
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                    placeholder="e.g. A2"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="block text-[11px] font-medium text-gray-700">
+                                    Uniform Size
+                                  </label>
+                                  <input
+                                    value={style.uniformSize || ""}
+                                    onChange={(e) =>
+                                      updateStyle(
+                                        index,
+                                        "uniformSize",
+                                        e.target.value
+                                      )
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                    placeholder="e.g. Small"
+                                  />
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeStyle(index)}
+                                className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </form>
                 )}
               </section>
+
+              {/* STYLE DOCUMENTS */}
+              <section className="rounded-lg border border-gray-200 bg-white p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-semibold">Style Documents</h2>
+                  <label className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark cursor-pointer">
+                    {uploadingDocument ? "Uploading..." : "Upload PDF"}
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleDocumentUpload}
+                      disabled={uploadingDocument}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  {styles.length === 0 ? (
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                      <p className="text-xs text-gray-400">
+                        No styles assigned yet. Assign a style to view available documents.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {styles.map((s, i) => {
+                        // Get documents for this style and rank
+                        const selectedStyle = availableStyles.find(
+                          (style) => style.name === s.name
+                        );
+
+                        if (!selectedStyle || !s.rank) return null;
+
+                        let styleDocs: StyleDocument[] = [];
+
+                        if (selectedStyle.beltConfig) {
+                          try {
+                            const beltConfig = JSON.parse(selectedStyle.beltConfig);
+                            const currentRank = beltConfig.ranks?.find((r: any) => r.name === s.rank);
+
+                            if (currentRank) {
+                              // Get all ranks up to and including current rank
+                              const ranksToInclude = beltConfig.ranks.filter(
+                                (r: any) => r.order <= currentRank.order
+                              );
+
+                              // Collect all PDFs from these ranks
+                              ranksToInclude.forEach((rank: any) => {
+                                if (rank.pdfDocuments && Array.isArray(rank.pdfDocuments)) {
+                                  rank.pdfDocuments.forEach((pdf: any) => {
+                                    if (!styleDocs.some(d => d.name === pdf.name)) {
+                                      styleDocs.push(pdf);
+                                    }
+                                  });
+                                }
+                              });
+                            }
+                          } catch (e) {
+                            // Ignore JSON parse errors
+                          }
+                        }
+
+                        if (styleDocs.length === 0) return null;
+
+                        return (
+                          <div
+                            key={i}
+                            className="border border-gray-200 rounded-md p-2 space-y-2"
+                            style={{ maxWidth: '280px' }}
+                          >
+                            <div>
+                              <div className="font-medium text-gray-900">
+                                {s.name}
+                              </div>
+                              <div className="mt-1 space-y-0.5 text-sm text-gray-700">
+                                <select
+                                  className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs"
+                                  onChange={(e) => {
+                                    const doc = styleDocs.find(d => d.name === e.target.value);
+                                    if (doc) {
+                                      // Convert data URL to blob and open in new window
+                                      const byteString = atob(doc.url.split(',')[1]);
+                                      const mimeString = doc.url.split(',')[0].split(':')[1].split(';')[0];
+                                      const ab = new ArrayBuffer(byteString.length);
+                                      const ia = new Uint8Array(ab);
+                                      for (let i = 0; i < byteString.length; i++) {
+                                        ia[i] = byteString.charCodeAt(i);
+                                      }
+                                      const blob = new Blob([ab], { type: mimeString });
+                                      const blobUrl = URL.createObjectURL(blob);
+                                      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+                                      // Don't revoke the blob URL so it persists for back button navigation
+                                    }
+                                    e.target.value = "";
+                                  }}
+                                  defaultValue=""
+                                >
+                                  <option value="" disabled>Select a document to view...</option>
+                                  {styleDocs.map((doc, idx) => (
+                                    <option key={idx} value={doc.name}>
+                                      {doc.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <div className="text-xs text-gray-500">
+                                  {styleDocs.length} document{styleDocs.length !== 1 ? 's' : ''} available
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </section>
+
             </div>
 
             {/* RIGHT: Payments + Activity */}
@@ -1742,21 +2348,41 @@ export default function MemberProfilePage() {
               <section className="rounded-lg border border-gray-200 bg-white p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-sm font-semibold">Payments / POS</h2>
+                  {!editingPayments ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditingPayments(true)}
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                    >
+                      Edit
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => cancelSection("payments")}
+                        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        form="payments-form"
+                        disabled={saving}
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
+                      >
+                        {saving ? "Saving..." : "Save"}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {!editingPayments ? (
                   <>
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="mb-2">
                       <span className="text-xs text-gray-500">
                         Safe notes only (no card numbers).
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => setEditingPayments(true)}
-                        className="text-xs text-primary hover:text-primaryDark font-medium"
-                      >
-                        Edit
-                      </button>
                     </div>
                     <div className="space-y-2 text-sm">
                       <p className="text-gray-900 whitespace-pre-wrap">
@@ -1780,37 +2406,22 @@ export default function MemberProfilePage() {
                   </>
                 ) : (
                   <form
+                    id="payments-form"
                     onSubmit={(e) => {
                       e.preventDefault();
                       saveSection("payments");
                     }}
                     className="space-y-2 text-sm"
                   >
-                    <div className="flex items-center justify-between">
-                      <label className="block text-xs font-medium text-gray-700">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
                         Payment / POS Notes
                       </label>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => cancelSection("payments")}
-                          className="text-xs text-gray-500 hover:text-gray-700"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={savingSection === "payments"}
-                          className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
-                        >
-                          {savingSection === "payments" ? "Saving..." : "Save"}
-                        </button>
-                      </div>
                     </div>
                     <textarea
                       value={paymentNotes}
                       onChange={(e) => setPaymentNotes(e.target.value)}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                      className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       rows={5}
                       placeholder={
                         'Examples:\n- "Visa ending 1234, saved in Square; default for tuition."\n- "Cash only; pays first week of each month."\n- "Promo: HEROES-CUP-2026 (50% off Jan) applied."'
@@ -1863,6 +2474,8 @@ export default function MemberProfilePage() {
             </div>
           </div>
         )}
+
+        {/* PDF Viewer Modal */}
       </div>
     </AppLayout>
   );

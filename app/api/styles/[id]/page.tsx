@@ -185,7 +185,7 @@ export default function StyleEditPage({ params }: PageProps) {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   placeholder="Hawaiian Kempo, Brazilian Jiu Jitsu, etc."
                 />
               </div>
@@ -198,7 +198,7 @@ export default function StyleEditPage({ params }: PageProps) {
                   type="text"
                   value={shortName}
                   onChange={(e) => setShortName(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   placeholder="HK, BJJ, MMA, etc."
                 />
               </div>
@@ -212,7 +212,7 @@ export default function StyleEditPage({ params }: PageProps) {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                 placeholder="Optional notes about this style, age groups, focus, etc."
               />
             </div>

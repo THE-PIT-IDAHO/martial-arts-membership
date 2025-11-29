@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
@@ -27,8 +27,8 @@ type BeltRank = {
   classRequirements?: ClassRequirement[];
   minDuration?: RankDuration;
   notes?: string | null;
-  // belt design snapshot for this rank
   layers?: BeltLayerConfig;
+  pdfDocuments?: Array<{ id: string; name: string; url: string }>;  // Array of PDF documents
 };
 
 type BeltLayerConfig = {
@@ -91,6 +91,12 @@ type Style = {
   beltConfig?: string | null;
 };
 
+// Popup target for editable pop-out
+type PopupTarget =
+  | { type: "rankName"; rankId: string }
+  | { type: "rankNotes"; rankId: string }
+  | { type: "classLabel"; rankId: string; reqId: string };
+
 // -------- Defaults & helpers --------
 
 const defaultLayers: BeltLayerConfig = {
@@ -129,7 +135,6 @@ const defaultLayers: BeltLayerConfig = {
 const STORAGE_PREFIX = "beltSetup_";
 const getStorageKey = (styleId: string) => `${STORAGE_PREFIX}${styleId}`;
 
-// lowest positive integer not in the set of used orders
 function getNextOrder(existingRanks: BeltRank[]): number {
   const used = new Set(
     existingRanks
@@ -158,11 +163,9 @@ export default function BeltDesignerPage() {
 
   const [style, setStyle] = useState<Style | null>(null);
 
-  // Visual layers (current working design) + ranks
   const [layers, setLayers] = useState<BeltLayerConfig>(defaultLayers);
   const [ranks, setRanks] = useState<BeltRank[]>([]);
 
-  // Rank editor state (top form)
   const [editingId, setEditingId] = useState<string | null>(null);
   const [rankName, setRankName] = useState("");
   const [rankOrder, setRankOrder] = useState<number>(1);
@@ -172,14 +175,31 @@ export default function BeltDesignerPage() {
   const [durationValue, setDurationValue] = useState<string>("");
   const [durationUnit, setDurationUnit] = useState<DurationUnit>("months");
   const [rankNotes, setRankNotes] = useState("");
+  const [rankPdfDocuments, setRankPdfDocuments] = useState<Array<{ id: string; name: string; url: string }>>([]);
 
   const [loading, setLoading] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // drag-and-drop for ranks
+  const [classTypes, setClassTypes] = useState<string[]>([]);
+
   const [draggedRankId, setDraggedRankId] = useState<string | null>(null);
   const [hoveredRankId, setHoveredRankId] = useState<string | null>(null);
+
+  // Pop-out editor
+  const [popup, setPopup] = useState<PopupTarget | null>(null);
+  const [popupValue, setPopupValue] = useState<string>("");
+  const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(
+    null
+  );
+  const popupTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Hover box
+  const [hoverBox, setHoverBox] = useState<{
+    value: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
   // ---- Local storage hydrate helper ----
   function hydrateFromLocal(sid: string) {
@@ -189,13 +209,8 @@ export default function BeltDesignerPage() {
       if (!raw) return;
       const parsed: BeltSetup = JSON.parse(raw);
 
-      if (parsed.layers) {
-        setLayers({
-          ...defaultLayers,
-          ...parsed.layers,
-          fabric: true,
-        });
-      }
+      // Always use default layers - don't load saved layer configuration
+      setLayers(defaultLayers);
       if (Array.isArray(parsed.ranks)) {
         const hydrated = parsed.ranks
           .map((r) => ({
@@ -210,13 +225,12 @@ export default function BeltDesignerPage() {
         setRanks(hydrated);
         setRankOrder(getNextOrder(hydrated));
       }
-      console.log("Hydrated belt setup from localStorage for style", sid);
     } catch (err) {
       console.warn("Failed to hydrate belt setup from localStorage:", err);
     }
   }
 
-  // Load existing beltConfig from the Style
+  // Load existing beltConfig from Style
   useEffect(() => {
     async function loadStyle() {
       if (!styleId) return;
@@ -241,13 +255,8 @@ export default function BeltDesignerPage() {
             const parsed: any = JSON.parse(s.beltConfig);
             if (parsed && typeof parsed === "object") {
               parsedOk = true;
-              if (parsed.layers) {
-                setLayers({
-                  ...defaultLayers,
-                  ...parsed.layers,
-                  fabric: true,
-                });
-              }
+              // Always use default layers - don't load saved layer configuration
+              setLayers(defaultLayers);
               const parsedRanks: BeltRank[] =
                 parsed.ranks || parsed.levels || [];
               if (Array.isArray(parsedRanks)) {
@@ -286,19 +295,43 @@ export default function BeltDesignerPage() {
     loadStyle();
   }, [styleId]);
 
-  // whenever ranks change and we're NOT editing in the top form,
-  // keep the order field at "lowest unused"
+  // Load available class types
+  useEffect(() => {
+    async function loadClassTypes() {
+      try {
+        const res = await fetch("/api/classes?types=true");
+        if (res.ok) {
+          const data = await res.json();
+          setClassTypes(data.classTypes || []);
+        }
+      } catch (err) {
+        console.error("Error loading class types:", err);
+      }
+    }
+    loadClassTypes();
+  }, []);
+
   useEffect(() => {
     if (!editingId) {
       setRankOrder(getNextOrder(ranks));
     }
   }, [ranks, editingId]);
 
-  // ----- Rank form helpers (top form) -----
+  // Auto-size popup textarea height
+  useEffect(() => {
+    if (popup && popupTextareaRef.current) {
+      const t = popupTextareaRef.current;
+      t.style.height = "auto";
+      t.style.height = `${t.scrollHeight}px`;
+    }
+  }, [popup, popupValue]);
+
+  // ----- Helpers -----
 
   function scrollToDesignerTop() {
-    // Always scroll to very top of the page
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   function resetRankForm() {
@@ -309,6 +342,7 @@ export default function BeltDesignerPage() {
     setDurationValue("");
     setDurationUnit("months");
     setRankNotes("");
+    setRankPdfDocuments([]);
   }
 
   function handleEditRank(rank: BeltRank) {
@@ -334,6 +368,7 @@ export default function BeltDesignerPage() {
       setDurationUnit("months");
     }
     setRankNotes(rank.notes || "");
+    setRankPdfDocuments(rank.pdfDocuments || []);
 
     const rankLayers = rank.layers
       ? { ...defaultLayers, ...rank.layers, fabric: true }
@@ -344,9 +379,8 @@ export default function BeltDesignerPage() {
   }
 
   function handleDeleteRank(id: string) {
-    if (!window.confirm("Delete this belt rank?")) return;
+    if (!window.confirm("Delete this rank?")) return;
     const updatedRanks = ranks.filter((r) => r.id !== id);
-    // re-sequence orders after delete
     updatedRanks
       .sort((a, b) => a.order - b.order)
       .forEach((r, idx) => {
@@ -360,7 +394,7 @@ export default function BeltDesignerPage() {
       setRankOrder(getNextOrder(updatedRanks));
     }
     if (styleId) {
-      persistBeltConfig(updatedRanks, layers);
+      void persistBeltConfig(updatedRanks, layers);
     }
   }
 
@@ -377,6 +411,7 @@ export default function BeltDesignerPage() {
         : { value: null, unit: "months" },
       notes: rank.notes || null,
       layers: rank.layers ? { ...rank.layers } : { ...defaultLayers },
+      pdfDocuments: rank.pdfDocuments ? [...rank.pdfDocuments] : [],
     };
 
     const updatedRanks = [...current, duplicated];
@@ -389,13 +424,16 @@ export default function BeltDesignerPage() {
     setRanks(updatedRanks);
     setRankOrder(getNextOrder(updatedRanks));
     if (styleId) {
-      persistBeltConfig(updatedRanks, layers);
+      void persistBeltConfig(updatedRanks, layers);
     }
   }
 
-  // Class requirement helpers (top form)
+  // New Belt Rank min-classes: max 5 rows
   function addClassRequirement() {
-    setRankClassRequirements((prev) => [...prev, createEmptyRequirement()]);
+    setRankClassRequirements((prev) => {
+      if (prev.length >= 5) return prev;
+      return [...prev, createEmptyRequirement()];
+    });
   }
 
   function updateClassRequirement(
@@ -407,14 +445,14 @@ export default function BeltDesignerPage() {
       prev.map((req) =>
         req.id === id
           ? {
-              ...req,
-              [field]:
-                field === "minCount"
-                  ? value.trim() === ""
-                    ? null
-                    : Number(value) || 0
-                  : value,
-            }
+            ...req,
+            [field]:
+              field === "minCount"
+                ? value.trim() === ""
+                  ? null
+                  : Number(value) || 0
+                : value,
+          }
           : req
       )
     );
@@ -424,8 +462,6 @@ export default function BeltDesignerPage() {
     setRankClassRequirements((prev) => prev.filter((req) => req.id !== id));
   }
 
-  // ----- Layers / preview helpers -----
-
   function toggleLayer(key: ToggleableLayerKey) {
     setLayers((prev) => ({
       ...prev,
@@ -434,12 +470,14 @@ export default function BeltDesignerPage() {
     }));
   }
 
-  // Save belt design + ranks together to the Style AND to localStorage
   async function persistBeltConfig(
     nextRanks: BeltRank[],
     nextLayers: BeltLayerConfig
   ) {
-    if (!styleId) return;
+    if (!styleId) {
+      console.warn("No styleId provided, skipping save");
+      return;
+    }
 
     setSavingAll(true);
     setSuccess(null);
@@ -449,18 +487,26 @@ export default function BeltDesignerPage() {
       ranks: nextRanks,
     };
 
+    // Save to localStorage as backup
     if (typeof window !== "undefined") {
       try {
         window.localStorage.setItem(
           getStorageKey(styleId),
           JSON.stringify(payload)
         );
+        console.log("✓ Saved to localStorage");
       } catch (err) {
-        console.warn("Failed to save belt setup to localStorage:", err);
+        console.error("Failed to save belt setup to localStorage:", err);
       }
     }
 
+    // Save to database via API
     try {
+      console.log("Saving belt config to database...", {
+        styleId,
+        ranksCount: nextRanks.length,
+      });
+
       const res = await fetch(`/api/styles/${styleId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -468,26 +514,86 @@ export default function BeltDesignerPage() {
       });
 
       if (!res.ok) {
-        console.error("Failed to save belt setup:", res.status, res.statusText);
-      } else {
-        try {
-          const data = await res.json();
-          if (data && data.style) {
-            setStyle(data.style);
-          }
-        } catch (err) {
-          console.warn("Save succeeded but response was not JSON:", err);
-        }
-        setSuccess("Belt design and ranks saved.");
+        const errorText = await res.text();
+        console.error("Failed to save belt setup:", {
+          status: res.status,
+          statusText: res.statusText,
+          error: errorText,
+        });
+        setSuccess(
+          `⚠️ Save failed (${res.status}). Data saved to browser only.`
+        );
+        return;
       }
+
+      try {
+        const data = await res.json();
+        if (data && data.style) {
+          setStyle(data.style);
+          console.log("✓ Saved to database successfully");
+        }
+      } catch (err) {
+        console.warn("Save succeeded but response was not JSON:", err);
+      }
+
+      setSuccess("✓ Belt design and ranks saved to database.");
     } catch (err) {
       console.error("Network error while saving belt setup:", err);
+      setSuccess(
+        "⚠️ Network error. Data saved to browser only. Check console."
+      );
     } finally {
       setSavingAll(false);
     }
   }
 
-  // Save button for rank (top form)
+  function handlePdfUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check max limit
+    if (rankPdfDocuments.length >= 5) {
+      alert("Maximum 5 documents allowed");
+      e.target.value = "";
+      return;
+    }
+
+    // Validate file type
+    if (file.type !== "application/pdf") {
+      alert("Only PDF files are allowed");
+      e.target.value = "";
+      return;
+    }
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      alert("File size must be less than 10MB");
+      e.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        // Remove .pdf extension from the name
+        const fileName = file.name.replace(/\.pdf$/i, '');
+        const newDoc = {
+          id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          name: fileName,
+          url: result
+        };
+        setRankPdfDocuments([...rankPdfDocuments, newDoc]);
+      }
+      e.target.value = "";
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleRemovePdfDocument(docId: string) {
+    setRankPdfDocuments(rankPdfDocuments.filter(d => d.id !== docId));
+  }
+
   async function handleSaveRank(e: React.FormEvent) {
     e.preventDefault();
     if (!rankName.trim()) return;
@@ -520,14 +626,15 @@ export default function BeltDesignerPage() {
       updatedRanks = ranks.map((r) =>
         r.id === editingId
           ? {
-              ...r,
-              name: rankName.trim(),
-              order: rankOrder || r.order,
-              classRequirements: cleanRequirements,
-              minDuration,
-              notes: rankNotes.trim() || null,
-              layers: { ...currentLayers },
-            }
+            ...r,
+            name: rankName.trim(),
+            order: rankOrder || r.order,
+            classRequirements: cleanRequirements,
+            minDuration,
+            notes: rankNotes.trim() || null,
+            layers: { ...currentLayers },
+            pdfDocuments: rankPdfDocuments.length > 0 ? [...rankPdfDocuments] : undefined,
+          }
           : r
       );
     } else {
@@ -541,12 +648,12 @@ export default function BeltDesignerPage() {
         minDuration,
         notes: rankNotes.trim() || null,
         layers: { ...currentLayers },
+        pdfDocuments: rankPdfDocuments.length > 0 ? [...rankPdfDocuments] : undefined,
       };
 
       updatedRanks = [...ranks, newRank];
     }
 
-    // sort & normalize
     updatedRanks
       .sort((a, b) => a.order - b.order)
       .forEach((r, idx) => {
@@ -557,15 +664,13 @@ export default function BeltDesignerPage() {
 
     await persistBeltConfig(updatedRanks, currentLayers);
 
-    // after successful create/edit:
     resetRankForm();
     setLayers(defaultLayers);
     setRankOrder(getNextOrder(updatedRanks));
   }
 
-  // ---------- Inline editing helpers for Existing Ranks ----------
+  // ---------- Inline editing helpers ----------
 
-  // Update a simple field on a rank (name, order, notes, etc) in state only
   function updateRankField<K extends keyof BeltRank>(
     rankId: string,
     field: K,
@@ -576,7 +681,6 @@ export default function BeltDesignerPage() {
     );
   }
 
-  // Update class requirement inside a rank (existing belts section)
   function updateRankRequirementInline(
     rankId: string,
     reqId: string,
@@ -589,14 +693,14 @@ export default function BeltDesignerPage() {
         const classRequirements = (rank.classRequirements || []).map((req) =>
           req.id === reqId
             ? {
-                ...req,
-                [field]:
-                  field === "minCount"
-                    ? value.trim() === ""
-                      ? null
-                      : Number(value) || 0
-                    : value,
-              }
+              ...req,
+              [field]:
+                field === "minCount"
+                  ? value.trim() === ""
+                    ? null
+                    : Number(value) || 0
+                  : value,
+            }
             : req
         );
         return { ...rank, classRequirements };
@@ -604,7 +708,36 @@ export default function BeltDesignerPage() {
     );
   }
 
-  // Update minDuration inside a rank (Existing belts)
+  function removeRankRequirementInline(rankId: string, reqId: string) {
+    setRanks((prev) => {
+      const updated = prev.map((rank) => {
+        if (rank.id !== rankId) return rank;
+        const classRequirements = (rank.classRequirements || []).filter(
+          (req) => req.id !== reqId
+        );
+        return { ...rank, classRequirements };
+      });
+      if (styleId) {
+        void persistBeltConfig(updated, layers);
+      }
+      return updated;
+    });
+  }
+
+  function addRankRequirementInline(rankId: string) {
+    setRanks((prev) =>
+      prev.map((rank) => {
+        if (rank.id !== rankId) return rank;
+        const existing = rank.classRequirements || [];
+        if (existing.length >= 5) return rank;
+        return {
+          ...rank,
+          classRequirements: [...existing, createEmptyRequirement()],
+        };
+      })
+    );
+  }
+
   function updateRankDurationInline(
     rankId: string,
     field: "value" | "unit",
@@ -620,19 +753,18 @@ export default function BeltDesignerPage() {
         const next: RankDuration =
           field === "value"
             ? {
-                ...current,
-                value: value.trim() === "" ? null : Number(value) || 0,
-              }
+              ...current,
+              value: value.trim() === "" ? null : Number(value) || 0,
+            }
             : {
-                ...current,
-                unit: value as DurationUnit,
-              };
+              ...current,
+              unit: value as DurationUnit,
+            };
         return { ...rank, minDuration: next };
       })
     );
   }
 
-  // Commit inline changes: normalize order, persist, update default next order
   function commitRanksInline() {
     setRanks((prev) => {
       const updated = [...prev]
@@ -650,7 +782,6 @@ export default function BeltDesignerPage() {
     });
   }
 
-  // Handle Enter to commit; blur on last field (Notes) also commits
   function handleInlineKeyDown(
     e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement>
   ) {
@@ -661,7 +792,49 @@ export default function BeltDesignerPage() {
     }
   }
 
-  // ---------- Drag & drop existing ranks ----------
+  // ---------- Pop-out editor helpers ----------
+
+  function openPopup(target: PopupTarget, value: string, rect: DOMRect) {
+    setPopup(target);
+    setPopupValue(value || "");
+    setPopupPos({
+      x: rect.left + rect.width / 2,
+      y: rect.bottom,
+    });
+    setHoverBox(null);
+  }
+
+  function commitPopup() {
+    if (!popup) return;
+    let updatedRanks = [...ranks];
+
+    if (popup.type === "rankName") {
+      updatedRanks = updatedRanks.map((rank) =>
+        rank.id === popup.rankId ? { ...rank, name: popupValue } : rank
+      );
+    } else if (popup.type === "rankNotes") {
+      updatedRanks = updatedRanks.map((rank) =>
+        rank.id === popup.rankId ? { ...rank, notes: popupValue || null } : rank
+      );
+    } else if (popup.type === "classLabel") {
+      updatedRanks = updatedRanks.map((rank) => {
+        if (rank.id !== popup.rankId) return rank;
+        const classRequirements = (rank.classRequirements || []).map((req) =>
+          req.id === popup.reqId ? { ...req, label: popupValue } : req
+        );
+        return { ...rank, classRequirements };
+      });
+    }
+
+    setRanks(updatedRanks);
+    if (styleId) {
+      void persistBeltConfig(updatedRanks, layers);
+    }
+    setPopup(null);
+    setPopupPos(null);
+  }
+
+  // ---------- Drag & drop ----------
 
   function handleDragStart(rankId: string) {
     setDraggedRankId(rankId);
@@ -713,7 +886,8 @@ export default function BeltDesignerPage() {
     setHoveredRankId(null);
   }
 
-  // Image src map for each layer
+  // ---------- Belt preview ----------
+
   const layerSrc: Record<string, string> = {
     outline: "/belts/outline.png",
     fabric: "/belts/fabric.png",
@@ -764,7 +938,7 @@ export default function BeltDesignerPage() {
       : { ...defaultLayers, ...layers, fabric: true };
 
     return (
-      <div className="relative w-full overflow-hidden rounded-md bg-black/5">
+      <div className="relative w-full overflow-hidden rounded-md border border-gray-200 bg-black/5">
         <div className={`${heightClass} relative w-full`}>
           {usedLayers.fabric && (
             <TintedLayer
@@ -846,31 +1020,34 @@ export default function BeltDesignerPage() {
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold">Belt Designer</h1>
-            {styleId && (
-              <p className="mt-1 text-xl font-semibold text-gray-800">
-                Style:{" "}
-                <span className="font-bold">
-                  {styleName || style?.name || `#${styleId}`}
-                </span>
-              </p>
-            )}
-            {!styleId && (
-              <p className="mt-1 text-xs text-gray-500">
-                No style selected. Open this page from a style to see belt
-                settings.
-              </p>
+            {styleId ? (
+              <>
+                <h1 className="text-2xl font-bold">
+                  Style:{" "}
+                  <span className="font-bold">
+                    {styleName || style?.name || `#${styleId}`}
+                  </span>
+                </h1>
+              </>
+            ) : (
+              <>
+                <h1 className="text-2xl font-bold">Belt Designer</h1>
+                <p className="mt-1 text-xs text-gray-500">
+                  No style selected. Open this page from a style to see belt
+                  settings.
+                </p>
+              </>
             )}
           </div>
           <Link
             href="/styles"
-            className="text-xs rounded-md border border-primary px-3 py-1 font-semibold text-primary hover:bg-primary hover:text-white"
+            className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
           >
             Back to Styles
           </Link>
         </div>
 
-        {/* Messages (only success now) */}
+        {/* Messages */}
         {success && (
           <div className="rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-800">
             {success}
@@ -882,384 +1059,486 @@ export default function BeltDesignerPage() {
           </div>
         )}
 
-        {/* 1) Top: Belt preview */}
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="mb-2 text-sm font-semibold text-gray-800">
-            Belt Preview
-          </h2>
-          <div className="flex justify-start rounded-md border border-dashed border-gray-300 bg-gray-50 p-4">
-            <div className="w-full max-w-[420px]">
-              <BeltPreview heightClass="h-56" />
+        {/* 1) Belt preview + Options box side by side */}
+        <section className="rounded-lg border border-gray-200 bg-white p-4 min-w-fit">
+          <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+            {/* Preview */}
+            <div className="flex justify-start rounded-md border border-gray-200 bg-gray-50 p-4 min-w-fit">
+              <div className="w-full max-w-[420px]">
+                <BeltPreview heightClass="h-56" />
+              </div>
+            </div>
+
+            {/* Options box (with inline swatches) */}
+            <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 w-full min-w-fit">
+              <h2 className="text-sm font-semibold text-gray-800">
+                Rank Options
+              </h2>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Rank Color (always on) */}
+                <div className="col-span-2 flex items-center gap-2">
+                  <span className="whitespace-nowrap text-xs font-medium">
+                    Rank Color
+                  </span>
+                  <input
+                    type="color"
+                    value={layers.fabricColor}
+                    onChange={(e) =>
+                      setLayers((prev) => ({
+                        ...prev,
+                        fabricColor: e.target.value,
+                        fabric: true,
+                      }))
+                    }
+                    className="h-5 w-5 min-h-[1.25rem] min-w-[1.25rem] cursor-pointer rounded-md border border-gray-300 bg-white"
+                  />
+                </div>
+
+                {/* Linear Stripe */}
+                <div className="flex items-center gap-2 h-[22px]">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={layers.linear}
+                      onChange={() => toggleLayer("linear")}
+                      className="h-3 w-3 rounded border-gray-300"
+                    />
+                    <span className="whitespace-nowrap text-xs font-medium">
+                      Linear Stripe
+                    </span>
+                  </label>
+                  {layers.linear && (
+                    <input
+                      type="color"
+                      value={layers.linearColor}
+                      onChange={(e) =>
+                        setLayers((prev) => ({
+                          ...prev,
+                          linearColor: e.target.value,
+                        }))
+                      }
+                      className="h-5 w-5 min-h-[1.25rem] min-w-[1.25rem] cursor-pointer rounded-md border border-gray-300 bg-white"
+                    />
+                  )}
+                </div>
+
+                {/* Patch 1 */}
+                <div className="flex items-center gap-2 h-[22px]">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={layers.patch}
+                      onChange={() => toggleLayer("patch")}
+                      className="h-3 w-3 rounded border-gray-300"
+                    />
+                    <span className="whitespace-nowrap text-xs font-medium">
+                      Patch 1
+                    </span>
+                  </label>
+                  {layers.patch ? (
+                    <input
+                      type="color"
+                      value={layers.patchColor}
+                      onChange={(e) =>
+                        setLayers((prev) => ({
+                          ...prev,
+                          patchColor: e.target.value,
+                        }))
+                      }
+                      className="h-5 w-5 min-h-[1.25rem] min-w-[1.25rem] cursor-pointer rounded-md border border-gray-300 bg-white"
+                    />
+                  ) : (
+                    <div className="h-5 w-5 min-h-[1.25rem] min-w-[1.25rem]" />
+                  )}
+                </div>
+
+                {/* Camo */}
+                <div className="flex items-center justify-between gap-2 h-[22px]">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={layers.camo}
+                      onChange={() => toggleLayer("camo")}
+                      className="h-3 w-3 rounded border-gray-300"
+                    />
+                    <span className="whitespace-nowrap text-xs font-medium">
+                      Camo
+                    </span>
+                  </label>
+                  {/* Spacer so layout stays aligned even without swatch */}
+                  <div className="h-5 w-5 min-h-[1.25rem] min-w-[1.25rem]" />
+                </div>
+
+                {/* Patch 2 */}
+                <div className="flex items-center gap-2 h-[22px]">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={layers.patch2}
+                      onChange={() => toggleLayer("patch2")}
+                      className="h-3 w-3 rounded border-gray-300"
+                    />
+                    <span className="whitespace-nowrap text-xs font-medium">
+                      Patch 2
+                    </span>
+                  </label>
+                  {layers.patch2 ? (
+                    <input
+                      type="color"
+                      value={layers.patch2Color}
+                      onChange={(e) =>
+                        setLayers((prev) => ({
+                          ...prev,
+                          patch2Color: e.target.value,
+                        }))
+                      }
+                      className="h-5 w-5 min-h-[1.25rem] min-w-[1.25rem] cursor-pointer rounded-md border border-gray-300 bg-white"
+                    />
+                  ) : (
+                    <div className="h-5 w-5 min-h-[1.25rem] min-w-[1.25rem]" />
+                  )}
+                </div>
+              </div>
+
+              {/* Stripes */}
+              <div className="mt-1 space-y-1">
+                <p className="text-[11px] font-semibold text-gray-800">
+                  Stripes
+                </p>
+                <div className="grid grid-cols-5 gap-x-2.5 gap-y-2">
+                  {(
+                    [
+                      "stripe1",
+                      "stripe2",
+                      "stripe3",
+                      "stripe4",
+                      "stripe5",
+                      "stripe6",
+                      "stripe7",
+                      "stripe8",
+                      "stripe9",
+                      "stripe10",
+                    ] as const
+                  ).map((key, i) => {
+                    const k = key as ToggleableLayerKey;
+                    const colorKey = `${key}Color` as keyof BeltLayerConfig;
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center whitespace-nowrap"
+                      >
+                        <label className="flex items-center gap-1 w-6">
+                          <input
+                            type="checkbox"
+                            checked={layers[k]}
+                            onChange={() => toggleLayer(k)}
+                            className="h-3 w-3 shrink-0 rounded border-gray-300"
+                          />
+                          <span className="text-xs font-medium w-3 text-center">
+                            {i + 1}
+                          </span>
+                        </label>
+                        {layers[k] ? (
+                          <input
+                            type="color"
+                            value={(layers as any)[colorKey]}
+                            onChange={(e) =>
+                              setLayers((prev) => ({
+                                ...prev,
+                                [colorKey]: e.target.value,
+                              }))
+                            }
+                            className="ml-1.5 h-5 w-5 min-h-[1.25rem] min-w-[1.25rem] shrink-0 cursor-pointer rounded-md border border-gray-300 bg-white"
+                          />
+                        ) : (
+                          <div className="ml-1.5 h-5 w-5 min-h-[1.25rem] min-w-[1.25rem]" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* 2) New Belt Rank + Options */}
+        {/* 2) New Rank (form only, full width, no partition) */}
         <section
           id="belt-rank-editor"
           className="space-y-4 rounded-lg border border-gray-200 bg-white p-4"
         >
           <h2 className="text-sm font-semibold text-gray-800">
-            New Belt Rank
+            New Rank
           </h2>
 
           <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
-            <div className="md:flex md:gap-4">
-              {/* LEFT: Options */}
-              <div className="md:w-[420px] md:flex-none space-y-3">
-                <div className="grid grid-cols-2 gap-3 text-xs text-gray-700">
-                  {/* Belt Color */}
-                  <div className="flex flex-col gap-1 col-span-2">
-                    <span className="font-medium">Belt Color</span>
-                    <input
-                      type="color"
-                      value={layers.fabricColor}
-                      onChange={(e) =>
-                        setLayers((prev) => ({
-                          ...prev,
-                          fabricColor: e.target.value,
-                          fabric: true,
-                        }))
-                      }
-                      className="h-7 w-20 cursor-pointer rounded-md border border-gray-300 bg-white"
-                    />
-                  </div>
-
-                  {/* Linear Stripe */}
-                  <div className="flex flex-col gap-1">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={layers.linear}
-                        onChange={() => toggleLayer("linear")}
-                        className="h-3 w-3 rounded border-gray-300"
-                      />
-                      <span className="font-medium">Linear Stripe</span>
-                    </label>
-                    {layers.linear && (
-                      <input
-                        type="color"
-                        value={layers.linearColor}
-                        onChange={(e) =>
-                          setLayers((prev) => ({
-                            ...prev,
-                            linearColor: e.target.value,
-                          }))
-                        }
-                        className="h-7 w-20 cursor-pointer rounded-md border border-gray-300 bg-white"
-                      />
-                    )}
-                  </div>
-
-                  {/* Patch 1 */}
-                  <div className="flex flex-col gap-1">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={layers.patch}
-                        onChange={() => toggleLayer("patch")}
-                        className="h-3 w-3 rounded border-gray-300"
-                      />
-                      <span className="font-medium">Patch 1</span>
-                    </label>
-                    {layers.patch && (
-                      <input
-                        type="color"
-                        value={layers.patchColor}
-                        onChange={(e) =>
-                          setLayers((prev) => ({
-                            ...prev,
-                            patchColor: e.target.value,
-                          }))
-                        }
-                        className="h-7 w-20 cursor-pointer rounded-md border border-gray-300 bg-white"
-                      />
-                    )}
-                  </div>
-
-                  {/* Camo */}
-                  <div className="flex flex-col gap-1">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={layers.camo}
-                        onChange={() => toggleLayer("camo")}
-                        className="h-3 w-3 rounded border-gray-300"
-                      />
-                      <span className="font-medium">Camo</span>
-                    </label>
-                  </div>
-
-                  {/* Patch 2 */}
-                  <div className="flex flex-col gap-1">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={layers.patch2}
-                        onChange={() => toggleLayer("patch2")}
-                        className="h-3 w-3 rounded border-gray-300"
-                      />
-                      <span className="font-medium">Patch 2</span>
-                    </label>
-                    {layers.patch2 && (
-                      <input
-                        type="color"
-                        value={layers.patch2Color}
-                        onChange={(e) =>
-                          setLayers((prev) => ({
-                            ...prev,
-                            patch2Color: e.target.value,
-                          }))
-                        }
-                        className="h-7 w-20 cursor-pointer rounded-md border border-gray-300 bg-white"
-                      />
-                    )}
-                  </div>
+            <form onSubmit={handleSaveRank} className="space-y-3">
+              {/* Row 1: Order | Rank Name | Notes (3 columns) */}
+              <div className="grid gap-3 grid-cols-[auto_1fr_1fr]">
+                {/* Order (centered) */}
+                <div className="w-11">
+                  <label className="mb-1 block text-[11px] font-medium text-gray-700 text-center">
+                    Order
+                  </label>
+                  <input
+                    type="number"
+                    value={rankOrder}
+                    onChange={(e) =>
+                      setRankOrder(Number(e.target.value) || 1)
+                    }
+                    className="no-spinner w-full rounded-md border border-gray-300 px-2 py-1 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    min={1}
+                    placeholder="#"
+                  />
                 </div>
 
-                {/* Stripes */}
-                <div className="mt-3 space-y-1">
-                  <p className="text-[11px] font-semibold text-gray-800">
-                    Stripes
-                  </p>
-                  <div className="grid grid-cols-5 gap-3 text-xs text-gray-700">
-                    {(
-                      [
-                        "stripe1",
-                        "stripe2",
-                        "stripe3",
-                        "stripe4",
-                        "stripe5",
-                        "stripe6",
-                        "stripe7",
-                        "stripe8",
-                        "stripe9",
-                        "stripe10",
-                      ] as const
-                    ).map((key, i) => {
-                      const k = key as ToggleableLayerKey;
-                      const colorKey = `${key}Color` as keyof BeltLayerConfig;
-                      return (
-                        <div key={key} className="flex flex-col gap-1">
-                          <label className="flex items-center gap-1">
-                            <input
-                              type="checkbox"
-                              checked={layers[k]}
-                              onChange={() => toggleLayer(k)}
-                              className="h-3 w-3 rounded border-gray-300"
-                            />
-                            <span className="font-medium">{i + 1}</span>
-                          </label>
-                          {layers[k] && (
-                            <input
-                              type="color"
-                              value={(layers as any)[colorKey]}
-                              onChange={(e) =>
-                                setLayers((prev) => ({
-                                  ...prev,
-                                  [colorKey]: e.target.value,
-                                }))
-                              }
-                              className="h-6 w-8 cursor-pointer rounded-md border border-gray-300 bg-white"
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                {/* Rank Name */}
+                <div className="min-w-[80px]">
+                  <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                    Rank Name
+                  </label>
+                  <input
+                    type="text"
+                    value={rankName}
+                    onChange={(e) => setRankName(e.target.value)}
+                    title={rankName}
+                    className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="White, Yellow, Orange..."
+                    required
+                  />
+                </div>
+
+                {/* Notes */}
+                <div className="ml-5 min-w-[80px]">
+                  <label className="mb-1 block text-[11px] font-medium text-gray-700">
+                    Notes
+                  </label>
+                  <input
+                    type="text"
+                    value={rankNotes}
+                    onChange={(e) => setRankNotes(e.target.value)}
+                    title={rankNotes}
+                    className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="Optional details about this rank"
+                  />
                 </div>
               </div>
 
-              {/* RIGHT: New/Edit Belt Rank form */}
-              <div className="mt-4 md:mt-0 md:flex-1 md:border-l md:border-gray-200 md:pl-4 space-y-3">
-                <form onSubmit={handleSaveRank} className="space-y-3">
-                  <div className="grid gap-3 sm:grid-cols-4 sm:items-end">
-                    <div className="sm:col-span-2">
-                      <label className="mb-1 block text-[11px] font-medium text-gray-700">
-                        Belt Rank Name
-                      </label>
-                      <input
-                        type="text"
-                        value={rankName}
-                        onChange={(e) => setRankName(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                        placeholder="White, Yellow, Orange..."
-                        required
-                      />
-                    </div>
+              {/* Row 2: Min Classes | Min Time */}
+              <div className="grid gap-3 grid-cols-[auto_1fr_1fr]" style={{ marginBottom: '-6px' }}>
+                <label className="text-[11px] font-medium text-gray-700 whitespace-nowrap">
+                  Min Classes (by type)
+                </label>
+                <div></div>
+                <label className="text-[11px] font-medium text-gray-700" style={{ marginLeft: '-9px' }}>
+                  Min Time
+                </label>
+              </div>
 
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-gray-700">
-                        Order
-                      </label>
-                      <input
-                        type="number"
-                        value={rankOrder}
-                        onChange={(e) =>
-                          setRankOrder(Number(e.target.value) || 1)
-                        }
-                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                        min={1}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Min Classes */}
-                  <div className="space-y-2">
-                    <label className="block text-[11px] font-medium text-gray-700">
-                      Min Classes (by type)
-                    </label>
-                    {rankClassRequirements.length === 0 && (
-                      <p className="text-[11px] text-gray-500">
-                        No class requirements yet. Add one below if needed.
-                      </p>
-                    )}
-                    <div className="space-y-2">
-                      {rankClassRequirements.map((req) => (
-                        <div
-                          key={req.id}
-                          className="flex flex-wrap items-center gap-2"
-                        >
-                          <input
-                            type="number"
-                            min={0}
-                            value={
-                              req.minCount === null ||
-                              req.minCount === undefined
-                                ? ""
-                                : req.minCount
-                            }
-                            onChange={(e) =>
-                              updateClassRequirement(
-                                req.id,
-                                "minCount",
-                                e.target.value
-                              )
-                            }
-                            className="w-20 rounded-md border border-gray-300 px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
-                            placeholder="#"
-                          />
-                          <input
-                            type="text"
-                            value={req.label}
-                            onChange={(e) =>
-                              updateClassRequirement(
-                                req.id,
-                                "label",
-                                e.target.value
-                              )
-                            }
-                            className="min-w-[140px] flex-1 rounded-md border border-gray-300 px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
-                            placeholder="Class type (e.g., HK class, BJJ, etc.)"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeClassRequirement(req.id)}
-                            className="text-[11px] font-semibold text-red-500 hover:text-red-600"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={addClassRequirement}
-                      className="text-[11px] rounded-md border border-gray-300 px-2 py-1 font-semibold text-gray-700 hover:bg-gray-100"
+              <div className="space-y-2">
+                {rankClassRequirements.length === 0 && (
+                  <p className="text-[11px] text-gray-500">
+                    No class requirements yet. Add one below if needed.
+                  </p>
+                )}
+                <div className="space-y-2">
+                  {rankClassRequirements.map((req, idx) => (
+                    <div
+                      key={req.id}
+                      className="grid gap-3 items-center"
+                      style={{ gridTemplateColumns: 'auto 1fr 1fr' }}
                     >
-                      Add Class Requirement
-                    </button>
-                  </div>
-
-                  {/* Min Time */}
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-medium text-gray-700">
-                      Min Time
-                    </label>
-                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Min Classes fields */}
                       <input
                         type="number"
                         min={0}
-                        value={durationValue}
-                        onChange={(e) => setDurationValue(e.target.value)}
-                        className="w-24 rounded-md border border-gray-300 px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
+                        value={
+                          req.minCount === null ||
+                            req.minCount === undefined
+                            ? ""
+                            : req.minCount
+                        }
+                        onChange={(e) =>
+                          updateClassRequirement(
+                            req.id,
+                            "minCount",
+                            e.target.value
+                          )
+                        }
+                        title={
+                          req.minCount === null ||
+                            req.minCount === undefined
+                            ? ""
+                            : String(req.minCount)
+                        }
+                        className="no-spinner w-11 rounded-md border border-gray-300 px-1.5 py-1 text-center text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
                         placeholder="#"
                       />
-                      <select
-                        value={durationUnit}
-                        onChange={(e) =>
-                          setDurationUnit(e.target.value as DurationUnit)
-                        }
-                        className="w-28 rounded-md border border-gray-300 px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
-                      >
-                        <option value="weeks">Weeks</option>
-                        <option value="months">Months</option>
-                        <option value="years">Years</option>
-                      </select>
+                      <div className="min-w-[80px]">
+                        <select
+                          value={req.label}
+                          onChange={(e) =>
+                            updateClassRequirement(
+                              req.id,
+                              "label",
+                              e.target.value
+                            )
+                          }
+                          title={req.label}
+                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          <option value="">Select class type</option>
+                          {classTypes.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Min Time fields container - only on first row */}
+                      {idx === 0 ? (
+                        <div className="flex items-center gap-3 ml-5 min-w-[80px]">
+                          <input
+                            type="number"
+                            min={0}
+                            value={durationValue}
+                            onChange={(e) => setDurationValue(e.target.value)}
+                            title={durationValue}
+                            className="no-spinner w-11 rounded-md border border-gray-300 px-1.5 py-1 text-center text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
+                            placeholder="#"
+                          />
+                          <select
+                            value={durationUnit}
+                            onChange={(e) =>
+                              setDurationUnit(e.target.value as DurationUnit)
+                            }
+                            className="w-28 rounded-md border border-gray-300 px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
+                          >
+                            <option value="weeks">Weeks</option>
+                            <option value="months">Months</option>
+                            <option value="years">Years</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          {idx > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removeClassRequirement(req.id)
+                              }
+                              className="text-[10px] font-black leading-none text-red-500 hover:text-red-600"
+                              aria-label="Remove class requirement"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  ))}
+                </div>
+                {rankClassRequirements.length < 5 && (
+                  <button
+                    type="button"
+                    onClick={addClassRequirement}
+                    className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100"
+                  >
+                    Add Class Requirement
+                  </button>
+                )}
+              </div>
 
-                  {/* Notes */}
-                  <div>
-                    <label className="mb-1 block text-[11px] font-medium text-gray-700">
-                      Notes
-                    </label>
-                    <input
-                      type="text"
-                      value={rankNotes}
-                      onChange={(e) => setRankNotes(e.target.value)}
-                      className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                      placeholder="Optional details about this rank"
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex gap-2">
+              {/* PDF Documents */}
+              <div className="space-y-2 pt-2 border-t border-gray-200">
+                <label className="text-[11px] font-medium text-gray-700">
+                  Rank Documents (PDF)
+                </label>
+                {rankPdfDocuments.length === 0 && (
+                  <p className="text-[11px] text-gray-500">
+                    No documents yet. Add one below if needed.
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {rankPdfDocuments.map((doc, idx) => (
+                    <div
+                      key={doc.id}
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 bg-gray-50"
+                    >
+                      <span className="text-xs text-gray-700">{doc.name}</span>
                       <button
                         type="button"
-                        onClick={() => {
-                          resetRankForm();
-                          setLayers(defaultLayers);
-                        }}
-                        className="text-xs rounded-md border border-gray-300 px-3 py-1 font-semibold text-gray-700 hover:bg-gray-100"
+                        onClick={() => handleRemovePdfDocument(doc.id)}
+                        className="text-[10px] font-black leading-none text-red-500 hover:text-red-600"
+                        aria-label="Remove document"
                       >
-                        Clear
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={savingAll}
-                        className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark disabled:cursor-not-allowed disabled:bg-gray-300"
-                      >
-                        {editingId ? "Save Rank" : "Save Rank"}
+                        ✕
                       </button>
                     </div>
-                  </div>
-                </form>
+                  ))}
+                </div>
+                {rankPdfDocuments.length < 5 && (
+                  <label className="inline-block">
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handlePdfUpload}
+                      className="hidden"
+                    />
+                    <span className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100 cursor-pointer inline-block">
+                      Add Document
+                    </span>
+                  </label>
+                )}
               </div>
-            </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetRankForm();
+                      setLayers(defaultLayers);
+                    }}
+                    className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                  >
+                    {editingId ? "Cancel" : "Clear"}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingAll}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    Save Rank
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </section>
 
-        {/* 3) Existing Belt Ranks */}
+        {/* 3) Existing Ranks */}
         <section className="rounded-lg border border-gray-200 bg-white">
           <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2">
             <h2 className="text-sm font-semibold text-gray-800">
-              Existing Belt Ranks
+              Existing Ranks <span className="text-[11px] font-normal text-gray-500">(Click image to edit thumbnail)</span>
             </h2>
           </div>
 
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
                   <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
                     Belt
                   </th>
                   <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
-                    Belt Rank
+                    Rank
                   </th>
                   <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
-                    Order
+
                   </th>
                   <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
                     Min Classes
@@ -1270,6 +1549,9 @@ export default function BeltDesignerPage() {
                   <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
                     Notes
                   </th>
+                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
+                    Documents
+                  </th>
                   <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">
                     Actions
                   </th>
@@ -1279,10 +1561,10 @@ export default function BeltDesignerPage() {
                 {sortedRanks.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-3 py-6 text-center text-sm text-gray-400"
                     >
-                      No belt ranks yet. Use the New Belt Rank section above to
+                      No ranks yet. Use the New Rank section above to
                       create the first rank.
                     </td>
                   </tr>
@@ -1294,56 +1576,82 @@ export default function BeltDesignerPage() {
                     const isLowerOfPair =
                       hoveredIndex !== -1 && index === hoveredIndex;
 
+                    const classReqCount =
+                      rank.classRequirements?.length ?? 0;
+
                     return (
                       <tr
                         key={rank.id}
-                        className={`border-t border-gray-100 hover:bg-gray-50 ${
-                          isBetweenSegment ? "bg-red-50/60" : ""
-                        } ${isLowerOfPair ? "border-t-4 border-red-300" : ""}`}
+                        className={`border-t border-gray-100 hover:bg-gray-50 ${isBetweenSegment ? "bg-red-50/60" : ""
+                          } ${isLowerOfPair ? "border-t-4 border-red-300" : ""
+                          }`}
                         onDragOver={(e) => handleRowDragOver(e, rank.id)}
                         onDrop={() => handleDrop(rank.id)}
                       >
                         {/* Belt snapshot (drag + edit) */}
                         <td className="px-3 py-2 align-middle">
-                          <div className="w-40 select-none flex flex-col items-center">
+                          <div className="flex w-40 select-none flex-col items-center">
                             <div
-                              className="cursor-move w-full"
+                              className="w-full cursor-pointer"
                               draggable
                               onDragStart={() => handleDragStart(rank.id)}
                               onDragEnd={handleDragEnd}
-                              onDoubleClick={() => handleEditRank(rank)}
+                              onClick={() => handleEditRank(rank)}
                             >
                               <BeltPreview
                                 heightClass="h-20"
                                 customLayers={rank.layers}
                               />
                             </div>
-                            <button
-                              type="button"
-                              tabIndex={-1}
-                              onClick={() => handleEditRank(rank)}
-                              className="mt-1 inline-flex items-center rounded-md bg-primary px-3 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark"
-                            >
-                              Edit Belt
-                            </button>
                           </div>
                         </td>
 
-                        {/* Belt Rank Name (inline editable) */}
-                        <td className="px-3 py-2 text-xs text-gray-900 align-middle">
+                        {/* Rank Name (inline + popup if overflow) */}
+                        <td className="px-3 py-2 align-middle text-xs text-gray-900">
                           <input
                             type="text"
                             value={rank.name}
                             onChange={(e) =>
                               updateRankField(rank.id, "name", e.target.value)
                             }
+                            onClick={(e) => {
+                              const el = e.currentTarget;
+                              if (
+                                el.scrollWidth > el.clientWidth &&
+                                rank.name
+                              ) {
+                                openPopup(
+                                  { type: "rankName", rankId: rank.id },
+                                  rank.name,
+                                  el.getBoundingClientRect()
+                                );
+                              }
+                            }}
+                            onMouseEnter={(e) => {
+                              if (popup) return;
+                              const el = e.currentTarget;
+                              if (
+                                el.scrollWidth <= el.clientWidth ||
+                                !rank.name
+                              )
+                                return;
+                              const rect = el.getBoundingClientRect();
+                              setHoverBox({
+                                value: rank.name,
+                                x: rect.left + rect.width / 2,
+                                y: rect.bottom,
+                              });
+                            }}
+                            onMouseLeave={() => {
+                              if (!popup) setHoverBox(null);
+                            }}
                             onKeyDown={handleInlineKeyDown}
-                            className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                            className="w-full min-w-[5rem] max-w-[16rem] cursor-text rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                           />
                         </td>
 
                         {/* Order (inline editable; re-sorts on commit) */}
-                        <td className="px-3 py-2 text-xs text-gray-700 align-middle">
+                        <td className="px-3 py-2 align-middle text-xs text-gray-700">
                           <input
                             type="number"
                             min={1}
@@ -1356,55 +1664,96 @@ export default function BeltDesignerPage() {
                               )
                             }
                             onKeyDown={handleInlineKeyDown}
-                            className="no-spinner w-16 rounded border border-gray-300 px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary"
+                            className="no-spinner w-10 rounded border border-gray-300 px-1.5 py-1 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                            placeholder="#"
                           />
                         </td>
 
-                        {/* Min Classes (inline editable, stacked) */}
-                        <td className="px-3 py-2 text-xs text-gray-700 align-middle">
+                        {/* Min Classes (inline editable, stacked, consistent width) */}
+                        <td className="px-3 py-2 align-middle text-xs text-gray-700">
                           {rank.classRequirements &&
-                          rank.classRequirements.length > 0 ? (
+                            rank.classRequirements.length > 0 ? (
                             <div className="space-y-1">
-                              {rank.classRequirements.map((req) => (
+                              {rank.classRequirements.map((req, idx) => (
                                 <div
                                   key={req.id}
                                   className="flex items-center gap-1"
                                 >
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={
-                                      req.minCount === null ||
-                                      req.minCount === undefined
-                                        ? ""
-                                        : req.minCount
-                                    }
-                                    onChange={(e) =>
-                                      updateRankRequirementInline(
-                                        rank.id,
-                                        req.id,
-                                        "minCount",
-                                        e.target.value
-                                      )
-                                    }
-                                    onKeyDown={handleInlineKeyDown}
-                                    className="no-spinner w-12 rounded border border-gray-300 px-1 py-0.5 text-[11px] text-right focus:outline-none focus:ring-1 focus:ring-primary"
-                                  />
-                                  <span className="text-[11px]">x</span>
-                                  <input
-                                    type="text"
-                                    value={req.label}
-                                    onChange={(e) =>
-                                      updateRankRequirementInline(
-                                        rank.id,
-                                        req.id,
-                                        "label",
-                                        e.target.value
-                                      )
-                                    }
-                                    onKeyDown={handleInlineKeyDown}
-                                    className="flex-1 rounded border border-gray-300 px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
-                                  />
+                                  <div className="flex flex-1 items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={
+                                        req.minCount === null ||
+                                          req.minCount === undefined
+                                          ? ""
+                                          : req.minCount
+                                      }
+                                      onChange={(e) =>
+                                        updateRankRequirementInline(
+                                          rank.id,
+                                          req.id,
+                                          "minCount",
+                                          e.target.value
+                                        )
+                                      }
+                                      onKeyDown={handleInlineKeyDown}
+                                      className="no-spinner w-10 rounded border border-gray-300 px-1 py-0.5 text-center text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
+                                      placeholder="#"
+                                    />
+                                    <span className="text-[11px]">x</span>
+                                    <select
+                                      value={req.label}
+                                      onChange={(e) =>
+                                        updateRankRequirementInline(
+                                          rank.id,
+                                          req.id,
+                                          "label",
+                                          e.target.value
+                                        )
+                                      }
+                                      onKeyDown={handleInlineKeyDown}
+                                      className="w-full min-w-[5rem] max-w-[14rem] rounded border border-gray-300 px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
+                                    >
+                                      <option value="">Select class type</option>
+                                      {classTypes.map((type) => (
+                                        <option key={type} value={type}>
+                                          {type}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="ml-1 flex w-5 items-center justify-center">
+                                    {idx === 0 && classReqCount < 5 && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          addRankRequirementInline(rank.id)
+                                        }
+                                        tabIndex={-1}
+                                        className="text-base font-bold leading-none text-red-500 hover:text-red-600"
+                                        aria-label="Add class requirement"
+                                      >
+                                        +
+                                      </button>
+                                    )}
+                                    {idx > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          removeRankRequirementInline(
+                                            rank.id,
+                                            req.id
+                                          )
+                                        }
+                                        tabIndex={-1}
+                                        className="text-[10px] font-black leading-none text-red-500 hover:text-red-600"
+                                        aria-label="Remove class requirement"
+                                      >
+                                        ✕
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -1414,15 +1763,15 @@ export default function BeltDesignerPage() {
                         </td>
 
                         {/* Min Time (inline editable) */}
-                        <td className="px-3 py-2 text-xs text-gray-700 align-middle">
+                        <td className="px-3 py-2 align-middle text-xs text-gray-700">
                           <div className="flex items-center gap-1">
                             <input
                               type="number"
                               min={0}
                               value={
                                 rank.minDuration &&
-                                rank.minDuration.value !== null &&
-                                rank.minDuration.value !== undefined
+                                  rank.minDuration.value !== null &&
+                                  rank.minDuration.value !== undefined
                                   ? rank.minDuration.value
                                   : ""
                               }
@@ -1434,7 +1783,8 @@ export default function BeltDesignerPage() {
                                 )
                               }
                               onKeyDown={handleInlineKeyDown}
-                              className="no-spinner w-14 rounded border border-gray-300 px-1 py-0.5 text-[11px] text-right focus:outline-none focus:ring-1 focus:ring-primary"
+                              className="no-spinner w-10 rounded border border-gray-300 px-1 py-0.5 text-center text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
+                              placeholder="#"
                             />
                             <select
                               value={
@@ -1459,8 +1809,8 @@ export default function BeltDesignerPage() {
                           </div>
                         </td>
 
-                        {/* Notes (inline editable; blur here commits + re-sorts) */}
-                        <td className="px-3 py-2 text-xs text-gray-700 align-middle">
+                        {/* Notes (inline + popup if overflow) */}
+                        <td className="px-3 py-2 align-middle text-xs text-gray-700">
                           <input
                             type="text"
                             value={rank.notes || ""}
@@ -1471,14 +1821,69 @@ export default function BeltDesignerPage() {
                                 e.target.value || null
                               )
                             }
+                            onClick={(e) => {
+                              const el = e.currentTarget;
+                              if (
+                                el.scrollWidth > el.clientWidth &&
+                                rank.notes
+                              ) {
+                                openPopup(
+                                  { type: "rankNotes", rankId: rank.id },
+                                  rank.notes || "",
+                                  el.getBoundingClientRect()
+                                );
+                              }
+                            }}
+                            onMouseEnter={(e) => {
+                              if (popup) return;
+                              const el = e.currentTarget;
+                              if (
+                                el.scrollWidth <= el.clientWidth ||
+                                !(rank.notes && rank.notes.length)
+                              )
+                                return;
+                              const rect = el.getBoundingClientRect();
+                              setHoverBox({
+                                value: rank.notes || "",
+                                x: rect.left + rect.width / 2,
+                                y: rect.bottom,
+                              });
+                            }}
+                            onMouseLeave={() => {
+                              if (!popup) setHoverBox(null);
+                            }}
                             onKeyDown={handleInlineKeyDown}
-                            onBlur={commitRanksInline}
-                            className="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                            className="w-full min-w-[5rem] max-w-[18rem] cursor-text rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                           />
                         </td>
 
-                        {/* Actions (tab should skip these) */}
-                        <td className="px-3 py-2 text-right whitespace-nowrap align-middle space-x-2">
+                        {/* Documents */}
+                        <td className="px-3 py-2 align-middle text-xs text-gray-700">
+                          {rank.pdfDocuments && rank.pdfDocuments.length > 0 ? (
+                            <select
+                              className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs bg-gray-50"
+                              value=""
+                              onChange={(e) => {
+                                // Reset to default after viewing
+                                e.target.value = "";
+                              }}
+                            >
+                              <option value="">
+                                {rank.pdfDocuments.length} document{rank.pdfDocuments.length !== 1 ? 's' : ''} attached
+                              </option>
+                              {rank.pdfDocuments.map((doc) => (
+                                <option key={doc.id} value={doc.id}>
+                                  {doc.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="space-x-2 px-3 py-2 text-right align-middle">
                           <button
                             type="button"
                             onClick={() => handleDuplicateRank(rank)}
@@ -1503,17 +1908,75 @@ export default function BeltDesignerPage() {
               </tbody>
             </table>
           </div>
+          {sortedRanks.length > 0 && (
+            <div className="border-t border-gray-200 px-4 py-3">
+              <div className="ml-8">
+                <button
+                  type="button"
+                  onClick={commitRanksInline}
+                  disabled={savingAll}
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  {savingAll ? "Saving..." : "Save Ranks"}
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       </div>
 
-      {/* Styled-JSX: remove number spinners from existing-belts fields */}
+      {/* Hover box (only if overflow, below field) */}
+      {hoverBox && !popup && (
+        <div
+          className="pointer-events-none fixed z-40 w-64 -translate-x-1/2 rounded-md border border-gray-300 bg-white p-3 text-xs shadow-lg"
+          style={{ left: hoverBox.x, top: hoverBox.y }}
+        >
+          <div className="max-height-[40vh] overflow-hidden whitespace-pre-wrap break-words">
+            {hoverBox.value || <span className="text-gray-400">(empty)</span>}
+          </div>
+        </div>
+      )}
+
+      {/* Pop-out editor overlay, below field */}
+      {popup && popupPos && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/10"
+            onClick={commitPopup}
+          />
+          <div
+            className="fixed z-50 w-64 -translate-x-1/2 rounded-md border border-gray-300 bg-white p-3 shadow-lg"
+            style={{ left: popupPos.x, top: popupPos.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <textarea
+              ref={popupTextareaRef}
+              autoFocus
+              value={popupValue}
+              onChange={(e) => setPopupValue(e.target.value)}
+              rows={1}
+              className="w-full resize-none rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              style={{ maxHeight: "50vh", overflow: "hidden" }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  commitPopup();
+                }
+              }}
+              onBlur={commitPopup}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Styled-JSX: remove number spinners from number fields */}
       <style jsx>{`
-        input[type='number'].no-spinner::-webkit-outer-spin-button,
-        input[type='number'].no-spinner::-webkit-inner-spin-button {
+        input[type="number"].no-spinner::-webkit-outer-spin-button,
+        input[type="number"].no-spinner::-webkit-inner-spin-button {
           -webkit-appearance: none;
           margin: 0;
         }
-        input[type='number'].no-spinner {
+        input[type="number"].no-spinner {
           -moz-appearance: textfield;
         }
       `}</style>

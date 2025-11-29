@@ -30,7 +30,12 @@ type SortKey =
   | "phone"
   | "status"
   | "memberNumber"
-  | "createdAt";
+  | "createdAt"
+  | "cityState"
+  | "dateOfBirth"
+  | "age"
+  | "membershipType"
+  | "waiverSigned";
 
 type SortDirection = "asc" | "desc";
 
@@ -41,40 +46,31 @@ type ColumnId =
   | "email"
   | "phone"
   | "createdAt"
-  | "cityState" // personal
-  | "dateOfBirth" // personal
-  | "membershipType" // membership
-  | "primaryStyle" // membership
-  | "waiverSigned"; // waiver
-
-type ColumnSection = "core" | "personal" | "membership" | "waiver";
+  | "cityState"
+  | "dateOfBirth"
+  | "age"
+  | "membershipType"
+  | "waiverSigned";
 
 type ColumnDef = {
   id: ColumnId;
   label: string;
-  section: ColumnSection;
   /** Whether this column participates in sorting (shows clickable header + arrow) */
   sortable?: boolean;
 };
 
 /** All possible customizable columns (first/last name are always-on static columns) */
 const ALL_COLUMNS: ColumnDef[] = [
-  { id: "memberNumber", label: "Member #", section: "core", sortable: true },
-  { id: "status", label: "Status", section: "core", sortable: true },
-  { id: "email", label: "Email", section: "core", sortable: true },
-  { id: "phone", label: "Phone", section: "core", sortable: true },
-  { id: "createdAt", label: "Joined", section: "core", sortable: true },
-
-  // Personal info
-  { id: "cityState", label: "City / State", section: "personal" },
-  { id: "dateOfBirth", label: "DOB", section: "personal" },
-
-  // Membership
-  { id: "membershipType", label: "Membership Type", section: "membership" },
-  { id: "primaryStyle", label: "Primary Style", section: "membership" },
-
-  // Waiver
-  { id: "waiverSigned", label: "Waiver Signed", section: "waiver" },
+  { id: "memberNumber", label: "Member #", sortable: true },
+  { id: "status", label: "Status", sortable: true },
+  { id: "email", label: "Email", sortable: true },
+  { id: "phone", label: "Phone", sortable: true },
+  { id: "createdAt", label: "Joined", sortable: true },
+  { id: "cityState", label: "City / State", sortable: true },
+  { id: "dateOfBirth", label: "DOB", sortable: true },
+  { id: "age", label: "Age", sortable: true },
+  { id: "membershipType", label: "Membership Type", sortable: true },
+  { id: "waiverSigned", label: "Waiver Signed", sortable: true },
 ];
 
 const COLUMNS_BY_ID: Record<ColumnId, ColumnDef> = ALL_COLUMNS.reduce(
@@ -105,6 +101,11 @@ const ALL_SORT_KEYS: SortKey[] = [
   "status",
   "memberNumber",
   "createdAt",
+  "cityState",
+  "dateOfBirth",
+  "age",
+  "membershipType",
+  "waiverSigned",
 ];
 
 const STORAGE_KEYS = {
@@ -196,6 +197,34 @@ export default function MembersPage() {
   }, []);
 
   // --------------------------------------------------
+  // Delete member
+  // --------------------------------------------------
+  async function handleDeleteMember(memberId: string, memberName: string) {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete ${memberName}? This action cannot be undone.`
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      const res = await fetch(`/api/members/${memberId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete member");
+      }
+
+      // Remove member from local state
+      setMembers((current) => current.filter((m) => m.id !== memberId));
+    } catch (err: any) {
+      console.error("Error deleting member:", err);
+      setError(err.message || "Failed to delete member");
+    }
+  }
+
+  // --------------------------------------------------
   // Load saved layout/sort from localStorage on mount
   // --------------------------------------------------
   useEffect(() => {
@@ -274,6 +303,16 @@ export default function MembersPage() {
         return "memberNumber";
       case "createdAt":
         return "createdAt";
+      case "cityState":
+        return "cityState";
+      case "dateOfBirth":
+        return "dateOfBirth";
+      case "age":
+        return "age";
+      case "membershipType":
+        return "membershipType";
+      case "waiverSigned":
+        return "waiverSigned";
       default:
         return null;
     }
@@ -298,12 +337,7 @@ export default function MembersPage() {
   }
 
   function sortIndicator(key: SortKey) {
-    if (key !== sortKey) return null;
-    return (
-      <span className="ml-1 text-sm font-bold text-gray-700">
-        {sortDirection === "asc" ? "▲" : "▼"}
-      </span>
-    );
+    return null;
   }
 
   // --------------------------------------------------
@@ -370,6 +404,22 @@ export default function MembersPage() {
         return [...current, status];
       }
     });
+  }
+
+  // --------------------------------------------------
+  // Helper functions
+  // --------------------------------------------------
+  function calculateAge(dateOfBirth: string | null | undefined): number | null {
+    if (!dateOfBirth) return null;
+    const d = new Date(dateOfBirth);
+    if (Number.isNaN(d.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - d.getFullYear();
+    const hasHadBirthdayThisYear =
+      today.getMonth() > d.getMonth() ||
+      (today.getMonth() === d.getMonth() && today.getDate() >= d.getDate());
+    if (!hasHadBirthdayThisYear) age--;
+    return age >= 0 ? age : null;
   }
 
   // --------------------------------------------------
@@ -458,6 +508,39 @@ export default function MembersPage() {
         return aTime > bTime ? dir : -dir;
       }
 
+      if (sortKey === "cityState") {
+        const aVal = `${a.city ?? ""} ${a.state ?? ""}`.toLowerCase();
+        const bVal = `${b.city ?? ""} ${b.state ?? ""}`.toLowerCase();
+        return aVal.localeCompare(bVal) * dir;
+      }
+
+      if (sortKey === "dateOfBirth") {
+        const aTime = a.dateOfBirth ? new Date(a.dateOfBirth).getTime() : 0;
+        const bTime = b.dateOfBirth ? new Date(b.dateOfBirth).getTime() : 0;
+        if (aTime === bTime) return 0;
+        return aTime > bTime ? dir : -dir;
+      }
+
+      if (sortKey === "age") {
+        const aAge = calculateAge(a.dateOfBirth) ?? -1;
+        const bAge = calculateAge(b.dateOfBirth) ?? -1;
+        if (aAge === bAge) return 0;
+        return aAge > bAge ? dir : -dir;
+      }
+
+      if (sortKey === "membershipType") {
+        const aVal = (a.membershipType ?? "").toLowerCase();
+        const bVal = (b.membershipType ?? "").toLowerCase();
+        return aVal.localeCompare(bVal) * dir;
+      }
+
+      if (sortKey === "waiverSigned") {
+        const aVal = a.waiverSigned ? 1 : 0;
+        const bVal = b.waiverSigned ? 1 : 0;
+        if (aVal === bVal) return 0;
+        return aVal > bVal ? dir : -dir;
+      }
+
       return 0;
     });
 
@@ -467,23 +550,31 @@ export default function MembersPage() {
   // --------------------------------------------------
   // Render helpers
   // --------------------------------------------------
-  function renderStatusBadge(status: string) {
+  function getStatusColors(status: string) {
     const normalized = (status || "").toUpperCase();
-    let bg = "bg-gray-100 text-gray-800 border-gray-300";
 
     if (normalized === "ACTIVE") {
-      bg = "bg-green-100 text-green-800 border-green-300";
+      return { bg: "bg-green-100", text: "text-green-800", border: "border-green-300" };
     } else if (normalized === "PROSPECT") {
-      bg = "bg-yellow-100 text-yellow-800 border-yellow-300";
+      return { bg: "bg-yellow-100", text: "text-yellow-800", border: "border-yellow-300" };
     } else if (normalized === "INACTIVE") {
-      bg = "bg-red-100 text-red-800 border-red-300";
+      return { bg: "bg-red-100", text: "text-red-800", border: "border-red-300" };
     } else if (normalized === "PARENT") {
-      bg = "bg-blue-100 text-blue-800 border-blue-300";
+      return { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-300" };
+    } else if (normalized === "BANNED") {
+      return { bg: "bg-gray-200", text: "text-gray-900", border: "border-gray-400" };
     }
+
+    return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-300" };
+  }
+
+  function renderStatusBadge(status: string) {
+    const normalized = (status || "").toUpperCase();
+    const colors = getStatusColors(status);
 
     return (
       <span
-        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${bg}`}
+        className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium ${colors.bg} ${colors.text} ${colors.border}`}
       >
         {normalized || "UNKNOWN"}
       </span>
@@ -543,16 +634,18 @@ export default function MembersPage() {
           <span className="text-xs text-gray-400">—</span>
         );
 
-      case "membershipType":
-        return m.membershipType ? (
-          <span className="text-xs text-gray-900">{m.membershipType}</span>
+      case "age": {
+        const age = calculateAge(m.dateOfBirth);
+        return age !== null ? (
+          <span className="text-xs text-gray-900">{age}</span>
         ) : (
           <span className="text-xs text-gray-400">—</span>
         );
+      }
 
-      case "primaryStyle":
-        return m.primaryStyle ? (
-          <span className="text-xs text-gray-900">{m.primaryStyle}</span>
+      case "membershipType":
+        return m.membershipType ? (
+          <span className="text-xs text-gray-900">{m.membershipType}</span>
         ) : (
           <span className="text-xs text-gray-400">—</span>
         );
@@ -580,8 +673,7 @@ export default function MembersPage() {
           <div>
             <h1 className="text-2xl font-bold">Members</h1>
             <p className="text-sm text-gray-600">
-              Full member list with sortable, customizable columns. Drag column
-              headers (except first/last name) to reorder them.
+              Full member list with sortable, customizable columns.
             </p>
           </div>
           <Link
@@ -601,12 +693,12 @@ export default function MembersPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by name, email, phone, status, #..."
-                className="w-full sm:w-72 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full sm:w-72 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
               <button
                 type="button"
                 onClick={() => setShowColumnConfig(true)}
-                className="flex items-center gap-1 rounded-md border border-primary bg-primary px-3 py-2 text-xs font-medium text-white hover:bg-primaryDark"
+                className="flex items-center gap-1 rounded-md border border-primary bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primaryDark"
               >
                 Customize Columns
               </button>
@@ -614,15 +706,16 @@ export default function MembersPage() {
               {/* Status filter toggle buttons */}
               {availableStatuses.map((status) => {
                 const isActive = activeStatusFilters.includes(status);
+                const colors = getStatusColors(status);
                 return (
                   <button
                     key={status}
                     type="button"
                     onClick={() => toggleStatusFilter(status)}
-                    className={`rounded-full px-3 py-1 text-[11px] font-medium border ${
+                    className={`rounded-full px-3 py-1 text-xs font-medium border ${
                       isActive
-                        ? "bg-primary text-white border-primary"
-                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                        ? `${colors.bg} ${colors.text} ${colors.border}`
+                        : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
                     }`}
                   >
                     {status}
@@ -688,7 +781,7 @@ export default function MembersPage() {
                           e.preventDefault();
                           handleDrop(colId);
                         }}
-                        className={`px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500 whitespace-nowrap ${
+                        className={`px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 whitespace-nowrap ${
                           draggingColumn === colId ? "bg-gray-100" : ""
                         } cursor-move`}
                       >
@@ -711,7 +804,7 @@ export default function MembersPage() {
                       </th>
                     );
                   })}
-                  <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500 whitespace-nowrap">
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 whitespace-nowrap">
                     Actions
                   </th>
                 </tr>
@@ -766,19 +859,33 @@ export default function MembersPage() {
                       {visibleColumns.map((colId) => (
                         <td
                           key={colId}
-                          className="px-3 py-2 whitespace-nowrap align-middle"
+                          className="px-3 py-2 whitespace-nowrap align-middle text-center"
                         >
                           {renderCell(colId, m)}
                         </td>
                       ))}
 
-                      <td className="px-3 py-2 text-right whitespace-nowrap align-middle">
-                        <Link
-                          href={`/members/${m.id}`}
-                          className="text-xs text-primary hover:text-primaryDark font-medium"
-                        >
-                          View
-                        </Link>
+                      <td className="px-3 py-2 whitespace-nowrap align-middle text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <Link
+                            href={`/members/${m.id}`}
+                            className="text-xs text-primary hover:text-primaryDark font-medium"
+                          >
+                            View
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDeleteMember(
+                                m.id,
+                                `${m.firstName} ${m.lastName}`
+                              )
+                            }
+                            className="text-xs text-red-600 hover:text-red-700 font-medium"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -806,105 +913,22 @@ export default function MembersPage() {
               </button>
             </div>
 
-            <div className="max-h-80 space-y-3 overflow-y-auto text-xs">
-              {/* Core */}
-              <div>
-                <h3 className="mb-1 font-semibold text-gray-700 uppercase text-[10px]">
-                  Core
-                </h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {ALL_COLUMNS.filter((c) => c.section === "core").map(
-                    (col) => (
-                      <label
-                        key={col.id}
-                        className="flex items-center gap-2 text-gray-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={visibleColumns.includes(col.id)}
-                          onChange={() => handleToggleColumn(col.id)}
-                          className="h-3 w-3"
-                        />
-                        <span>{col.label}</span>
-                      </label>
-                    )
-                  )}
-                </div>
-              </div>
-
-              {/* Personal */}
-              <div>
-                <h3 className="mb-1 font-semibold text-gray-700 uppercase text-[10px]">
-                  Personal Info
-                </h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {ALL_COLUMNS.filter((c) => c.section === "personal").map(
-                    (col) => (
-                      <label
-                        key={col.id}
-                        className="flex items-center gap-2 text-gray-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={visibleColumns.includes(col.id)}
-                          onChange={() => handleToggleColumn(col.id)}
-                          className="h-3 w-3"
-                        />
-                        <span>{col.label}</span>
-                      </label>
-                    )
-                  )}
-                </div>
-              </div>
-
-              {/* Membership */}
-              <div>
-                <h3 className="mb-1 font-semibold text-gray-700 uppercase text-[10px]">
-                  Membership
-                </h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {ALL_COLUMNS.filter((c) => c.section === "membership").map(
-                    (col) => (
-                      <label
-                        key={col.id}
-                        className="flex items-center gap-2 text-gray-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={visibleColumns.includes(col.id)}
-                          onChange={() => handleToggleColumn(col.id)}
-                          className="h-3 w-3"
-                        />
-                        <span>{col.label}</span>
-                      </label>
-                    )
-                  )}
-                </div>
-              </div>
-
-              {/* Waiver */}
-              <div>
-                <h3 className="mb-1 font-semibold text-gray-700 uppercase text-[10px]">
-                  Waiver
-                </h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {ALL_COLUMNS.filter((c) => c.section === "waiver").map(
-                    (col) => (
-                      <label
-                        key={col.id}
-                        className="flex items-center gap-2 text-gray-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={visibleColumns.includes(col.id)}
-                          onChange={() => handleToggleColumn(col.id)}
-                          className="h-3 w-3"
-                        />
-                        <span>{col.label}</span>
-                      </label>
-                    )
-                  )}
-                </div>
+            <div className="max-h-80 overflow-y-auto text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                {ALL_COLUMNS.map((col) => (
+                  <label
+                    key={col.id}
+                    className="flex items-center gap-2 text-gray-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visibleColumns.includes(col.id)}
+                      onChange={() => handleToggleColumn(col.id)}
+                      className="h-3 w-3"
+                    />
+                    <span>{col.label}</span>
+                  </label>
+                ))}
               </div>
             </div>
 
@@ -921,7 +945,7 @@ export default function MembersPage() {
                 <button
                   type="button"
                   onClick={() => setShowColumnConfig(false)}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                 >
                   Close
                 </button>

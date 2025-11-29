@@ -4,7 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 
-const STATUS_OPTIONS = ["PROSPECT", "ACTIVE", "INACTIVE", "PARENT"] as const;
+const STATUS_OPTIONS = ["PROSPECT", "ACTIVE", "INACTIVE", "PARENT", "BANNED"] as const;
+
+// Format phone number as user types: (123) 456-7890
+function formatPhoneNumber(value: string): string {
+  // Remove all non-digits
+  const digits = value.replace(/\D/g, "");
+
+  // Format based on length
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+}
 
 function calculateAgeFromDateString(dateString?: string | null): number | null {
   if (!dateString) return null;
@@ -106,18 +118,18 @@ export default function NewMemberPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="text-xs text-gray-500 hover:text-gray-700 underline mb-1"
-            >
-              ← Back to members
-            </button>
-            <h1 className="text-2xl font-bold">Add New Member</h1>
+            <h1 className="text-2xl font-bold">Add Member</h1>
             <p className="text-sm text-gray-600">
               Create a new member profile. You can always edit details later.
             </p>
           </div>
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+          >
+            Back to Members
+          </button>
         </div>
 
         {error && (
@@ -139,7 +151,7 @@ export default function NewMemberPage() {
               <input
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                 autoFocus
               />
             </div>
@@ -151,7 +163,7 @@ export default function NewMemberPage() {
               <input
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             </div>
 
@@ -163,7 +175,7 @@ export default function NewMemberPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             </div>
 
@@ -172,9 +184,12 @@ export default function NewMemberPage() {
                 Phone
               </label>
               <input
+                type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
+                placeholder="(123) 456-7890"
+                maxLength={14}
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             </div>
 
@@ -185,7 +200,7 @@ export default function NewMemberPage() {
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               >
                 {STATUS_OPTIONS.map((s) => (
                   <option key={s} value={s}>
@@ -207,7 +222,7 @@ export default function NewMemberPage() {
                 type="date"
                 value={dateOfBirth}
                 onChange={(e) => setDateOfBirth(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
               {dateOfBirth && ageFromState !== null && (
                 <p className="text-[11px] text-gray-500 mt-0.5">
@@ -223,7 +238,7 @@ export default function NewMemberPage() {
               <input
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             </div>
 
@@ -234,7 +249,7 @@ export default function NewMemberPage() {
               <input
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             </div>
 
@@ -245,7 +260,7 @@ export default function NewMemberPage() {
               <input
                 value={stateValue}
                 onChange={(e) => setStateValue(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             </div>
 
@@ -256,7 +271,7 @@ export default function NewMemberPage() {
               <input
                 value={zipCode}
                 onChange={(e) => setZipCode(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             </div>
 
@@ -267,7 +282,7 @@ export default function NewMemberPage() {
               <input
                 value={emergencyContactName}
                 onChange={(e) => setEmergencyContactName(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             </div>
 
@@ -276,9 +291,12 @@ export default function NewMemberPage() {
                 Emergency Contact Phone
               </label>
               <input
+                type="tel"
                 value={emergencyContactPhone}
-                onChange={(e) => setEmergencyContactPhone(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                onChange={(e) => setEmergencyContactPhone(formatPhoneNumber(e.target.value))}
+                placeholder="(123) 456-7890"
+                maxLength={14}
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             </div>
 
@@ -289,7 +307,7 @@ export default function NewMemberPage() {
               <input
                 value={parentGuardianName}
                 onChange={(e) => setParentGuardianName(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
             </div>
 
@@ -300,7 +318,7 @@ export default function NewMemberPage() {
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                 rows={2}
               />
             </div>
@@ -312,7 +330,7 @@ export default function NewMemberPage() {
               <textarea
                 value={medicalNotes}
                 onChange={(e) => setMedicalNotes(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                 rows={2}
               />
             </div>
@@ -321,14 +339,14 @@ export default function NewMemberPage() {
               <button
                 type="button"
                 onClick={handleCancel}
-                className="text-xs text-gray-500 hover:text-gray-700"
+                className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="text-xs rounded-md bg-primary px-4 py-2 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
+                className="text-xs rounded-md bg-primary px-4 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
               >
                 {saving ? "Creating..." : "Create Member"}
               </button>
@@ -339,3 +357,4 @@ export default function NewMemberPage() {
     </AppLayout>
   );
 }
+

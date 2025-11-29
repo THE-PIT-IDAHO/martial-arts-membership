@@ -7,9 +7,10 @@ import { AppLayout } from "@/components/app-layout";
 type Style = {
   id: string;
   name: string;
-  shortName?: string | null;
-  description?: string | null;
-  beltSystemEnabled?: boolean | null;
+  shortName: string | null;
+  description: string | null;
+  beltSystemEnabled: boolean;
+  ranks?: any[];
 };
 
 export default function StylesPage() {
@@ -18,48 +19,69 @@ export default function StylesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchStyles() {
+    async function loadStyles() {
       try {
         setLoading(true);
-        setError(null);
         const res = await fetch("/api/styles");
+
         if (!res.ok) {
           throw new Error("Failed to load styles");
         }
+
         const data = await res.json();
+        console.log("Fetched styles data:", data);
+        console.log("Styles array:", data.styles);
         setStyles(data.styles || []);
       } catch (err: any) {
-        console.error(err);
+        console.error("Error loading styles:", err);
         setError(err.message || "Failed to load styles");
-        setStyles([]);
       } finally {
         setLoading(false);
       }
     }
 
-    fetchStyles();
+    loadStyles();
   }, []);
+
+  async function handleDeleteStyle(id: string, name: string) {
+    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/styles/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to delete style");
+      }
+
+      // Remove from list
+      setStyles((prev) => prev.filter((s) => s.id !== id));
+    } catch (err: any) {
+      console.error("Error deleting style:", err);
+      alert(err.message || "Failed to delete style");
+    }
+  }
 
   return (
     <AppLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Styles</h1>
-            <p className="text-sm text-gray-600">
-              Choose an existing style to edit, or create a new one.
+            <p className="mt-1 text-sm text-gray-600">
+              Manage your styles and rank systems
             </p>
           </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/styles/new"
-              className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
-            >
-              Create Style
-            </Link>
-          </div>
+          <Link
+            href="/styles/new"
+            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+          >
+            Create Style
+          </Link>
         </div>
 
         {/* Error */}
@@ -69,113 +91,91 @@ export default function StylesPage() {
           </div>
         )}
 
-        {/* Styles list */}
-        <section className="rounded-lg border border-gray-200 bg-white">
-          <div className="border-b border-gray-200 px-4 py-2 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-800">
-              Existing Styles
-            </h2>
+        {/* Loading */}
+        {loading && (
+          <div className="rounded-md border border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500">
+            Loading styles...
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500 whitespace-nowrap">
-                    Name
-                  </th>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500 whitespace-nowrap">
-                    Short
-                  </th>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500 whitespace-nowrap">
-                    Description
-                  </th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 whitespace-nowrap">
-                    Belt System
-                  </th>
-                  <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500 whitespace-nowrap">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-3 py-6 text-center text-sm text-gray-500"
-                    >
-                      Loading styles…
-                    </td>
-                  </tr>
-                ) : styles.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-3 py-6 text-center text-sm text-gray-400"
-                    >
-                      No styles yet. Use the &quot;Create Style&quot; button to
-                      add your first one.
-                    </td>
-                  </tr>
-                ) : (
-                  styles.map((style) => (
-                    <tr
-                      key={style.id}
-                      className="border-t border-gray-100 hover:bg-gray-50"
-                    >
-                      <td className="px-3 py-2 whitespace-nowrap align-middle">
+        )}
+
+        {/* Styles List */}
+        {!loading && (
+          <>
+            {styles.length === 0 ? (
+              <div className="rounded-md border border-gray-200 bg-white px-4 py-8 text-center">
+                <p className="text-sm text-gray-500">
+                  No styles yet. Create your first style to get started.
+                </p>
+                <Link
+                  href="/styles/new"
+                  className="mt-4 inline-block rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                >
+                  Create First Style
+                </Link>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-4">
+                {styles.map((style) => (
+                  <div
+                    key={style.id}
+                    className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow w-full sm:flex-1 sm:min-w-[calc(50%-0.5rem)] sm:max-w-[calc(50%-0.5rem)] lg:min-w-[calc(33.333%-0.667rem)] lg:max-w-[calc(33.333%-0.667rem)] xl:min-w-[calc(25%-0.75rem)] xl:max-w-[calc(25%-0.75rem)]"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {style.name}
+                        </h3>
+                        {style.shortName && (
+                          <p className="text-xs text-gray-500">
+                            ({style.shortName})
+                          </p>
+                        )}
+                      </div>
+                      {style.beltSystemEnabled && (
+                        <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                          Rank System
+                        </span>
+                      )}
+                    </div>
+
+                    {style.description && (
+                      <p className="mt-2 text-sm text-gray-600 line-clamp-2">
+                        {style.description}
+                      </p>
+                    )}
+
+                    <div className="mt-4 flex flex-col gap-2">
+                      <div className="flex gap-2">
                         <Link
                           href={`/styles/${style.id}`}
-                          className="text-sm font-medium text-primary hover:text-primaryDark"
+                          className="flex-1 rounded-md bg-primary px-3 py-1 text-center text-xs font-semibold text-white hover:bg-primaryDark"
                         >
-                          {style.name}
+                          Edit Style
                         </Link>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap align-middle text-xs text-gray-700">
-                        {style.shortName || "—"}
-                      </td>
-                      <td className="px-3 py-2 align-middle text-xs text-gray-700 max-w-xs">
-                        <span className="line-clamp-2">
-                          {style.description || "—"}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-center align-middle">
-                        {style.beltSystemEnabled ? (
-                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800 border border-green-300">
-                            Enabled
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700 border border-gray-300">
-                            Off
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap align-middle">
-                        <div className="inline-flex items-center gap-2">
-                          {/* These are styled as subtle text links, not primary buttons */}
-                          <Link
-                            href={`/styles/${style.id}`}
-                            className="text-xs text-primary hover:text-primaryDark font-medium"
-                          >
-                            Edit
-                          </Link>
-                          <Link
-                            href={`/styles/belt-designer?styleId=${style.id}&styleName=${encodeURIComponent(
-                              style.name
-                            )}`}
-                            className="text-xs text-gray-600 hover:text-primary font-medium"
-                          >
-                            Belt Designer
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                        <button
+                          onClick={() => handleDeleteStyle(style.id, style.name)}
+                          className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                      {style.beltSystemEnabled && (
+                        <Link
+                          href={`/styles/belt-designer?styleId=${style.id}&styleName=${encodeURIComponent(
+                            style.name
+                          )}`}
+                          className="rounded-md bg-primary px-3 py-1 text-center text-xs font-semibold text-white hover:bg-primaryDark"
+                        >
+                          Create/Edit Ranks
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </AppLayout>
   );

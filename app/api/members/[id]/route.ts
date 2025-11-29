@@ -21,6 +21,17 @@ export async function GET(_req: Request, { params }: Params) {
   try {
     const member = await prisma.member.findUnique({
       where: { id },
+      include: {
+        attendances: {
+          include: {
+            classSession: {
+              include: {
+                program: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!member) {
@@ -73,6 +84,7 @@ export async function PATCH(req: Request, { params }: Params) {
       rank,
       startDate,
       uniformSize,
+      styleDocuments,
 
       membershipType,
 
@@ -113,6 +125,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (startDate !== undefined)
       updateData.startDate = toDateOrNull(startDate);
     if (uniformSize !== undefined) updateData.uniformSize = uniformSize;
+    if (styleDocuments !== undefined) updateData.styleDocuments = styleDocuments;
 
     if (membershipType !== undefined)
       updateData.membershipType = membershipType;
@@ -130,6 +143,26 @@ export async function PATCH(req: Request, { params }: Params) {
     console.error(`PATCH /api/members/${params.id} error:`, err);
     return NextResponse.json(
       { error: "Failed to update member" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/members/:id
+export async function DELETE(_req: Request, { params }: Params) {
+  const { id } = params;
+
+  try {
+    // Delete member and all related data (relationships, activities)
+    await prisma.member.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error(`DELETE /api/members/${id} error:`, err);
+    return NextResponse.json(
+      { error: "Failed to delete member" },
       { status: 500 }
     );
   }

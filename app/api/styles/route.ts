@@ -5,6 +5,17 @@ import { prisma } from "@/lib/prisma"; // adjust path if needed
 export async function GET() {
   try {
     const styles = await prisma.style.findMany({
+      include: {
+        ranks: {
+          orderBy: { order: "asc" },
+          select: {
+            id: true,
+            name: true,
+            order: true,
+            styleId: true,
+          },
+        },
+      },
       orderBy: { name: "asc" },
     });
 
@@ -19,7 +30,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, shortName, description } = body;
+    const { name, shortName, description, beltSystemEnabled } = body;
 
     if (!name || typeof name !== "string") {
       return new NextResponse("Name is required", { status: 400 });
@@ -30,6 +41,7 @@ export async function POST(req: Request) {
         name: name.trim(),
         shortName: shortName?.trim() || null,
         description: description?.trim() || null,
+        beltSystemEnabled: beltSystemEnabled ?? false,
       },
     });
 

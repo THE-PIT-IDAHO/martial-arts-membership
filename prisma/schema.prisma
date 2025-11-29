@@ -66,6 +66,9 @@ model Member {
   primaryStyle String?
   stylesNotes  String?
 
+  // Style documents (JSON array of document objects with name, url, uploadedAt)
+  styleDocuments String?
+
   // Payment / POS notes
   paymentNotes String?
 
@@ -188,6 +191,34 @@ model ClassSession {
   startsAt  DateTime
   endsAt    DateTime
 
+  // Optional: categorize class type (e.g., "Kempo", "Sparring", "Weapons")
+  classType String?
+
+  // Style fields (replacing programId) - supports multiple styles
+  styleIds   String? // JSON array of style IDs
+  styleNames String? // JSON array of style names
+
+  // Legacy single style fields (kept for backward compatibility)
+  styleId   String?
+  styleName String?
+
+  // Minimum rank requirement (members below this rank cannot check in)
+  minRankId   String?
+  minRankName String?
+
+  // Recurring schedule fields
+  isRecurring     Boolean @default(false)
+  frequencyNumber Int?
+  frequencyUnit   String?
+
+  // Schedule date range
+  scheduleStartDate DateTime?
+  scheduleEndDate   DateTime?
+  isOngoing         Boolean @default(true)
+
+  // Calendar color (hex color code)
+  color String? @default("#a3a3a3")
+
   programId String?
   program   Program? @relation(fields: [programId], references: [id])
 
@@ -241,6 +272,23 @@ model Style {
   // Store belt designer settings as JSON string
   beltConfig        String?
 
+  ranks             Rank[]
+
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+}
+
+model Rank {
+  id               String   @id @default(cuid())
+  name             String
+  order            Int
+  thumbnail        String?
+  classRequirement Int?
+  pdfDocument      String?  // Base64 encoded PDF data URL
+
+  styleId   String
+  style     Style    @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

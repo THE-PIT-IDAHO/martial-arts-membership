@@ -4,19 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
-import {
-  BeltDesigner,
-  BeltConfig,
-  defaultBeltConfig,
-} from "@/components/belt-designer";
-
-type Style = {
-  id: string;
-  name: string;
-  shortName?: string | null;
-  description?: string | null;
-  beltConfig?: string | null;
-};
 
 export default function NewStylePage() {
   const router = useRouter();
@@ -25,20 +12,19 @@ export default function NewStylePage() {
   const [name, setName] = useState("");
   const [shortName, setShortName] = useState("");
   const [description, setDescription] = useState("");
-
-  // Created style info
-  const [createdStyle, setCreatedStyle] = useState<Style | null>(null);
-
-  // Belt designer state
-  const [beltConfig, setBeltConfig] = useState<BeltConfig>(defaultBeltConfig);
+  const [beltSystemEnabled, setBeltSystemEnabled] = useState(true);
 
   const [creating, setCreating] = useState(false);
-  const [savingBelt, setSavingBelt] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createdStyleId, setCreatedStyleId] = useState<string | null>(null);
 
-  // STEP 1 — Create the style
-  async function handleCreateStyle(e: React.FormEvent) {
+  async function handleSaveStyle(e: React.FormEvent) {
     e.preventDefault();
+
+    if (!name.trim()) {
+      setError("Style name is required");
+      return;
+    }
 
     try {
       setCreating(true);
@@ -51,49 +37,77 @@ export default function NewStylePage() {
           name: name.trim(),
           shortName: shortName.trim() || null,
           description: description.trim() || null,
+          beltSystemEnabled: beltSystemEnabled,
         }),
       });
 
       if (!res.ok) {
-        throw new Error("Failed to create style");
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to create style");
       }
 
       const data = await res.json();
-      setCreatedStyle(data.style);
 
-      // Belt designer is now unlocked
+      if (data.style && data.style.id) {
+        setCreatedStyleId(data.style.id);
+        // Redirect to styles list
+        router.push("/styles");
+      } else {
+        // Fallback to styles list
+        router.push("/styles");
+      }
     } catch (err: any) {
-      setError(err.message);
+      console.error("Error creating style:", err);
+      setError(err.message || "Failed to create style");
     } finally {
       setCreating(false);
     }
   }
 
-  // STEP 2 — Save the belt designer settings
-  async function handleSaveBelt() {
-    if (!createdStyle) return;
+  async function handleCreateRanks() {
+    if (!name.trim()) {
+      setError("Style name is required");
+      return;
+    }
 
     try {
-      setSavingBelt(true);
+      setCreating(true);
       setError(null);
 
-      const res = await fetch(`/api/styles/${createdStyle.id}`, {
-        method: "PATCH",
+      const res = await fetch("/api/styles", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          beltConfig,
+          name: name.trim(),
+          shortName: shortName.trim() || null,
+          description: description.trim() || null,
+          beltSystemEnabled: beltSystemEnabled,
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to save belt design");
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to create style");
+      }
 
-      // Reload saved beltConfig (optional)
       const data = await res.json();
-      setCreatedStyle(data.style);
+
+      // Redirect to belt designer for the new style
+      if (data.style && data.style.id) {
+        router.push(
+          `/styles/belt-designer?styleId=${data.style.id}&styleName=${encodeURIComponent(
+            data.style.name
+          )}`
+        );
+      } else {
+        // Fallback to styles list
+        router.push("/styles");
+      }
     } catch (err: any) {
-      setError(err.message);
+      console.error("Error creating style:", err);
+      setError(err.message || "Failed to create style");
     } finally {
-      setSavingBelt(false);
+      setCreating(false);
     }
   }
 
@@ -102,10 +116,15 @@ export default function NewStylePage() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Create Style</h1>
+          <div>
+            <h1 className="text-2xl font-bold">Create Style</h1>
+            <p className="mt-1 text-sm text-gray-600">
+              Add a new style and rank system
+            </p>
+          </div>
           <Link
             href="/styles"
-            className="text-xs rounded-md border border-primary px-3 py-1 font-semibold text-primary hover:bg-primary hover:text-white"
+            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
           >
             Back to Styles
           </Link>
@@ -118,77 +137,103 @@ export default function NewStylePage() {
           </div>
         )}
 
-        {/* FORM — Create Style */}
-        {!createdStyle && (
-          <form
-            onSubmit={handleCreateStyle}
-            className="space-y-4 rounded-lg border border-gray-200 bg-white p-4"
-          >
-            <h2 className="text-sm font-semibold text-gray-800">Style Details</h2>
+        {/* Form */}
+        <form
+          onSubmit={handleSaveStyle}
+          className="space-y-4 rounded-lg border border-gray-200 bg-white p-4"
+        >
+          <h2 className="text-sm font-semibold text-gray-800">Style Details</h2>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-medium">Style Name</label>
-                <input
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium">Short Name</label>
-                <input
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                  value={shortName}
-                  onChange={(e) => setShortName(e.target.value)}
-                />
-              </div>
-            </div>
-
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="text-xs font-medium">Description</label>
-              <textarea
-                className="w-full rounded-md border px-3 py-2 text-sm"
-                rows={2}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+              <label className="mb-1 block text-xs font-medium text-gray-700">
+                Style Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., Kempo, Brazilian Jiu-Jitsu"
+                required
+                disabled={creating}
               />
             </div>
 
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700">
+                Short Name
+              </label>
+              <input
+                type="text"
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                value={shortName}
+                onChange={(e) => setShortName(e.target.value)}
+                placeholder="e.g., BJJ, TKD"
+                disabled={creating}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">
+              Description
+            </label>
+            <textarea
+              className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Brief description of this martial arts style..."
+              disabled={creating}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="beltSystemEnabled"
+              checked={beltSystemEnabled}
+              onChange={(e) => setBeltSystemEnabled(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary"
+              disabled={creating}
+            />
+            <label
+              htmlFor="beltSystemEnabled"
+              className="text-sm font-medium text-gray-700"
+            >
+              Enable Rank System
+            </label>
+          </div>
+
+          <div className="flex gap-2 pt-2">
             <button
               type="submit"
               disabled={creating}
-              className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
+              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:cursor-not-allowed disabled:bg-gray-300"
             >
-              {creating ? "Creating…" : "Create Style"}
+              {creating ? "Saving..." : "Save Style"}
             </button>
-          </form>
-        )}
-
-        {/* BELT DESIGNER — only visible after style is created */}
-        {createdStyle && (
-          <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">
-                Belt Designer for {createdStyle.name}
-              </h2>
-
+            {beltSystemEnabled && (
               <button
-                onClick={handleSaveBelt}
-                disabled={savingBelt}
-                className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
+                type="button"
+                onClick={handleCreateRanks}
+                disabled={creating}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:cursor-not-allowed disabled:bg-gray-300"
               >
-                {savingBelt ? "Saving…" : "Save Belt Design"}
+                {creating ? "Creating..." : "Create Ranks"}
               </button>
-            </div>
-
-            {/* Belt Designer Component */}
-            <BeltDesigner value={beltConfig} onChange={setBeltConfig} />
+            )}
+            <Link
+              href="/styles"
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+            >
+              Cancel
+            </Link>
           </div>
-        )}
+        </form>
       </div>
     </AppLayout>
   );
 }
+
