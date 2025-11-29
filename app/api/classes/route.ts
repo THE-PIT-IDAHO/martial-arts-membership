@@ -21,10 +21,11 @@ export async function GET(req: Request) {
         distinct: ["classType"],
       });
 
-      const classTypes = classes
-        .map((c) => c.classType)
-        .filter((type): type is string => type !== null)
-        .sort();
+      const classTypes = [...new Set(
+        classes
+          .map((c) => c.classType?.trim())
+          .filter((type): type is string => type !== null && type !== "")
+      )].sort();
 
       return NextResponse.json({ classTypes });
     }

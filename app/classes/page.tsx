@@ -483,7 +483,7 @@ export default function ClassesPage() {
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Class Type
+                    Class Type (used in style ranks)
                   </label>
                   <input
                     type="text"

@@ -1960,6 +1960,24 @@ export default function MemberProfilePage() {
                                   }
 
                                   // If we have class type requirements from beltConfig, show them
+                                  // Helper to check if attendance matches this style
+                                  const matchesStyle = (att: { classSession?: { styleName?: string | null; styleNames?: string | null; program?: { name?: string } | null } | null }) => {
+                                    const cs = att.classSession;
+                                    if (!cs) return false;
+                                    // Check styleName (single style)
+                                    if (cs.styleName?.toLowerCase() === s.name.toLowerCase()) return true;
+                                    // Check styleNames (JSON array of style names)
+                                    if (cs.styleNames) {
+                                      try {
+                                        const names = JSON.parse(cs.styleNames);
+                                        if (Array.isArray(names) && names.some((n: string) => n.toLowerCase() === s.name.toLowerCase())) return true;
+                                      } catch { /* ignore */ }
+                                    }
+                                    // Check program name (legacy)
+                                    if (cs.program?.name?.toLowerCase() === s.name.toLowerCase()) return true;
+                                    return false;
+                                  };
+
                                   if (classRequirements.length > 0) {
                                     return (
                                       <div className="space-y-0.5">
@@ -1967,7 +1985,7 @@ export default function MemberProfilePage() {
                                           // Count attendance for this class type
                                           const attended = (member?.attendances || []).filter(
                                             (att) =>
-                                              att.classSession?.program?.name === s.name &&
+                                              matchesStyle(att) &&
                                               att.classSession?.classType === req.label
                                           ).length;
 
@@ -1985,7 +2003,7 @@ export default function MemberProfilePage() {
                                   const selectedRank = selectedStyle.ranks?.find((r) => r.name === s.rank);
                                   if (selectedRank?.classRequirement != null) {
                                     const styleAttendance = (member?.attendances || []).filter(
-                                      (att) => att.classSession?.program?.name === s.name
+                                      (att) => matchesStyle(att)
                                     );
                                     return (
                                       <div>
@@ -2001,7 +2019,7 @@ export default function MemberProfilePage() {
                                     Start:{" "}
                                     <span>
                                       {new Date(
-                                        s.startDate
+                                        s.startDate + "T00:00:00"
                                       ).toLocaleDateString()}
                                     </span>
                                   </div>

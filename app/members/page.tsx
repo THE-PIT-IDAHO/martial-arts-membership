@@ -132,6 +132,9 @@ export default function MembersPage() {
   );
   const [draggingColumn, setDraggingColumn] = useState<ColumnId | null>(null);
 
+  // Track if we've loaded preferences from localStorage (to prevent overwriting on initial render)
+  const [hasLoadedPrefs, setHasLoadedPrefs] = useState(false);
+
   // Column config popup
   const [showColumnConfig, setShowColumnConfig] = useState(false);
 
@@ -260,12 +263,17 @@ export default function MembersPage() {
     } catch (err) {
       console.warn("Failed to load list preferences from localStorage", err);
     }
+
+    // Mark that we've loaded preferences (even if there were none)
+    setHasLoadedPrefs(true);
   }, []);
 
   // --------------------------------------------------
   // Persist columns + sort to localStorage when they change
   // --------------------------------------------------
   useEffect(() => {
+    // Don't save until we've loaded preferences (prevents overwriting on initial render)
+    if (!hasLoadedPrefs) return;
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem(
@@ -275,9 +283,11 @@ export default function MembersPage() {
     } catch (err) {
       console.warn("Failed to save columns to localStorage", err);
     }
-  }, [visibleColumns]);
+  }, [visibleColumns, hasLoadedPrefs]);
 
   useEffect(() => {
+    // Don't save until we've loaded preferences (prevents overwriting on initial render)
+    if (!hasLoadedPrefs) return;
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem(STORAGE_KEYS.sortKey, sortKey);
@@ -285,7 +295,7 @@ export default function MembersPage() {
     } catch (err) {
       console.warn("Failed to save sort settings to localStorage", err);
     }
-  }, [sortKey, sortDirection]);
+  }, [sortKey, sortDirection, hasLoadedPrefs]);
 
   // --------------------------------------------------
   // Sorting logic

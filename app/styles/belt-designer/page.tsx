@@ -302,7 +302,9 @@ export default function BeltDesignerPage() {
         const res = await fetch("/api/classes?types=true");
         if (res.ok) {
           const data = await res.json();
-          setClassTypes(data.classTypes || []);
+          // Ensure unique class types (deduplicate)
+          const uniqueTypes = [...new Set((data.classTypes || []) as string[])];
+          setClassTypes(uniqueTypes);
         }
       } catch (err) {
         console.error("Error loading class types:", err);

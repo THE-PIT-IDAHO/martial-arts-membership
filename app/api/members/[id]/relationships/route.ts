@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 type RouteParams = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 // Directed relationships: PARENT, GUARDIAN, PAYS_FOR
@@ -52,7 +52,7 @@ async function ensureSymmetricRelationship(
 }
 
 export async function GET(req: NextRequest, { params }: RouteParams) {
-  const memberId = params.id;
+  const { id: memberId } = await params;
 
   const relationships = await prisma.memberRelationship.findMany({
     where: {
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 }
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  const currentMemberId = params.id;
+  const { id: currentMemberId } = await params;
   const body = await req.json();
 
   const targetMemberId: string = body.targetMemberId;
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 }
 
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
-  const memberId = params.id;
+  const { id: memberId } = await params;
   const body = await req.json();
   const id = body.id as string;
 

@@ -216,6 +216,10 @@ model ClassSession {
   scheduleEndDate   DateTime?
   isOngoing         Boolean @default(true)
 
+  // Excluded dates for recurring classes (JSON array of ISO date strings)
+  // Used when "Edit this class only" is used to delete/modify a single occurrence
+  excludedDates String?
+
   // Calendar color (hex color code)
   color String? @default("#a3a3a3")
 
@@ -237,11 +241,22 @@ model Attendance {
   classSessionId String?
 
   member       Member        @relation(fields: [memberId], references: [id])
-  classSession ClassSession? @relation(fields: [classSessionId], references: [id])
+  classSession ClassSession? @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
 
-  checkedInAt DateTime @default(now())
+  // The specific date of attendance (important for recurring classes)
+  attendanceDate DateTime
+  checkedInAt    DateTime @default(now())
   // Suggested: KIOSK, MANUAL, IMPORT
-  source      String  @default("KIOSK")
+  source         String   @default("MANUAL")
+
+  // Track if member was added despite not meeting class requirements
+  requirementOverride Boolean @default(false)
+
+  // Track if attendance has been confirmed (only confirmed attendance counts toward requirements)
+  confirmed Boolean @default(false)
+
+  // Unique constraint: one member can only attend a class once per date
+  @@unique([memberId, classSessionId, attendanceDate])
 }
 
 //

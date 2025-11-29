@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 type RouteParams = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 // GET /api/styles/:id
 export async function GET(_req: Request, { params }: RouteParams) {
-  const { id } = params;
+  const { id } = await params;
 
   try {
     const style = await prisma.style.findUnique({
@@ -33,7 +33,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 }
 
 export async function PATCH(req: Request, { params }: RouteParams) {
-  const { id } = params;
+  const { id } = await params;
 
   try {
     const body = await req.json();
@@ -121,7 +121,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 
 // DELETE /api/styles/:id
 export async function DELETE(_req: Request, { params }: RouteParams) {
-  const { id } = params;
+  const { id } = await params;
 
   try {
     // First, get the style name before deleting

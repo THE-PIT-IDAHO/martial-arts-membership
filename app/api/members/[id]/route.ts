@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 type Params = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 function toDateOrNull(value: any): Date | null {
@@ -16,16 +16,24 @@ function toDateOrNull(value: any): Date | null {
 
 // GET /api/members/:id
 export async function GET(_req: Request, { params }: Params) {
-  const { id } = params;
+  const { id } = await params;
 
   try {
     const member = await prisma.member.findUnique({
       where: { id },
       include: {
         attendances: {
+          where: {
+            confirmed: true, // Only include confirmed attendance for requirement counting
+          },
           include: {
             classSession: {
-              include: {
+              select: {
+                id: true,
+                name: true,
+                classType: true,
+                styleName: true,
+                styleNames: true,
                 program: true,
               },
             },
@@ -53,7 +61,7 @@ export async function GET(_req: Request, { params }: Params) {
 
 // PATCH /api/members/:id
 export async function PATCH(req: Request, { params }: Params) {
-  const { id } = params;
+  const { id } = await params;
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -140,7 +148,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
     return NextResponse.json({ member });
   } catch (err) {
-    console.error(`PATCH /api/members/${params.id} error:`, err);
+    console.error(`PATCH /api/members/${id} error:`, err);
     return NextResponse.json(
       { error: "Failed to update member" },
       { status: 500 }
@@ -150,7 +158,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
 // DELETE /api/members/:id
 export async function DELETE(_req: Request, { params }: Params) {
-  const { id } = params;
+  const { id } = await params;
 
   try {
     // Delete member and all related data (relationships, activities)

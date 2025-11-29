@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 type Params = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 // GET /api/classes/:id
 export async function GET(_req: Request, { params }: Params) {
-  const { id } = params;
+  const { id } = await params;
 
   try {
     const classSession = await prisma.classSession.findUnique({
@@ -41,7 +41,7 @@ export async function GET(_req: Request, { params }: Params) {
 
 // PATCH /api/classes/:id
 export async function PATCH(req: Request, { params }: Params) {
-  const { id } = params;
+  const { id } = await params;
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -59,6 +59,7 @@ export async function PATCH(req: Request, { params }: Params) {
       minRankName,
       programId,
       color,
+      excludedDates,
     } = body || {};
 
     const updateData: any = {};
@@ -75,6 +76,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (minRankName !== undefined) updateData.minRankName = minRankName;
     if (programId !== undefined) updateData.programId = programId;
     if (color !== undefined) updateData.color = color;
+    if (excludedDates !== undefined) updateData.excludedDates = excludedDates;
 
     const classSession = await prisma.classSession.update({
       where: { id },
@@ -86,7 +88,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
     return NextResponse.json({ class: classSession });
   } catch (err) {
-    console.error(`PATCH /api/classes/${params.id} error:`, err);
+    console.error(`PATCH /api/classes/${id} error:`, err);
     return NextResponse.json(
       { error: "Failed to update class" },
       { status: 500 }
@@ -96,7 +98,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
 // DELETE /api/classes/:id
 export async function DELETE(_req: Request, { params }: Params) {
-  const { id } = params;
+  const { id } = await params;
 
   try {
     await prisma.classSession.delete({
