@@ -14,10 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-white text-black">
-        <div className="flex flex-col min-h-screen">
-          {/* Top bar */}
-          <header className="bg-primary shadow-md">
+      <body className="min-h-screen bg-white text-black overflow-hidden">
+        <div className="flex flex-col h-screen">
+          {/* Top bar - fixed at top */}
+          <header className="bg-primary shadow-md flex-shrink-0 z-50 py-3">
             <div className="w-full px-4 sm:px-6 lg:px-8 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-xl font-bold tracking-wide text-white">
@@ -30,8 +30,8 @@ export default function RootLayout({
             </div>
           </header>
 
-          <main className="flex-1">
-            <div className="w-full px-4 sm:px-6 lg:px-8 py-8">{children}</div>
+          <main className="flex-1 overflow-hidden">
+            <div className="w-full h-full px-4 sm:px-6 lg:px-8 py-4">{children}</div>
           </main>
         </div>
       </body>

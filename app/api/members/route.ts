@@ -37,9 +37,18 @@ async function getNextMemberNumber() {
 }
 
 // GET /api/members
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    const status = searchParams.get("status");
+
+    const whereClause: any = {};
+    if (status) {
+      whereClause.status = status;
+    }
+
     const members = await prisma.member.findMany({
+      where: whereClause,
       orderBy: [
         { lastName: "asc" },
         { firstName: "asc" },

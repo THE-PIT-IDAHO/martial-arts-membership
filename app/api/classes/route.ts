@@ -49,7 +49,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, startsAt, endsAt, classType, styleIds, styleNames, styleId, styleName, minRankId, minRankName, programId, clientId, isRecurring, frequencyNumber, frequencyUnit, scheduleStartDate, scheduleEndDate, isOngoing, color } = body;
+    const { name, startsAt, endsAt, classType, styleIds, styleNames, styleId, styleName, minRankId, minRankName, programId, clientId, isRecurring, frequencyNumber, frequencyUnit, scheduleStartDate, scheduleEndDate, isOngoing, color, coachId, coachName } = body;
 
     if (!name || typeof name !== "string") {
       return new NextResponse("Name is required", { status: 400 });
@@ -83,6 +83,8 @@ export async function POST(req: Request) {
         scheduleEndDate: scheduleEndDate ? new Date(scheduleEndDate) : null,
         isOngoing: isOngoing !== undefined ? isOngoing : true,
         color: color || "#a3a3a3",
+        coachId: coachId || null,
+        coachName: coachName || null,
       },
       include: {
         program: true,

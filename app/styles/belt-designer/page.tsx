@@ -14,6 +14,11 @@ type RankDuration = {
   unit: DurationUnit;
 };
 
+type AttendanceWindow = {
+  value: number | null;
+  unit: DurationUnit;
+};
+
 type ClassRequirement = {
   id: string;
   label: string;
@@ -26,6 +31,7 @@ type BeltRank = {
   order: number;
   classRequirements?: ClassRequirement[];
   minDuration?: RankDuration;
+  attendanceWindow?: AttendanceWindow;  // How far back to count classes (from grading date or current date)
   notes?: string | null;
   layers?: BeltLayerConfig;
   pdfDocuments?: Array<{ id: string; name: string; url: string }>;  // Array of PDF documents
@@ -174,6 +180,8 @@ export default function BeltDesignerPage() {
   >(() => [createEmptyRequirement()]);
   const [durationValue, setDurationValue] = useState<string>("");
   const [durationUnit, setDurationUnit] = useState<DurationUnit>("months");
+  const [attendanceWindowValue, setAttendanceWindowValue] = useState<string>("");
+  const [attendanceWindowUnit, setAttendanceWindowUnit] = useState<DurationUnit>("months");
   const [rankNotes, setRankNotes] = useState("");
   const [rankPdfDocuments, setRankPdfDocuments] = useState<Array<{ id: string; name: string; url: string }>>([]);
 
@@ -217,6 +225,10 @@ export default function BeltDesignerPage() {
             ...r,
             classRequirements: r.classRequirements || [],
             minDuration: r.minDuration || {
+              value: null,
+              unit: "months" as DurationUnit,
+            },
+            attendanceWindow: r.attendanceWindow || {
               value: null,
               unit: "months" as DurationUnit,
             },
@@ -265,6 +277,10 @@ export default function BeltDesignerPage() {
                     ...r,
                     classRequirements: r.classRequirements || [],
                     minDuration: r.minDuration || {
+                      value: null,
+                      unit: "months" as DurationUnit,
+                    },
+                    attendanceWindow: r.attendanceWindow || {
                       value: null,
                       unit: "months" as DurationUnit,
                     },
@@ -343,6 +359,8 @@ export default function BeltDesignerPage() {
     setRankClassRequirements([createEmptyRequirement()]);
     setDurationValue("");
     setDurationUnit("months");
+    setAttendanceWindowValue("");
+    setAttendanceWindowUnit("months");
     setRankNotes("");
     setRankPdfDocuments([]);
   }
@@ -368,6 +386,17 @@ export default function BeltDesignerPage() {
     } else {
       setDurationValue("");
       setDurationUnit("months");
+    }
+    if (rank.attendanceWindow) {
+      setAttendanceWindowValue(
+        rank.attendanceWindow.value !== null && rank.attendanceWindow.value !== undefined
+          ? String(rank.attendanceWindow.value)
+          : ""
+      );
+      setAttendanceWindowUnit(rank.attendanceWindow.unit || "months");
+    } else {
+      setAttendanceWindowValue("");
+      setAttendanceWindowUnit("months");
     }
     setRankNotes(rank.notes || "");
     setRankPdfDocuments(rank.pdfDocuments || []);
@@ -410,6 +439,9 @@ export default function BeltDesignerPage() {
         rank.classRequirements?.map((req) => ({ ...req })) || [],
       minDuration: rank.minDuration
         ? { ...rank.minDuration }
+        : { value: null, unit: "months" },
+      attendanceWindow: rank.attendanceWindow
+        ? { ...rank.attendanceWindow }
         : { value: null, unit: "months" },
       notes: rank.notes || null,
       layers: rank.layers ? { ...rank.layers } : { ...defaultLayers },
@@ -608,6 +640,14 @@ export default function BeltDesignerPage() {
       unit: durationUnit,
     };
 
+    const attendanceWindowVal =
+      attendanceWindowValue.trim() === "" ? null : Number(attendanceWindowValue) || 0;
+
+    const attendanceWindow: AttendanceWindow = {
+      value: attendanceWindowVal,
+      unit: attendanceWindowUnit,
+    };
+
     const cleanRequirements = rankClassRequirements.map((req) => ({
       ...req,
       label: req.label.trim(),
@@ -633,6 +673,7 @@ export default function BeltDesignerPage() {
             order: rankOrder || r.order,
             classRequirements: cleanRequirements,
             minDuration,
+            attendanceWindow,
             notes: rankNotes.trim() || null,
             layers: { ...currentLayers },
             pdfDocuments: rankPdfDocuments.length > 0 ? [...rankPdfDocuments] : undefined,
@@ -648,6 +689,7 @@ export default function BeltDesignerPage() {
         order: rankOrder || getNextOrder(ranks),
         classRequirements: cleanRequirements,
         minDuration,
+        attendanceWindow,
         notes: rankNotes.trim() || null,
         layers: { ...currentLayers },
         pdfDocuments: rankPdfDocuments.length > 0 ? [...rankPdfDocuments] : undefined,
@@ -765,6 +807,49 @@ export default function BeltDesignerPage() {
         return { ...rank, minDuration: next };
       })
     );
+  }
+
+  function updateRankAttendanceWindowInline(
+    rankId: string,
+    field: "value" | "unit",
+    value: string
+  ) {
+    setRanks((prev) =>
+      prev.map((rank) => {
+        if (rank.id !== rankId) return rank;
+        const current = rank.attendanceWindow || {
+          value: null,
+          unit: "months" as DurationUnit,
+        };
+        const next: AttendanceWindow =
+          field === "value"
+            ? {
+              ...current,
+              value: value.trim() === "" ? null : Number(value) || 0,
+            }
+            : {
+              ...current,
+              unit: value as DurationUnit,
+            };
+        return { ...rank, attendanceWindow: next };
+      })
+    );
+  }
+
+  function removeRankDocumentInline(rankId: string, docId: string) {
+    setRanks((prev) => {
+      const updated = prev.map((rank) => {
+        if (rank.id !== rankId) return rank;
+        const pdfDocuments = (rank.pdfDocuments || []).filter(
+          (doc) => doc.id !== docId
+        );
+        return { ...rank, pdfDocuments: pdfDocuments.length > 0 ? pdfDocuments : undefined };
+      });
+      if (styleId) {
+        void persistBeltConfig(updated, layers);
+      }
+      return updated;
+    });
   }
 
   function commitRanksInline() {
@@ -1418,9 +1503,9 @@ export default function BeltDesignerPage() {
                             }
                             className="w-28 rounded-md border border-gray-300 px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
                           >
-                            <option value="weeks">Weeks</option>
-                            <option value="months">Months</option>
-                            <option value="years">Years</option>
+                            <option value="weeks">{Number(durationValue) === 1 ? "Week" : "Weeks"}</option>
+                            <option value="months">{Number(durationValue) === 1 ? "Month" : "Months"}</option>
+                            <option value="years">{Number(durationValue) === 1 ? "Year" : "Years"}</option>
                           </select>
                         </div>
                       ) : (
@@ -1431,7 +1516,7 @@ export default function BeltDesignerPage() {
                               onClick={() =>
                                 removeClassRequirement(req.id)
                               }
-                              className="text-[10px] font-black leading-none text-red-500 hover:text-red-600"
+                              className="text-[10px] font-black leading-none text-primary hover:text-primaryDark"
                               aria-label="Remove class requirement"
                             >
                               ✕
@@ -1451,6 +1536,39 @@ export default function BeltDesignerPage() {
                     Add Class Requirement
                   </button>
                 )}
+              </div>
+
+              {/* Attendance Window */}
+              <div className="space-y-2 pt-2 border-t border-gray-200">
+                <label className="text-[11px] font-medium text-gray-700">
+                  Attendance Window
+                </label>
+                <p className="text-[10px] text-gray-500 -mt-1">
+                  Only count classes within this time period before grading (or current date if no grading set)
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={0}
+                    value={attendanceWindowValue}
+                    onChange={(e) => setAttendanceWindowValue(e.target.value)}
+                    title={attendanceWindowValue}
+                    className="no-spinner w-11 rounded-md border border-gray-300 px-1.5 py-1 text-center text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="#"
+                  />
+                  <select
+                    value={attendanceWindowUnit}
+                    onChange={(e) =>
+                      setAttendanceWindowUnit(e.target.value as DurationUnit)
+                    }
+                    className="w-28 rounded-md border border-gray-300 px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="weeks">{Number(attendanceWindowValue) === 1 ? "Week" : "Weeks"}</option>
+                    <option value="months">{Number(attendanceWindowValue) === 1 ? "Month" : "Months"}</option>
+                    <option value="years">{Number(attendanceWindowValue) === 1 ? "Year" : "Years"}</option>
+                  </select>
+                  <span className="text-[11px] text-gray-500">before grading</span>
+                </div>
               </div>
 
               {/* PDF Documents */}
@@ -1473,7 +1591,7 @@ export default function BeltDesignerPage() {
                       <button
                         type="button"
                         onClick={() => handleRemovePdfDocument(doc.id)}
-                        className="text-[10px] font-black leading-none text-red-500 hover:text-red-600"
+                        className="text-[10px] font-black leading-none text-primary hover:text-primaryDark"
                         aria-label="Remove document"
                       >
                         ✕
@@ -1499,6 +1617,13 @@ export default function BeltDesignerPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex gap-2">
                   <button
+                    type="submit"
+                    disabled={savingAll}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    Save Rank
+                  </button>
+                  <button
                     type="button"
                     onClick={() => {
                       resetRankForm();
@@ -1507,13 +1632,6 @@ export default function BeltDesignerPage() {
                     className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                   >
                     {editingId ? "Cancel" : "Clear"}
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={savingAll}
-                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:cursor-not-allowed disabled:bg-gray-300"
-                  >
-                    Save Rank
                   </button>
                 </div>
               </div>
@@ -1533,28 +1651,31 @@ export default function BeltDesignerPage() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">
                     Belt
                   </th>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">
                     Rank
                   </th>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
-
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">
+                    Order
                   </th>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">
                     Min Classes
                   </th>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">
                     Min Time
                   </th>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">
+                    Att. Window
+                  </th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">
                     Notes
                   </th>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">
                     Documents
                   </th>
-                  <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">
                     Actions
                   </th>
                 </tr>
@@ -1563,7 +1684,7 @@ export default function BeltDesignerPage() {
                 {sortedRanks.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-3 py-6 text-center text-sm text-gray-400"
                     >
                       No ranks yet. Use the New Rank section above to
@@ -1584,14 +1705,14 @@ export default function BeltDesignerPage() {
                     return (
                       <tr
                         key={rank.id}
-                        className={`border-t border-gray-100 hover:bg-gray-50 ${isBetweenSegment ? "bg-red-50/60" : ""
-                          } ${isLowerOfPair ? "border-t-4 border-red-300" : ""
+                        className={`border-t border-gray-100 hover:bg-gray-50 ${isBetweenSegment ? "bg-primary/10" : ""
+                          } ${isLowerOfPair ? "border-t-4 border-primary/30" : ""
                           }`}
                         onDragOver={(e) => handleRowDragOver(e, rank.id)}
                         onDrop={() => handleDrop(rank.id)}
                       >
                         {/* Belt snapshot (drag + edit) */}
-                        <td className="px-3 py-2 align-middle">
+                        <td className="px-3 py-2 align-middle text-center">
                           <div className="flex w-40 select-none flex-col items-center">
                             <div
                               className="w-full cursor-pointer"
@@ -1609,7 +1730,7 @@ export default function BeltDesignerPage() {
                         </td>
 
                         {/* Rank Name (inline + popup if overflow) */}
-                        <td className="px-3 py-2 align-middle text-xs text-gray-900">
+                        <td className="px-3 py-2 align-middle text-center text-xs text-gray-900">
                           <input
                             type="text"
                             value={rank.name}
@@ -1653,7 +1774,7 @@ export default function BeltDesignerPage() {
                         </td>
 
                         {/* Order (inline editable; re-sorts on commit) */}
-                        <td className="px-3 py-2 align-middle text-xs text-gray-700">
+                        <td className="px-3 py-2 align-middle text-center text-xs text-gray-700">
                           <input
                             type="number"
                             min={1}
@@ -1672,7 +1793,7 @@ export default function BeltDesignerPage() {
                         </td>
 
                         {/* Min Classes (inline editable, stacked, consistent width) */}
-                        <td className="px-3 py-2 align-middle text-xs text-gray-700">
+                        <td className="px-3 py-2 align-middle text-center text-xs text-gray-700">
                           {rank.classRequirements &&
                             rank.classRequirements.length > 0 ? (
                             <div className="space-y-1">
@@ -1733,7 +1854,7 @@ export default function BeltDesignerPage() {
                                           addRankRequirementInline(rank.id)
                                         }
                                         tabIndex={-1}
-                                        className="text-base font-bold leading-none text-red-500 hover:text-red-600"
+                                        className="text-base font-bold leading-none text-primary hover:text-primaryDark"
                                         aria-label="Add class requirement"
                                       >
                                         +
@@ -1749,7 +1870,7 @@ export default function BeltDesignerPage() {
                                           )
                                         }
                                         tabIndex={-1}
-                                        className="text-[10px] font-black leading-none text-red-500 hover:text-red-600"
+                                        className="text-[10px] font-black leading-none text-primary hover:text-primaryDark"
                                         aria-label="Remove class requirement"
                                       >
                                         ✕
@@ -1765,7 +1886,7 @@ export default function BeltDesignerPage() {
                         </td>
 
                         {/* Min Time (inline editable) */}
-                        <td className="px-3 py-2 align-middle text-xs text-gray-700">
+                        <td className="px-3 py-2 align-middle text-center text-xs text-gray-700">
                           <div className="flex items-center gap-1">
                             <input
                               type="number"
@@ -1804,15 +1925,62 @@ export default function BeltDesignerPage() {
                               onKeyDown={handleInlineKeyDown}
                               className="rounded border border-gray-300 px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
                             >
-                              <option value="weeks">Weeks</option>
-                              <option value="months">Months</option>
-                              <option value="years">Years</option>
+                              <option value="weeks">{rank.minDuration?.value === 1 ? "Week" : "Weeks"}</option>
+                              <option value="months">{rank.minDuration?.value === 1 ? "Month" : "Months"}</option>
+                              <option value="years">{rank.minDuration?.value === 1 ? "Year" : "Years"}</option>
+                            </select>
+                          </div>
+                        </td>
+
+                        {/* Attendance Window (inline editable) */}
+                        <td className="px-3 py-2 align-middle text-center text-xs text-gray-700">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={0}
+                              value={
+                                rank.attendanceWindow &&
+                                  rank.attendanceWindow.value !== null &&
+                                  rank.attendanceWindow.value !== undefined
+                                  ? rank.attendanceWindow.value
+                                  : ""
+                              }
+                              onChange={(e) =>
+                                updateRankAttendanceWindowInline(
+                                  rank.id,
+                                  "value",
+                                  e.target.value
+                                )
+                              }
+                              onKeyDown={handleInlineKeyDown}
+                              className="no-spinner w-10 rounded border border-gray-300 px-1 py-0.5 text-center text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
+                              placeholder="#"
+                            />
+                            <select
+                              value={
+                                (rank.attendanceWindow &&
+                                  rank.attendanceWindow.unit) ||
+                                "months"
+                              }
+                              onChange={(e) =>
+                                updateRankAttendanceWindowInline(
+                                  rank.id,
+                                  "unit",
+                                  e.target.value
+                                )
+                              }
+                              onKeyDown={handleInlineKeyDown}
+                              className="rounded border border-gray-300 px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
+                            >
+                              <option value="weeks">{rank.attendanceWindow?.value === 1 ? "Week" : "Weeks"}</option>
+                              <option value="months">{rank.attendanceWindow?.value === 1 ? "Month" : "Months"}</option>
+                              <option value="years">{rank.attendanceWindow?.value === 1 ? "Year" : "Years"}</option>
                             </select>
                           </div>
                         </td>
 
                         {/* Notes (inline + popup if overflow) */}
-                        <td className="px-3 py-2 align-middle text-xs text-gray-700">
+                        <td className="px-3 py-2 align-middle text-center text-xs text-gray-700">
                           <input
                             type="text"
                             value={rank.notes || ""}
@@ -1860,32 +2028,50 @@ export default function BeltDesignerPage() {
                         </td>
 
                         {/* Documents */}
-                        <td className="px-3 py-2 align-middle text-xs text-gray-700">
+                        <td className="px-3 py-2 align-middle text-center text-xs text-gray-700">
                           {rank.pdfDocuments && rank.pdfDocuments.length > 0 ? (
-                            <select
-                              className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs bg-gray-50"
-                              value=""
-                              onChange={(e) => {
-                                // Reset to default after viewing
-                                e.target.value = "";
-                              }}
-                            >
-                              <option value="">
-                                {rank.pdfDocuments.length} document{rank.pdfDocuments.length !== 1 ? 's' : ''} attached
-                              </option>
+                            <div className={`space-y-1 ${rank.pdfDocuments.length > 2 ? 'max-h-[56px] overflow-y-auto pr-1' : ''}`}>
                               {rank.pdfDocuments.map((doc) => (
-                                <option key={doc.id} value={doc.id}>
-                                  {doc.name}
-                                </option>
+                                <div key={doc.id} className="flex items-center gap-1 rounded border border-gray-300 bg-gray-50 px-2 py-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      // Convert data URL to blob and open in new window
+                                      const byteString = atob(doc.url.split(',')[1]);
+                                      const mimeString = doc.url.split(',')[0].split(':')[1].split(';')[0];
+                                      const ab = new ArrayBuffer(byteString.length);
+                                      const ia = new Uint8Array(ab);
+                                      for (let i = 0; i < byteString.length; i++) {
+                                        ia[i] = byteString.charCodeAt(i);
+                                      }
+                                      const blob = new Blob([ab], { type: mimeString });
+                                      const blobUrl = URL.createObjectURL(blob);
+                                      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+                                    }}
+                                    className="text-blue-600 hover:text-blue-800 hover:underline truncate max-w-[100px] text-left"
+                                    title={doc.name}
+                                  >
+                                    {doc.name}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeRankDocumentInline(rank.id, doc.id)}
+                                    tabIndex={-1}
+                                    className="text-[10px] font-black leading-none text-primary hover:text-primaryDark ml-auto"
+                                    aria-label="Remove document"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
                               ))}
-                            </select>
+                            </div>
                           ) : (
                             <span className="text-gray-400">—</span>
                           )}
                         </td>
 
                         {/* Actions */}
-                        <td className="space-x-2 px-3 py-2 text-right align-middle">
+                        <td className="space-x-2 px-3 py-2 text-center align-middle">
                           <button
                             type="button"
                             onClick={() => handleDuplicateRank(rank)}
@@ -1898,7 +2084,7 @@ export default function BeltDesignerPage() {
                             type="button"
                             onClick={() => handleDeleteRank(rank.id)}
                             tabIndex={-1}
-                            className="text-xs font-medium text-red-500 hover:text-red-600"
+                            className="text-xs font-medium text-primary hover:text-primaryDark"
                           >
                             Delete
                           </button>

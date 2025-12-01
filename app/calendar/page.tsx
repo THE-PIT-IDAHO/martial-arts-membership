@@ -24,6 +24,14 @@ interface ClassSession {
   isOngoing: boolean;
   excludedDates: string | null; // JSON array of ISO date strings
   color: string | null;
+  coachId: string | null;
+  coachName: string | null;
+}
+
+interface Coach {
+  id: string;
+  firstName: string;
+  lastName: string;
 }
 
 interface CalendarDay {
@@ -134,16 +142,19 @@ export default function CalendarPage() {
     { day: "Monday", times: [{ startTime: "09:00", endTime: "10:00" }] }
   ]);
   const [saving, setSaving] = useState(false);
+  const [coaches, setCoaches] = useState<Coach[]>([]);
+  const [selectedCoachId, setSelectedCoachId] = useState("");
 
   // Fetch all classes, styles, and members
   useEffect(() => {
     async function fetchData() {
       try {
-        const [classesRes, stylesRes, membersRes, countsRes] = await Promise.all([
+        const [classesRes, stylesRes, membersRes, countsRes, coachesRes] = await Promise.all([
           fetch("/api/classes"),
           fetch("/api/styles"),
           fetch("/api/members"),
-          fetch("/api/attendance/counts")
+          fetch("/api/attendance/counts"),
+          fetch("/api/members?status=COACH")
         ]);
 
         if (!classesRes.ok || !stylesRes.ok) {
@@ -154,9 +165,17 @@ export default function CalendarPage() {
         const stylesData = await stylesRes.json();
         const membersData = membersRes.ok ? await membersRes.json() : { members: [] };
         const countsData = countsRes.ok ? await countsRes.json() : { counts: {} };
+        const coachesData = coachesRes.ok ? await coachesRes.json() : { members: [] };
 
         // Load attendance counts from database
         setMemberClassCounts(countsData.counts || {});
+
+        // Set coaches (members with COACH status)
+        setCoaches((coachesData.members || []).map((c: { id: string; firstName: string; lastName: string }) => ({
+          id: c.id,
+          firstName: c.firstName,
+          lastName: c.lastName
+        })));
 
         setAllClasses(classesData.classes || []);
         const loadedStyles = stylesData.styles || [];
@@ -1054,6 +1073,9 @@ export default function CalendarPage() {
       times: [{ startTime, endTime }]
     }]);
 
+    // Set coach
+    setSelectedCoachId(selectedClass.coachId || "");
+
     setModalStep("edit");
   }
 
@@ -1079,12 +1101,15 @@ export default function CalendarPage() {
       } else if (editOption === "future") {
         // Update all future occurrences
         // This would update the recurring class settings
+        const selectedCoach = coaches.find(c => c.id === selectedCoachId);
         const response = await fetch(`/api/classes/${selectedClass.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name,
             classType,
+            coachId: selectedCoachId || null,
+            coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
             // Add other fields as needed
           }),
         });
@@ -1129,6 +1154,7 @@ export default function CalendarPage() {
     setScheduleEndDate("");
     setIsOngoing(true);
     setDaySchedules([{ day: "Monday", times: [{ startTime: "09:00", endTime: "10:00" }] }]);
+    setSelectedCoachId("");
   }
 
   async function handleDeleteClass() {
@@ -1607,6 +1633,14 @@ export default function CalendarPage() {
                     </button>
                   </div>
 
+                  {/* Coach Display */}
+                  {selectedClass.coachName && (
+                    <div className="mb-3 inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1">
+                      <span className="text-xs font-medium text-primary">Coach:</span>
+                      <span className="text-xs font-medium text-primary">{selectedClass.coachName}</span>
+                    </div>
+                  )}
+
                   <div className="mb-4 text-xs text-gray-600">
                     {selectedDate && (
                       <div>
@@ -1778,7 +1812,7 @@ export default function CalendarPage() {
                                     {/* Warning */}
                                     <div className="flex justify-center">
                                       {hasWarning ? (
-                                        <span className="text-red-500 cursor-help" title={tooltipText}>⚠</span>
+                                        <span className="text-primary cursor-help" title={tooltipText}>⚠</span>
                                       ) : (
                                         <span className="text-gray-300">-</span>
                                       )}
@@ -1807,7 +1841,7 @@ export default function CalendarPage() {
                                       {isConfirmedAttendance ? (
                                         <span className="text-green-600 font-medium">Confirmed</span>
                                       ) : isAbsent ? (
-                                        <span className="text-red-500 font-medium">Absent</span>
+                                        <span className="text-primary font-medium">Absent</span>
                                       ) : (
                                         <span className="text-gray-400">-</span>
                                       )}
@@ -1864,7 +1898,7 @@ export default function CalendarPage() {
                       </div>
                     )}
                     {selectedClass.isRecurring && (
-                      <div className="mt-1 text-red-600">
+                      <div className="mt-1 text-primary">
                         This is a recurring class
                       </div>
                     )}
@@ -1879,7 +1913,7 @@ export default function CalendarPage() {
                         value="single"
                         checked={editOption === "single"}
                         onChange={() => setEditOption("single")}
-                        className="mt-0.5 h-4 w-4 text-red-500 focus:ring-2 focus:ring-red-500"
+                        className="mt-0.5 h-4 w-4 text-primary focus:ring-2 focus:ring-primary"
                       />
                       <div className="flex-1">
                         <div className="text-xs font-semibold text-gray-900">
@@ -1899,7 +1933,7 @@ export default function CalendarPage() {
                         value="day"
                         checked={editOption === "day"}
                         onChange={() => setEditOption("day")}
-                        className="mt-0.5 h-4 w-4 text-red-500 focus:ring-2 focus:ring-red-500"
+                        className="mt-0.5 h-4 w-4 text-primary focus:ring-2 focus:ring-primary"
                       />
                       <div className="flex-1">
                         <div className="text-xs font-semibold text-gray-900">
@@ -1919,7 +1953,7 @@ export default function CalendarPage() {
                         value="range"
                         checked={editOption === "range"}
                         onChange={() => setEditOption("range")}
-                        className="mt-0.5 h-4 w-4 text-red-500 focus:ring-2 focus:ring-red-500"
+                        className="mt-0.5 h-4 w-4 text-primary focus:ring-2 focus:ring-primary"
                       />
                       <div className="flex-1">
                         <div className="text-xs font-semibold text-gray-900">
@@ -1938,7 +1972,7 @@ export default function CalendarPage() {
                                 type="date"
                                 value={rangeStartDate}
                                 onChange={(e) => setRangeStartDate(e.target.value)}
-                                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+                                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                               />
                             </div>
                             <div>
@@ -1949,7 +1983,7 @@ export default function CalendarPage() {
                                 type="date"
                                 value={rangeEndDate}
                                 onChange={(e) => setRangeEndDate(e.target.value)}
-                                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+                                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                               />
                             </div>
                           </div>
@@ -1966,7 +2000,7 @@ export default function CalendarPage() {
                           value="future"
                           checked={editOption === "future"}
                           onChange={() => setEditOption("future")}
-                          className="mt-0.5 h-4 w-4 text-red-500 focus:ring-2 focus:ring-red-500"
+                          className="mt-0.5 h-4 w-4 text-primary focus:ring-2 focus:ring-primary"
                         />
                         <div className="flex-1">
                           <div className="text-xs font-semibold text-gray-900">
@@ -2013,13 +2047,13 @@ export default function CalendarPage() {
                     <div className="grid gap-2 grid-cols-2">
                       <div>
                         <label className="mb-1 block text-xs font-medium text-gray-700">
-                          Class Name <span className="text-red-500">*</span>
+                          Class Name <span className="text-primary">*</span>
                         </label>
                         <input
                           type="text"
                           value={name}
                           onChange={(e) => setName(e.target.value)}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                           required
                         />
                       </div>
@@ -2032,14 +2066,14 @@ export default function CalendarPage() {
                           type="text"
                           value={classType}
                           onChange={(e) => setClassType(e.target.value)}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                       </div>
                     </div>
 
                     {/* Styles Selection */}
                     <div>
-                      <div className="mb-2 grid grid-cols-2 gap-2">
+                      <div className="mb-1 grid grid-cols-2 gap-2">
                         <label className="text-xs font-medium text-gray-700">
                           Allowed Styles
                         </label>
@@ -2062,7 +2096,7 @@ export default function CalendarPage() {
                                   setMinRankIds(newRankIds);
                                   if (index === 0) setMinRankId("");
                                 }}
-                                className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+                                className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                               >
                                 <option value="">Select Style</option>
                                 <option value="NO_STYLE">No Style</option>
@@ -2079,7 +2113,7 @@ export default function CalendarPage() {
                                       setSelectedStyleIds([...selectedStyleIds, ""]);
                                       setMinRankIds([...minRankIds, ""]);
                                     }}
-                                    className="text-base font-bold leading-none text-red-500 hover:text-red-600"
+                                    className="text-base font-bold leading-none text-primary hover:text-primaryDark"
                                   >
                                     +
                                   </button>
@@ -2092,7 +2126,7 @@ export default function CalendarPage() {
                                       setSelectedStyleIds(selectedStyleIds.filter((_, i) => i !== index));
                                       setMinRankIds(minRankIds.filter((_, i) => i !== index));
                                     }}
-                                    className="text-[10px] font-black leading-none text-red-500 hover:text-red-600"
+                                    className="text-[10px] font-black leading-none text-primary hover:text-primaryDark"
                                   >
                                     ✕
                                   </button>
@@ -2109,7 +2143,7 @@ export default function CalendarPage() {
                                   setMinRankIds(newRankIds);
                                   if (index === 0) setMinRankId(e.target.value);
                                 }}
-                                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+                                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                                 disabled={!selectedStyleIds[index] || selectedStyleIds[index] === "NO_STYLE"}
                               >
                                 <option value="">No Rank Requirement</option>
@@ -2125,8 +2159,8 @@ export default function CalendarPage() {
 
                     {/* Day Schedules */}
                     <div>
-                      <label className="mb-2 block text-xs font-medium text-gray-700">
-                        Class Schedule <span className="text-red-500">*</span>
+                      <label className="mb-1 block text-xs font-medium text-gray-700">
+                        Class Schedule <span className="text-primary">*</span>
                       </label>
                       <div className="space-y-2">
                         {daySchedules.map((schedule, scheduleIndex) => (
@@ -2142,7 +2176,7 @@ export default function CalendarPage() {
                                       setDaySchedules(newSchedules);
                                     }}
                                     style={{ width: '139px' }}
-                                    className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                                   >
                                     {DAYS_OF_WEEK.map(day => (
                                       <option key={day} value={day}>{day}</option>
@@ -2161,7 +2195,7 @@ export default function CalendarPage() {
                                     setDaySchedules(newSchedules);
                                   }}
                                   style={{ width: '139px' }}
-                                  className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+                                  className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                                   required
                                 />
 
@@ -2176,7 +2210,7 @@ export default function CalendarPage() {
                                     setDaySchedules(newSchedules);
                                   }}
                                   style={{ width: '139px' }}
-                                  className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-red-500"
+                                  className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                                   required
                                 />
                               </div>
@@ -2186,12 +2220,32 @@ export default function CalendarPage() {
                       </div>
                     </div>
 
+                    {/* Coach Selection */}
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-700">
+                        Coach
+                      </label>
+                      <select
+                        value={selectedCoachId}
+                        onChange={(e) => setSelectedCoachId(e.target.value)}
+                        style={{ width: '200px' }}
+                        className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">No Coach</option>
+                        {coaches.map(coach => (
+                          <option key={coach.id} value={coach.id}>
+                            {coach.firstName} {coach.lastName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     {/* Form Actions */}
                     <div className="flex justify-between pt-4">
                       <button
                         type="button"
                         onClick={() => setShowDeleteConfirm(true)}
-                        className="rounded-md border border-red-500 px-3 py-1 text-xs font-semibold text-red-500 hover:bg-red-50"
+                        className="rounded-md border border-red-600 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                       >
                         Delete
                       </button>
@@ -2224,8 +2278,8 @@ export default function CalendarPage() {
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
             <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
               <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
-                  <span className="text-xl text-red-600">⚠</span>
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20">
+                  <span className="text-xl text-primary">⚠</span>
                 </div>
                 <h3 className="text-lg font-bold text-gray-900">
                   Requirement Not Met
@@ -2260,8 +2314,8 @@ export default function CalendarPage() {
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
             <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
               <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
-                  <span className="text-xl text-red-600">⚠</span>
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20">
+                  <span className="text-xl text-primary">⚠</span>
                 </div>
                 <h3 className="text-lg font-bold text-gray-900">
                   Delete Class

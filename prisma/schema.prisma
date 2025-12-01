@@ -25,6 +25,7 @@ model Client {
   membershipPlans MembershipPlan[]
   classSessions   ClassSession[]
   tasks           Task[]
+  appointments    Appointment[]
 }
 
 //
@@ -72,7 +73,7 @@ model Member {
   // Payment / POS notes
   paymentNotes String?
 
-  // Status: PROSPECT, ACTIVE, INACTIVE, PARENT (by convention)
+  // Status: PROSPECT, ACTIVE, INACTIVE, PARENT, COACH (by convention)
   status String @default("PROSPECT")
 
   // Personal info
@@ -147,15 +148,73 @@ model Program {
 }
 
 //
+// MEMBERSHIP TYPES (for reporting labels: Monthly, Paid in Full, Trial, etc.)
+//
+model MembershipType {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+
+  clientId String @default("default-client")
+
+  membershipPlans MembershipPlan[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+//
 // MEMBERSHIP PLANS
 //
 model MembershipPlan {
   id           String   @id @default(cuid())
+
+  /// Membership ID number – unique identifier for display
+  membershipId String?  @unique
+
+  /// Membership Type for reporting purposes
+  membershipTypeId String?
+  membershipType   MembershipType? @relation(fields: [membershipTypeId], references: [id])
+
   name         String
   description  String?
+
+  // Pricing
   priceCents   Int?
-  // Suggested: WEEKLY, MONTHLY, YEARLY, SESSION
+  setupFeeCents Int?    // One-time enrollment/registration fee
+  purchaseLimit Int?    // Max times this plan can be purchased, null = unlimited
+
+  // Suggested: WEEKLY, MONTHLY, YEARLY, SESSION, ONE_TIME
   billingCycle String   @default("MONTHLY")
+
+  // Contract terms
+  contractLengthMonths Int?     // Minimum commitment period (e.g., 12 months)
+  autoRenew            Boolean  @default(true)
+
+  // Access controls
+  classesPerDay        Int?     // null = unlimited
+  classesPerWeek       Int?     // null = unlimited
+  classesPerMonth      Int?     // null = unlimited
+  allowedStyles        String?  // JSON array of style IDs, null = all styles
+
+  // Family/group discounts
+  familyDiscountPercent Int?    // e.g., 10 = 10% off for additional family members
+
+  // Trial/promo
+  trialDays            Int?     // Free trial period before billing starts
+  promoCode            String?  // Optional promo code for this plan
+
+  // Cancellation
+  cancellationNoticeDays Int?   // Days notice required to cancel
+  cancellationFeeCents   Int?   // Fee charged for early cancellation (in cents)
+
+  // Display
+  sortOrder            Int      @default(0)  // For ordering plans in UI
+  color                String?  // Color for display
+
   isActive     Boolean  @default(true)
 
   clientId String
@@ -223,6 +282,10 @@ model ClassSession {
   // Calendar color (hex color code)
   color String? @default("#a3a3a3")
 
+  // Coach assigned to this class
+  coachId   String?
+  coachName String?
+
   programId String?
   program   Program? @relation(fields: [programId], references: [id])
 
@@ -287,6 +350,9 @@ model Style {
   // Store belt designer settings as JSON string
   beltConfig        String?
 
+  // Store grading event dates as JSON string
+  gradingDates      String?
+
   ranks             Rank[]
 
   createdAt         DateTime  @default(now())
@@ -306,4 +372,233 @@ model Rank {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+//
+// APPOINTMENT TYPES (templates for booking)
+//
+model Appointment {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+
+  // Appointment type (e.g., "Private Lesson", "Meeting", "Trial Class")
+  type        String?
+
+  // Duration in minutes
+  duration    Int      @default(60)
+
+  // Price in cents
+  priceCents  Int?
+
+  // Color for calendar display
+  color       String?  @default("#6b7280")
+
+  // Coach assigned to this appointment type
+  coachId     String?
+  coachName   String?
+
+  // Style associated with this appointment type
+  styleId     String?
+  styleName   String?
+
+  // Notes/instructions for this appointment type
+  notes       String?
+
+  // Is this appointment type active/available for booking
+  isActive    Boolean  @default(true)
+
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  scheduledAppointments ScheduledAppointment[]
+}
+
+//
+// SCHEDULED APPOINTMENTS (actual booked instances on calendar)
+//
+model ScheduledAppointment {
+  id             String   @id @default(cuid())
+
+  // Reference to the appointment type template
+  appointmentId  String
+  appointment    Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  // Scheduled date and time
+  scheduledDate  DateTime
+  startTime      String   // Format: "HH:mm"
+  endTime        String   // Format: "HH:mm"
+
+  // Member who booked (optional - could be external client)
+  memberId       String?
+  memberName     String?
+
+  // Override fields (if different from template)
+  coachId        String?
+  coachName      String?
+  notes          String?
+
+  // Status: SCHEDULED, COMPLETED, CANCELLED, NO_SHOW
+  status         String   @default("SCHEDULED")
+
+  clientId       String
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+//
+// DOJO BOARD - CHANNELS
+//
+model BoardChannel {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+
+  // Channel type: all, style, rank, team, custom
+  type        String   @default("custom")
+
+  // Visibility settings (JSON)
+  visibility  String?
+
+  // Track unread status
+  hasUpdates  Boolean  @default(false)
+
+  clientId    String   @default("default-client")
+
+  posts       BoardPost[]
+  polls       BoardPoll[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+//
+// DOJO BOARD - POSTS
+//
+model BoardPost {
+  id          String   @id @default(cuid())
+
+  // Post type: notice, technique, testing, achievement, schedule
+  type        String   @default("notice")
+
+  title       String
+  content     String
+
+  authorId    String?
+  authorName  String
+  authorInitials String
+
+  isPriority  Boolean  @default(false)
+
+  // Style tags (JSON array)
+  styleTags   String?
+
+  // Reactions (JSON object: { type: count })
+  reactions   String?
+
+  channelId   String
+  channel     BoardChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  files       BoardFile[]
+  replies     BoardReply[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+//
+// DOJO BOARD - FILES
+//
+model BoardFile {
+  id          String   @id @default(cuid())
+  name        String
+  size        Int
+  type        String
+  url         String
+
+  uploadedBy  String
+
+  postId      String?
+  post        BoardPost? @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  channelId   String   @default("all")
+
+  createdAt   DateTime @default(now())
+}
+
+//
+// DOJO BOARD - REPLIES
+//
+model BoardReply {
+  id             String   @id @default(cuid())
+  content        String
+
+  authorId       String?
+  authorName     String
+  authorInitials String
+
+  postId         String
+  post           BoardPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime @default(now())
+}
+
+//
+// DOJO BOARD - POLLS
+//
+model BoardPoll {
+  id             String   @id @default(cuid())
+  question       String
+
+  authorId       String?
+  authorName     String
+  authorInitials String
+
+  allowMultiple  Boolean  @default(false)
+  isAnonymous    Boolean  @default(false)
+
+  expiresAt      DateTime?
+
+  channelId      String
+  channel        BoardChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  options        BoardPollOption[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+//
+// DOJO BOARD - POLL OPTIONS
+//
+model BoardPollOption {
+  id          String   @id @default(cuid())
+  text        String
+  order       Int      @default(0)
+
+  pollId      String
+  poll        BoardPoll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  votes       BoardPollVote[]
+}
+
+//
+// DOJO BOARD - POLL VOTES
+//
+model BoardPollVote {
+  id          String   @id @default(cuid())
+
+  optionId    String
+  option      BoardPollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  // Voter ID (could be member ID or anonymous identifier)
+  voterId     String
+
+  createdAt   DateTime @default(now())
+
+  @@unique([optionId, voterId])
 }

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 
-const STATUS_OPTIONS = ["PROSPECT", "ACTIVE", "INACTIVE", "PARENT", "BANNED"] as const;
+const STATUS_OPTIONS = ["PROSPECT", "ACTIVE", "INACTIVE", "PARENT", "COACH", "BANNED"] as const;
 
 // Format phone number as user types: (123) 456-7890
 function formatPhoneNumber(value: string): string {
@@ -39,7 +39,7 @@ export default function NewMemberPage() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [status, setStatus] = useState<string>("PROSPECT");
+  const [statuses, setStatuses] = useState<string[]>(["PROSPECT"]);
 
   // Personal info
   const [dateOfBirth, setDateOfBirth] = useState("");
@@ -78,7 +78,7 @@ export default function NewMemberPage() {
           lastName: lastName.trim(),
           email: email.trim() || null,
           phone: phone.trim() || null,
-          status,
+          status: statuses.join(","),
 
           dateOfBirth: dateOfBirth || null,
           address: address.trim() || null,
@@ -133,7 +133,7 @@ export default function NewMemberPage() {
         </div>
 
         {error && (
-          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
             {error}
           </div>
         )}
@@ -197,17 +197,124 @@ export default function NewMemberPage() {
               <label className="block text-xs font-medium text-gray-700">
                 Status
               </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s.charAt(0) + s.slice(1).toLowerCase()}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Coach */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (statuses.includes("COACH")) {
+                      setStatuses((prev) => prev.filter((s) => s !== "COACH"));
+                    } else {
+                      // Adding Coach clears Banned
+                      setStatuses((prev) => [...prev.filter((s) => s !== "COACH" && s !== "BANNED"), "COACH"]);
+                    }
+                  }}
+                  className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                    statuses.includes("COACH")
+                      ? "bg-purple-100 text-purple-800 border-purple-300"
+                      : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  Coach
+                </button>
+                {/* Active */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Prospect/Active/Inactive are mutually exclusive, clears Banned
+                    setStatuses((prev) => {
+                      const others = prev.filter((s) => !["PROSPECT", "ACTIVE", "INACTIVE", "BANNED"].includes(s));
+                      return [...others, "ACTIVE"];
+                    });
+                  }}
+                  className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                    statuses.includes("ACTIVE")
+                      ? "bg-green-100 text-green-800 border-green-300"
+                      : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  Active
+                </button>
+                {/* Parent */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (statuses.includes("PARENT")) {
+                      setStatuses((prev) => prev.filter((s) => s !== "PARENT"));
+                    } else {
+                      // Adding Parent clears Banned
+                      setStatuses((prev) => [...prev.filter((s) => s !== "PARENT" && s !== "BANNED"), "PARENT"]);
+                    }
+                  }}
+                  className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                    statuses.includes("PARENT")
+                      ? "bg-blue-100 text-blue-800 border-blue-300"
+                      : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  Parent
+                </button>
+                {/* Inactive */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Prospect/Active/Inactive are mutually exclusive, clears Banned
+                    setStatuses((prev) => {
+                      const others = prev.filter((s) => !["PROSPECT", "ACTIVE", "INACTIVE", "BANNED"].includes(s));
+                      return [...others, "INACTIVE"];
+                    });
+                  }}
+                  className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                    statuses.includes("INACTIVE")
+                      ? "bg-primary/10 text-primary border-primary/30"
+                      : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  Inactive
+                </button>
+                {/* Prospect */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Prospect/Active/Inactive are mutually exclusive, clears Banned
+                    setStatuses((prev) => {
+                      const others = prev.filter((s) => !["PROSPECT", "ACTIVE", "INACTIVE", "BANNED"].includes(s));
+                      return [...others, "PROSPECT"];
+                    });
+                  }}
+                  className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                    statuses.includes("PROSPECT")
+                      ? "bg-yellow-100 text-yellow-800 border-yellow-300"
+                      : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  Prospect
+                </button>
+                {/* Banned */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (statuses.includes("BANNED")) {
+                      // Removing Banned - confirm first
+                      if (window.confirm("Are you sure you want to remove the banned status from this member?")) {
+                        setStatuses((prev) => prev.filter((s) => s !== "BANNED"));
+                      }
+                    } else {
+                      // Adding Banned clears ALL other statuses - confirm first
+                      if (window.confirm("Are you sure you want to ban this member? This will clear all other statuses.")) {
+                        setStatuses(["BANNED"]);
+                      }
+                    }
+                  }}
+                  className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                    statuses.includes("BANNED")
+                      ? "bg-gray-200 text-gray-900 border-gray-400"
+                      : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  Banned
+                </button>
+              </div>
               <p className="text-[11px] text-gray-500 mt-0.5">
                 Default is <strong>Prospect</strong> for brand new leads.
               </p>
@@ -337,18 +444,18 @@ export default function NewMemberPage() {
 
             <div className="md:col-span-2 flex items-center justify-end gap-2 mt-2">
               <button
-                type="button"
-                onClick={handleCancel}
-                className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-              >
-                Cancel
-              </button>
-              <button
                 type="submit"
                 disabled={saving}
                 className="text-xs rounded-md bg-primary px-4 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
               >
                 {saving ? "Creating..." : "Create Member"}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
               </button>
             </div>
           </form>

@@ -60,6 +60,8 @@ export async function PATCH(req: Request, { params }: Params) {
       programId,
       color,
       excludedDates,
+      coachId,
+      coachName,
     } = body || {};
 
     const updateData: any = {};
@@ -77,6 +79,8 @@ export async function PATCH(req: Request, { params }: Params) {
     if (programId !== undefined) updateData.programId = programId;
     if (color !== undefined) updateData.color = color;
     if (excludedDates !== undefined) updateData.excludedDates = excludedDates;
+    if (coachId !== undefined) updateData.coachId = coachId;
+    if (coachName !== undefined) updateData.coachName = coachName;
 
     const classSession = await prisma.classSession.update({
       where: { id },

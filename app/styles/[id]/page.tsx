@@ -291,7 +291,7 @@ export default function StyleEditPage({ params }: PageProps) {
 
         {/* Error */}
         {error && (
-          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
             {error}
           </div>
         )}
@@ -317,7 +317,7 @@ export default function StyleEditPage({ params }: PageProps) {
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="text-xs text-red-500 hover:text-red-600 disabled:cursor-not-allowed"
+                className="text-xs text-primary hover:text-primaryDark disabled:cursor-not-allowed"
               >
                 {deleting ? "Deleting…" : "Delete Style"}
               </button>
@@ -326,7 +326,7 @@ export default function StyleEditPage({ params }: PageProps) {
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Style Name<span className="text-red-500">*</span>
+                  Style Name<span className="text-primary">*</span>
                 </label>
                 <input
                   type="text"

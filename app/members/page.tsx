@@ -138,7 +138,7 @@ export default function MembersPage() {
   // Column config popup
   const [showColumnConfig, setShowColumnConfig] = useState(false);
 
-  // Status filter buttons
+  // Status filter buttons (excludes comma-separated statuses)
   const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
   const [activeStatusFilters, setActiveStatusFilters] = useState<string[]>([]);
 
@@ -178,13 +178,23 @@ export default function MembersPage() {
         setMembers(rows);
 
         // Build status filter buttons from the data
+        // Exclude any status that contains commas (like "PROSPECT,PARENT,COACH")
+        // Sort by priority order: COACH, ACTIVE, PARENT, INACTIVE, PROSPECT, BANNED
+        const priorityOrder = ["COACH", "ACTIVE", "PARENT", "INACTIVE", "PROSPECT", "BANNED"];
         const statuses = Array.from(
           new Set(
             rows
               .map((r) => (r.status ?? "").toUpperCase())
-              .filter((s) => s.length > 0)
+              .filter((s) => s.length > 0 && !s.includes(","))
           )
-        ).sort();
+        ).sort((a, b) => {
+          const aIndex = priorityOrder.indexOf(a);
+          const bIndex = priorityOrder.indexOf(b);
+          // If status is not in priority list, put it at the end
+          const aPriority = aIndex === -1 ? priorityOrder.length : aIndex;
+          const bPriority = bIndex === -1 ? priorityOrder.length : bIndex;
+          return aPriority - bPriority;
+        });
 
         setAvailableStatuses(statuses);
         setActiveStatusFilters(statuses); // start with all statuses visible
@@ -439,11 +449,13 @@ export default function MembersPage() {
     const q = search.trim().toLowerCase();
 
     const filtered = members.filter((m) => {
-      // status group filter
-      const statusNormalized = (m.status ?? "").toUpperCase();
+      // status group filter - check if any of the member's statuses match any active filter
+      const memberStatuses = (m.status ?? "").includes(",")
+        ? (m.status ?? "").split(",").map(s => s.trim().toUpperCase())
+        : [(m.status ?? "").toUpperCase()];
       if (
         activeStatusFilters.length > 0 &&
-        !activeStatusFilters.includes(statusNormalized)
+        !memberStatuses.some(s => activeStatusFilters.includes(s))
       ) {
         return false;
       }
@@ -568,9 +580,11 @@ export default function MembersPage() {
     } else if (normalized === "PROSPECT") {
       return { bg: "bg-yellow-100", text: "text-yellow-800", border: "border-yellow-300" };
     } else if (normalized === "INACTIVE") {
-      return { bg: "bg-red-100", text: "text-red-800", border: "border-red-300" };
+      return { bg: "bg-primary/10", text: "text-primary", border: "border-primary/30" };
     } else if (normalized === "PARENT") {
       return { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-300" };
+    } else if (normalized === "COACH") {
+      return { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-300" };
     } else if (normalized === "BANNED") {
       return { bg: "bg-gray-200", text: "text-gray-900", border: "border-gray-400" };
     }
@@ -578,15 +592,57 @@ export default function MembersPage() {
     return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-300" };
   }
 
+  // Priority order for displaying a single status: Coach, Active, Parent, Inactive, Prospect, Banned
+  const STATUS_PRIORITY = ["COACH", "ACTIVE", "PARENT", "INACTIVE", "PROSPECT", "BANNED"];
+
+  function getPriorityStatus(statusString: string): string {
+    const statuses = statusString.includes(",")
+      ? statusString.split(",").map(s => s.trim().toUpperCase())
+      : [statusString.toUpperCase()];
+
+    for (const priority of STATUS_PRIORITY) {
+      if (statuses.includes(priority)) {
+        return priority;
+      }
+    }
+    return statuses[0] || "UNKNOWN";
+  }
+
+  function getDisplayStatus(statusString: string): string {
+    const memberStatuses = statusString.includes(",")
+      ? statusString.split(",").map(s => s.trim().toUpperCase())
+      : [statusString.toUpperCase()];
+
+    // If only one filter is active and the member has that status, show that status
+    if (activeStatusFilters.length === 1) {
+      const activeFilter = activeStatusFilters[0];
+      if (memberStatuses.includes(activeFilter)) {
+        return activeFilter;
+      }
+    }
+
+    // If multiple filters are active, show the highest priority status that matches any active filter
+    if (activeStatusFilters.length > 0 && activeStatusFilters.length < availableStatuses.length) {
+      for (const priority of STATUS_PRIORITY) {
+        if (memberStatuses.includes(priority) && activeStatusFilters.includes(priority)) {
+          return priority;
+        }
+      }
+    }
+
+    // Default: show priority status
+    return getPriorityStatus(statusString);
+  }
+
   function renderStatusBadge(status: string) {
-    const normalized = (status || "").toUpperCase();
-    const colors = getStatusColors(status);
+    const displayStatus = getDisplayStatus(status);
+    const colors = getStatusColors(displayStatus);
 
     return (
       <span
         className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium ${colors.bg} ${colors.text} ${colors.border}`}
       >
-        {normalized || "UNKNOWN"}
+        {displayStatus || "UNKNOWN"}
       </span>
     );
   }
@@ -694,7 +750,7 @@ export default function MembersPage() {
           </Link>
         </div>
 
-        {/* Search + column config + status filters */}
+        {/* Search + column config */}
         <section className="space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
@@ -712,32 +768,34 @@ export default function MembersPage() {
               >
                 Customize Columns
               </button>
-
-              {/* Status filter toggle buttons */}
-              {availableStatuses.map((status) => {
-                const isActive = activeStatusFilters.includes(status);
-                const colors = getStatusColors(status);
-                return (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => toggleStatusFilter(status)}
-                    className={`rounded-full px-3 py-1 text-xs font-medium border ${
-                      isActive
-                        ? `${colors.bg} ${colors.text} ${colors.border}`
-                        : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    {status}
-                  </button>
-                );
-              })}
             </div>
+          </div>
+
+          {/* Status filter toggle buttons (excludes comma-separated statuses) */}
+          <div className="flex flex-wrap items-center gap-2">
+            {availableStatuses.map((status) => {
+              const isActive = activeStatusFilters.includes(status);
+              const colors = getStatusColors(status);
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => toggleStatusFilter(status)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                    isActive
+                      ? `${colors.bg} ${colors.text} ${colors.border}`
+                      : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  {status}
+                </button>
+              );
+            })}
           </div>
 
           {/* Error */}
           {error && (
-            <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
               {error}
             </div>
           )}
@@ -891,7 +949,7 @@ export default function MembersPage() {
                                 `${m.firstName} ${m.lastName}`
                               )
                             }
-                            className="text-xs text-red-600 hover:text-red-700 font-medium"
+                            className="text-xs text-primary hover:text-primaryDark font-medium"
                           >
                             Delete
                           </button>

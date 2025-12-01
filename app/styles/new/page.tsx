@@ -132,7 +132,7 @@ export default function NewStylePage() {
 
         {/* Error */}
         {error && (
-          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
             {error}
           </div>
         )}
@@ -147,7 +147,7 @@ export default function NewStylePage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700">
-                Style Name <span className="text-red-500">*</span>
+                Style Name <span className="text-primary">*</span>
               </label>
               <input
                 type="text"

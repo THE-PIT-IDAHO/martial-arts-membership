@@ -76,6 +76,7 @@ type StyleEntry = {
   beltSize?: string;
   uniformSize?: string;
   startDate?: string;
+  lastPromotionDate?: string;  // Date of last rank promotion (for attendance window calculation)
 };
 
 type StyleDocument = {
@@ -123,7 +124,39 @@ type MemberSummary = {
   status: string;
 };
 
-const STATUS_OPTIONS = ["PROSPECT", "ACTIVE", "INACTIVE", "PARENT", "BANNED"] as const;
+const STATUS_OPTIONS = ["PROSPECT", "ACTIVE", "INACTIVE", "PARENT", "COACH", "BANNED"] as const;
+
+// Priority order for displaying statuses: Coach, Active, Parent, Inactive, Prospect, Banned
+const STATUS_PRIORITY = ["COACH", "ACTIVE", "PARENT", "INACTIVE", "PROSPECT", "BANNED"];
+
+function sortStatusesByPriority(statuses: string[]): string[] {
+  return [...statuses].sort((a, b) => {
+    const aIndex = STATUS_PRIORITY.indexOf(a.toUpperCase());
+    const bIndex = STATUS_PRIORITY.indexOf(b.toUpperCase());
+    const aPriority = aIndex === -1 ? STATUS_PRIORITY.length : aIndex;
+    const bPriority = bIndex === -1 ? STATUS_PRIORITY.length : bIndex;
+    return aPriority - bPriority;
+  });
+}
+
+function getStatusBadgeClasses(status: string): string {
+  switch (status) {
+    case "ACTIVE":
+      return "bg-green-100 text-green-800 border-green-300";
+    case "PROSPECT":
+      return "bg-yellow-100 text-yellow-800 border-yellow-300";
+    case "INACTIVE":
+      return "bg-primary/10 text-primary border-primary/30";
+    case "PARENT":
+      return "bg-blue-100 text-blue-800 border-blue-300";
+    case "COACH":
+      return "bg-purple-100 text-purple-800 border-purple-300";
+    case "BANNED":
+      return "bg-gray-200 text-gray-900 border-gray-400";
+    default:
+      return "bg-gray-100 text-gray-800 border-gray-300";
+  }
+}
 
 // Relationship types
 const RELATIONSHIP_OPTIONS = [
@@ -256,7 +289,7 @@ export default function MemberProfilePage() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [status, setStatus] = useState<string>("PROSPECT");
+  const [statuses, setStatuses] = useState<string[]>(["PROSPECT"]);
   const [memberNumber, setMemberNumber] = useState<string>("");
 
   const [dateOfBirth, setDateOfBirth] = useState("");
@@ -294,7 +327,7 @@ export default function MemberProfilePage() {
   // edit flags
   const [editingPhoto, setEditingPhoto] = useState(false);
   const [editingPersonal, setEditingPersonal] = useState(false);
-  const [editingStyle, setEditingStyle] = useState(false);
+  const [editingStyleIndex, setEditingStyleIndex] = useState<number | null>(null);
   const [editingMembership, setEditingMembership] = useState(false);
   const [editingPayments, setEditingPayments] = useState(false);
 
@@ -305,6 +338,9 @@ export default function MemberProfilePage() {
   const [relationships, setRelationships] = useState<RelationshipRecord[]>([]);
   const [relationshipsLoading, setRelationshipsLoading] = useState(false);
   const [addingRelationship, setAddingRelationship] = useState(false);
+
+  // Rank documents popup - tracks which style index has its popup open
+  const [rankDocsPopupIndex, setRankDocsPopupIndex] = useState<number | null>(null);
   const [newRelationshipType, setNewRelationshipType] =
     useState<string>("PARENT");
   const [newRelationshipMemberId, setNewRelationshipMemberId] = useState("");
@@ -471,6 +507,10 @@ export default function MemberProfilePage() {
                   startDate:
                     obj.startDate !== undefined && obj.startDate !== null
                       ? String(obj.startDate)
+                      : undefined,
+                  lastPromotionDate:
+                    obj.lastPromotionDate !== undefined && obj.lastPromotionDate !== null
+                      ? String(obj.lastPromotionDate)
                       : undefined
                 };
                 return entry;
@@ -506,7 +546,12 @@ export default function MemberProfilePage() {
     setLastName(m.lastName);
     setEmail(m.email || "");
     setPhone(m.phone || "");
-    setStatus(m.status || "PROSPECT");
+    // Parse status - can be comma-separated or single value
+    const statusValue = m.status || "PROSPECT";
+    const statusArray = statusValue.includes(",")
+      ? statusValue.split(",").map(s => s.trim()).filter(s => s)
+      : [statusValue];
+    setStatuses(statusArray);
     setMemberNumber(
       m.memberNumber != null ? String(m.memberNumber) : ""
     );
@@ -555,7 +600,7 @@ export default function MemberProfilePage() {
     hydrateFormFromMember(member);
 
     if (section === "personal") setEditingPersonal(false);
-    if (section === "style") setEditingStyle(false);
+    if (section === "style") setEditingStyleIndex(null);
     if (section === "membership") setEditingMembership(false);
     if (section === "payments") setEditingPayments(false);
     if (section === "photo") setEditingPhoto(false);
@@ -694,7 +739,8 @@ export default function MemberProfilePage() {
         rank: s.rank?.trim() || undefined,
         beltSize: s.beltSize?.trim() || undefined,
         uniformSize: s.uniformSize?.trim() || undefined,
-        startDate: s.startDate || undefined
+        startDate: s.startDate || undefined,
+        lastPromotionDate: s.lastPromotionDate || undefined
       }))
       .filter((s) => s.name !== "");
 
@@ -708,7 +754,7 @@ export default function MemberProfilePage() {
       lastName: lastName.trim(),
       email: email.trim() || null,
       phone: phone.trim() || null,
-      status,
+      status: statuses.join(","),
       memberNumber:
         memberNumberValue != null && !Number.isNaN(memberNumberValue)
           ? memberNumberValue
@@ -767,7 +813,7 @@ export default function MemberProfilePage() {
       }
 
       if (section === "personal") setEditingPersonal(false);
-      if (section === "style") setEditingStyle(false);
+      if (section === "style") setEditingStyleIndex(null);
       if (section === "membership") setEditingMembership(false);
       if (section === "payments") setEditingPayments(false);
       if (section === "photo") setEditingPhoto(false);
@@ -908,9 +954,17 @@ export default function MemberProfilePage() {
           rank: "",
           beltSize: "",
           uniformSize: "",
-          startDate: ""
+          startDate: "",
+          lastPromotionDate: ""
         };
-      copy[index] = { ...current, [field]: value };
+
+      // If rank is changing to a different value, update lastPromotionDate
+      if (field === "rank" && value !== current.rank && value !== "") {
+        const today = new Date().toISOString().split("T")[0];
+        copy[index] = { ...current, [field]: value, lastPromotionDate: today };
+      } else {
+        copy[index] = { ...current, [field]: value };
+      }
       return copy;
     });
   }
@@ -1173,12 +1227,12 @@ export default function MemberProfilePage() {
         {(error || relationshipError) && (
           <div className="space-y-1">
             {error && (
-              <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
                 {error}
               </div>
             )}
             {relationshipError && (
-              <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary">
                 {relationshipError}
               </div>
             )}
@@ -1205,18 +1259,18 @@ export default function MemberProfilePage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => cancelSection("personal")}
-                        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
                         disabled={savingSection === "personal"}
                         onClick={() => saveSection("personal")}
                         className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
                       >
                         {savingSection === "personal" ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => cancelSection("personal")}
+                        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                      >
+                        Cancel
                       </button>
                     </div>
                   )}
@@ -1324,22 +1378,19 @@ export default function MemberProfilePage() {
                       <dt className="text-gray-500 text-xs uppercase">
                         Status
                       </dt>
-                      <dd>
-                        <span className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium ${
-                          member.status === "ACTIVE"
-                            ? "bg-green-100 text-green-800 border-green-300"
-                            : member.status === "PROSPECT"
-                            ? "bg-yellow-100 text-yellow-800 border-yellow-300"
-                            : member.status === "INACTIVE"
-                            ? "bg-red-100 text-red-800 border-red-300"
-                            : member.status === "PARENT"
-                            ? "bg-blue-100 text-blue-800 border-blue-300"
-                            : member.status === "BANNED"
-                            ? "bg-gray-200 text-gray-900 border-gray-400"
-                            : "bg-gray-100 text-gray-800 border-gray-300"
-                        }`}>
-                          {member.status}
-                        </span>
+                      <dd className="flex flex-wrap gap-1">
+                        {sortStatusesByPriority(
+                          member.status.includes(",")
+                            ? member.status.split(",").map(s => s.trim())
+                            : [member.status]
+                        ).map((s) => (
+                          <span
+                            key={s}
+                            className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium ${getStatusBadgeClasses(s)}`}
+                          >
+                            {s.charAt(0) + s.slice(1).toLowerCase()}
+                          </span>
+                        ))}
                       </dd>
                     </div>
 
@@ -1473,17 +1524,124 @@ export default function MemberProfilePage() {
                       <label className="block text-xs font-medium text-gray-700">
                         Status
                       </label>
-                      <select
-                        value={status}
-                        onChange={(e) => setStatus(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                      >
-                        {STATUS_OPTIONS.map((s) => (
-                          <option key={s} value={s}>
-                            {s.charAt(0) + s.slice(1).toLowerCase()}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Coach */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (statuses.includes("COACH")) {
+                              setStatuses((prev) => prev.filter((s) => s !== "COACH"));
+                            } else {
+                              // Adding Coach clears Banned
+                              setStatuses((prev) => [...prev.filter((s) => s !== "COACH" && s !== "BANNED"), "COACH"]);
+                            }
+                          }}
+                          className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                            statuses.includes("COACH")
+                              ? "bg-purple-100 text-purple-800 border-purple-300"
+                              : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          Coach
+                        </button>
+                        {/* Active */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Prospect/Active/Inactive are mutually exclusive, clears Banned
+                            setStatuses((prev) => {
+                              const others = prev.filter((s) => !["PROSPECT", "ACTIVE", "INACTIVE", "BANNED"].includes(s));
+                              return [...others, "ACTIVE"];
+                            });
+                          }}
+                          className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                            statuses.includes("ACTIVE")
+                              ? "bg-green-100 text-green-800 border-green-300"
+                              : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          Active
+                        </button>
+                        {/* Parent */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (statuses.includes("PARENT")) {
+                              setStatuses((prev) => prev.filter((s) => s !== "PARENT"));
+                            } else {
+                              // Adding Parent clears Banned
+                              setStatuses((prev) => [...prev.filter((s) => s !== "PARENT" && s !== "BANNED"), "PARENT"]);
+                            }
+                          }}
+                          className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                            statuses.includes("PARENT")
+                              ? "bg-blue-100 text-blue-800 border-blue-300"
+                              : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          Parent
+                        </button>
+                        {/* Inactive */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Prospect/Active/Inactive are mutually exclusive, clears Banned
+                            setStatuses((prev) => {
+                              const others = prev.filter((s) => !["PROSPECT", "ACTIVE", "INACTIVE", "BANNED"].includes(s));
+                              return [...others, "INACTIVE"];
+                            });
+                          }}
+                          className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                            statuses.includes("INACTIVE")
+                              ? "bg-primary/10 text-primary border-primary/30"
+                              : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          Inactive
+                        </button>
+                        {/* Prospect */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Prospect/Active/Inactive are mutually exclusive, clears Banned
+                            setStatuses((prev) => {
+                              const others = prev.filter((s) => !["PROSPECT", "ACTIVE", "INACTIVE", "BANNED"].includes(s));
+                              return [...others, "PROSPECT"];
+                            });
+                          }}
+                          className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                            statuses.includes("PROSPECT")
+                              ? "bg-yellow-100 text-yellow-800 border-yellow-300"
+                              : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          Prospect
+                        </button>
+                        {/* Banned */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (statuses.includes("BANNED")) {
+                              // Removing Banned - confirm first
+                              if (window.confirm("Are you sure you want to remove the banned status from this member?")) {
+                                setStatuses((prev) => prev.filter((s) => s !== "BANNED"));
+                              }
+                            } else {
+                              // Adding Banned clears ALL other statuses - confirm first
+                              if (window.confirm("Are you sure you want to ban this member? This will clear all other statuses.")) {
+                                setStatuses(["BANNED"]);
+                              }
+                            }
+                          }}
+                          className={`rounded-full px-3 py-1 text-xs font-medium border ${
+                            statuses.includes("BANNED")
+                              ? "bg-gray-200 text-gray-900 border-gray-400"
+                              : "bg-white text-gray-400 border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          Banned
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-1">
@@ -1706,6 +1864,13 @@ export default function MemberProfilePage() {
                             <div className="flex items-center justify-end gap-2">
                               <button
                                 type="button"
+                                onClick={handleAddRelationship}
+                                className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                              >
+                                Add
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => {
                                   setAddingRelationship(false);
                                   setNewRelationshipType("PARENT");
@@ -1716,16 +1881,9 @@ export default function MemberProfilePage() {
                               >
                                 Cancel
                               </button>
-                              <button
-                                type="button"
-                                onClick={handleAddRelationship}
-                                className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
-                              >
-                                Add
-                              </button>
                             </div>
                             {relationshipError && (
-                              <p className="text-xs text-red-600">
+                              <p className="text-xs text-primary">
                                 {relationshipError}
                               </p>
                             )}
@@ -1808,18 +1966,18 @@ export default function MemberProfilePage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => cancelSection("membership")}
-                        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
                         disabled={savingSection === "membership"}
                         onClick={() => saveSection("membership")}
                         className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
                       >
                         {savingSection === "membership" ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => cancelSection("membership")}
+                        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                      >
+                        Cancel
                       </button>
                     </div>
                   )}
@@ -1865,273 +2023,68 @@ export default function MemberProfilePage() {
               <section className="rounded-lg border border-gray-200 bg-white p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-sm font-semibold">Styles</h2>
-                  {!editingStyle ? (
-                    <button
-                      type="button"
-                      onClick={() => setEditingStyle(true)}
-                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
-                    >
-                      Edit
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={addStyle}
-                        className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
-                      >
-                        Add Style
-                      </button>
-                      <button
-                        type="button"
-                        disabled={savingSection === "style"}
-                        onClick={() => saveSection("style")}
-                        className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
-                      >
-                        {savingSection === "style" ? "Saving..." : "Save"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => cancelSection("style")}
-                        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addStyle();
+                      setEditingStyleIndex(styles.length);
+                    }}
+                    className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
+                  >
+                    Add Style
+                  </button>
                 </div>
 
-                {!editingStyle ? (
-                  <div className="space-y-3 text-sm">
-                    {styles.length === 0 ? (
-                      <span className="text-sm text-gray-400">
-                        No styles added yet.
-                      </span>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {styles.map((s, i) => (
-                          <div
-                            key={i}
-                            className="border border-gray-200 rounded-md p-2 space-y-2"
-                            style={{ maxWidth: '280px' }}
-                          >
-                            <div>
-                              <div className="font-medium text-gray-900">
-                                {s.name}
+                <div className="space-y-3 text-sm">
+                  {styles.length === 0 ? (
+                    <span className="text-sm text-gray-400">
+                      No styles added yet.
+                    </span>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {styles.map((s, i) => (
+                        <div
+                          key={i}
+                          className="border border-gray-200 rounded-lg p-3 space-y-3 bg-gradient-to-br from-gray-50 to-white shadow-sm hover:shadow-md transition-shadow"
+                          style={{ maxWidth: '280px' }}
+                        >
+                          {editingStyleIndex === i ? (
+                            /* EDIT MODE for this style */
+                            <div className="space-y-2">
+                              <div className="space-y-1">
+                                <label className="block text-[11px] font-medium text-gray-700">
+                                  Style
+                                </label>
+                                <select
+                                  value={s.name}
+                                  onChange={(e) =>
+                                    updateStyle(i, "name", e.target.value)
+                                  }
+                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                >
+                                  <option value="">Select Style</option>
+                                  {availableStyles.map((st) => (
+                                    <option key={st.id} value={st.name}>
+                                      {st.name}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
-                              <div className="mt-1 space-y-0.5 text-sm text-gray-700">
-                                {s.rank && (
-                                  <div>
-                                    Rank: <span>{s.rank}</span>
-                                  </div>
-                                )}
-                                {s.beltSize && (
-                                  <div>
-                                    Belt Size: <span>{s.beltSize}</span>
-                                  </div>
-                                )}
-                                {s.uniformSize && (
-                                  <div>
-                                    Uniform Size: <span>{s.uniformSize}</span>
-                                  </div>
-                                )}
-                                {(() => {
-                                  const selectedStyle = availableStyles.find(
-                                    (style) => style.name === s.name
-                                  );
-
-                                  if (!selectedStyle || !s.rank) return null;
-
-                                  // Try to get class requirements from beltConfig JSON
-                                  let classRequirements: Array<{ label: string; minCount: number | null }> = [];
-
-                                  if (selectedStyle.beltConfig) {
-                                    try {
-                                      const beltConfig = JSON.parse(selectedStyle.beltConfig);
-                                      const rankData = beltConfig.ranks?.find((r: any) => r.name === s.rank);
-                                      if (rankData?.classRequirements) {
-                                        classRequirements = rankData.classRequirements.filter(
-                                          (req: any) => req.label && req.minCount != null && req.minCount > 0
-                                        );
-                                      }
-                                    } catch (e) {
-                                      // Ignore JSON parse errors
-                                    }
-                                  }
-
-                                  // If we have class type requirements from beltConfig, show them
-                                  // Helper to check if attendance matches this style
-                                  const matchesStyle = (att: { classSession?: { styleName?: string | null; styleNames?: string | null; program?: { name?: string } | null } | null }) => {
-                                    const cs = att.classSession;
-                                    if (!cs) return false;
-                                    // Check styleName (single style)
-                                    if (cs.styleName?.toLowerCase() === s.name.toLowerCase()) return true;
-                                    // Check styleNames (JSON array of style names)
-                                    if (cs.styleNames) {
-                                      try {
-                                        const names = JSON.parse(cs.styleNames);
-                                        if (Array.isArray(names) && names.some((n: string) => n.toLowerCase() === s.name.toLowerCase())) return true;
-                                      } catch { /* ignore */ }
-                                    }
-                                    // Check program name (legacy)
-                                    if (cs.program?.name?.toLowerCase() === s.name.toLowerCase()) return true;
-                                    return false;
-                                  };
-
-                                  if (classRequirements.length > 0) {
-                                    return (
-                                      <div className="space-y-0.5">
-                                        {classRequirements.map((req, idx) => {
-                                          // Count attendance for this class type
-                                          const attended = (member?.attendances || []).filter(
-                                            (att) =>
-                                              matchesStyle(att) &&
-                                              att.classSession?.classType === req.label
-                                          ).length;
-
-                                          return (
-                                            <div key={idx}>
-                                              {req.label}: <span>{attended}/{req.minCount}</span>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    );
-                                  }
-
-                                  // Fallback: show single requirement from Rank model if available
-                                  const selectedRank = selectedStyle.ranks?.find((r) => r.name === s.rank);
-                                  if (selectedRank?.classRequirement != null) {
-                                    const styleAttendance = (member?.attendances || []).filter(
-                                      (att) => matchesStyle(att)
-                                    );
-                                    return (
-                                      <div>
-                                        Classes: <span>{styleAttendance.length}/{selectedRank.classRequirement}</span>
-                                      </div>
-                                    );
-                                  }
-
-                                  return null;
-                                })()}
-                                {s.startDate && (
-                                  <div>
-                                    Start:{" "}
-                                    <span>
-                                      {new Date(
-                                        s.startDate + "T00:00:00"
-                                      ).toLocaleDateString()}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex justify-end">
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  const styleName = s.name || "this style";
-                                  if (!window.confirm(`Are you sure you want to remove ${styleName}?`)) {
-                                    return;
-                                  }
-
-                                  // Remove the style from local state
-                                  const updatedStyles = styles.filter((_, idx) => idx !== i);
-                                  setStyles(updatedStyles);
-
-                                  // Immediately save to server
-                                  try {
-                                    const body = {
-                                      stylesNotes: JSON.stringify(updatedStyles),
-                                    };
-
-                                    const res = await fetch(`/api/members/${memberId}`, {
-                                      method: "PATCH",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify(body),
-                                    });
-
-                                    if (!res.ok) {
-                                      const errText = await res.text();
-                                      throw new Error(errText || "Failed to remove style");
-                                    }
-
-                                    const updated = await res.json();
-                                    setMember(updated.member);
-                                    hydrateFormFromMember(updated.member);
-                                  } catch (err: any) {
-                                    setError(err.message || "Failed to remove style");
-                                    // Restore the style if save failed
-                                    if (member) {
-                                      hydrateFormFromMember(member);
-                                    }
-                                  }
-                                }}
-                                className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      saveSection("style");
-                    }}
-                    className="space-y-4 text-sm"
-                  >
-                    {styles.length === 0 ? (
-                      <p className="text-sm text-gray-400">
-                        No styles added yet. Click &quot;Add Style&quot; to add one.
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {styles.map((style, index) => (
-                          <div
-                            key={index}
-                            className="border border-gray-200 rounded-md p-2 space-y-2"
-                            style={{ maxWidth: '280px' }}
-                          >
-                            <div className="space-y-1">
-                              <label className="block text-[11px] font-medium text-gray-700">
-                                Style
-                              </label>
-                              <select
-                                value={style.name}
-                                onChange={(e) =>
-                                  updateStyle(index, "name", e.target.value)
-                                }
-                                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                              >
-                                <option value="">Select Style</option>
-                                {availableStyles.map((s) => (
-                                  <option key={s.id} value={s.name}>
-                                    {s.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="grid grid-cols-1 gap-2">
                               <div className="space-y-1">
                                 <label className="block text-[11px] font-medium text-gray-700">
                                   Rank Level
                                 </label>
                                 <select
-                                  value={style.rank || ""}
+                                  value={s.rank || ""}
                                   onChange={(e) =>
-                                    updateStyle(index, "rank", e.target.value)
+                                    updateStyle(i, "rank", e.target.value)
                                   }
                                   className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                                 >
                                   <option value="">Select Rank</option>
                                   {(() => {
                                     const selectedStyle = availableStyles.find(
-                                      (s) => s.name === style.name
+                                      (st) => st.name === s.name
                                     );
                                     if (!selectedStyle || !selectedStyle.ranks) {
                                       return null;
@@ -2148,10 +2101,10 @@ export default function MemberProfilePage() {
                               </div>
                               {(() => {
                                 const selectedStyle = availableStyles.find(
-                                  (s) => s.name === style.name
+                                  (st) => st.name === s.name
                                 );
                                 const selectedRank = selectedStyle?.ranks?.find(
-                                  (r) => r.name === style.rank
+                                  (r) => r.name === s.rank
                                 );
                                 if (selectedRank && selectedRank.classRequirement != null) {
                                   return (
@@ -2176,69 +2129,416 @@ export default function MemberProfilePage() {
                                 </label>
                                 <input
                                   type="date"
-                                  value={style.startDate || ""}
+                                  value={s.startDate || ""}
                                   onChange={(e) =>
-                                    updateStyle(
-                                      index,
-                                      "startDate",
-                                      e.target.value
-                                    )
+                                    updateStyle(i, "startDate", e.target.value)
                                   }
                                   className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                                 />
                               </div>
+                              <div className="space-y-1">
+                                <label className="block text-[11px] font-medium text-gray-700">
+                                  Last Promotion Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={s.lastPromotionDate || ""}
+                                  onChange={(e) =>
+                                    updateStyle(i, "lastPromotionDate", e.target.value)
+                                  }
+                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                />
+                                <p className="text-[10px] text-gray-500">Auto-updates when rank changes</p>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-[11px] font-medium text-gray-700">
+                                  Belt Size
+                                </label>
+                                <input
+                                  value={s.beltSize || ""}
+                                  onChange={(e) =>
+                                    updateStyle(i, "beltSize", e.target.value)
+                                  }
+                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                  placeholder="e.g. A2"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-[11px] font-medium text-gray-700">
+                                  Uniform Size
+                                </label>
+                                <input
+                                  value={s.uniformSize || ""}
+                                  onChange={(e) =>
+                                    updateStyle(i, "uniformSize", e.target.value)
+                                  }
+                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                  placeholder="e.g. Small"
+                                />
+                              </div>
+                              <div className="flex justify-end gap-2 pt-2">
+                                <button
+                                  type="button"
+                                  disabled={savingSection === "style"}
+                                  onClick={() => saveSection("style")}
+                                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
+                                >
+                                  {savingSection === "style" ? "Saving..." : "Save"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    cancelSection("style");
+                                  }}
+                                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex items-end justify-between gap-2">
-                              <div className="flex-1 space-y-2">
-                                <div className="space-y-1">
-                                  <label className="block text-[11px] font-medium text-gray-700">
-                                    Belt Size
-                                  </label>
-                                  <input
-                                    value={style.beltSize || ""}
-                                    onChange={(e) =>
-                                      updateStyle(
-                                        index,
-                                        "beltSize",
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                    placeholder="e.g. A2"
-                                  />
+                          ) : (
+                            /* READ-ONLY MODE for this style */
+                            <>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-semibold text-gray-900">
+                                    {s.name}
+                                  </span>
                                 </div>
-                                <div className="space-y-1">
-                                  <label className="block text-[11px] font-medium text-gray-700">
-                                    Uniform Size
-                                  </label>
-                                  <input
-                                    value={style.uniformSize || ""}
-                                    onChange={(e) =>
-                                      updateStyle(
-                                        index,
-                                        "uniformSize",
-                                        e.target.value
-                                      )
+                                <div className="mt-3 space-y-2 text-sm">
+                                  {s.rank && (() => {
+                                    // Get the rank color from beltConfig
+                                    const styleData = availableStyles.find((style) => style.name === s.name);
+                                    let rankColor = "#e5e7eb"; // default gray
+                                    if (styleData?.beltConfig) {
+                                      try {
+                                        const beltConfig = JSON.parse(styleData.beltConfig);
+                                        const rankData = beltConfig.ranks?.find((r: any) => r.name === s.rank);
+                                        if (rankData?.layers?.fabricColor) {
+                                          const color = rankData.layers.fabricColor.toLowerCase();
+                                          // Use light gray for white/near-white colors
+                                          if (color === "#ffffff" || color === "#fff" || color === "white") {
+                                            rankColor = "#e5e7eb";
+                                          } else {
+                                            rankColor = rankData.layers.fabricColor;
+                                          }
+                                        }
+                                      } catch { /* ignore */ }
                                     }
-                                    className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                    placeholder="e.g. Small"
-                                  />
+                                    // Create a light tint (10% opacity effect)
+                                    const hexToRgb = (hex: string) => {
+                                      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                                      return result ? {
+                                        r: parseInt(result[1], 16),
+                                        g: parseInt(result[2], 16),
+                                        b: parseInt(result[3], 16)
+                                      } : { r: 229, g: 231, b: 235 };
+                                    };
+                                    const rgb = hexToRgb(rankColor);
+                                    // Create a very light tint by mixing with white (90% white, 10% color)
+                                    const lightBg = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`;
+                                    const borderColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4)`;
+                                    // Use slate-500 - a soft neutral that works on all tinted backgrounds
+                                    const textColor = "#64748b";
+
+                                    return (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Rank</span>
+                                        <span
+                                          className="text-xs font-medium rounded px-2 py-0.5"
+                                          style={{
+                                            backgroundColor: lightBg,
+                                            border: `1px solid ${borderColor}`,
+                                            color: textColor
+                                          }}
+                                        >
+                                          {s.rank}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
+                                  {s.beltSize && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Belt</span>
+                                      <span className="text-xs font-medium text-gray-700">{s.beltSize}</span>
+                                    </div>
+                                  )}
+                                  {s.uniformSize && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Uniform</span>
+                                      <span className="text-xs font-medium text-gray-700">{s.uniformSize}</span>
+                                    </div>
+                                  )}
+                                  {(() => {
+                                    const selectedStyle = availableStyles.find(
+                                      (style) => style.name === s.name
+                                    );
+
+                                    if (!selectedStyle || !s.rank) return null;
+
+                                    // Try to get class requirements from beltConfig JSON
+                                    let classRequirements: Array<{ label: string; minCount: number | null }> = [];
+
+                                    if (selectedStyle.beltConfig) {
+                                      try {
+                                        const beltConfig = JSON.parse(selectedStyle.beltConfig);
+                                        const rankData = beltConfig.ranks?.find((r: any) => r.name === s.rank);
+                                        if (rankData?.classRequirements) {
+                                          classRequirements = rankData.classRequirements.filter(
+                                            (req: any) => req.label && req.minCount != null && req.minCount > 0
+                                          );
+                                        }
+                                      } catch (e) {
+                                        // Ignore JSON parse errors
+                                      }
+                                    }
+
+                                    // If we have class type requirements from beltConfig, show them
+                                    // Helper to check if attendance matches this style
+                                    const matchesStyle = (att: { classSession?: { styleName?: string | null; styleNames?: string | null; program?: { name?: string } | null } | null }) => {
+                                      const cs = att.classSession;
+                                      if (!cs) return false;
+                                      // Check styleName (single style)
+                                      if (cs.styleName?.toLowerCase() === s.name.toLowerCase()) return true;
+                                      // Check styleNames (JSON array of style names)
+                                      if (cs.styleNames) {
+                                        try {
+                                          const names = JSON.parse(cs.styleNames);
+                                          if (Array.isArray(names) && names.some((n: string) => n.toLowerCase() === s.name.toLowerCase())) return true;
+                                        } catch { /* ignore */ }
+                                      }
+                                      // Check program name (legacy)
+                                      if (cs.program?.name?.toLowerCase() === s.name.toLowerCase()) return true;
+                                      return false;
+                                    };
+
+                                    if (classRequirements.length > 0) {
+                                      return (
+                                        <div className="space-y-1.5 pt-1">
+                                          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Progress</span>
+                                          {classRequirements.map((req, idx) => {
+                                            // Count attendance for this class type
+                                            const attended = (member?.attendances || []).filter(
+                                              (att) =>
+                                                matchesStyle(att) &&
+                                                att.classSession?.classType === req.label
+                                            ).length;
+                                            const progress = req.minCount ? Math.min(100, (attended / req.minCount) * 100) : 0;
+                                            const isComplete = req.minCount ? attended >= req.minCount : false;
+
+                                            return (
+                                              <div key={idx} className="space-y-0.5">
+                                                <div className="flex items-center justify-between text-xs">
+                                                  <span className="font-medium text-gray-600">{req.label}</span>
+                                                  <span className={`font-bold ${isComplete ? 'text-green-600' : 'text-gray-800'}`}>{attended}/{req.minCount}</span>
+                                                </div>
+                                                <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                                                  <div
+                                                    className={`h-full rounded-full transition-all ${isComplete ? 'bg-green-500' : 'bg-primary'}`}
+                                                    style={{ width: `${progress}%` }}
+                                                  />
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      );
+                                    }
+
+                                    // Fallback: show single requirement from Rank model if available
+                                    const selectedRank = selectedStyle.ranks?.find((r) => r.name === s.rank);
+                                    if (selectedRank?.classRequirement != null) {
+                                      const styleAttendance = (member?.attendances || []).filter(
+                                        (att) => matchesStyle(att)
+                                      );
+                                      const progress = Math.min(100, (styleAttendance.length / selectedRank.classRequirement) * 100);
+                                      const isComplete = styleAttendance.length >= selectedRank.classRequirement;
+                                      return (
+                                        <div className="space-y-1.5 pt-1">
+                                          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Progress</span>
+                                          <div className="space-y-0.5">
+                                            <div className="flex items-center justify-between text-xs">
+                                              <span className="font-medium text-gray-600">Classes</span>
+                                              <span className={`font-bold ${isComplete ? 'text-green-600' : 'text-gray-800'}`}>{styleAttendance.length}/{selectedRank.classRequirement}</span>
+                                            </div>
+                                            <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                                              <div
+                                                className={`h-full rounded-full transition-all ${isComplete ? 'bg-green-500' : 'bg-primary'}`}
+                                                style={{ width: `${progress}%` }}
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+
+                                    return null;
+                                  })()}
+                                  {s.startDate && (
+                                    <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Started</span>
+                                      <span className="text-xs font-medium text-gray-700">
+                                        {new Date(
+                                          s.startDate + "T00:00:00"
+                                        ).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {s.lastPromotionDate && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Last Promotion</span>
+                                      <span className="text-xs font-medium text-gray-700">
+                                        {new Date(
+                                          s.lastPromotionDate + "T00:00:00"
+                                        ).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => removeStyle(index)}
-                                className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </form>
-                )}
+                              <div className="flex items-center justify-between gap-2">
+                                {/* Rank Documents button + popup */}
+                                {(() => {
+                                  const styleData = availableStyles.find((style) => style.name === s.name);
+                                  if (!styleData || !s.rank || !styleData.beltConfig) return <div className="flex-1" />;
+
+                                  let styleDocs: StyleDocument[] = [];
+                                  try {
+                                    const beltConfig = JSON.parse(styleData.beltConfig);
+                                    const currentRank = beltConfig.ranks?.find((r: any) => r.name === s.rank);
+                                    if (currentRank) {
+                                      const ranksToInclude = beltConfig.ranks
+                                        .filter((r: any) => r.order <= currentRank.order)
+                                        .sort((a: any, b: any) => b.order - a.order); // Sort descending by order
+                                      ranksToInclude.forEach((rank: any) => {
+                                        if (rank.pdfDocuments && Array.isArray(rank.pdfDocuments)) {
+                                          rank.pdfDocuments.forEach((pdf: any) => {
+                                            if (!styleDocs.some(d => d.name === pdf.name)) {
+                                              styleDocs.push(pdf);
+                                            }
+                                          });
+                                        }
+                                      });
+                                    }
+                                  } catch { /* ignore */ }
+
+                                  if (styleDocs.length === 0) return <div className="flex-1" />;
+
+                                  return (
+                                    <div className="relative flex-1 min-w-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => setRankDocsPopupIndex(rankDocsPopupIndex === i ? null : i)}
+                                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-left hover:bg-gray-50"
+                                      >
+                                        Rank Documents
+                                      </button>
+                                      {rankDocsPopupIndex === i && (
+                                        <>
+                                          {/* Backdrop to close popup */}
+                                          <div
+                                            className="fixed inset-0 z-40"
+                                            onClick={() => setRankDocsPopupIndex(null)}
+                                          />
+                                          {/* Popup */}
+                                          <div className="absolute left-0 top-full mt-1 z-50 w-64 max-h-60 overflow-y-auto rounded-md border border-gray-300 bg-white shadow-lg">
+                                            <div className="p-2 border-b border-gray-200 bg-gray-50">
+                                              <span className="text-xs font-semibold text-gray-700">Rank Documents</span>
+                                            </div>
+                                            <div className="py-1">
+                                              {styleDocs.map((doc, idx) => (
+                                                <button
+                                                  key={idx}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const byteString = atob(doc.url.split(',')[1]);
+                                                    const mimeString = doc.url.split(',')[0].split(':')[1].split(';')[0];
+                                                    const ab = new ArrayBuffer(byteString.length);
+                                                    const ia = new Uint8Array(ab);
+                                                    for (let j = 0; j < byteString.length; j++) {
+                                                      ia[j] = byteString.charCodeAt(j);
+                                                    }
+                                                    const blob = new Blob([ab], { type: mimeString });
+                                                    const blobUrl = URL.createObjectURL(blob);
+                                                    window.open(blobUrl, '_blank', 'noopener,noreferrer');
+                                                    setRankDocsPopupIndex(null);
+                                                  }}
+                                                  className="w-full px-3 py-2 text-left text-xs hover:bg-gray-100 flex items-center gap-2"
+                                                >
+                                                  <svg className="w-4 h-4 text-primary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                                                  </svg>
+                                                  <span className="truncate">{doc.name}</span>
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                                <div className="flex gap-2 flex-shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const styleName = s.name || "this style";
+                                      if (!window.confirm(`Are you sure you want to remove ${styleName}?`)) {
+                                        return;
+                                      }
+
+                                      // Remove the style from local state
+                                      const updatedStyles = styles.filter((_, idx) => idx !== i);
+                                      setStyles(updatedStyles);
+
+                                      // Immediately save to server
+                                      try {
+                                        const body = {
+                                          stylesNotes: JSON.stringify(updatedStyles),
+                                        };
+
+                                        const res = await fetch(`/api/members/${memberId}`, {
+                                          method: "PATCH",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify(body),
+                                        });
+
+                                        if (!res.ok) {
+                                          const errText = await res.text();
+                                          throw new Error(errText || "Failed to remove style");
+                                        }
+
+                                        const updated = await res.json();
+                                        setMember(updated.member);
+                                        hydrateFormFromMember(updated.member);
+                                      } catch (err: any) {
+                                        setError(err.message || "Failed to remove style");
+                                        // Restore the style if save failed
+                                        if (member) {
+                                          hydrateFormFromMember(member);
+                                        }
+                                      }
+                                    }}
+                                    className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                                  >
+                                    Remove
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingStyleIndex(i)}
+                                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                                  >
+                                    Edit
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </section>
 
               {/* STYLE DOCUMENTS */}
@@ -2261,98 +2561,14 @@ export default function MemberProfilePage() {
                   {styles.length === 0 ? (
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                       <p className="text-xs text-gray-400">
-                        No styles assigned yet. Assign a style to view available documents.
+                        No styles assigned yet. Assign a style to upload documents.
                       </p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {styles.map((s, i) => {
-                        // Get documents for this style and rank
-                        const selectedStyle = availableStyles.find(
-                          (style) => style.name === s.name
-                        );
-
-                        if (!selectedStyle || !s.rank) return null;
-
-                        let styleDocs: StyleDocument[] = [];
-
-                        if (selectedStyle.beltConfig) {
-                          try {
-                            const beltConfig = JSON.parse(selectedStyle.beltConfig);
-                            const currentRank = beltConfig.ranks?.find((r: any) => r.name === s.rank);
-
-                            if (currentRank) {
-                              // Get all ranks up to and including current rank
-                              const ranksToInclude = beltConfig.ranks.filter(
-                                (r: any) => r.order <= currentRank.order
-                              );
-
-                              // Collect all PDFs from these ranks
-                              ranksToInclude.forEach((rank: any) => {
-                                if (rank.pdfDocuments && Array.isArray(rank.pdfDocuments)) {
-                                  rank.pdfDocuments.forEach((pdf: any) => {
-                                    if (!styleDocs.some(d => d.name === pdf.name)) {
-                                      styleDocs.push(pdf);
-                                    }
-                                  });
-                                }
-                              });
-                            }
-                          } catch (e) {
-                            // Ignore JSON parse errors
-                          }
-                        }
-
-                        if (styleDocs.length === 0) return null;
-
-                        return (
-                          <div
-                            key={i}
-                            className="border border-gray-200 rounded-md p-2 space-y-2"
-                            style={{ maxWidth: '280px' }}
-                          >
-                            <div>
-                              <div className="font-medium text-gray-900">
-                                {s.name}
-                              </div>
-                              <div className="mt-1 space-y-0.5 text-sm text-gray-700">
-                                <select
-                                  className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs"
-                                  onChange={(e) => {
-                                    const doc = styleDocs.find(d => d.name === e.target.value);
-                                    if (doc) {
-                                      // Convert data URL to blob and open in new window
-                                      const byteString = atob(doc.url.split(',')[1]);
-                                      const mimeString = doc.url.split(',')[0].split(':')[1].split(';')[0];
-                                      const ab = new ArrayBuffer(byteString.length);
-                                      const ia = new Uint8Array(ab);
-                                      for (let i = 0; i < byteString.length; i++) {
-                                        ia[i] = byteString.charCodeAt(i);
-                                      }
-                                      const blob = new Blob([ab], { type: mimeString });
-                                      const blobUrl = URL.createObjectURL(blob);
-                                      window.open(blobUrl, '_blank', 'noopener,noreferrer');
-                                      // Don't revoke the blob URL so it persists for back button navigation
-                                    }
-                                    e.target.value = "";
-                                  }}
-                                  defaultValue=""
-                                >
-                                  <option value="" disabled>Select a document to view...</option>
-                                  {styleDocs.map((doc, idx) => (
-                                    <option key={idx} value={doc.name}>
-                                      {doc.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <div className="text-xs text-gray-500">
-                                  {styleDocs.length} document{styleDocs.length !== 1 ? 's' : ''} available
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                      <p className="text-xs text-gray-400">
+                        Click "Upload PDF" to add documents to this member's styles.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -2377,19 +2593,19 @@ export default function MemberProfilePage() {
                   ) : (
                     <div className="flex items-center gap-2">
                       <button
+                        type="submit"
+                        form="payments-form"
+                        disabled={savingSection === "payments"}
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
+                      >
+                        {savingSection === "payments" ? "Saving..." : "Save"}
+                      </button>
+                      <button
                         type="button"
                         onClick={() => cancelSection("payments")}
                         className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                       >
                         Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        form="payments-form"
-                        disabled={saving}
-                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
-                      >
-                        {saving ? "Saving..." : "Save"}
                       </button>
                     </div>
                   )}

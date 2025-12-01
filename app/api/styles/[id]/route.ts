@@ -37,7 +37,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 
   try {
     const body = await req.json();
-    const { name, shortName, description, beltSystemEnabled, beltConfig } = body;
+    const { name, shortName, description, beltSystemEnabled, beltConfig, gradingDates } = body;
 
     if (name !== undefined && typeof name !== "string") {
       return new NextResponse("Name must be a string", { status: 400 });
@@ -58,6 +58,10 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     if (beltConfig !== undefined) {
       // beltConfig is stored as JSON string in the database
       data.beltConfig = typeof beltConfig === 'string' ? beltConfig : JSON.stringify(beltConfig);
+    }
+    if (gradingDates !== undefined) {
+      // gradingDates is stored as JSON string in the database
+      data.gradingDates = typeof gradingDates === 'string' ? gradingDates : JSON.stringify(gradingDates);
     }
 
     const style = await prisma.style.update({
