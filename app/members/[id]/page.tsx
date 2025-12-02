@@ -77,6 +77,7 @@ type StyleEntry = {
   uniformSize?: string;
   startDate?: string;
   lastPromotionDate?: string;  // Date of last rank promotion (for attendance window calculation)
+  active?: boolean;  // Whether this style is currently active for the member
 };
 
 type StyleDocument = {
@@ -312,6 +313,7 @@ export default function MemberProfilePage() {
   // styles: array of { name, rank, beltSize, uniformSize, startDate }
   const [styles, setStyles] = useState<StyleEntry[]>([]);
   const [availableStyles, setAvailableStyles] = useState<AvailableStyle[]>([]);
+  const [stylesTab, setStylesTab] = useState<"active" | "inactive">("active");
 
   // style documents
   const [styleDocuments, setStyleDocuments] = useState<StyleDocument[]>([]);
@@ -511,6 +513,10 @@ export default function MemberProfilePage() {
                   lastPromotionDate:
                     obj.lastPromotionDate !== undefined && obj.lastPromotionDate !== null
                       ? String(obj.lastPromotionDate)
+                      : undefined,
+                  active:
+                    obj.active !== undefined
+                      ? Boolean(obj.active)
                       : undefined
                 };
                 return entry;
@@ -2028,10 +2034,37 @@ export default function MemberProfilePage() {
                     onClick={() => {
                       addStyle();
                       setEditingStyleIndex(styles.length);
+                      setStylesTab("active"); // Switch to active tab when adding
                     }}
                     className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
                   >
                     Add Style
+                  </button>
+                </div>
+
+                {/* Tabs for Active/Inactive Styles */}
+                <div className="flex gap-2 mb-3 border-b border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setStylesTab("active")}
+                    className={`px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                      stylesTab === "active"
+                        ? "border-primary text-primary"
+                        : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Active Styles ({styles.filter(s => s.active !== false).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStylesTab("inactive")}
+                    className={`px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                      stylesTab === "inactive"
+                        ? "border-primary text-primary"
+                        : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Inactive Styles ({styles.filter(s => s.active === false).length})
                   </button>
                 </div>
 
@@ -2040,9 +2073,28 @@ export default function MemberProfilePage() {
                     <span className="text-sm text-gray-400">
                       No styles added yet.
                     </span>
-                  ) : (
+                  ) : (() => {
+                    const filteredStyles = styles
+                      .map((s, i) => ({ style: s, originalIndex: i }))
+                      .filter(({ style }) =>
+                        stylesTab === "active"
+                          ? style.active !== false
+                          : style.active === false
+                      );
+
+                    if (filteredStyles.length === 0) {
+                      return (
+                        <span className="text-sm text-gray-400">
+                          {stylesTab === "active"
+                            ? "No active styles."
+                            : "No inactive styles."}
+                        </span>
+                      );
+                    }
+
+                    return (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {styles.map((s, i) => (
+                      {filteredStyles.map(({ style: s, originalIndex: i }) => (
                         <div
                           key={i}
                           className="border border-gray-200 rounded-lg p-3 space-y-3 bg-gradient-to-br from-gray-50 to-white shadow-sm hover:shadow-md transition-shadow"
@@ -2525,6 +2577,47 @@ export default function MemberProfilePage() {
                                   </button>
                                   <button
                                     type="button"
+                                    onClick={async () => {
+                                      // Toggle active status
+                                      const updatedStyles = styles.map((style, idx) =>
+                                        idx === i ? { ...style, active: style.active === false ? true : false } : style
+                                      );
+                                      setStyles(updatedStyles);
+
+                                      // Immediately save to server
+                                      try {
+                                        const body = {
+                                          stylesNotes: JSON.stringify(updatedStyles),
+                                        };
+
+                                        const res = await fetch(`/api/members/${memberId}`, {
+                                          method: "PATCH",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify(body),
+                                        });
+
+                                        if (!res.ok) {
+                                          const errText = await res.text();
+                                          throw new Error(errText || "Failed to update style status");
+                                        }
+
+                                        const updated = await res.json();
+                                        setMember(updated.member);
+                                        hydrateFormFromMember(updated.member);
+                                      } catch (err: any) {
+                                        setError(err.message || "Failed to update style status");
+                                        // Restore if save failed
+                                        if (member) {
+                                          hydrateFormFromMember(member);
+                                        }
+                                      }
+                                    }}
+                                    className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                                  >
+                                    {s.active === false ? "Activate" : "Deactivate"}
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => setEditingStyleIndex(i)}
                                     className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                                   >
@@ -2537,7 +2630,8 @@ export default function MemberProfilePage() {
                         </div>
                       ))}
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </section>
 

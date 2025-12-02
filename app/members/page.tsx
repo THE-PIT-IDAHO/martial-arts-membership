@@ -177,17 +177,29 @@ export default function MembersPage() {
 
         setMembers(rows);
 
-        // Build status filter buttons from the data
-        // Exclude any status that contains commas (like "PROSPECT,PARENT,COACH")
+        // Build status filter buttons - always show all standard statuses
         // Sort by priority order: COACH, ACTIVE, PARENT, INACTIVE, PROSPECT, BANNED
         const priorityOrder = ["COACH", "ACTIVE", "PARENT", "INACTIVE", "PROSPECT", "BANNED"];
-        const statuses = Array.from(
-          new Set(
-            rows
-              .map((r) => (r.status ?? "").toUpperCase())
-              .filter((s) => s.length > 0 && !s.includes(","))
-          )
-        ).sort((a, b) => {
+
+        // Collect all unique statuses from members (including individual parts of comma-separated)
+        const memberStatuses = new Set<string>();
+        rows.forEach((r) => {
+          const status = (r.status ?? "").toUpperCase();
+          if (status.includes(",")) {
+            // Split comma-separated statuses and add each one
+            status.split(",").forEach(s => {
+              const trimmed = s.trim();
+              if (trimmed.length > 0) memberStatuses.add(trimmed);
+            });
+          } else if (status.length > 0) {
+            memberStatuses.add(status);
+          }
+        });
+
+        // Always include all priority statuses, plus any extras from members
+        const allStatuses = new Set([...priorityOrder, ...memberStatuses]);
+
+        const statuses = Array.from(allStatuses).sort((a, b) => {
           const aIndex = priorityOrder.indexOf(a);
           const bIndex = priorityOrder.indexOf(b);
           // If status is not in priority list, put it at the end
