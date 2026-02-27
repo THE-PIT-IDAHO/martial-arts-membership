@@ -14,6 +14,8 @@ export async function GET(_req: Request, props: { params: Promise<{ memberId: st
       signedAt: true,
       signatureData: true,
       pdfData: true,
+      confirmed: true,
+      confirmedAt: true,
     },
   });
   return NextResponse.json({ waivers });

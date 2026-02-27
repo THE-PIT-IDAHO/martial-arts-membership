@@ -31,6 +31,21 @@ type Member = {
   waiverSignedAt?: string | null;
 };
 
+type PendingWaiver = {
+  id: string;
+  templateName: string;
+  signedAt: string;
+  signatureData: string;
+  member: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email?: string | null;
+    phone?: string | null;
+    status?: string | null;
+  };
+};
+
 type WaiverSection = {
   id: string;
   title: string;
@@ -175,6 +190,8 @@ export default function WaiversPage() {
   const [waiverOptions, setWaiverOptions] = useState<WaiverOptions>(DEFAULT_WAIVER_OPTIONS);
   const [editingWaiverOptions, setEditingWaiverOptions] = useState<WaiverOptions>(DEFAULT_WAIVER_OPTIONS);
   const [savingWaiver, setSavingWaiver] = useState(false);
+  const [pendingWaivers, setPendingWaivers] = useState<PendingWaiver[]>([]);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -227,6 +244,12 @@ export default function WaiversPage() {
               // Use defaults if parsing fails
             }
           }
+        }
+        // Load pending waivers
+        const pendingRes = await fetch("/api/waivers/pending");
+        if (pendingRes.ok) {
+          const data = await pendingRes.json();
+          setPendingWaivers(data.pendingWaivers || []);
         }
       } catch (err) {
         console.error("Failed to load data:", err);
@@ -289,6 +312,33 @@ export default function WaiversPage() {
       }
     } catch (err) {
       console.error("Failed to reset waiver:", err);
+    }
+  }
+
+  async function confirmWaiver(waiverId: string) {
+    setConfirmingId(waiverId);
+    try {
+      const res = await fetch(`/api/waivers/confirm/${waiverId}`, { method: "PATCH" });
+      if (res.ok) {
+        const confirmed = pendingWaivers.find((w) => w.id === waiverId);
+        setPendingWaivers((prev) => prev.filter((w) => w.id !== waiverId));
+        if (confirmed) {
+          setMembers((prev) =>
+            prev.map((m) =>
+              m.id === confirmed.member.id
+                ? { ...m, waiverSigned: true, waiverSignedAt: new Date().toISOString() }
+                : m
+            )
+          );
+        }
+      } else {
+        alert("Failed to confirm waiver.");
+      }
+    } catch (err) {
+      console.error("Failed to confirm waiver:", err);
+      alert("Error confirming waiver.");
+    } finally {
+      setConfirmingId(null);
     }
   }
 
@@ -485,7 +535,7 @@ export default function WaiversPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <div className="text-sm text-gray-500">Total Members</div>
             <div className="text-2xl font-bold text-gray-900">{totalMembers}</div>
@@ -501,7 +551,64 @@ export default function WaiversPage() {
             <div className="text-sm text-gray-500">Pending Signatures</div>
             <div className="text-2xl font-bold text-orange-600">{unsignedCount}</div>
           </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <div className="text-sm text-gray-500">Pending Confirmation</div>
+            <div className="text-2xl font-bold text-yellow-600">{pendingWaivers.length}</div>
+          </div>
         </div>
+
+        {/* Pending Waiver Confirmations */}
+        {pendingWaivers.length > 0 && (
+          <div className="bg-white border-2 border-yellow-300 rounded-lg overflow-hidden">
+            <div className="bg-yellow-50 px-4 py-3 border-b border-yellow-200">
+              <h2 className="text-sm font-bold text-yellow-800 flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Pending Waiver Confirmations ({pendingWaivers.length})
+              </h2>
+              <p className="text-xs text-yellow-700 mt-1">
+                These waivers have been submitted but need your confirmation before appearing on the member&apos;s profile.
+              </p>
+            </div>
+            <table className="w-full">
+              <thead className="bg-yellow-50/50 border-b border-yellow-100">
+                <tr>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase">Member</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase">Waiver</th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-gray-600 uppercase">Submitted</th>
+                  <th className="text-right px-4 py-2 text-xs font-semibold text-gray-600 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {pendingWaivers.map((pw) => (
+                  <tr key={pw.id} className="hover:bg-yellow-50/30">
+                    <td className="px-4 py-3">
+                      <Link href={`/members/${pw.member.id}`} className="font-medium text-gray-900 hover:text-primary">
+                        {pw.member.firstName} {pw.member.lastName}
+                      </Link>
+                      <div className="text-xs text-gray-500">{pw.member.email || pw.member.phone || "-"}</div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{pw.templateName}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {new Date(pw.signedAt).toLocaleDateString()}{" "}
+                      {new Date(pw.signedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => confirmWaiver(pw.id)}
+                        disabled={confirmingId === pw.id}
+                        className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                      >
+                        {confirmingId === pw.id ? "Confirming..." : "Confirm"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="bg-white border border-gray-200 rounded-lg p-4">

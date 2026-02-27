@@ -385,6 +385,30 @@ export async function sendWaiverWelcomeEmail(params: {
   await sendEmail({ to: [params.email], subject, html });
 }
 
+// --- 11c. Waiver Confirmed (sent after admin confirms waiver) ---
+
+export async function sendWaiverConfirmationEmail(params: {
+  email: string;
+  memberName: string;
+  portalUrl: string;
+  magicLoginUrl: string;
+  clientId?: string;
+}) {
+  const brand = await getGymBranding();
+  const resolved = await resolveTemplate("waiver_confirmed", {
+    memberName: params.memberName,
+    memberEmail: params.email,
+    portalUrl: params.portalUrl,
+    magicLoginUrl: params.magicLoginUrl,
+    gymName: brand.gymName,
+    gymEmail: brand.gymEmail,
+  });
+  if (!resolved) return;
+  const { subject, bodyHtml } = resolved;
+  const html = wrapInTemplate(brand, bodyHtml);
+  await sendEmail({ to: [params.email], subject, html, clientId: params.clientId });
+}
+
 // --- 12. Custom Message (for calendar "message attendees") ---
 
 export async function sendCustomMessageEmail(params: {

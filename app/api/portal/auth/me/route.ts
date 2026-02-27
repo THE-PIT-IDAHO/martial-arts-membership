@@ -236,12 +236,18 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // Check for pending (unconfirmed) waivers
+  const pendingWaiverCount = await prisma.signedWaiver.count({
+    where: { memberId: member.id, confirmed: false },
+  });
+
   // Don't send raw attendances/stylesNotes/passwordHash to the client
   const { attendances: _a, stylesNotes: _s, portalPasswordHash, ...memberData } = member;
 
   return NextResponse.json({
     ...memberData,
     mustSetPassword: !portalPasswordHash,
+    hasPendingWaiver: pendingWaiverCount > 0,
     rankInfo,
   });
 }

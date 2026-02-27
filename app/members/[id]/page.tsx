@@ -2541,7 +2541,10 @@ export default function MemberProfilePage() {
                       <dd className="text-gray-900">
                         <div className="space-y-0.5 text-sm">
                           <div>
-                            Signed: <span>{member.waiverSigned ? "Yes" : "No"}</span>
+                            Status:{" "}
+                            <span className={member.waiverSigned ? "text-green-600 font-medium" : "text-gray-500"}>
+                              {member.waiverSigned ? "Confirmed" : "Not confirmed"}
+                            </span>
                           </div>
                           {member.waiverSignedAt && (
                             <div>
@@ -2554,8 +2557,8 @@ export default function MemberProfilePage() {
                                 .then(r => r.json())
                                 .then(data => {
                                   if (data.waivers?.length) {
-                                    const list = data.waivers.map((w: { templateName: string; signedAt: string }) =>
-                                      `${w.templateName} — ${new Date(w.signedAt).toLocaleDateString()}`
+                                    const list = data.waivers.map((w: { templateName: string; signedAt: string; confirmed: boolean }) =>
+                                      `${w.templateName} — ${new Date(w.signedAt).toLocaleDateString()} (${w.confirmed ? "Confirmed" : "Pending"})`
                                     ).join("\n");
                                     alert("Signed Waivers:\n\n" + list);
                                   } else {

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
-import { sendWaiverWelcomeEmail } from "@/lib/notifications";
 
 async function getNextMemberNumber(): Promise<number> {
   const lastMember = await prisma.member.findFirst({
@@ -72,28 +70,27 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
       emergencyContactName: emergencyContactName || null,
       emergencyContactPhone: emergencyContactPhone || null,
       medicalNotes: medicalNotes || null,
-      waiverSigned: true,
-      waiverSignedAt: new Date(),
+      waiverSigned: false,
       status: "PROSPECT",
       memberNumber,
       clientId,
     },
   });
 
-  if (pdfBase64) await savePdfToMember(member.id, pdfBase64);
+  // Create SignedWaiver in pending (unconfirmed) state
+  await prisma.signedWaiver.create({
+    data: {
+      memberId: member.id,
+      templateName: "Public Waiver",
+      waiverContent: "Submitted via public waiver form",
+      signatureData: body.signatureData || "submitted",
+      pdfData: pdfBase64 || null,
+      confirmed: false,
+      clientId,
+    },
+  });
 
-  // Send welcome email with portal access link
-  if (email) {
-    const headersList = await headers();
-    const host = headersList.get("host") || "localhost:3000";
-    const protocol = host.includes("localhost") ? "http" : "https";
-    const portalUrl = `${protocol}://${host}/portal/login`;
-    sendWaiverWelcomeEmail({
-      email,
-      memberName: `${firstName.trim()} ${lastName.trim()}`,
-      portalUrl,
-    }).catch(() => {}); // Fire and forget — don't block submission
-  }
+  if (pdfBase64) await savePdfToMember(member.id, pdfBase64);
 
   return NextResponse.json({ member: { id: member.id } }, { status: 201 });
 }
@@ -127,10 +124,22 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
       emergencyContactName: emergencyContactName || null,
       emergencyContactPhone: emergencyContactPhone || null,
       medicalNotes: medicalNotes || null,
-      waiverSigned: true,
-      waiverSignedAt: new Date(),
+      waiverSigned: false,
       status: "PROSPECT",
       memberNumber: depNumber,
+      clientId,
+    },
+  });
+
+  // Create SignedWaiver in pending (unconfirmed) state
+  await prisma.signedWaiver.create({
+    data: {
+      memberId: dependent.id,
+      templateName: "Public Waiver (Guardian)",
+      waiverContent: "Submitted via public guardian waiver form",
+      signatureData: body.signatureData || "submitted",
+      pdfData: pdfBase64 || null,
+      confirmed: false,
       clientId,
     },
   });
@@ -165,21 +174,6 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
         relationship: relationshipType,
       },
     });
-  }
-
-  // Send welcome email to guardian (primary contact) with portal info for the dependent
-  const contactEmail = email || dependentEmail;
-  if (contactEmail) {
-    const headersList = await headers();
-    const host = headersList.get("host") || "localhost:3000";
-    const protocol = host.includes("localhost") ? "http" : "https";
-    const portalUrl = `${protocol}://${host}/portal/login`;
-    const memberName = `${dependentFirstName.trim()} ${dependentLastName.trim()}`;
-    sendWaiverWelcomeEmail({
-      email: contactEmail,
-      memberName,
-      portalUrl,
-    }).catch(() => {});
   }
 
   return NextResponse.json({ member: { id: dependent.id } }, { status: 201 });

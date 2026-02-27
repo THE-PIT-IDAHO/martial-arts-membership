@@ -286,6 +286,29 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     variables: ["memberName", "memberEmail", "portalUrl", "gymName", "gymEmail"],
   },
 
+  {
+    eventKey: "waiver_confirmed",
+    name: "Waiver Confirmed / Portal Access",
+    subject: "Your Waiver Has Been Confirmed — {{gymName}}",
+    bodyHtml: `<h2 style="color:#c41111;">Your Waiver is Confirmed!</h2>
+    <p>Hi {{memberName}},</p>
+    <p>Great news! Your liability waiver at <strong>{{gymName}}</strong> has been reviewed and confirmed. You're all set to start training!</p>
+    <div style="background:#fef2f2;padding:16px;border-radius:8px;margin:16px 0;border:1px solid #fecaca;">
+      <p style="margin:0 0 8px;font-weight:600;font-size:16px;">Access Your Member Portal</p>
+      <p style="margin:0 0 12px;color:#6b7280;">View your classes, track your progress, manage your account, and more.</p>
+      <a href="{{magicLoginUrl}}" style="display:inline-block;background:#c41111;color:#ffffff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Log In Now</a>
+    </div>
+    <p style="font-size:14px;">This login link expires in 15 minutes. After that, you can always sign in at:</p>
+    <ol style="font-size:14px;color:#374151;">
+      <li>Go to <a href="{{portalUrl}}">{{portalUrl}}</a></li>
+      <li>Enter your email: <strong>{{memberEmail}}</strong></li>
+      <li>Click "Send Magic Link" to receive a new login link</li>
+    </ol>
+    <p>If you have any questions, contact us at {{gymEmail}}.</p>
+    <p>See you on the mat!</p>`,
+    variables: ["memberName", "memberEmail", "portalUrl", "magicLoginUrl", "gymName", "gymEmail"],
+  },
+
   // --- Auth ---
   {
     eventKey: "magic_link",
@@ -364,7 +387,7 @@ export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
   },
   {
     label: "Enrollment",
-    keys: ["enrollment_confirmation", "waiver_welcome"],
+    keys: ["enrollment_confirmation", "waiver_welcome", "waiver_confirmed"],
   },
   {
     label: "Auth",

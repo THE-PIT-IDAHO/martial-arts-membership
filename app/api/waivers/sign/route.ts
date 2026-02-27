@@ -35,14 +35,9 @@ export async function POST(request: Request) {
         templateName,
         waiverContent,
         signatureData,
+        confirmed: false,
         clientId,
       },
-    });
-
-    // Update member waiver status
-    await prisma.member.update({
-      where: { id: memberId },
-      data: { waiverSigned: true, waiverSignedAt: new Date() },
     });
 
     logAudit({

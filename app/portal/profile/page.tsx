@@ -21,6 +21,7 @@ interface Profile {
   memberNumber?: number;
   waiverSigned: boolean;
   waiverSignedAt?: string;
+  hasPendingWaiver?: boolean;
   emailOptIn: boolean;
   startDate?: string;
   medicalNotes?: string;
@@ -211,7 +212,9 @@ export default function PortalProfilePage() {
             <InfoRow label="Waiver" value={
               profile.waiverSigned
                 ? `Signed${profile.waiverSignedAt ? ` on ${new Date(profile.waiverSignedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : ""}`
-                : "Not signed"
+                : profile.hasPendingWaiver
+                  ? "Pending Confirmation"
+                  : "Not signed"
             } />
             {message && <p className="text-sm text-green-600">{message}</p>}
           </div>

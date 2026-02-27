@@ -878,6 +878,8 @@ model SignedWaiver {
   signedAt      DateTime        @default(now())
   ipAddress     String?
   pdfData       String?
+  confirmed     Boolean         @default(false)
+  confirmedAt   DateTime?
   clientId      String          @default("default-client")
   createdAt     DateTime        @default(now())
   member        Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)

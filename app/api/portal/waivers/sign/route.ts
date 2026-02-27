@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   const signed = await prisma.signedWaiver.findMany({
     where: { memberId: auth.memberId },
     orderBy: { signedAt: "desc" },
-    select: { id: true, templateName: true, signedAt: true },
+    select: { id: true, templateName: true, signedAt: true, confirmed: true },
   });
 
   return NextResponse.json({ template, signed });
@@ -51,13 +51,9 @@ export async function POST(request: NextRequest) {
         templateName: template?.name || "General Waiver",
         waiverContent: template?.content || "Standard liability waiver",
         signatureData,
+        confirmed: false,
         clientId,
       },
-    });
-
-    await prisma.member.update({
-      where: { id: auth.memberId },
-      data: { waiverSigned: true, waiverSignedAt: new Date() },
     });
 
     return NextResponse.json({ signedWaiver: signed }, { status: 201 });
