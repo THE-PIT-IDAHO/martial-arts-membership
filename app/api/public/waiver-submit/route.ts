@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { sendWaiverWelcomeEmail } from "@/lib/notifications";
 
 const DEFAULT_CLIENT_ID = "default-client";
 
@@ -80,6 +82,19 @@ async function handleAdultSubmit(body: Record<string, string>) {
 
   if (pdfBase64) await savePdfToMember(member.id, pdfBase64);
 
+  // Send welcome email with portal access link
+  if (email) {
+    const headersList = await headers();
+    const host = headersList.get("host") || "localhost:3000";
+    const protocol = host.includes("localhost") ? "http" : "https";
+    const portalUrl = `${protocol}://${host}/portal/login`;
+    sendWaiverWelcomeEmail({
+      email,
+      memberName: `${firstName.trim()} ${lastName.trim()}`,
+      portalUrl,
+    }).catch(() => {}); // Fire and forget — don't block submission
+  }
+
   return NextResponse.json({ member: { id: member.id } }, { status: 201 });
 }
 
@@ -150,6 +165,21 @@ async function handleGuardianSubmit(body: Record<string, string>) {
         relationship: relationshipType,
       },
     });
+  }
+
+  // Send welcome email to guardian (primary contact) with portal info for the dependent
+  const contactEmail = email || dependentEmail;
+  if (contactEmail) {
+    const headersList = await headers();
+    const host = headersList.get("host") || "localhost:3000";
+    const protocol = host.includes("localhost") ? "http" : "https";
+    const portalUrl = `${protocol}://${host}/portal/login`;
+    const memberName = `${dependentFirstName.trim()} ${dependentLastName.trim()}`;
+    sendWaiverWelcomeEmail({
+      email: contactEmail,
+      memberName,
+      portalUrl,
+    }).catch(() => {});
   }
 
   return NextResponse.json({ member: { id: dependent.id } }, { status: 201 });

@@ -261,6 +261,31 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     variables: ["firstName", "planName", "gymName", "gymEmail"],
   },
 
+  // --- Waiver ---
+  {
+    eventKey: "waiver_welcome",
+    name: "Waiver Welcome / Portal Access",
+    subject: "Welcome to {{gymName}} — Your Portal Access",
+    bodyHtml: `<h2 style="color:#c41111;">Welcome to {{gymName}}!</h2>
+    <p>Hi {{memberName}},</p>
+    <p>Thank you for completing your liability waiver. You're all set to start training!</p>
+    <div style="background:#fef2f2;padding:16px;border-radius:8px;margin:16px 0;border:1px solid #fecaca;">
+      <p style="margin:0 0 8px;font-weight:600;font-size:16px;">Access Your Member Portal</p>
+      <p style="margin:0 0 12px;color:#6b7280;">View your classes, track your progress, manage your account, and more.</p>
+      <a href="{{portalUrl}}" style="display:inline-block;background:#c41111;color:#ffffff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Go to Member Portal</a>
+    </div>
+    <p style="font-size:14px;"><strong>How to sign in:</strong></p>
+    <ol style="font-size:14px;color:#374151;">
+      <li>Click the button above or go to <a href="{{portalUrl}}">{{portalUrl}}</a></li>
+      <li>Enter your email address: <strong>{{memberEmail}}</strong></li>
+      <li>Click "Send Magic Link"</li>
+      <li>Check your inbox for a login link and click it — no password needed!</li>
+    </ol>
+    <p>If you have any questions, feel free to contact us at {{gymEmail}}.</p>
+    <p>See you on the mat!</p>`,
+    variables: ["memberName", "memberEmail", "portalUrl", "gymName", "gymEmail"],
+  },
+
   // --- Auth ---
   {
     eventKey: "magic_link",
@@ -339,7 +364,7 @@ export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
   },
   {
     label: "Enrollment",
-    keys: ["enrollment_confirmation"],
+    keys: ["enrollment_confirmation", "waiver_welcome"],
   },
   {
     label: "Auth",

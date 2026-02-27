@@ -364,6 +364,27 @@ export async function sendEnrollmentConfirmationEmail(params: {
   await sendEmail({ to: [params.email], subject, html });
 }
 
+// --- 11b. Waiver Welcome (portal access email sent after waiver submission) ---
+
+export async function sendWaiverWelcomeEmail(params: {
+  email: string;
+  memberName: string;
+  portalUrl: string;
+}) {
+  const brand = await getGymBranding();
+  const resolved = await resolveTemplate("waiver_welcome", {
+    memberName: params.memberName,
+    memberEmail: params.email,
+    portalUrl: params.portalUrl,
+    gymName: brand.gymName,
+    gymEmail: brand.gymEmail,
+  });
+  if (!resolved) return;
+  const { subject, bodyHtml } = resolved;
+  const html = wrapInTemplate(brand, bodyHtml);
+  await sendEmail({ to: [params.email], subject, html });
+}
+
 // --- 12. Custom Message (for calendar "message attendees") ---
 
 export async function sendCustomMessageEmail(params: {
