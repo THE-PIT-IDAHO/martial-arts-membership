@@ -116,6 +116,8 @@ export default function AdultWaiverPage() {
   const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
   const [medicalNotes, setMedicalNotes] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [hasScrolledWaiver, setHasScrolledWaiver] = useState(false);
+  const waiverScrollRef = useRef<HTMLDivElement>(null);
   const [signatureDate, setSignatureDate] = useState(getTodayString());
   const [waiverSections, setWaiverSections] = useState<WaiverSection[]>(DEFAULT_WAIVER_SECTIONS);
   const [gymSettings, setGymSettings] = useState<GymSettings>(DEFAULT_GYM_SETTINGS);
@@ -159,6 +161,14 @@ export default function AdultWaiverPage() {
     }
     loadData();
   }, []);
+
+  function handleWaiverScroll() {
+    const el = waiverScrollRef.current;
+    if (!el) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 10) {
+      setHasScrolledWaiver(true);
+    }
+  }
 
   // Canvas drawing functions
   function startDrawing(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
@@ -679,25 +689,33 @@ export default function AdultWaiverPage() {
               <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
                 Waiver & Release of Liability
               </h2>
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 sm:p-4 max-h-48 sm:max-h-64 overflow-y-auto text-xs sm:text-sm text-gray-700 space-y-2 sm:space-y-3">
+              <div
+                ref={waiverScrollRef}
+                onScroll={handleWaiverScroll}
+                className="bg-gray-50 border border-gray-200 rounded-lg p-3 sm:p-4 max-h-96 sm:max-h-[32rem] overflow-y-auto text-xs sm:text-sm text-gray-700 space-y-2 sm:space-y-3"
+              >
                 {waiverSections.map((section) => (
                   <p key={section.id}>
                     {section.title && <strong>{section.title}:</strong>} {replacePlaceholders(section.content, gymSettings, firstName && lastName ? `${firstName} ${lastName}` : "")}
                   </p>
                 ))}
               </div>
+              {!hasScrolledWaiver && (
+                <p className="text-xs text-gray-400 mt-1 text-center">Scroll to the bottom to continue</p>
+              )}
             </section>
 
             {/* Agreement Checkbox */}
-            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+            <div className={`flex items-start gap-3 rounded-lg p-3 sm:p-4 transition-opacity ${hasScrolledWaiver ? "bg-red-50 border border-red-200" : "bg-gray-100 border border-gray-200 opacity-50"}`}>
               <input
                 type="checkbox"
                 id="agree"
                 checked={agreedToTerms}
                 onChange={(e) => setAgreedToTerms(e.target.checked)}
+                disabled={!hasScrolledWaiver}
                 className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4 rounded border-gray-300 text-primary focus:ring-primary flex-shrink-0"
               />
-              <label htmlFor="agree" className="text-xs sm:text-sm text-gray-700">
+              <label htmlFor="agree" className={`text-xs sm:text-sm ${hasScrolledWaiver ? "text-gray-700" : "text-gray-400"}`}>
                 I have read and agree to the terms and conditions stated above. I understand that this is a legally binding agreement and that I am giving up certain legal rights by signing this waiver.
               </label>
             </div>
