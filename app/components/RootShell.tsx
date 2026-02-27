@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import Header from "./Header";
 import { ThemeProvider } from "@/components/theme-provider";
 
-const PASSTHROUGH_PREFIXES = ["/portal", "/kiosk", "/waivers/blank"];
+const PASSTHROUGH_PREFIXES = ["/portal", "/kiosk", "/waivers/new"];
 
 export default function RootShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

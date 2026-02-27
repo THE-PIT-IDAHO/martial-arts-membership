@@ -44,7 +44,7 @@ export default function BlankWaiversPage() {
                   rules and regulations, and health declaration.
                 </p>
                 <Link
-                  href="/waivers/blank/adult"
+                  href="/waivers/new/adult"
                   className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark active:scale-[0.98] transition-all"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,7 +67,7 @@ export default function BlankWaiversPage() {
                   Includes dependent information section and guardian authorization.
                 </p>
                 <Link
-                  href="/waivers/blank/guardian"
+                  href="/waivers/new/guardian"
                   className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark active:scale-[0.98] transition-all"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
