@@ -251,12 +251,11 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
   {
     eventKey: "enrollment_confirmation",
     name: "Waiver Confirmation",
-    subject: "Waiver Received — {{gymName}}",
-    bodyHtml: `<h2 style="color:#c41111;">Waiver Received!</h2>
+    subject: "Waiver Confirmed — {{gymName}}",
+    bodyHtml: `<h2 style="color:#c41111;">Your Waiver Has Been Confirmed!</h2>
     <p>Hi {{firstName}},</p>
-    <p>Thank you for submitting your liability waiver at <strong>{{gymName}}</strong>.</p>
-    <p>We've received your signed waiver and it is currently being reviewed. You'll receive another email once it has been confirmed.</p>
-    <p>If you have any questions, feel free to contact us at {{gymEmail}}.</p>`,
+    <p>Your liability waiver at <strong>{{gymName}}</strong> has been reviewed and confirmed.</p>
+    <p>Thank you for completing your waiver. If you have any questions, feel free to contact us at {{gymEmail}}.</p>`,
     variables: ["firstName", "gymName", "gymEmail"],
   },
 

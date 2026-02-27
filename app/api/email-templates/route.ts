@@ -27,6 +27,19 @@ export async function GET(req: Request) {
     );
   }
 
+  // Sync names for non-custom templates (picks up renames in defaults)
+  const defaultMap = new Map(DEFAULT_EMAIL_TEMPLATES.map((t) => [t.eventKey, t]));
+  const existing = await prisma.emailTemplate.findMany({ where: { clientId } });
+  for (const tpl of existing) {
+    const def = defaultMap.get(tpl.eventKey);
+    if (def && !tpl.isCustom && tpl.name !== def.name) {
+      await prisma.emailTemplate.update({
+        where: { id: tpl.id },
+        data: { name: def.name },
+      });
+    }
+  }
+
   const templates = await prisma.emailTemplate.findMany({
     where: { clientId },
     orderBy: { eventKey: "asc" },

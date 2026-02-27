@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
+import { sendWaiverReceivedEmail } from "@/lib/notifications";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -44,7 +45,16 @@ export async function PATCH(req: Request, { params }: Params) {
       data: { waiverSigned: true, waiverSignedAt: new Date() },
     });
 
-    // 3. Audit log
+    // 3. Send waiver confirmation email
+    if (waiver.member.email) {
+      sendWaiverReceivedEmail({
+        email: waiver.member.email,
+        firstName: waiver.member.firstName,
+        clientId,
+      }).catch(() => {});
+    }
+
+    // 4. Audit log
     logAudit({
       entityType: "SignedWaiver",
       entityId: id,

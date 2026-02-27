@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
-import { sendWaiverReceivedEmail } from "@/lib/notifications";
 
 async function getNextMemberNumber(): Promise<number> {
   const lastMember = await prisma.member.findFirst({
@@ -93,15 +92,6 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
 
   if (pdfBase64) await savePdfToMember(member.id, pdfBase64);
 
-  // Send waiver received confirmation email
-  if (email) {
-    sendWaiverReceivedEmail({
-      email,
-      firstName: firstName.trim(),
-      clientId,
-    }).catch(() => {});
-  }
-
   return NextResponse.json({ member: { id: member.id } }, { status: 201 });
 }
 
@@ -155,15 +145,6 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
   });
 
   if (pdfBase64) await savePdfToMember(dependent.id, pdfBase64);
-
-  // Send waiver received confirmation email to guardian
-  if (email) {
-    sendWaiverReceivedEmail({
-      email,
-      firstName: dependentFirstName.trim(),
-      clientId,
-    }).catch(() => {});
-  }
 
   // Create guardian member
   if (guardianFirstName && guardianLastName) {
