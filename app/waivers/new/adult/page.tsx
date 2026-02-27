@@ -383,7 +383,8 @@ export default function AdultWaiverPage() {
       if (res.ok) {
         setSuccess(true);
       } else {
-        setError("Failed to submit waiver");
+        const data = await res.json().catch(() => null);
+        setError(data?.error || "Failed to submit waiver");
       }
     } catch (err) {
       setError("Failed to submit waiver");

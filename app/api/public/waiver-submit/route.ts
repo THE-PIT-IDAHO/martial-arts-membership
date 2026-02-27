@@ -41,8 +41,9 @@ export async function POST(req: Request) {
     }
     return handleAdultSubmit(body);
   } catch (error) {
-    console.error("Error submitting waiver:", error);
-    return NextResponse.json({ error: "Failed to submit waiver" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    console.error("Error submitting waiver:", msg, error);
+    return NextResponse.json({ error: `Failed to submit waiver: ${msg}` }, { status: 500 });
   }
 }
 
@@ -61,7 +62,7 @@ async function handleAdultSubmit(body: Record<string, string>) {
       lastName: lastName.trim(),
       email: email || null,
       phone: phone || null,
-      dateOfBirth: dateOfBirth || null,
+      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
       address: address || null,
       city: city || null,
       state: state || null,
@@ -102,7 +103,7 @@ async function handleGuardianSubmit(body: Record<string, string>) {
       firstName: dependentFirstName.trim(),
       lastName: dependentLastName.trim(),
       email: dependentEmail || null,
-      dateOfBirth: dependentDateOfBirth || null,
+      dateOfBirth: dependentDateOfBirth ? new Date(dependentDateOfBirth) : null,
       address: address || null,
       city: city || null,
       state: state || null,
