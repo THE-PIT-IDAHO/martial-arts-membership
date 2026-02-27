@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
-import { generateMagicLinkToken } from "@/lib/portal-auth";
-import { sendWaiverConfirmationEmail } from "@/lib/notifications";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -46,25 +44,7 @@ export async function PATCH(req: Request, { params }: Params) {
       data: { waiverSigned: true, waiverSignedAt: new Date() },
     });
 
-    // 3. Send confirmation email with magic link
-    if (waiver.member.email) {
-      const host = req.headers.get("host") || "localhost:3000";
-      const protocol = host.includes("localhost") ? "http" : "https";
-      const portalUrl = `${protocol}://${host}/portal/login`;
-
-      const token = await generateMagicLinkToken(waiver.member.id, waiver.member.email);
-      const magicLoginUrl = `${protocol}://${host}/portal/verify?token=${token}`;
-
-      sendWaiverConfirmationEmail({
-        email: waiver.member.email,
-        memberName: `${waiver.member.firstName} ${waiver.member.lastName}`,
-        portalUrl,
-        magicLoginUrl,
-        clientId,
-      }).catch(() => {});
-    }
-
-    // 4. Audit log
+    // 3. Audit log
     logAudit({
       entityType: "SignedWaiver",
       entityId: id,

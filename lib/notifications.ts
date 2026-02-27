@@ -11,8 +11,8 @@ async function resolveTemplate(
 
 // --- Branding ---
 
-async function getGymBranding() {
-  const s = await getSettings(["gymName", "gymEmail", "gymPhone", "gymLogo"]);
+async function getGymBranding(clientId?: string) {
+  const s = await getSettings(["gymName", "gymEmail", "gymPhone", "gymLogo"], clientId);
   return {
     gymName: s.gymName || "Our Gym",
     gymEmail: s.gymEmail || "",
@@ -344,25 +344,27 @@ export async function sendWaitlistPromotionEmail(params: {
   await sendEmail({ to: emails, subject, html });
 }
 
-// --- 11. Enrollment Confirmation (to applicant) ---
+// --- 11. Waiver Confirmation (sent to submitter after waiver submission) ---
 
-export async function sendEnrollmentConfirmationEmail(params: {
+export async function sendWaiverReceivedEmail(params: {
   email: string;
   firstName: string;
-  planName?: string;
+  clientId?: string;
 }) {
-  const brand = await getGymBranding();
+  const brand = await getGymBranding(params.clientId);
   const resolved = await resolveTemplate("enrollment_confirmation", {
     firstName: params.firstName,
-    planName: params.planName ? `<p>Plan selected: <strong>${params.planName}</strong></p>` : "",
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
   });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [params.email], subject, html });
+  await sendEmail({ to: [params.email], subject, html, clientId: params.clientId });
 }
+
+// Keep old name as alias for backwards compatibility
+export const sendEnrollmentConfirmationEmail = sendWaiverReceivedEmail;
 
 // --- 11b. Waiver Welcome (portal access email sent after waiver submission) ---
 
@@ -394,7 +396,7 @@ export async function sendWaiverConfirmationEmail(params: {
   magicLoginUrl: string;
   clientId?: string;
 }) {
-  const brand = await getGymBranding();
+  const brand = await getGymBranding(params.clientId);
   const resolved = await resolveTemplate("waiver_confirmed", {
     memberName: params.memberName,
     memberEmail: params.email,

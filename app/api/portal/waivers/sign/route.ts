@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { sendWaiverReceivedEmail } from "@/lib/notifications";
 
 export async function GET(request: NextRequest) {
   const auth = await getAuthenticatedMember(request);
@@ -55,6 +56,19 @@ export async function POST(request: NextRequest) {
         clientId,
       },
     });
+
+    // Send waiver received confirmation email
+    const member = await prisma.member.findUnique({
+      where: { id: auth.memberId },
+      select: { firstName: true, email: true },
+    });
+    if (member?.email) {
+      sendWaiverReceivedEmail({
+        email: member.email,
+        firstName: member.firstName,
+        clientId,
+      }).catch(() => {});
+    }
 
     return NextResponse.json({ signedWaiver: signed }, { status: 201 });
   } catch (error) {

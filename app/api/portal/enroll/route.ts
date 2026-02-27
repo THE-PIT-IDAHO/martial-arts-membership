@@ -86,7 +86,6 @@ export async function POST(req: Request) {
     sendEnrollmentConfirmationEmail({
       email: email.trim().toLowerCase(),
       firstName: firstName.trim(),
-      planName,
     }).catch(() => {});
 
     return NextResponse.json({ success: true, id: submission.id }, { status: 201 });

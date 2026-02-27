@@ -218,18 +218,37 @@ export default function WaiversPage() {
           }
         }
 
-        // Load gym settings
-        const gymRes = await fetch("/api/settings?key=gym_settings");
-        if (gymRes.ok) {
-          const data = await gymRes.json();
-          if (data.setting?.value) {
+        // Load gym settings: use main app settings as base, overlay waiver-specific overrides
+        const appRes = await fetch("/api/settings");
+        if (appRes.ok) {
+          const appData = await appRes.json();
+          const allSettings: { key: string; value: string }[] = appData.settings || [];
+          const lookup = (k: string) => allSettings.find((s) => s.key === k)?.value || "";
+
+          // Start with main app settings (from Account > Preferences)
+          const fromApp: GymSettings = {
+            name: lookup("gymName") || DEFAULT_GYM_SETTINGS.name,
+            address: lookup("gymAddress") || "",
+            phone: lookup("gymPhone") || "",
+            email: lookup("gymEmail") || "",
+          };
+
+          // Check if waiver-specific overrides exist
+          const gymSettingsRaw = lookup("gym_settings");
+          if (gymSettingsRaw) {
             try {
-              const parsed = JSON.parse(data.setting.value);
-              setGymSettings(parsed);
+              const parsed = JSON.parse(gymSettingsRaw);
+              // Only use waiver-specific fields if they have real values
+              if (parsed.name && parsed.name !== DEFAULT_GYM_SETTINGS.name) fromApp.name = parsed.name;
+              if (parsed.address) fromApp.address = parsed.address;
+              if (parsed.phone) fromApp.phone = parsed.phone;
+              if (parsed.email) fromApp.email = parsed.email;
             } catch {
-              // Use defaults if parsing fails
+              // Ignore parse errors
             }
           }
+
+          setGymSettings(fromApp);
         }
 
         // Load waiver options
@@ -354,10 +373,29 @@ export default function WaiversPage() {
     }
   }
 
-  function openEditModal() {
+  async function openEditModal() {
     setEditingSections(JSON.parse(JSON.stringify(waiverSections)));
-    setEditingGymSettings(JSON.parse(JSON.stringify(gymSettings)));
     setEditingWaiverOptions(JSON.parse(JSON.stringify(waiverOptions)));
+
+    // Start with current gym settings, then fill any empty fields from app settings
+    const current: GymSettings = JSON.parse(JSON.stringify(gymSettings));
+    try {
+      const res = await fetch("/api/settings");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.settings && Array.isArray(data.settings)) {
+          const map: Record<string, string> = {};
+          for (const s of data.settings) map[s.key] = s.value;
+          if (!current.name || current.name === DEFAULT_GYM_SETTINGS.name) current.name = map.gymName || current.name;
+          if (!current.address) current.address = map.gymAddress || "";
+          if (!current.phone) current.phone = map.gymPhone || "";
+          if (!current.email) current.email = map.gymEmail || "";
+        }
+      }
+    } catch {
+      // Use whatever we have
+    }
+    setEditingGymSettings(current);
     setShowEditModal(true);
   }
 
