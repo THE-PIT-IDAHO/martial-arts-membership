@@ -109,7 +109,7 @@ export async function sendEmail(params: {
       to: recipients,
       subject: params.subject,
       html: params.html,
-      reply_to: gymEmail || undefined,
+      replyTo: gymEmail || undefined,
     };
 
     if (params.attachments && params.attachments.length > 0) {

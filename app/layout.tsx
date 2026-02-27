@@ -5,7 +5,11 @@ import RootShell from "./components/RootShell";
 
 export const metadata: Metadata = {
   title: "Dojo Storm Software",
-  description: "Martial arts gym management software"
+  description: "Martial arts gym management software",
+  icons: {
+    icon: "/favicon.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({
