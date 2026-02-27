@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: process.env.BUILD_STANDALONE === "true" ? "standalone" : undefined,
+  output: "standalone",
   reactStrictMode: true,
   async headers() {
     return [
