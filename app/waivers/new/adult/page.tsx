@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from "react";
 import { jsPDF } from "jspdf";
 import { getTodayString } from "@/lib/dates";
 import { DateOfBirthPicker } from "@/components/date-of-birth-picker";
-import { AddressAutocomplete } from "@/components/address-autocomplete";
 
 type WaiverSection = {
   id: string;
@@ -588,16 +587,11 @@ export default function AdultWaiverPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Street Address
                   </label>
-                  <AddressAutocomplete
+                  <input
+                    type="text"
                     value={address}
-                    onChange={setAddress}
-                    onAddressSelect={(parts) => {
-                      setAddress(parts.address);
-                      setCity(parts.city);
-                      setState(parts.state);
-                      setZipCode(parts.zipCode);
-                    }}
-                    autoCapitalize={autoCapitalize}
+                    onChange={(e) => setAddress(autoCapitalize(e.target.value))}
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
                 <div>
