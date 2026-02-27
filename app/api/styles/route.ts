@@ -30,7 +30,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, shortName, description, beltSystemEnabled } = body;
+    const { name, shortName, description, beltSystemEnabled, testNamingConvention } = body;
 
     if (!name || typeof name !== "string") {
       return new NextResponse("Name is required", { status: 400 });
@@ -42,6 +42,7 @@ export async function POST(req: Request) {
         shortName: shortName?.trim() || null,
         description: description?.trim() || null,
         beltSystemEnabled: beltSystemEnabled ?? false,
+        testNamingConvention: testNamingConvention || "INTO_RANK",
       },
     });
 

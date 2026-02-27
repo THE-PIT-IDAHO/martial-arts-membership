@@ -1,82 +1,51 @@
-// prisma/schema.prisma
-
-datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
-}
-
 generator client {
   provider = "prisma-client-js"
 }
 
-//
-// CLIENT (gym owner account)
-//
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
 model Client {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  users           User[]
-  members         Member[]
-  programs        Program[]
-  membershipPlans MembershipPlan[]
-  classSessions   ClassSession[]
-  tasks           Task[]
+  id              String           @id @default(cuid())
+  name            String
+  slug            String           @unique
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   appointments    Appointment[]
+  classSessions   ClassSession[]
+  members         Member[]
+  membershipPlans MembershipPlan[]
+  programs        Program[]
+  tasks           Task[]
+  users           User[]
 }
 
-//
-// USERS (staff/admin login)
-//
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  name         String?
-  // Allowed values (by convention): OWNER, ADMIN, COACH, FRONTDESK
-  role         String    @default("COACH")
-
-  clientId String
-  client   Client   @relation(fields: [clientId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  email              String   @unique
+  passwordHash       String
+  name               String?
+  role               String   @default("COACH")
+  mustChangePassword Boolean  @default(false)
+  clientId           String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  client             Client   @relation(fields: [clientId], references: [id])
 }
 
-//
-// MEMBERS
-//
 model Member {
-  id    String @id @default(cuid())
-
-  /// Member number – unique, starts at 10000000 and up (enforced in API logic)
-  memberNumber Int? @unique
-
-  firstName String
-  lastName  String
-  email     String?
-  phone     String?
-
-  // Profile / media
-  photoUrl String?
-
-  // Styles (JSON array of style objects)
-  primaryStyle String?
-  stylesNotes  String?
-
-  // Style documents (JSON array of document objects with name, url, uploadedAt)
-  styleDocuments String?
-
-  // Payment / POS notes
-  paymentNotes String?
-
-  // Status: PROSPECT, ACTIVE, INACTIVE, PARENT, COACH (by convention)
-  status String @default("PROSPECT")
-
-  // Personal info
+  id                    String               @id @default(cuid())
+  firstName             String
+  lastName              String
+  email                 String?
+  phone                 String?
+  photoUrl              String?
+  primaryStyle          String?
+  stylesNotes           String?
+  paymentNotes          String?
+  status                String               @default("PROSPECT")
   dateOfBirth           DateTime?
   address               String?
   city                  String?
@@ -85,520 +54,939 @@ model Member {
   emergencyContactName  String?
   emergencyContactPhone String?
   parentGuardianName    String?
+  minorCommsMode        String?               @default("both") // "both" or "parent_only"
   notes                 String?
-
-  // Martial arts info (mirrors primary style)
-  startDate    DateTime?
-  rank         String?
-  uniformSize  String?
-  medicalNotes String?
-  waiverSigned Boolean   @default(false)
-  waiverSignedAt DateTime?
-
-  // Membership label (later can link to MembershipPlan)
-  membershipType String?
-
-  // Relationships
-  relationshipsFrom MemberRelationship[] @relation("MemberRelationshipsFrom")
-  relationshipsTo   MemberRelationship[] @relation("MemberRelationshipsTo")
-
-  clientId String
-  client   Client   @relation(fields: [clientId], references: [id])
-
-  memberships Membership[]
-  attendances Attendance[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  startDate             DateTime?
+  rank                  String?
+  uniformSize           String?
+  medicalNotes          String?
+  waiverSigned          Boolean              @default(false)
+  waiverSignedAt        DateTime?
+  emailOptIn            Boolean              @default(true)
+  membershipType        String?
+  clientId              String
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  /// Member number – unique, starts at 10000000 and up (enforced in API logic)
+  memberNumber          Int?                 @unique
+  styleDocuments        String?
+  accountCreditCents    Int                  @default(0)
+  accessRole            String?              // "OWNER", "ADMIN", "COACH", "FRONT_DESK"
+  stripeCustomerId      String?
+  defaultPaymentMethodId String?
+  paypalPayerId         String?
+  squareCustomerId      String?
+  portalPasswordHash    String?
+  leadSource            String?
+  referredByMemberId    String?
+  referredBy            Member?   @relation("Referrals", fields: [referredByMemberId], references: [id])
+  referrals             Member[]  @relation("Referrals")
+  attendances           Attendance[]
+  client                Client               @relation(fields: [clientId], references: [id])
+  relationshipsTo       MemberRelationship[] @relation("MemberRelationshipsTo")
+  relationshipsFrom     MemberRelationship[] @relation("MemberRelationshipsFrom")
+  memberships           Membership[]
+  invoices              Invoice[]
+  authTokens            MemberAuthToken[]
+  sessions              MemberSession[]
+  bookings              ClassBooking[]
+  signedWaivers         SignedWaiver[]
+  signedContracts       SignedContract[]
+  trialPasses           TrialPass[]
+  serviceCredits        MemberServiceCredit[]
 }
 
-//
-// MEMBER RELATIONSHIPS
-//
 model MemberRelationship {
-  id String @id @default(cuid())
-
+  id           String   @id @default(cuid())
   fromMemberId String
   toMemberId   String
-
-  // Allowed values:
-  // PARENT, CHILD, GUARDIAN, SPOUSE, SIGNIFICANT_OTHER,
-  // SIBLING, PAYS_FOR, PAID_FOR_BY
   relationship String
-
-  fromMember Member @relation("MemberRelationshipsFrom", fields: [fromMemberId], references: [id])
-  toMember   Member @relation("MemberRelationshipsTo", fields: [toMemberId], references: [id])
-
-  createdAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  toMember     Member   @relation("MemberRelationshipsTo", fields: [toMemberId], references: [id])
+  fromMember   Member   @relation("MemberRelationshipsFrom", fields: [fromMemberId], references: [id])
 }
 
-//
-// PROGRAMS (styles)
-//
 model Program {
-  id          String   @id @default(cuid())
+  id          String         @id @default(cuid())
   name        String
   description String?
-  isActive    Boolean  @default(true)
-
-  clientId String
-  client   Client   @relation(fields: [clientId], references: [id])
-
-  classes ClassSession[]
+  isActive    Boolean        @default(true)
+  clientId    String
+  classes     ClassSession[]
+  client      Client         @relation(fields: [clientId], references: [id])
 }
 
-//
-// MEMBERSHIP TYPES (for reporting labels: Monthly, Paid in Full, Trial, etc.)
-//
 model MembershipType {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  color       String?
-  sortOrder   Int      @default(0)
-  isActive    Boolean  @default(true)
-
-  clientId String @default("default-client")
-
+  id              String           @id @default(cuid())
+  name            String
+  description     String?
+  color           String?
+  sortOrder       Int              @default(0)
+  isActive        Boolean          @default(true)
+  clientId        String           @default("default-client")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   membershipPlans MembershipPlan[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
 
-//
-// MEMBERSHIP PLANS
-//
 model MembershipPlan {
-  id           String   @id @default(cuid())
-
+  id                           String          @id @default(cuid())
   /// Membership ID number – unique identifier for display
-  membershipId String?  @unique
-
+  membershipId                 String?         @unique
   /// Membership Type for reporting purposes
-  membershipTypeId String?
-  membershipType   MembershipType? @relation(fields: [membershipTypeId], references: [id])
-
-  name         String
-  description  String?
-
-  // Pricing
-  priceCents   Int?
-  setupFeeCents Int?    // One-time enrollment/registration fee
-  purchaseLimit Int?    // Max times this plan can be purchased, null = unlimited
-
-  // Suggested: WEEKLY, MONTHLY, YEARLY, SESSION, ONE_TIME
-  billingCycle String   @default("MONTHLY")
-
-  // Contract terms
-  contractLengthMonths Int?     // Minimum commitment period (e.g., 12 months)
-  autoRenew            Boolean  @default(true)
-
-  // Access controls
-  classesPerDay        Int?     // null = unlimited
-  classesPerWeek       Int?     // null = unlimited
-  classesPerMonth      Int?     // null = unlimited
-  allowedStyles        String?  // JSON array of style IDs, null = all styles
-
-  // Family/group discounts
-  familyDiscountPercent Int?    // e.g., 10 = 10% off for additional family members
-
-  // Trial/promo
-  trialDays            Int?     // Free trial period before billing starts
-  promoCode            String?  // Optional promo code for this plan
-
-  // Cancellation
-  cancellationNoticeDays Int?   // Days notice required to cancel
-  cancellationFeeCents   Int?   // Fee charged for early cancellation (in cents)
-
-  // Display
-  sortOrder            Int      @default(0)  // For ordering plans in UI
-  color                String?  // Color for display
-
-  isActive     Boolean  @default(true)
-
-  clientId String
-  client   Client   @relation(fields: [clientId], references: [id])
-
-  memberships Membership[]
+  membershipTypeId             String?
+  name                         String
+  description                  String?
+  priceCents                   Int?
+  setupFeeCents                Int?
+  billingCycle                 String          @default("MONTHLY")
+  contractLengthMonths         Int?
+  autoRenew                    Boolean         @default(true)
+  classesPerDay                Int?
+  classesPerWeek               Int?
+  classesPerMonth              Int?
+  allowedStyles                String?
+  familyDiscountPercent        Int?
+  trialDays                    Int?
+  promoCode                    String?
+  cancellationNoticeDays       Int?
+  cancellationFeeCents         Int?
+  sortOrder                    Int             @default(0)
+  color                        String?
+  isActive                     Boolean         @default(true)
+  availableOnline              Boolean         @default(false)
+  clientId                     String
+  purchaseLimit                Int?
+  rankPromotionDiscountPercent Int?
+  otherDiscountPercent         Int?
+  contractClauses              String?
+  memberships                  Membership[]
+  client                       Client          @relation(fields: [clientId], references: [id])
+  membershipType               MembershipType? @relation(fields: [membershipTypeId], references: [id])
 }
 
-//
-// MEMBERSHIP LINK
-//
 model Membership {
-  id               String   @id @default(cuid())
-  memberId         String
-  membershipPlanId String
-
-  member         Member         @relation(fields: [memberId], references: [id])
-  membershipPlan MembershipPlan @relation(fields: [membershipPlanId], references: [id])
-
-  startDate DateTime
-  endDate   DateTime?
-
-  // Suggested: ACTIVE, PAUSED, CANCELED, EXPIRED
-  status String @default("ACTIVE")
+  id                     String         @id @default(cuid())
+  memberId               String
+  membershipPlanId       String
+  startDate              DateTime
+  endDate                DateTime?
+  customPriceCents       Int?
+  firstMonthDiscountOnly Boolean        @default(false)
+  lastPaymentDate        DateTime?
+  nextPaymentDate        DateTime?
+  pauseEndDate           DateTime?
+  status                 String         @default("ACTIVE")
+  contractEndDate        DateTime?
+  cancellationRequestDate   DateTime?
+  cancellationEffectiveDate DateTime?
+  cancellationReason     String?
+  membershipPlan         MembershipPlan @relation(fields: [membershipPlanId], references: [id])
+  member                 Member         @relation(fields: [memberId], references: [id])
+  invoices               Invoice[]
 }
 
-//
-// CLASS SESSIONS
-//
 model ClassSession {
-  id        String   @id @default(cuid())
-  name      String
-  startsAt  DateTime
-  endsAt    DateTime
-
-  // Optional: categorize class type (e.g., "Kempo", "Sparring", "Weapons")
-  classType String?
-
-  // Style fields (replacing programId) - supports multiple styles
-  styleIds   String? // JSON array of style IDs
-  styleNames String? // JSON array of style names
-
-  // Legacy single style fields (kept for backward compatibility)
-  styleId   String?
-  styleName String?
-
-  // Minimum rank requirement (members below this rank cannot check in)
-  minRankId   String?
-  minRankName String?
-
-  // Recurring schedule fields
-  isRecurring     Boolean @default(false)
-  frequencyNumber Int?
-  frequencyUnit   String?
-
-  // Schedule date range
+  id                String       @id @default(cuid())
+  name              String
+  startsAt          DateTime
+  endsAt            DateTime
+  classType         String?
+  classTypes        String?
+  styleIds          String?
+  styleNames        String?
+  styleId           String?
+  styleName         String?
+  minRankId         String?
+  minRankName       String?
+  isRecurring       Boolean      @default(false)
+  frequencyNumber   Int?
+  frequencyUnit     String?
   scheduleStartDate DateTime?
   scheduleEndDate   DateTime?
-  isOngoing         Boolean @default(true)
-
-  // Excluded dates for recurring classes (JSON array of ISO date strings)
-  // Used when "Edit this class only" is used to delete/modify a single occurrence
-  excludedDates String?
-
-  // Calendar color (hex color code)
-  color String? @default("#a3a3a3")
-
-  // Coach assigned to this class
-  coachId   String?
-  coachName String?
-
-  programId String?
-  program   Program? @relation(fields: [programId], references: [id])
-
-  clientId String
-  client   Client   @relation(fields: [clientId], references: [id])
-
-  attendances Attendance[]
+  isOngoing         Boolean      @default(true)
+  color             String?      @default("#a3a3a3")
+  programId         String?
+  clientId          String
+  excludedDates     String?
+  coachId           String?
+  coachName         String?
+  maxCapacity       Int?
+  bookingEnabled    Boolean      @default(false)
+  bookingCutoffMins Int?
+  bookingAdvanceDays Int?
+  kioskEnabled      Boolean      @default(false)
+  attendances       Attendance[]
+  bookings          ClassBooking[]
+  locationId        String?
+  spaceId           String?
+  client            Client       @relation(fields: [clientId], references: [id])
+  program           Program?     @relation(fields: [programId], references: [id])
 }
 
-//
-// ATTENDANCE
-//
 model Attendance {
-  id             String        @id @default(cuid())
-  memberId       String
-  classSessionId String?
+  id                  String        @id @default(cuid())
+  memberId            String
+  classSessionId      String?
+  attendanceDate      DateTime
+  checkedInAt         DateTime      @default(now())
+  source              String        @default("MANUAL")
+  requirementOverride Boolean       @default(false)
+  confirmed           Boolean       @default(false)
+  classSession        ClassSession? @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+  member              Member        @relation(fields: [memberId], references: [id])
 
-  member       Member        @relation(fields: [memberId], references: [id])
-  classSession ClassSession? @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
-
-  // The specific date of attendance (important for recurring classes)
-  attendanceDate DateTime
-  checkedInAt    DateTime @default(now())
-  // Suggested: KIOSK, MANUAL, IMPORT
-  source         String   @default("MANUAL")
-
-  // Track if member was added despite not meeting class requirements
-  requirementOverride Boolean @default(false)
-
-  // Track if attendance has been confirmed (only confirmed attendance counts toward requirements)
-  confirmed Boolean @default(false)
-
-  // Unique constraint: one member can only attend a class once per date
   @@unique([memberId, classSessionId, attendanceDate])
 }
 
-//
-// TASKS
-//
 model Task {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
   description String?
   dueDate     DateTime?
-  // Suggested: OPEN, IN_PROGRESS, DONE
-  status      String   @default("OPEN")
-
-  clientId String
-  client   Client   @relation(fields: [clientId], references: [id])
-
-  createdAt   DateTime @default(now())
+  priority    String    @default("MEDIUM")
+  recurrence  String?
+  assignedRole String?   // "OWNER", "ADMIN", "COACH", "FRONT_DESK"
+  status      String    @default("OPEN")
+  clientId    String
+  createdAt   DateTime  @default(now())
   completedAt DateTime?
+  client      Client    @relation(fields: [clientId], references: [id])
 }
 
 model Style {
-  id                String   @id @default(cuid())
+  id                   String   @id @default(cuid())
+  name                 String
+  shortName            String?
+  description          String?
+  beltSystemEnabled    Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  beltConfig           String?
+  gradingDates         String?
+  testNamingConvention String   @default("INTO_RANK") // "INTO_RANK" = test named for target rank, "FROM_RANK" = test named for current rank
+  ranks                Rank[]
+}
+
+model Rank {
+  id               String     @id @default(cuid())
+  name             String
+  order            Int
+  thumbnail        String?
+  styleId          String
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  classRequirement Int?
+  pdfDocument      String?
+  style            Style      @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  rankTests        RankTest[]
+}
+
+model RankTest {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  rankId      String
+  styleId     String
+  sortOrder   Int            @default(0)
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  rank        Rank           @relation(fields: [rankId], references: [id], onDelete: Cascade)
+  categories  RankTestCategory[]
+}
+
+model RankTestCategory {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  sortOrder   Int            @default(0)
+  rankTestId  String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  rankTest    RankTest       @relation(fields: [rankTestId], references: [id], onDelete: Cascade)
+  items       RankTestItem[]
+}
+
+model RankTestItem {
+  id                String           @id @default(cuid())
   name              String
-  shortName         String?
   description       String?
-  beltSystemEnabled Boolean   @default(false)
+  type              String           @default("skill")
+  required          Boolean          @default(true)
+  sortOrder         Int              @default(0)
+  reps              Int?
+  sets              Int?
+  duration          String?
+  distance          String?
+  timeLimit         String?
+  timeLimitOperator String?          // "lte" (<=), "lt" (<), "eq" (=), "gte" (>=), "gt" (>)
+  videoUrl          String?
+  imageUrl          String?
+  showTitleInPdf    Boolean          @default(true)
+  categoryId        String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  category          RankTestCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+}
 
-  // Store belt designer settings as JSON string
-  beltConfig        String?
+model Appointment {
+  id                    String                 @id @default(cuid())
+  title                 String
+  description           String?
+  type                  String?
+  duration              Int                    @default(60)
+  priceCents            Int?
+  color                 String?                @default("#6b7280")
+  coachId               String?
+  coachName             String?
+  styleId               String?
+  styleName             String?
+  notes                 String?
+  isActive              Boolean                @default(true)
+  clientId              String
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  locationId            String?
+  client                Client                 @relation(fields: [clientId], references: [id])
+  scheduledAppointments ScheduledAppointment[]
+  servicePackages       ServicePackage[]
+}
 
-  // Store grading event dates as JSON string
-  gradingDates      String?
+model ScheduledAppointment {
+  id                    String               @id @default(cuid())
+  appointmentId         String
+  scheduledDate         DateTime
+  startTime             String
+  endTime               String
+  memberId              String?
+  memberName            String?
+  coachId               String?
+  coachName             String?
+  notes                 String?
+  status                String               @default("SCHEDULED")
+  memberServiceCreditId String?
+  spaceId               String?
+  clientId              String
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  appointment           Appointment          @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  memberServiceCredit   MemberServiceCredit? @relation(fields: [memberServiceCreditId], references: [id])
+}
 
-  ranks             Rank[]
+model BoardChannel {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  type        String      @default("custom")
+  visibility  String?
+  hasUpdates  Boolean     @default(false)
+  clientId    String      @default("default-client")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  polls       BoardPoll[]
+  posts       BoardPost[]
+}
 
+model BoardPost {
+  id             String       @id @default(cuid())
+  type           String       @default("notice")
+  title          String
+  content        String
+  authorId       String?
+  authorName     String
+  authorInitials String
+  isPriority     Boolean      @default(false)
+  pinnedUntil    DateTime?    // Auto-unpin after this date passes (used for event posts)
+  styleTags      String?
+  reactions      String?
+  channelId      String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  files          BoardFile[]
+  channel        BoardChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  replies        BoardReply[]
+}
+
+model BoardFile {
+  id         String     @id @default(cuid())
+  name       String
+  size       Int
+  type       String
+  url        String
+  uploadedBy String
+  postId     String?
+  channelId  String     @default("all")
+  createdAt  DateTime   @default(now())
+  post       BoardPost? @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model BoardReply {
+  id             String    @id @default(cuid())
+  content        String
+  authorId       String?
+  authorName     String
+  authorInitials String
+  postId         String
+  createdAt      DateTime  @default(now())
+  post           BoardPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model BoardPoll {
+  id             String            @id @default(cuid())
+  question       String
+  authorId       String?
+  authorName     String
+  authorInitials String
+  allowMultiple  Boolean           @default(false)
+  isAnonymous    Boolean           @default(false)
+  expiresAt      DateTime?
+  channelId      String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  channel        BoardChannel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  options        BoardPollOption[]
+}
+
+model BoardPollOption {
+  id     String          @id @default(cuid())
+  text   String
+  order  Int             @default(0)
+  pollId String
+  poll   BoardPoll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes  BoardPollVote[]
+}
+
+model BoardPollVote {
+  id        String          @id @default(cuid())
+  optionId  String
+  voterId   String
+  createdAt DateTime        @default(now())
+  option    BoardPollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, voterId])
+}
+
+model POSItem {
+  id              String           @id
+  name            String
+  description     String?
+  sku             String?          @unique
+  priceCents      Int
+  quantity        Int              @default(0)
+  category        String?
+  sizes           String?
+  colors          String?
+  variantLabel1   String?
+  variantLabel2   String?
+  itemType        String?
+  isActive        Boolean          @default(true)
+  availableOnline Boolean          @default(false)
+  reorderThreshold Int?
+  clientId        String           @default("default-client")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime
+  POSLineItem     POSLineItem[]
+  variants        POSItemVariant[]
+}
+
+model POSItemVariant {
+  id        String   @id @default(cuid())
+  itemId    String
+  size      String?
+  color     String?
+  sku       String?
+  quantity  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  item      POSItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, size, color])
+}
+
+model POSLineItem {
+  id               String         @id
+  itemId           String?
+  transactionId    String
+  itemName         String
+  itemSku          String?
+  type             String         @default("product")
+  membershipPlanId String?
+  variantInfo      String?
+  quantity         Int
+  unitPriceCents   Int
+  subtotalCents    Int
+  servicePackageId String?
+  createdAt        DateTime       @default(now())
+  POSTransaction   POSTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  POSItem          POSItem?       @relation(fields: [itemId], references: [id])
+}
+
+model POSTransaction {
+  id                String        @id
+  transactionNumber String?       @unique
+  memberId          String?
+  memberName        String?
+  subtotalCents     Int
+  taxCents          Int           @default(0)
+  discountCents     Int           @default(0)
+  totalCents        Int
+  paymentMethod     String        @default("CASH")
+  status            String        @default("COMPLETED")
+  notes             String?
+  paymentIntentId   String?
+  paymentProcessor  String?
+  receiptUrl        String?
+  clientId          String        @default("default-client")
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime
+  POSLineItem       POSLineItem[]
+}
+
+model Settings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  clientId  String   @default("default-client")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TestingEvent {
+  id           String               @id @default(cuid())
+  name         String
+  date         DateTime
+  time         String?
+  styleId      String
+  styleName    String
+  location     String?
+  notes        String?
+  status       String               @default("SCHEDULED")
+  clientId     String               @default("default-client")
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  participants TestingParticipant[]
+}
+
+model TestingParticipant {
+  id             String       @id @default(cuid())
+  testingEventId String
+  memberId       String
+  memberName     String
+  currentRank    String?
+  testingForRank String?
+  status         String       @default("REGISTERED")
+  score          Int?
+  notes          String?      // Member notes - included in test result PDF
+  adminNotes     String?      // Admin notes - internal only, not included in PDF
+  resultPdfUrl   String?
+  itemScores     String?      // JSON string storing individual item scores: { itemId: { score, passed, notes } }
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  testingEvent   TestingEvent @relation(fields: [testingEventId], references: [id], onDelete: Cascade)
+}
+
+model PromotionEvent {
+  id           String                 @id @default(cuid())
+  name         String
+  date         DateTime
+  time         String?
+  styleId      String
+  styleName    String
+  location     String?
+  notes        String?
+  costCents    Int?                   // Optional fee to charge for the promotion
+  status       String                 @default("SCHEDULED") // SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED
+  clientId     String                 @default("default-client")
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  participants PromotionParticipant[]
+}
+
+model PromotionParticipant {
+  id               String         @id @default(cuid())
+  promotionEventId String
+  memberId         String
+  memberName       String
+  currentRank      String?
+  promotingToRank  String?
+  status           String         @default("REGISTERED") // REGISTERED, PROMOTED, CANCELLED
+  notes            String?
+  promotedAt       DateTime?
+  feeCharged       Boolean        @default(false)
+  transactionId    String?        // Link to POSTransaction if fee was charged
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  promotionEvent   PromotionEvent @relation(fields: [promotionEventId], references: [id], onDelete: Cascade)
+}
+
+model BoardEvent {
+  id          String   @id @default(cuid())
+  sourceType  String   // "testing", "promotion"
+  sourceId    String   // ID of the TestingEvent or PromotionEvent
+  boardPostId String?  // ID of the BoardPost created when posted
+  clientId    String   @default("default-client")
+  createdAt   DateTime @default(now())
+
+  @@unique([sourceType, sourceId])
+}
+
+model WeeklyFocus {
+  id             String    @id @default(cuid())
+  title          String
+  description    String?
+  videoUrl       String?
+  rankTestItemId String?   // Optional link to a curriculum item
+  isActive       Boolean   @default(true)
+  postedAt       DateTime? // When this focus was posted to the feed
+  pinnedUntil    DateTime? // Stays pinned in feed until this date/time
+  boardPostId    String?   // ID of the BoardPost created when posted
+  clientId       String    @default("default-client")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model GiftCertificate {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  amountCents   Int
+  balanceCents  Int
+  purchasedBy   String?
+  recipientName String?
+  status        String   @default("ACTIVE") // ACTIVE, REDEEMED, VOIDED
+  transactionId String?
+  clientId      String   @default("default-client")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model DirectConversation {
+  id             String                     @id @default(cuid())
+  membersVisible Boolean                    @default(true) // can members see other members in this thread
+  clientId       String                     @default("default-client")
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  members        DirectConversationMember[]
+  messages       DirectMessage[]
+}
+
+model DirectConversationMember {
+  id             String             @id @default(cuid())
+  conversationId String
+  memberId       String
+  conversation   DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, memberId])
+}
+
+model DirectMessage {
+  id             String             @id @default(cuid())
+  conversationId String
+  senderType     String             // "admin" or "member"
+  senderId       String?            // memberId when senderType is "member"
+  content        String
+  isRead         Boolean            @default(false)
+  clientId       String             @default("default-client")
+  createdAt      DateTime           @default(now())
+  conversation   DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model Invoice {
+  id                     String     @id @default(cuid())
+  invoiceNumber          String?    @unique
+  membershipId           String
+  memberId               String
+  amountCents            Int
+  status                 String     @default("PENDING") // PENDING, PAID, FAILED, PAST_DUE, VOID
+  billingPeriodStart     DateTime
+  billingPeriodEnd       DateTime
+  dueDate                DateTime
+  paidAt                 DateTime?
+  paymentMethod          String?
+  transactionId          String?    // Links to POSTransaction when paid
+  stripePaymentIntentId  String?    // Stripe payment intent ID (backward compat)
+  externalPaymentId      String?    // Processor-agnostic payment ID
+  paymentProcessor       String?    // "stripe" | "paypal" | "square"
+  retryCount             Int        @default(0)
+  lastRetryDate          DateTime?
+  nextRetryDate          DateTime?
+  notes                  String?
+  clientId               String     @default("default-client")
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+  membership             Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  member                 Member     @relation(fields: [memberId], references: [id])
+
+  @@unique([membershipId, billingPeriodStart])
+}
+
+model MemberAuthToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  memberId  String
+  email     String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model MemberSession {
+  id        String   @id @default(cuid())
+  memberId  String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model ClassBooking {
+  id               String       @id @default(cuid())
+  memberId         String
+  classSessionId   String
+  bookingDate      DateTime
+  status           String       @default("CONFIRMED")
+  waitlistPosition Int?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  member           Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  classSession     ClassSession @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, classSessionId, bookingDate])
+}
+
+model EnrollmentSubmission {
+  id                    String    @id @default(cuid())
+  firstName             String
+  lastName              String
+  email                 String
+  phone                 String?
+  dateOfBirth           DateTime?
+  address               String?
+  city                  String?
+  state                 String?
+  zipCode               String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  parentGuardianName    String?
+  medicalNotes          String?
+  selectedPlanId        String?
+  waiverSigned          Boolean   @default(false)
+  waiverSignedAt        DateTime?
+  status                String    @default("PENDING")
+  memberId              String?
+  promoCode             String?
+  promoDiscountCents    Int?
+  leadSource            String?
+  notes                 String?
+  clientId              String    @default("default-client")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model PromoCode {
+  id                String    @id @default(cuid())
+  code              String    @unique
+  description       String?
+  discountType      String    @default("PERCENT") // PERCENT or FIXED
+  discountValue     Int                            // percent (0-100) or cents
+  applicablePlanIds String?                        // JSON array of plan IDs, null = all plans
+  maxRedemptions    Int?                           // null = unlimited
+  redemptionCount   Int       @default(0)
+  validFrom         DateTime?
+  validUntil        DateTime?
+  isActive          Boolean   @default(true)
+  clientId          String    @default("default-client")
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 }
 
-model Rank {
-  id               String   @id @default(cuid())
-  name             String
-  order            Int
-  thumbnail        String?
-  classRequirement Int?
-  pdfDocument      String?  // Base64 encoded PDF data URL
+model AuditLog {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  action     String
+  summary    String
+  changes    String?
+  clientId   String   @default("default-client")
+  createdAt  DateTime @default(now())
+}
 
-  styleId   String
-  style     Style    @relation(fields: [styleId], references: [id], onDelete: Cascade)
-
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  eventKey  String   @unique
+  name      String
+  subject   String
+  bodyHtml  String
+  variables String
+  isCustom  Boolean  @default(false)
+  enabled   Boolean  @default(true)
+  clientId  String   @default("default-client")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-//
-// APPOINTMENT TYPES (templates for booking)
-//
-model Appointment {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
+model Location {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  city      String?
+  state     String?
+  zipCode   String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  clientId  String   @default("default-client")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 
-  // Appointment type (e.g., "Private Lesson", "Meeting", "Trial Class")
-  type        String?
+model WaiverTemplate {
+  id            String        @id @default(cuid())
+  name          String
+  content       String        // Rich text / JSON sections
+  version       Int           @default(1)
+  isActive      Boolean       @default(true)
+  isDefault     Boolean       @default(false)
+  clientId      String        @default("default-client")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  signedWaivers SignedWaiver[]
+}
 
-  // Duration in minutes
-  duration    Int      @default(60)
+model SignedWaiver {
+  id            String          @id @default(cuid())
+  memberId      String
+  templateId    String?
+  templateName  String
+  waiverContent String
+  signatureData String
+  signedAt      DateTime        @default(now())
+  ipAddress     String?
+  pdfData       String?
+  clientId      String          @default("default-client")
+  createdAt     DateTime        @default(now())
+  member        Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  template      WaiverTemplate? @relation(fields: [templateId], references: [id])
+}
 
-  // Price in cents
-  priceCents  Int?
+model SignedContract {
+  id              String   @id @default(cuid())
+  memberId        String
+  membershipId    String?
+  transactionId   String?
+  planName        String
+  itemsSummary    String
+  contractContent String
+  signatureData   String
+  signedAt        DateTime @default(now())
+  clientId        String   @default("default-client")
+  createdAt       DateTime @default(now())
+  member          Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
 
-  // Color for calendar display
-  color       String?  @default("#6b7280")
+model TrialPass {
+  id                      String   @id @default(cuid())
+  memberId                String
+  maxClasses              Int      @default(3)
+  classesUsed             Int      @default(0)
+  expiresAt               DateTime
+  convertedToMembershipId String?
+  status                  String   @default("ACTIVE") // ACTIVE, EXPIRED, CONVERTED
+  classSessionIds         String?  // JSON array of attended class session IDs
+  notes                   String?
+  clientId                String   @default("default-client")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  member                  Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
 
-  // Coach assigned to this appointment type
-  coachId     String?
-  coachName   String?
+model ServicePackage {
+  id               String                @id @default(cuid())
+  name             String
+  description      String?
+  appointmentId    String?
+  sessionsIncluded Int                   @default(1)
+  priceCents       Int
+  expirationDays   Int?
+  isActive         Boolean               @default(true)
+  availableOnline  Boolean               @default(false)
+  sortOrder        Int                   @default(0)
+  clientId         String                @default("default-client")
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  appointment      Appointment?          @relation(fields: [appointmentId], references: [id])
+  memberCredits    MemberServiceCredit[]
+}
 
-  // Style associated with this appointment type
-  styleId     String?
-  styleName   String?
-
-  // Notes/instructions for this appointment type
-  notes       String?
-
-  // Is this appointment type active/available for booking
-  isActive    Boolean  @default(true)
-
-  clientId    String
-  client      Client   @relation(fields: [clientId], references: [id])
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+model MemberServiceCredit {
+  id                    String                 @id @default(cuid())
+  memberId              String
+  servicePackageId      String
+  creditsTotal          Int
+  creditsRemaining      Int
+  purchasedAt           DateTime               @default(now())
+  expiresAt             DateTime?
+  transactionId         String?
+  status                String                 @default("ACTIVE")
+  clientId              String                 @default("default-client")
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  member                Member                 @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  servicePackage        ServicePackage         @relation(fields: [servicePackageId], references: [id])
   scheduledAppointments ScheduledAppointment[]
 }
 
-//
-// SCHEDULED APPOINTMENTS (actual booked instances on calendar)
-//
-model ScheduledAppointment {
-  id             String   @id @default(cuid())
-
-  // Reference to the appointment type template
-  appointmentId  String
-  appointment    Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-
-  // Scheduled date and time
-  scheduledDate  DateTime
-  startTime      String   // Format: "HH:mm"
-  endTime        String   // Format: "HH:mm"
-
-  // Member who booked (optional - could be external client)
-  memberId       String?
-  memberName     String?
-
-  // Override fields (if different from template)
-  coachId        String?
-  coachName      String?
-  notes          String?
-
-  // Status: SCHEDULED, COMPLETED, CANCELLED, NO_SHOW
-  status         String   @default("SCHEDULED")
-
-  clientId       String
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+model Space {
+  id         String   @id @default(cuid())
+  name       String
+  locationId String?
+  isActive   Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  clientId   String   @default("default-client")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
-//
-// DOJO BOARD - CHANNELS
-//
-model BoardChannel {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-
-  // Channel type: all, style, rank, team, custom
-  type        String   @default("custom")
-
-  // Visibility settings (JSON)
-  visibility  String?
-
-  // Track unread status
-  hasUpdates  Boolean  @default(false)
-
-  clientId    String   @default("default-client")
-
-  posts       BoardPost[]
-  polls       BoardPoll[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model CoachAvailability {
+  id                String    @id @default(cuid())
+  coachId           String
+  coachName         String?
+  appointmentId     String?
+  startsAt          DateTime
+  endsAt            DateTime
+  isRecurring       Boolean   @default(false)
+  frequencyNumber   Int?
+  frequencyUnit     String?
+  scheduleStartDate DateTime?
+  scheduleEndDate   DateTime?
+  isOngoing         Boolean   @default(true)
+  excludedDates     String?
+  color             String?   @default("#6b7280")
+  locationId        String?
+  spaceId           String?
+  notes             String?
+  clientId          String    @default("default-client")
+  createdAt         DateTime  @default(now())
 }
 
-//
-// DOJO BOARD - POSTS
-//
-model BoardPost {
-  id          String   @id @default(cuid())
-
-  // Post type: notice, technique, testing, achievement, schedule
-  type        String   @default("notice")
-
-  title       String
-  content     String
-
-  authorId    String?
-  authorName  String
-  authorInitials String
-
-  isPriority  Boolean  @default(false)
-
-  // Style tags (JSON array)
-  styleTags   String?
-
-  // Reactions (JSON object: { type: count })
-  reactions   String?
-
-  channelId   String
-  channel     BoardChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-
-  files       BoardFile[]
-  replies     BoardReply[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-//
-// DOJO BOARD - FILES
-//
-model BoardFile {
-  id          String   @id @default(cuid())
-  name        String
-  size        Int
-  type        String
-  url         String
-
-  uploadedBy  String
-
-  postId      String?
-  post        BoardPost? @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  channelId   String   @default("all")
-
-  createdAt   DateTime @default(now())
-}
-
-//
-// DOJO BOARD - REPLIES
-//
-model BoardReply {
-  id             String   @id @default(cuid())
-  content        String
-
-  authorId       String?
-  authorName     String
-  authorInitials String
-
-  postId         String
-  post           BoardPost @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  createdAt      DateTime @default(now())
-}
-
-//
-// DOJO BOARD - POLLS
-//
-model BoardPoll {
-  id             String   @id @default(cuid())
-  question       String
-
-  authorId       String?
-  authorName     String
-  authorInitials String
-
-  allowMultiple  Boolean  @default(false)
-  isAnonymous    Boolean  @default(false)
-
-  expiresAt      DateTime?
-
-  channelId      String
-  channel        BoardChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-
-  options        BoardPollOption[]
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-
-//
-// DOJO BOARD - POLL OPTIONS
-//
-model BoardPollOption {
-  id          String   @id @default(cuid())
-  text        String
-  order       Int      @default(0)
-
-  pollId      String
-  poll        BoardPoll @relation(fields: [pollId], references: [id], onDelete: Cascade)
-
-  votes       BoardPollVote[]
-}
-
-//
-// DOJO BOARD - POLL VOTES
-//
-model BoardPollVote {
-  id          String   @id @default(cuid())
-
-  optionId    String
-  option      BoardPollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
-
-  // Voter ID (could be member ID or anonymous identifier)
-  voterId     String
-
-  createdAt   DateTime @default(now())
-
-  @@unique([optionId, voterId])
+model CalendarEvent {
+  id                String    @id @default(cuid())
+  title             String
+  description       String?
+  startsAt          DateTime
+  endsAt            DateTime
+  isAllDay          Boolean   @default(false)
+  isRecurring       Boolean   @default(false)
+  frequencyNumber   Int?
+  frequencyUnit     String?
+  scheduleStartDate DateTime?
+  scheduleEndDate   DateTime?
+  isOngoing         Boolean   @default(true)
+  excludedDates     String?
+  color             String?   @default("#3b82f6")
+  locationId        String?
+  spaceId           String?
+  notes             String?
+  clientId          String    @default("default-client")
+  createdAt         DateTime  @default(now())
 }

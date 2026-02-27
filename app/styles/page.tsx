@@ -67,9 +67,9 @@ export default function StylesPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+      <div className="space-y-4">
+        {/* Header with action buttons */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Styles</h1>
             <p className="mt-1 text-sm text-gray-600">

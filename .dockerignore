@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.gitignore
+*.md
+prisma/*.db
+prisma/*.db-journal
+.env
+.env.local
+.vscode
+coverage
+.turbo

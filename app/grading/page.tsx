@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/app-layout";
+import { getTodayString } from "@/lib/dates";
 
 type GradingEvent = {
   id: string;
@@ -25,7 +26,7 @@ export default function GradingPage() {
   const [saving, setSaving] = useState(false);
 
   // New event form
-  const [newEventDate, setNewEventDate] = useState("");
+  const [newEventDate, setNewEventDate] = useState(getTodayString());
   const [newEventName, setNewEventName] = useState("");
   const [newEventNotes, setNewEventNotes] = useState("");
 
@@ -152,8 +153,9 @@ export default function GradingPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-4">
+        {/* Header with action buttons */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold">Grading Events</h1>
           {styles.length > 1 && (
             <select
@@ -222,7 +224,7 @@ export default function GradingPage() {
                   <button
                     type="submit"
                     disabled={saving || !newEventDate}
-                    className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                    className="w-full rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                   >
                     {saving ? "Saving..." : "Add Grading Event"}
                   </button>

@@ -16,16 +16,20 @@ export async function POST(req: Request) {
       return new NextResponse("classSessionId and date are required", { status: 400 });
     }
 
-    // Parse the date to start of day for consistent matching
-    const attendanceDate = new Date(date);
-    attendanceDate.setHours(0, 0, 0, 0);
+    // Parse date components to avoid timezone shifting
+    const [year, month, day] = date.split("-").map(Number);
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
     // Update all matching attendance records to confirmed
     const result = await prisma.attendance.updateMany({
       where: {
         memberId: { in: memberIds },
         classSessionId,
-        attendanceDate,
+        attendanceDate: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
       },
       data: {
         confirmed: true,
@@ -57,16 +61,20 @@ export async function DELETE(req: Request) {
       return new NextResponse("classSessionId and date are required", { status: 400 });
     }
 
-    // Parse the date to start of day for consistent matching
-    const attendanceDate = new Date(date);
-    attendanceDate.setHours(0, 0, 0, 0);
+    // Parse date components to avoid timezone shifting
+    const [year, month, day] = date.split("-").map(Number);
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
     // Update all matching attendance records to unconfirmed (absent)
     const result = await prisma.attendance.updateMany({
       where: {
         memberId: { in: memberIds },
         classSessionId,
-        attendanceDate,
+        attendanceDate: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
       },
       data: {
         confirmed: false,

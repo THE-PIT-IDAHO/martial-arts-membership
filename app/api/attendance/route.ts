@@ -12,12 +12,10 @@ export async function GET(req: Request) {
       return new NextResponse("classSessionId and date are required", { status: 400 });
     }
 
-    // Parse the date and create start/end of day for comparison
-    const date = new Date(dateStr);
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    // Parse date components to avoid timezone shifting
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
     const attendances = await prisma.attendance.findMany({
       where: {
@@ -26,6 +24,7 @@ export async function GET(req: Request) {
           gte: startOfDay,
           lte: endOfDay,
         },
+        source: { not: "IMPORTED" },
       },
       include: {
         member: {
@@ -55,22 +54,32 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { memberId, classSessionId, attendanceDate, requirementOverride } = body;
+    const { memberId, classSessionId, attendanceDate, requirementOverride, source } = body;
 
     if (!memberId || !classSessionId || !attendanceDate) {
       return new NextResponse("memberId, classSessionId, and attendanceDate are required", { status: 400 });
     }
 
-    // Parse the date to start of day for consistent storage
-    const date = new Date(attendanceDate);
-    date.setHours(0, 0, 0, 0);
+    // Parse the date string to extract year/month/day components
+    // Use string splitting to avoid timezone shifting issues
+    const dateStr = typeof attendanceDate === "string" && attendanceDate.includes("T")
+      ? attendanceDate.split("T")[0]
+      : String(attendanceDate);
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const date = new Date(year, month - 1, day, 0, 0, 0, 0); // Local midnight
 
-    // Check if attendance already exists
+    // Check if attendance already exists using a date range to handle timezone variations
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+
     const existing = await prisma.attendance.findFirst({
       where: {
         memberId,
         classSessionId,
-        attendanceDate: date,
+        attendanceDate: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
       },
     });
 
@@ -83,7 +92,8 @@ export async function POST(req: Request) {
         memberId,
         classSessionId,
         attendanceDate: date,
-        source: "MANUAL",
+        source: source || "MANUAL",
+        confirmed: source === "KIOSK" ? true : false,
         requirementOverride: requirementOverride || false,
       },
       include: {
@@ -99,6 +109,26 @@ export async function POST(req: Request) {
         },
       },
     });
+
+    // Also create a ClassBooking so it appears in the member portal
+    const existingBooking = await prisma.classBooking.findFirst({
+      where: {
+        memberId,
+        classSessionId,
+        bookingDate: { gte: startOfDay, lte: endOfDay },
+        status: { in: ["CONFIRMED", "WAITLISTED"] },
+      },
+    });
+    if (!existingBooking) {
+      await prisma.classBooking.create({
+        data: {
+          memberId,
+          classSessionId,
+          bookingDate: date,
+          status: "CONFIRMED",
+        },
+      });
+    }
 
     return NextResponse.json({ attendance }, { status: 201 });
   } catch (error) {
@@ -117,21 +147,59 @@ export async function DELETE(req: Request) {
     const dateStr = searchParams.get("date");
 
     if (id) {
-      // Delete by ID
+      // Look up the attendance record first so we can cancel the matching booking
+      const att = await prisma.attendance.findUnique({
+        where: { id },
+        select: { memberId: true, classSessionId: true, attendanceDate: true },
+      });
+
       await prisma.attendance.delete({
         where: { id },
       });
+
+      // Cancel matching portal booking
+      if (att) {
+        const attDate = new Date(att.attendanceDate);
+        const s = new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate(), 0, 0, 0, 0);
+        const e = new Date(attDate.getFullYear(), attDate.getMonth(), attDate.getDate(), 23, 59, 59, 999);
+        if (att.classSessionId) {
+          await prisma.classBooking.updateMany({
+            where: {
+              memberId: att.memberId,
+              classSessionId: att.classSessionId,
+              bookingDate: { gte: s, lte: e },
+              status: { in: ["CONFIRMED", "WAITLISTED"] },
+            },
+            data: { status: "CANCELLED" },
+          });
+        }
+      }
     } else if (memberId && classSessionId && dateStr) {
-      // Delete by member, class, and date
-      const date = new Date(dateStr);
-      date.setHours(0, 0, 0, 0);
+      // Delete by member, class, and date using range to handle timezone variations
+      const [year, month, day] = dateStr.split("-").map(Number);
+      const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+      const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
       await prisma.attendance.deleteMany({
         where: {
           memberId,
           classSessionId,
-          attendanceDate: date,
+          attendanceDate: {
+            gte: startOfDay,
+            lte: endOfDay,
+          },
         },
+      });
+
+      // Cancel matching portal booking
+      await prisma.classBooking.updateMany({
+        where: {
+          memberId,
+          classSessionId,
+          bookingDate: { gte: startOfDay, lte: endOfDay },
+          status: { in: ["CONFIRMED", "WAITLISTED"] },
+        },
+        data: { status: "CANCELLED" },
       });
     } else {
       return new NextResponse("id or (memberId, classSessionId, date) required", { status: 400 });

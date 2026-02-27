@@ -52,6 +52,8 @@ export async function POST(req: Request) {
       coachName,
       notes,
       status,
+      memberServiceCreditId,
+      spaceId,
     } = body;
 
     if (!appointmentId) {
@@ -60,6 +62,62 @@ export async function POST(req: Request) {
 
     if (!scheduledDate || !startTime || !endTime) {
       return new NextResponse("Scheduled date and times are required", { status: 400 });
+    }
+
+    // If using an appointment credit, validate and deduct in a transaction
+    if (memberServiceCreditId) {
+      const credit = await prisma.memberServiceCredit.findUnique({
+        where: { id: memberServiceCreditId },
+        include: { servicePackage: true },
+      });
+
+      if (!credit || credit.status !== "ACTIVE") {
+        return new NextResponse("Appointment credit is not active", { status: 400 });
+      }
+      if (credit.memberId !== memberId) {
+        return new NextResponse("Appointment credit does not belong to this member", { status: 400 });
+      }
+      if (credit.creditsRemaining <= 0) {
+        return new NextResponse("No remaining credits", { status: 400 });
+      }
+      // If the package is linked to a specific appointment type, validate match
+      if (credit.servicePackage.appointmentId && credit.servicePackage.appointmentId !== appointmentId) {
+        return new NextResponse("This credit cannot be used for this appointment type", { status: 400 });
+      }
+
+      const result = await prisma.$transaction(async (tx) => {
+        const appt = await tx.scheduledAppointment.create({
+          data: {
+            appointmentId,
+            scheduledDate: new Date(scheduledDate),
+            startTime,
+            endTime,
+            memberId: memberId || null,
+            memberName: memberName?.trim() || null,
+            coachId: coachId || null,
+            coachName: coachName?.trim() || null,
+            notes: notes?.trim() || null,
+            status: status || "SCHEDULED",
+            memberServiceCreditId,
+            spaceId: spaceId || null,
+            clientId: DEFAULT_CLIENT_ID,
+          },
+          include: { appointment: true },
+        });
+
+        const newRemaining = credit.creditsRemaining - 1;
+        await tx.memberServiceCredit.update({
+          where: { id: memberServiceCreditId },
+          data: {
+            creditsRemaining: newRemaining,
+            status: newRemaining <= 0 ? "EXHAUSTED" : "ACTIVE",
+          },
+        });
+
+        return appt;
+      });
+
+      return NextResponse.json({ scheduledAppointment: result }, { status: 201 });
     }
 
     const scheduledAppointment = await prisma.scheduledAppointment.create({
@@ -74,6 +132,7 @@ export async function POST(req: Request) {
         coachName: coachName?.trim() || null,
         notes: notes?.trim() || null,
         status: status || "SCHEDULED",
+        spaceId: spaceId || null,
         clientId: DEFAULT_CLIENT_ID,
       },
       include: {

@@ -39,6 +39,7 @@ type BeltRank = {
 
 type BeltLayerConfig = {
   fabric: boolean;
+  twotone: boolean;
   linear: boolean;
   camo: boolean;
   patch: boolean;
@@ -55,6 +56,7 @@ type BeltLayerConfig = {
   stripe10: boolean;
 
   fabricColor: string;
+  twotoneColor: string;
   linearColor: string;
   patchColor: string;
   patch2Color: string;
@@ -71,6 +73,7 @@ type BeltLayerConfig = {
 };
 
 type ToggleableLayerKey =
+  | "twotone"
   | "linear"
   | "camo"
   | "patch"
@@ -107,6 +110,7 @@ type PopupTarget =
 
 const defaultLayers: BeltLayerConfig = {
   fabric: true,
+  twotone: false,
   linear: false,
   camo: false,
   patch: false,
@@ -123,6 +127,7 @@ const defaultLayers: BeltLayerConfig = {
   stripe10: false,
 
   fabricColor: "#ffffff",
+  twotoneColor: "#000000",
   linearColor: "#ffffff",
   patchColor: "#000000",
   patch2Color: "#000000",
@@ -978,6 +983,7 @@ export default function BeltDesignerPage() {
   const layerSrc: Record<string, string> = {
     outline: "/belts/outline.png",
     fabric: "/belts/fabric.png",
+    twotone: "/belts/twotone.png",
     linear: "/belts/linear.png",
     camo: "/belts/camo.png",
     patch: "/belts/patch.png",
@@ -1031,6 +1037,12 @@ export default function BeltDesignerPage() {
             <TintedLayer
               src={layerSrc.fabric}
               color={usedLayers.fabricColor}
+            />
+          )}
+          {usedLayers.twotone && (
+            <TintedLayer
+              src={layerSrc.twotone}
+              color={usedLayers.twotoneColor}
             />
           )}
           {usedLayers.camo && (
@@ -1164,7 +1176,7 @@ export default function BeltDesignerPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 {/* Rank Color (always on) */}
-                <div className="col-span-2 flex items-center gap-2">
+                <div className="flex items-center gap-2">
                   <span className="whitespace-nowrap text-xs font-medium">
                     Rank Color
                   </span>
@@ -1180,6 +1192,36 @@ export default function BeltDesignerPage() {
                     }
                     className="h-5 w-5 min-h-[1.25rem] min-w-[1.25rem] cursor-pointer rounded-md border border-gray-300 bg-white"
                   />
+                </div>
+
+                {/* Two Tone */}
+                <div className="flex items-center gap-2 h-[22px]">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={layers.twotone}
+                      onChange={() => toggleLayer("twotone")}
+                      className="h-3 w-3 rounded border-gray-300"
+                    />
+                    <span className="whitespace-nowrap text-xs font-medium">
+                      Two Tone
+                    </span>
+                  </label>
+                  {layers.twotone ? (
+                    <input
+                      type="color"
+                      value={layers.twotoneColor}
+                      onChange={(e) =>
+                        setLayers((prev) => ({
+                          ...prev,
+                          twotoneColor: e.target.value,
+                        }))
+                      }
+                      className="h-5 w-5 min-h-[1.25rem] min-w-[1.25rem] cursor-pointer rounded-md border border-gray-300 bg-white"
+                    />
+                  ) : (
+                    <div className="h-5 w-5 min-h-[1.25rem] min-w-[1.25rem]" />
+                  )}
                 </div>
 
                 {/* Linear Stripe */}
@@ -1576,6 +1618,9 @@ export default function BeltDesignerPage() {
                 <label className="text-[11px] font-medium text-gray-700">
                   Rank Documents (PDF)
                 </label>
+                <p className="text-[10px] text-amber-600">
+                  Upload supplementary documents for this rank (e.g., forms, waivers, handouts).
+                </p>
                 {rankPdfDocuments.length === 0 && (
                   <p className="text-[11px] text-gray-500">
                     No documents yet. Add one below if needed.

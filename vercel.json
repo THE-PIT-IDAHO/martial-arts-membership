@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/billing/auto-run",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

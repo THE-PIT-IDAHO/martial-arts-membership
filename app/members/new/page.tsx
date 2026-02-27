@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 
@@ -38,6 +38,7 @@ export default function NewMemberPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [emailOptIn, setEmailOptIn] = useState(true);
   const [phone, setPhone] = useState("");
   const [statuses, setStatuses] = useState<string[]>(["PROSPECT"]);
 
@@ -52,9 +53,19 @@ export default function NewMemberPage() {
   const [parentGuardianName, setParentGuardianName] = useState("");
   const [notes, setNotes] = useState("");
   const [medicalNotes, setMedicalNotes] = useState("");
+  const [leadSource, setLeadSource] = useState("");
+  const [referredByMemberId, setReferredByMemberId] = useState("");
+  const [allMembers, setAllMembers] = useState<{ id: string; firstName: string; lastName: string }[]>([]);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/members?status=ACTIVE&limit=500")
+      .then((r) => r.json())
+      .then((data) => setAllMembers((data.members || []).map((m: any) => ({ id: m.id, firstName: m.firstName, lastName: m.lastName }))))
+      .catch(() => {});
+  }, []);
 
   const ageFromState = calculateAgeFromDateString(dateOfBirth);
 
@@ -77,6 +88,7 @@ export default function NewMemberPage() {
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           email: email.trim() || null,
+          emailOptIn,
           phone: phone.trim() || null,
           status: statuses.join(","),
 
@@ -89,7 +101,9 @@ export default function NewMemberPage() {
           emergencyContactPhone: emergencyContactPhone.trim() || null,
           parentGuardianName: parentGuardianName.trim() || null,
           notes: notes.trim() || null,
-          medicalNotes: medicalNotes.trim() || null
+          medicalNotes: medicalNotes.trim() || null,
+          leadSource: leadSource || null,
+          referredByMemberId: referredByMemberId || null,
         })
       });
 
@@ -177,6 +191,18 @@ export default function NewMemberPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  type="checkbox"
+                  id="emailOptIn"
+                  checked={emailOptIn}
+                  onChange={(e) => setEmailOptIn(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <label htmlFor="emailOptIn" className="text-[11px] text-gray-500">
+                  Opted in to email notifications
+                </label>
+              </div>
             </div>
 
             <div className="space-y-1">
@@ -442,11 +468,51 @@ export default function NewMemberPage() {
               />
             </div>
 
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-700">
+                Lead Source
+              </label>
+              <select
+                value={leadSource}
+                onChange={(e) => setLeadSource(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+              >
+                <option value="">— Not set —</option>
+                <option value="Website">Website</option>
+                <option value="Walk-in">Walk-in</option>
+                <option value="Referral">Referral</option>
+                <option value="Social Media">Social Media</option>
+                <option value="Event">Event</option>
+                <option value="Google">Google</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            {leadSource === "Referral" && (
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-gray-700">
+                  Referred By
+                </label>
+                <select
+                  value={referredByMemberId}
+                  onChange={(e) => setReferredByMemberId(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                >
+                  <option value="">— Select member —</option>
+                  {allMembers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.firstName} {m.lastName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="md:col-span-2 flex items-center justify-end gap-2 mt-2">
               <button
                 type="submit"
                 disabled={saving}
-                className="text-xs rounded-md bg-primary px-4 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
+                className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
               >
                 {saving ? "Creating..." : "Create Member"}
               </button>

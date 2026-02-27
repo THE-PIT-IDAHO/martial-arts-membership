@@ -3,6 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
+import { getTodayString } from "@/lib/dates";
+
+// Helper to get local date string (YYYY-MM-DD) avoiding UTC timezone shift
+function toLocalDateStr(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
 interface ClassSession {
   id: string;
@@ -26,6 +32,13 @@ interface ClassSession {
   color: string | null;
   coachId: string | null;
   coachName: string | null;
+  maxCapacity: number | null;
+  bookingEnabled: boolean;
+  bookingCutoffMins: number | null;
+  bookingAdvanceDays: number | null;
+  kioskEnabled: boolean;
+  locationId: string | null;
+  spaceId: string | null;
 }
 
 interface Coach {
@@ -34,10 +47,79 @@ interface Coach {
   lastName: string;
 }
 
+interface ScheduledAppt {
+  id: string;
+  scheduledDate: string;
+  startTime: string;
+  endTime: string;
+  status: string;
+  memberName: string | null;
+  coachName: string | null;
+  notes: string | null;
+  spaceId: string | null;
+  appointment: { id: string; title: string };
+}
+
+interface CoachAvailabilityBlock {
+  id: string;
+  coachId: string;
+  coachName: string | null;
+  appointmentId: string | null;
+  startsAt: string;
+  endsAt: string;
+  isRecurring: boolean;
+  frequencyNumber: number | null;
+  frequencyUnit: string | null;
+  scheduleStartDate: string | null;
+  scheduleEndDate: string | null;
+  isOngoing: boolean;
+  excludedDates: string | null;
+  color: string | null;
+  locationId: string | null;
+  spaceId: string | null;
+  notes: string | null;
+}
+
+interface AppointmentType {
+  id: string;
+  title: string;
+  description: string | null;
+  type: string | null;
+  duration: number;
+  priceCents: number | null;
+  color: string | null;
+  coachId: string | null;
+  coachName: string | null;
+  isActive: boolean;
+}
+
+interface CalendarEventItem {
+  id: string;
+  title: string;
+  description: string | null;
+  startsAt: string;
+  endsAt: string;
+  isAllDay: boolean;
+  isRecurring: boolean;
+  frequencyNumber: number | null;
+  frequencyUnit: string | null;
+  scheduleStartDate: string | null;
+  scheduleEndDate: string | null;
+  isOngoing: boolean;
+  excludedDates: string | null;
+  color: string | null;
+  locationId: string | null;
+  spaceId: string | null;
+  notes: string | null;
+}
+
 interface CalendarDay {
   date: Date;
   isCurrentMonth: boolean;
   classes: ClassSession[];
+  appointments: ScheduledAppt[];
+  availabilityBlocks: CoachAvailabilityBlock[];
+  events: CalendarEventItem[];
 }
 
 interface Style {
@@ -72,29 +154,130 @@ type DayOfWeek = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "S
 
 const DAYS_OF_WEEK: DayOfWeek[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-// Helper function to determine if text should be white or black based on background color
-function getTextColor(bgColor: string): string {
+// Helper function to create a tint (lighter version) of a color
+function getTintedColor(hexColor: string, tintAmount: number = 0.7): string {
   // Convert hex to RGB
-  const hex = bgColor.replace('#', '');
+  const hex = hexColor.replace('#', '');
   const r = parseInt(hex.substring(0, 2), 16);
   const g = parseInt(hex.substring(2, 4), 16);
   const b = parseInt(hex.substring(4, 6), 16);
 
-  // Calculate relative luminance (https://www.w3.org/TR/WCAG20/#relativeluminancedef)
+  // Mix with white to create a tint
+  const tintedR = Math.round(r + (255 - r) * tintAmount);
+  const tintedG = Math.round(g + (255 - g) * tintAmount);
+  const tintedB = Math.round(b + (255 - b) * tintAmount);
+
+  // Convert back to hex
+  return `#${tintedR.toString(16).padStart(2, '0')}${tintedG.toString(16).padStart(2, '0')}${tintedB.toString(16).padStart(2, '0')}`;
+}
+
+// Helper function to determine text color based on the original (non-tinted) color
+function getTextColorForTint(originalColor: string): string {
+  // Convert hex to RGB
+  const hex = originalColor.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  // Calculate relative luminance
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 
-  // Use white text for dark backgrounds, black text for light backgrounds
-  return luminance > 0.5 ? '#000000' : '#ffffff';
+  // For tinted backgrounds, use darker version of the original color for text
+  // If original is very dark, use the original color; otherwise darken it
+  if (luminance < 0.3) {
+    return originalColor;
+  } else {
+    // Darken the original color for text
+    const darkenedR = Math.round(r * 0.4);
+    const darkenedG = Math.round(g * 0.4);
+    const darkenedB = Math.round(b * 0.4);
+    return `#${darkenedR.toString(16).padStart(2, '0')}${darkenedG.toString(16).padStart(2, '0')}${darkenedB.toString(16).padStart(2, '0')}`;
+  }
 }
+
 
 export default function CalendarPage() {
   const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([]);
   const [allClasses, setAllClasses] = useState<ClassSession[]>([]);
+  const [scheduledAppts, setScheduledAppts] = useState<ScheduledAppt[]>([]);
   const [styles, setStyles] = useState<Style[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"day" | "week" | "month">("month");
+  const [calendarMode, setCalendarMode] = useState<"classes" | "appointments" | "events">("classes");
+
+  // Appointments mode data
+  const [availabilityBlocks, setAvailabilityBlocks] = useState<CoachAvailabilityBlock[]>([]);
+  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentType[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEventItem[]>([]);
+
+  // Event modal states
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [eventModalMode, setEventModalMode] = useState<"create" | "edit">("create");
+  const [editingEvent, setEditingEvent] = useState<CalendarEventItem | null>(null);
+  const [evTitle, setEvTitle] = useState("");
+  const [evDescription, setEvDescription] = useState("");
+  const [evStartTime, setEvStartTime] = useState("09:00");
+  const [evEndTime, setEvEndTime] = useState("10:00");
+  const [evIsAllDay, setEvIsAllDay] = useState(false);
+  const [evIsRecurring, setEvIsRecurring] = useState(false);
+  const [evFrequencyNumber, setEvFrequencyNumber] = useState("1");
+  const [evFrequencyUnit, setEvFrequencyUnit] = useState<"Day" | "Week" | "Month">("Week");
+  const [evScheduleStartDate, setEvScheduleStartDate] = useState(getTodayString());
+  const [evScheduleEndDate, setEvScheduleEndDate] = useState("");
+  const [evIsOngoing, setEvIsOngoing] = useState(true);
+  const [evColor, setEvColor] = useState("#3b82f6");
+  const [evLocationId, setEvLocationId] = useState("");
+  const [evSpaceId, setEvSpaceId] = useState("");
+  const [evNotes, setEvNotes] = useState("");
+  const [evSaving, setEvSaving] = useState(false);
+  const [evSelectedDate, setEvSelectedDate] = useState<Date | null>(null);
+
+  // Availability modal states
+  const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
+  const [availabilityModalMode, setAvailabilityModalMode] = useState<"create" | "edit">("create");
+  const [editingAvailability, setEditingAvailability] = useState<CoachAvailabilityBlock | null>(null);
+  const [avCoachId, setAvCoachId] = useState("");
+  const [avAppointmentId, setAvAppointmentId] = useState("");
+  const [avStartTime, setAvStartTime] = useState("09:00");
+  const [avEndTime, setAvEndTime] = useState("10:00");
+  const [avIsRecurring, setAvIsRecurring] = useState(false);
+  const [avFrequencyNumber, setAvFrequencyNumber] = useState("1");
+  const [avFrequencyUnit, setAvFrequencyUnit] = useState<"Day" | "Week" | "Month">("Week");
+  const [avScheduleStartDate, setAvScheduleStartDate] = useState(getTodayString());
+  const [avScheduleEndDate, setAvScheduleEndDate] = useState("");
+  const [avIsOngoing, setAvIsOngoing] = useState(true);
+  const [avColor, setAvColor] = useState("#6b7280");
+  const [avLocationId, setAvLocationId] = useState("");
+  const [avSpaceId, setAvSpaceId] = useState("");
+  const [avNotes, setAvNotes] = useState("");
+  const [avSaving, setAvSaving] = useState(false);
+  const [avSelectedDate, setAvSelectedDate] = useState<Date | null>(null);
+
+  // Schedule appointment modal states
+  const [showScheduleApptModal, setShowScheduleApptModal] = useState(false);
+  const [schedApptTypeId, setSchedApptTypeId] = useState("");
+  const [schedMemberSearch, setSchedMemberSearch] = useState("");
+  const [schedFilteredMembers, setSchedFilteredMembers] = useState<MemberWithStyles[]>([]);
+  const [schedSelectedMember, setSchedSelectedMember] = useState<MemberWithStyles | null>(null);
+  const [schedCoachId, setSchedCoachId] = useState("");
+  const [schedStartTime, setSchedStartTime] = useState("09:00");
+  const [schedEndTime, setSchedEndTime] = useState("10:00");
+  const [schedDate, setSchedDate] = useState(getTodayString());
+  const [schedNotes, setSchedNotes] = useState("");
+  const [schedSpaceId, setSchedSpaceId] = useState("");
+  const [schedSaving, setSchedSaving] = useState(false);
+
+  // View appointment modal states
+  const [showViewApptModal, setShowViewApptModal] = useState(false);
+  const [viewingAppt, setViewingAppt] = useState<ScheduledAppt | null>(null);
+  const [viewApptSaving, setViewApptSaving] = useState(false);
+
+  // View availability modal states
+  const [showViewAvailabilityModal, setShowViewAvailabilityModal] = useState(false);
+  const [viewingAvailability, setViewingAvailability] = useState<CoachAvailabilityBlock | null>(null);
+  const [viewAvailabilityDate, setViewAvailabilityDate] = useState<Date | null>(null);
 
   // Modal states
   const [showEditModal, setShowEditModal] = useState(false);
@@ -102,7 +285,7 @@ export default function CalendarPage() {
   const [selectedClass, setSelectedClass] = useState<ClassSession | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [editOption, setEditOption] = useState<"single" | "day" | "range" | "future">("single");
-  const [rangeStartDate, setRangeStartDate] = useState("");
+  const [rangeStartDate, setRangeStartDate] = useState(getTodayString());
   const [rangeEndDate, setRangeEndDate] = useState("");
   const [classAttendees, setClassAttendees] = useState<MemberWithStyles[]>([]);
   const [memberSearch, setMemberSearch] = useState("");
@@ -132,7 +315,7 @@ export default function CalendarPage() {
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequencyNumber, setFrequencyNumber] = useState("1");
   const [frequencyUnit, setFrequencyUnit] = useState<"Day" | "Week" | "Month" | "Year">("Week");
-  const [scheduleStartDate, setScheduleStartDate] = useState("");
+  const [scheduleStartDate, setScheduleStartDate] = useState(getTodayString());
   const [scheduleEndDate, setScheduleEndDate] = useState("");
   const [isOngoing, setIsOngoing] = useState(true);
   const [daySchedules, setDaySchedules] = useState<{
@@ -144,17 +327,32 @@ export default function CalendarPage() {
   const [saving, setSaving] = useState(false);
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [selectedCoachId, setSelectedCoachId] = useState("");
+  const [bookingEnabled, setBookingEnabled] = useState(false);
+  const [kioskEnabled, setKioskEnabled] = useState(false);
+  const [maxCapacity, setMaxCapacity] = useState("");
+  const [bookingCutoffMins, setBookingCutoffMins] = useState("");
+  const [bookingAdvanceDays, setBookingAdvanceDays] = useState("");
+  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
+  const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [spaces, setSpaces] = useState<{ id: string; name: string }[]>([]);
+  const [selectedSpaceId, setSelectedSpaceId] = useState("");
 
   // Fetch all classes, styles, and members
   useEffect(() => {
     async function fetchData() {
       try {
-        const [classesRes, stylesRes, membersRes, countsRes, coachesRes] = await Promise.all([
+        const [classesRes, stylesRes, membersRes, countsRes, coachesRes, locationsRes, apptsRes, spacesRes, availRes, apptTypesRes, eventsRes] = await Promise.all([
           fetch("/api/classes"),
           fetch("/api/styles"),
           fetch("/api/members"),
           fetch("/api/attendance/counts"),
-          fetch("/api/members?status=COACH")
+          fetch("/api/members?status=COACH"),
+          fetch("/api/locations"),
+          fetch("/api/scheduled-appointments"),
+          fetch("/api/spaces"),
+          fetch("/api/coach-availability"),
+          fetch("/api/appointments"),
+          fetch("/api/calendar-events"),
         ]);
 
         if (!classesRes.ok || !stylesRes.ok) {
@@ -166,6 +364,18 @@ export default function CalendarPage() {
         const membersData = membersRes.ok ? await membersRes.json() : { members: [] };
         const countsData = countsRes.ok ? await countsRes.json() : { counts: {} };
         const coachesData = coachesRes.ok ? await coachesRes.json() : { members: [] };
+        const locationsData = locationsRes.ok ? await locationsRes.json() : { locations: [] };
+        const apptsData = apptsRes.ok ? await apptsRes.json() : { scheduledAppointments: [] };
+        const spacesData = spacesRes.ok ? await spacesRes.json() : { spaces: [] };
+        const availData = availRes.ok ? await availRes.json() : { availabilityBlocks: [] };
+        const apptTypesData = apptTypesRes.ok ? await apptTypesRes.json() : { appointments: [] };
+        const eventsData = eventsRes.ok ? await eventsRes.json() : { events: [] };
+        setAvailabilityBlocks(availData.availabilityBlocks || []);
+        setAppointmentTypes((apptTypesData.appointments || []).filter((a: AppointmentType) => a.isActive));
+        setCalendarEvents(eventsData.events || []);
+        setScheduledAppts((apptsData.scheduledAppointments || []).filter((a: ScheduledAppt) => a.status !== "CANCELLED"));
+        setLocations((locationsData.locations || []).filter((l: any) => l.isActive).map((l: any) => ({ id: l.id, name: l.name })));
+        setSpaces((spacesData.spaces || []).filter((s: any) => s.isActive).map((s: any) => ({ id: s.id, name: s.name })));
 
         // Load attendance counts from database
         setMemberClassCounts(countsData.counts || {});
@@ -270,6 +480,9 @@ export default function CalendarPage() {
         date,
         isCurrentMonth: false,
         classes: getClassesForDate(date),
+        appointments: getApptsForDate(date),
+        availabilityBlocks: getAvailabilityForDate(date),
+        events: getEventsForDate(date),
       });
     }
 
@@ -280,6 +493,9 @@ export default function CalendarPage() {
         date,
         isCurrentMonth: true,
         classes: getClassesForDate(date),
+        appointments: getApptsForDate(date),
+        availabilityBlocks: getAvailabilityForDate(date),
+        events: getEventsForDate(date),
       });
     }
 
@@ -290,16 +506,24 @@ export default function CalendarPage() {
         date,
         isCurrentMonth: false,
         classes: getClassesForDate(date),
+        appointments: getApptsForDate(date),
+        availabilityBlocks: getAvailabilityForDate(date),
+        events: getEventsForDate(date),
       });
     }
 
     setCalendarDays(days);
-  }, [currentDate, allClasses]);
+  }, [currentDate, allClasses, scheduledAppts, availabilityBlocks, calendarEvents]);
 
   function getClassesForDate(date: Date): ClassSession[] {
     const dateStr = date.toISOString().split("T")[0];
 
     return allClasses.filter((classSession) => {
+      // Skip "Imported" class types - they're only for rank progress tracking
+      if (classSession.classType === "Imported") {
+        return false;
+      }
+
       const classStartsAt = new Date(classSession.startsAt);
       const classDate = classStartsAt.toISOString().split("T")[0];
 
@@ -359,7 +583,152 @@ export default function CalendarPage() {
       }
 
       return false;
+    }).sort((a, b) => {
+      // Sort by time of day only (hours and minutes), not the full date
+      // This is important for recurring classes where the date portion may differ
+      const aDate = new Date(a.startsAt);
+      const bDate = new Date(b.startsAt);
+      const aMinutes = aDate.getHours() * 60 + aDate.getMinutes();
+      const bMinutes = bDate.getHours() * 60 + bDate.getMinutes();
+      return aMinutes - bMinutes;
     });
+  }
+
+  function getApptsForDate(date: Date): ScheduledAppt[] {
+    const dateStr = toLocalDateStr(date);
+    return scheduledAppts
+      .filter((a) => {
+        const apptDate = new Date(a.scheduledDate);
+        return toLocalDateStr(apptDate) === dateStr;
+      })
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }
+
+  function getAvailabilityForDate(date: Date): CoachAvailabilityBlock[] {
+    const dateStr = date.toISOString().split("T")[0];
+
+    return availabilityBlocks.filter((block) => {
+      const blockStartsAt = new Date(block.startsAt);
+      const blockDate = blockStartsAt.toISOString().split("T")[0];
+
+      // Check excluded dates
+      if (block.excludedDates) {
+        try {
+          const excluded = JSON.parse(block.excludedDates) as string[];
+          if (excluded.includes(dateStr)) return false;
+        } catch { /* ignore */ }
+      }
+
+      if (!block.isRecurring) {
+        return blockDate === dateStr;
+      }
+
+      // For recurring, check day of week
+      const blockDayOfWeek = blockStartsAt.getDay();
+      const dateDayOfWeek = date.getDay();
+      if (blockDayOfWeek !== dateDayOfWeek) return false;
+
+      if (block.scheduleStartDate) {
+        const scheduleStart = new Date(block.scheduleStartDate);
+        scheduleStart.setHours(0, 0, 0, 0);
+
+        const scheduleEnd = block.isOngoing || !block.scheduleEndDate
+          ? new Date(2099, 11, 31)
+          : new Date(block.scheduleEndDate);
+        scheduleEnd.setHours(23, 59, 59, 999);
+
+        const checkDate = new Date(date);
+        checkDate.setHours(12, 0, 0, 0);
+
+        if (checkDate < scheduleStart || checkDate > scheduleEnd) return false;
+
+        if (block.frequencyUnit === "Week") {
+          const weeksDiff = Math.floor(
+            (checkDate.getTime() - scheduleStart.getTime()) / (1000 * 60 * 60 * 24 * 7)
+          );
+          return weeksDiff % (block.frequencyNumber || 1) === 0;
+        } else if (block.frequencyUnit === "Day") {
+          const daysDiff = Math.floor(
+            (checkDate.getTime() - scheduleStart.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          return daysDiff % (block.frequencyNumber || 1) === 0;
+        }
+      }
+
+      return false;
+    }).sort((a, b) => {
+      const aDate = new Date(a.startsAt);
+      const bDate = new Date(b.startsAt);
+      const aMinutes = aDate.getHours() * 60 + aDate.getMinutes();
+      const bMinutes = bDate.getHours() * 60 + bDate.getMinutes();
+      return aMinutes - bMinutes;
+    });
+  }
+
+  function getEventsForDate(date: Date): CalendarEventItem[] {
+    const dateStr = date.toISOString().split("T")[0];
+
+    return calendarEvents.filter((event) => {
+      const eventStartsAt = new Date(event.startsAt);
+      const eventDate = eventStartsAt.toISOString().split("T")[0];
+
+      if (event.excludedDates) {
+        try {
+          const excluded = JSON.parse(event.excludedDates) as string[];
+          if (excluded.includes(dateStr)) return false;
+        } catch { /* ignore */ }
+      }
+
+      if (!event.isRecurring) {
+        return eventDate === dateStr;
+      }
+
+      const eventDayOfWeek = eventStartsAt.getDay();
+      const dateDayOfWeek = date.getDay();
+      if (eventDayOfWeek !== dateDayOfWeek) return false;
+
+      if (event.scheduleStartDate) {
+        const scheduleStart = new Date(event.scheduleStartDate);
+        scheduleStart.setHours(0, 0, 0, 0);
+
+        const scheduleEnd = event.isOngoing || !event.scheduleEndDate
+          ? new Date(2099, 11, 31)
+          : new Date(event.scheduleEndDate);
+        scheduleEnd.setHours(23, 59, 59, 999);
+
+        const checkDate = new Date(date);
+        checkDate.setHours(12, 0, 0, 0);
+
+        if (checkDate < scheduleStart || checkDate > scheduleEnd) return false;
+
+        if (event.frequencyUnit === "Week") {
+          const weeksDiff = Math.floor(
+            (checkDate.getTime() - scheduleStart.getTime()) / (1000 * 60 * 60 * 24 * 7)
+          );
+          return weeksDiff % (event.frequencyNumber || 1) === 0;
+        } else if (event.frequencyUnit === "Day") {
+          const daysDiff = Math.floor(
+            (checkDate.getTime() - scheduleStart.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          return daysDiff % (event.frequencyNumber || 1) === 0;
+        }
+      }
+
+      return false;
+    }).sort((a, b) => {
+      if (a.isAllDay && !b.isAllDay) return -1;
+      if (!a.isAllDay && b.isAllDay) return 1;
+      const aDate = new Date(a.startsAt);
+      const bDate = new Date(b.startsAt);
+      const aMinutes = aDate.getHours() * 60 + aDate.getMinutes();
+      const bMinutes = bDate.getHours() * 60 + bDate.getMinutes();
+      return aMinutes - bMinutes;
+    });
+  }
+
+  function getSpaceName(spaceId: string | null | undefined): string | null {
+    if (!spaceId) return null;
+    return spaces.find((s) => s.id === spaceId)?.name || null;
   }
 
   const monthNames = [
@@ -448,7 +817,7 @@ export default function CalendarPage() {
 
     // Load attendance from database
     try {
-      const dateStr = clickedDate.toISOString().split("T")[0];
+      const dateStr = toLocalDateStr(clickedDate);
       const res = await fetch(`/api/attendance?classSessionId=${classSession.id}&date=${dateStr}`);
       if (res.ok) {
         const data = await res.json();
@@ -459,11 +828,9 @@ export default function CalendarPage() {
           const m = att.member;
           let memberStyles: MemberStyle[] = [];
 
-          // Track confirmed vs absent status from database
+          // Track confirmed status from database
           if (att.confirmed) {
             confirmedSet.add(m.id);
-          } else {
-            absentSet.add(m.id);
           }
 
           // Try stylesNotes first - it contains the full style data with ranks
@@ -744,7 +1111,7 @@ export default function CalendarPage() {
         body: JSON.stringify({
           memberId: member.id,
           classSessionId: selectedClass.id,
-          attendanceDate: selectedDate.toISOString().split("T")[0],
+          attendanceDate: toLocalDateStr(selectedDate),
           requirementOverride: hasOverride,
         }),
       });
@@ -785,7 +1152,7 @@ export default function CalendarPage() {
 
     // Delete from database
     try {
-      const dateStr = selectedDate.toISOString().split("T")[0];
+      const dateStr = toLocalDateStr(selectedDate);
       const res = await fetch(
         `/api/attendance?memberId=${memberId}&classSessionId=${selectedClass.id}&date=${dateStr}`,
         { method: "DELETE" }
@@ -839,7 +1206,7 @@ export default function CalendarPage() {
         body: JSON.stringify({
           memberIds,
           classSessionId: selectedClass.id,
-          date: selectedDate.toISOString().split("T")[0],
+          date: toLocalDateStr(selectedDate),
         }),
       });
 
@@ -874,6 +1241,54 @@ export default function CalendarPage() {
     }
   }
 
+  // Bulk action: Unconfirm attendance (set back to unconfirmed, not absent)
+  async function handleBulkUnconfirm() {
+    if (confirmedMembers.size === 0 || !selectedClass || !selectedDate) return;
+
+    const memberIds = Array.from(confirmedMembers);
+
+    try {
+      const res = await fetch("/api/attendance/confirm", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberIds,
+          classSessionId: selectedClass.id,
+          date: toLocalDateStr(selectedDate),
+        }),
+      });
+
+      if (!res.ok) {
+        console.error("Failed to unconfirm attendance");
+        return;
+      }
+
+      // Remove from confirmed set (back to unconfirmed, NOT absent)
+      setAttendanceConfirmed(prev => {
+        const next = new Set(prev);
+        memberIds.forEach(id => next.delete(id));
+        return next;
+      });
+      setMarkedAbsent(prev => {
+        const next = new Set(prev);
+        memberIds.forEach(id => next.delete(id));
+        return next;
+      });
+
+      // Refresh attendance counts
+      const countsRes = await fetch(`/api/attendance/counts?memberIds=${memberIds.join(",")}`);
+      if (countsRes.ok) {
+        const countsData = await countsRes.json();
+        setMemberClassCounts(prev => ({
+          ...prev,
+          ...countsData.counts
+        }));
+      }
+    } catch (error) {
+      console.error("Error unconfirming attendance:", error);
+    }
+  }
+
   // Bulk action: Mark selected members as absent
   async function handleBulkMarkAbsent() {
     if (confirmedMembers.size === 0 || !selectedClass || !selectedDate) return;
@@ -888,7 +1303,7 @@ export default function CalendarPage() {
         body: JSON.stringify({
           memberIds,
           classSessionId: selectedClass.id,
-          date: selectedDate.toISOString().split("T")[0],
+          date: toLocalDateStr(selectedDate),
         }),
       });
 
@@ -948,30 +1363,38 @@ export default function CalendarPage() {
     setShowMessageModal(true);
   }
 
-  // Send message to selected members
+  // Send message to selected members via email
   async function handleSendMessage() {
     if (!messageText.trim() || confirmedMembers.size === 0) return;
 
     setSendingMessage(true);
+    try {
+      const memberIds = [...confirmedMembers];
+      const res = await fetch("/api/notifications/send-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberIds,
+          subject: selectedClass ? `Message about ${selectedClass.name}` : "Message from your gym",
+          message: messageText.trim(),
+        }),
+      });
 
-    // Get selected member details
-    const selectedMembersList = classAttendees.filter(m => confirmedMembers.has(m.id));
-
-    // TODO: Implement actual email/text sending via API
-    // For now, just show what would be sent
-    const memberNames = selectedMembersList.map(m => `${m.firstName} ${m.lastName}`).join(", ");
-    alert(`Message would be sent to: ${memberNames}\n\nMessage: ${messageText}`);
-
-    // Mark members as messaged
-    setMessagedMembers(prev => {
-      const next = new Set(prev);
-      confirmedMembers.forEach(id => next.add(id));
-      return next;
-    });
-
-    setSendingMessage(false);
-    setShowMessageModal(false);
-    setMessageText("");
+      if (res.ok) {
+        // Mark members as messaged
+        setMessagedMembers(prev => {
+          const next = new Set(prev);
+          confirmedMembers.forEach(id => next.add(id));
+          return next;
+        });
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setSendingMessage(false);
+      setShowMessageModal(false);
+      setMessageText("");
+    }
   }
 
   // Get next rank requirements for a member's style
@@ -1076,6 +1499,15 @@ export default function CalendarPage() {
     // Set coach
     setSelectedCoachId(selectedClass.coachId || "");
 
+    // Set booking fields
+    setBookingEnabled(selectedClass.bookingEnabled || false);
+    setKioskEnabled(selectedClass.kioskEnabled || false);
+    setMaxCapacity(selectedClass.maxCapacity != null ? String(selectedClass.maxCapacity) : "");
+    setBookingCutoffMins(selectedClass.bookingCutoffMins != null ? String(selectedClass.bookingCutoffMins) : "");
+    setBookingAdvanceDays(selectedClass.bookingAdvanceDays != null ? String(selectedClass.bookingAdvanceDays) : "");
+    setSelectedLocationId(selectedClass.locationId || "");
+    setSelectedSpaceId(selectedClass.spaceId || "");
+
     setModalStep("edit");
   }
 
@@ -1110,7 +1542,13 @@ export default function CalendarPage() {
             classType,
             coachId: selectedCoachId || null,
             coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
-            // Add other fields as needed
+            bookingEnabled,
+            kioskEnabled,
+            maxCapacity: maxCapacity || null,
+            bookingCutoffMins: bookingCutoffMins || null,
+            bookingAdvanceDays: bookingAdvanceDays || null,
+            locationId: selectedLocationId || null,
+            spaceId: selectedSpaceId || null,
           }),
         });
 
@@ -1155,6 +1593,12 @@ export default function CalendarPage() {
     setIsOngoing(true);
     setDaySchedules([{ day: "Monday", times: [{ startTime: "09:00", endTime: "10:00" }] }]);
     setSelectedCoachId("");
+    setBookingEnabled(false);
+    setMaxCapacity("");
+    setBookingCutoffMins("");
+    setBookingAdvanceDays("");
+    setSelectedLocationId("");
+    setSelectedSpaceId("");
   }
 
   async function handleDeleteClass() {
@@ -1165,7 +1609,7 @@ export default function CalendarPage() {
       if (editOption === "single") {
         if (selectedClass.isRecurring) {
           // For recurring classes, add the date to excludedDates instead of deleting
-          const dateStr = selectedDate.toISOString().split("T")[0];
+          const dateStr = toLocalDateStr(selectedDate);
           let excludedDates: string[] = [];
           if (selectedClass.excludedDates) {
             try {
@@ -1186,6 +1630,11 @@ export default function CalendarPage() {
             }),
           });
           if (!response.ok) throw new Error("Failed to exclude class date");
+
+          // Also delete attendance records for this class on this date
+          await fetch(`/api/attendance/by-class?classSessionId=${selectedClass.id}&date=${dateStr}`, {
+            method: "DELETE",
+          });
         } else {
           // For non-recurring classes, delete the class session
           const response = await fetch(`/api/classes/${selectedClass.id}`, {
@@ -1195,7 +1644,7 @@ export default function CalendarPage() {
         }
       } else if (editOption === "day") {
         // Delete all classes on this day
-        const dateStr = selectedDate.toISOString().split("T")[0];
+        const dateStr = toLocalDateStr(selectedDate);
         const classesOnDay = getClassesForDate(selectedDate);
 
         for (const cls of classesOnDay) {
@@ -1223,6 +1672,11 @@ export default function CalendarPage() {
             if (!response.ok) {
               console.error(`Failed to exclude class ${cls.id} from date`);
             }
+
+            // Also delete attendance records for this class on this date
+            await fetch(`/api/attendance/by-class?classSessionId=${cls.id}&date=${dateStr}`, {
+              method: "DELETE",
+            });
           } else {
             // For non-recurring classes, delete the class session
             const response = await fetch(`/api/classes/${cls.id}`, {
@@ -1248,7 +1702,7 @@ export default function CalendarPage() {
             // Check if this date would normally have this class
             const classesOnDate = getClassesForDate(currentDate);
             if (classesOnDate.some(c => c.id === selectedClass.id)) {
-              datesToExclude.push(currentDate.toISOString().split("T")[0]);
+              datesToExclude.push(toLocalDateStr(currentDate));
             }
             currentDate.setDate(currentDate.getDate() + 1);
           }
@@ -1277,6 +1731,13 @@ export default function CalendarPage() {
               }),
             });
             if (!response.ok) throw new Error("Failed to exclude class dates");
+
+            // Also delete attendance records for each excluded date
+            for (const d of datesToExclude) {
+              await fetch(`/api/attendance/by-class?classSessionId=${selectedClass.id}&date=${d}`, {
+                method: "DELETE",
+              });
+            }
           }
         } else {
           // For non-recurring classes, find and delete matching ones
@@ -1348,13 +1809,362 @@ export default function CalendarPage() {
     return "";
   }
 
+  // --- Appointments Mode Handlers ---
+
+  function openCreateAvailability(date: Date) {
+    setAvailabilityModalMode("create");
+    setEditingAvailability(null);
+    setAvCoachId("");
+    setAvAppointmentId("");
+    setAvStartTime("09:00");
+    setAvEndTime("10:00");
+    setAvIsRecurring(false);
+    setAvFrequencyNumber("1");
+    setAvFrequencyUnit("Week");
+    setAvScheduleStartDate(toLocalDateStr(date));
+    setAvScheduleEndDate("");
+    setAvIsOngoing(true);
+    setAvColor("#6b7280");
+    setAvLocationId("");
+    setAvSpaceId("");
+    setAvNotes("");
+    setAvSelectedDate(date);
+    setShowAvailabilityModal(true);
+  }
+
+  function openEditAvailability(block: CoachAvailabilityBlock, date: Date) {
+    setAvailabilityModalMode("edit");
+    setEditingAvailability(block);
+    setAvCoachId(block.coachId);
+    setAvAppointmentId(block.appointmentId || "");
+    const startDt = new Date(block.startsAt);
+    const endDt = new Date(block.endsAt);
+    setAvStartTime(`${String(startDt.getHours()).padStart(2, "0")}:${String(startDt.getMinutes()).padStart(2, "0")}`);
+    setAvEndTime(`${String(endDt.getHours()).padStart(2, "0")}:${String(endDt.getMinutes()).padStart(2, "0")}`);
+    setAvIsRecurring(block.isRecurring);
+    setAvFrequencyNumber(String(block.frequencyNumber || 1));
+    setAvFrequencyUnit((block.frequencyUnit as "Day" | "Week" | "Month") || "Week");
+    setAvScheduleStartDate(block.scheduleStartDate ? new Date(block.scheduleStartDate).toISOString().split("T")[0] : toLocalDateStr(date));
+    setAvScheduleEndDate(block.scheduleEndDate ? new Date(block.scheduleEndDate).toISOString().split("T")[0] : "");
+    setAvIsOngoing(block.isOngoing);
+    setAvColor(block.color || "#6b7280");
+    setAvLocationId(block.locationId || "");
+    setAvSpaceId(block.spaceId || "");
+    setAvNotes(block.notes || "");
+    setAvSelectedDate(date);
+    setShowAvailabilityModal(true);
+  }
+
+  async function handleSaveAvailability() {
+    if (!avCoachId) return;
+    setAvSaving(true);
+    try {
+      const dateStr = avSelectedDate ? toLocalDateStr(avSelectedDate) : avScheduleStartDate;
+      const [startH, startM] = avStartTime.split(":").map(Number);
+      const [endH, endM] = avEndTime.split(":").map(Number);
+      const startsAt = new Date(`${dateStr}T${avStartTime}:00`);
+      const endsAt = new Date(`${dateStr}T${avEndTime}:00`);
+
+      const coachObj = coaches.find(c => c.id === avCoachId);
+      const coachName = coachObj ? `${coachObj.firstName} ${coachObj.lastName}` : null;
+
+      const payload = {
+        coachId: avCoachId,
+        coachName,
+        appointmentId: avAppointmentId || null,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        isRecurring: avIsRecurring,
+        frequencyNumber: avIsRecurring ? parseInt(avFrequencyNumber) || 1 : null,
+        frequencyUnit: avIsRecurring ? avFrequencyUnit : null,
+        scheduleStartDate: avIsRecurring ? new Date(`${avScheduleStartDate}T00:00:00`).toISOString() : null,
+        scheduleEndDate: avIsRecurring && !avIsOngoing && avScheduleEndDate ? new Date(`${avScheduleEndDate}T23:59:59`).toISOString() : null,
+        isOngoing: avIsRecurring ? avIsOngoing : true,
+        color: avColor,
+        locationId: avLocationId || null,
+        spaceId: avSpaceId || null,
+        notes: avNotes || null,
+      };
+
+      if (availabilityModalMode === "edit" && editingAvailability) {
+        await fetch(`/api/coach-availability/${editingAvailability.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await fetch("/api/coach-availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      // Refresh availability
+      const res = await fetch("/api/coach-availability");
+      if (res.ok) {
+        const data = await res.json();
+        setAvailabilityBlocks(data.availabilityBlocks || []);
+      }
+      setShowAvailabilityModal(false);
+    } catch (error) {
+      console.error("Error saving availability:", error);
+    } finally {
+      setAvSaving(false);
+    }
+  }
+
+  async function handleDeleteAvailability() {
+    if (!editingAvailability) return;
+    setAvSaving(true);
+    try {
+      await fetch(`/api/coach-availability/${editingAvailability.id}`, { method: "DELETE" });
+      const res = await fetch("/api/coach-availability");
+      if (res.ok) {
+        const data = await res.json();
+        setAvailabilityBlocks(data.availabilityBlocks || []);
+      }
+      setShowAvailabilityModal(false);
+    } catch (error) {
+      console.error("Error deleting availability:", error);
+    } finally {
+      setAvSaving(false);
+    }
+  }
+
+  function openScheduleApptModal(date: Date, block?: CoachAvailabilityBlock) {
+    setSchedApptTypeId("");
+    setSchedMemberSearch("");
+    setSchedFilteredMembers([]);
+    setSchedSelectedMember(null);
+    setSchedCoachId(block?.coachId || "");
+    const startDt = block ? new Date(block.startsAt) : null;
+    const endDt = block ? new Date(block.endsAt) : null;
+    setSchedStartTime(startDt ? `${String(startDt.getHours()).padStart(2, "0")}:${String(startDt.getMinutes()).padStart(2, "0")}` : "09:00");
+    setSchedEndTime(endDt ? `${String(endDt.getHours()).padStart(2, "0")}:${String(endDt.getMinutes()).padStart(2, "0")}` : "10:00");
+    setSchedDate(toLocalDateStr(date));
+    setSchedNotes("");
+    setSchedSpaceId(block?.spaceId || "");
+    setShowScheduleApptModal(true);
+  }
+
+  function handleSchedMemberSearch(search: string) {
+    setSchedMemberSearch(search);
+    if (search.trim() === "") {
+      setSchedFilteredMembers([]);
+      return;
+    }
+    const searchLower = search.toLowerCase();
+    const filtered = allMembers.filter(
+      (m) =>
+        `${m.firstName} ${m.lastName}`.toLowerCase().includes(searchLower) ||
+        m.firstName.toLowerCase().includes(searchLower) ||
+        m.lastName.toLowerCase().includes(searchLower)
+    );
+    setSchedFilteredMembers(filtered.slice(0, 5));
+  }
+
+  async function handleSaveScheduledAppt() {
+    if (!schedApptTypeId) return;
+    setSchedSaving(true);
+    try {
+      const coachObj = coaches.find(c => c.id === schedCoachId);
+      const coachName = coachObj ? `${coachObj.firstName} ${coachObj.lastName}` : null;
+
+      await fetch("/api/scheduled-appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appointmentId: schedApptTypeId,
+          scheduledDate: new Date(`${schedDate}T00:00:00`).toISOString(),
+          startTime: schedStartTime,
+          endTime: schedEndTime,
+          memberId: schedSelectedMember?.id || null,
+          memberName: schedSelectedMember ? `${schedSelectedMember.firstName} ${schedSelectedMember.lastName}` : null,
+          coachId: schedCoachId || null,
+          coachName,
+          notes: schedNotes || null,
+          spaceId: schedSpaceId || null,
+        }),
+      });
+
+      // Refresh scheduled appointments
+      const res = await fetch("/api/scheduled-appointments");
+      if (res.ok) {
+        const data = await res.json();
+        setScheduledAppts((data.scheduledAppointments || []).filter((a: ScheduledAppt) => a.status !== "CANCELLED"));
+      }
+      setShowScheduleApptModal(false);
+    } catch (error) {
+      console.error("Error scheduling appointment:", error);
+    } finally {
+      setSchedSaving(false);
+    }
+  }
+
+  function openViewApptModal(appt: ScheduledAppt) {
+    setViewingAppt(appt);
+    setShowViewApptModal(true);
+  }
+
+  async function handleUpdateApptStatus(status: string) {
+    if (!viewingAppt) return;
+    setViewApptSaving(true);
+    try {
+      await fetch(`/api/scheduled-appointments/${viewingAppt.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const res = await fetch("/api/scheduled-appointments");
+      if (res.ok) {
+        const data = await res.json();
+        setScheduledAppts((data.scheduledAppointments || []).filter((a: ScheduledAppt) => a.status !== "CANCELLED"));
+      }
+      setShowViewApptModal(false);
+    } catch (error) {
+      console.error("Error updating appointment:", error);
+    } finally {
+      setViewApptSaving(false);
+    }
+  }
+
+  function openViewAvailabilityModal(block: CoachAvailabilityBlock, date: Date) {
+    setViewingAvailability(block);
+    setViewAvailabilityDate(date);
+    setShowViewAvailabilityModal(true);
+  }
+
+  // --- Events Mode Handlers ---
+
+  function openCreateEvent(date: Date) {
+    setEventModalMode("create");
+    setEditingEvent(null);
+    setEvTitle("");
+    setEvDescription("");
+    setEvStartTime("09:00");
+    setEvEndTime("10:00");
+    setEvIsAllDay(false);
+    setEvIsRecurring(false);
+    setEvFrequencyNumber("1");
+    setEvFrequencyUnit("Week");
+    setEvScheduleStartDate(toLocalDateStr(date));
+    setEvScheduleEndDate("");
+    setEvIsOngoing(true);
+    setEvColor("#3b82f6");
+    setEvLocationId("");
+    setEvSpaceId("");
+    setEvNotes("");
+    setEvSelectedDate(date);
+    setShowEventModal(true);
+  }
+
+  function openEditEvent(event: CalendarEventItem, date: Date) {
+    setEventModalMode("edit");
+    setEditingEvent(event);
+    setEvTitle(event.title);
+    setEvDescription(event.description || "");
+    const startDt = new Date(event.startsAt);
+    const endDt = new Date(event.endsAt);
+    setEvStartTime(`${String(startDt.getHours()).padStart(2, "0")}:${String(startDt.getMinutes()).padStart(2, "0")}`);
+    setEvEndTime(`${String(endDt.getHours()).padStart(2, "0")}:${String(endDt.getMinutes()).padStart(2, "0")}`);
+    setEvIsAllDay(event.isAllDay);
+    setEvIsRecurring(event.isRecurring);
+    setEvFrequencyNumber(String(event.frequencyNumber || 1));
+    setEvFrequencyUnit((event.frequencyUnit as "Day" | "Week" | "Month") || "Week");
+    setEvScheduleStartDate(event.scheduleStartDate ? new Date(event.scheduleStartDate).toISOString().split("T")[0] : toLocalDateStr(date));
+    setEvScheduleEndDate(event.scheduleEndDate ? new Date(event.scheduleEndDate).toISOString().split("T")[0] : "");
+    setEvIsOngoing(event.isOngoing);
+    setEvColor(event.color || "#3b82f6");
+    setEvLocationId(event.locationId || "");
+    setEvSpaceId(event.spaceId || "");
+    setEvNotes(event.notes || "");
+    setEvSelectedDate(date);
+    setShowEventModal(true);
+  }
+
+  async function handleSaveEvent() {
+    if (!evTitle.trim()) return;
+    setEvSaving(true);
+    try {
+      const dateStr = evSelectedDate ? toLocalDateStr(evSelectedDate) : evScheduleStartDate;
+      const startsAt = evIsAllDay
+        ? new Date(`${dateStr}T00:00:00`)
+        : new Date(`${dateStr}T${evStartTime}:00`);
+      const endsAt = evIsAllDay
+        ? new Date(`${dateStr}T23:59:59`)
+        : new Date(`${dateStr}T${evEndTime}:00`);
+
+      const payload = {
+        title: evTitle.trim(),
+        description: evDescription.trim() || null,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        isAllDay: evIsAllDay,
+        isRecurring: evIsRecurring,
+        frequencyNumber: evIsRecurring ? parseInt(evFrequencyNumber) || 1 : null,
+        frequencyUnit: evIsRecurring ? evFrequencyUnit : null,
+        scheduleStartDate: evIsRecurring ? new Date(`${evScheduleStartDate}T00:00:00`).toISOString() : null,
+        scheduleEndDate: evIsRecurring && !evIsOngoing && evScheduleEndDate ? new Date(`${evScheduleEndDate}T23:59:59`).toISOString() : null,
+        isOngoing: evIsRecurring ? evIsOngoing : true,
+        color: evColor,
+        locationId: evLocationId || null,
+        spaceId: evSpaceId || null,
+        notes: evNotes || null,
+      };
+
+      if (eventModalMode === "edit" && editingEvent) {
+        await fetch(`/api/calendar-events/${editingEvent.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await fetch("/api/calendar-events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      const res = await fetch("/api/calendar-events");
+      if (res.ok) {
+        const data = await res.json();
+        setCalendarEvents(data.events || []);
+      }
+      setShowEventModal(false);
+    } catch (error) {
+      console.error("Error saving event:", error);
+    } finally {
+      setEvSaving(false);
+    }
+  }
+
+  async function handleDeleteEvent() {
+    if (!editingEvent) return;
+    setEvSaving(true);
+    try {
+      await fetch(`/api/calendar-events/${editingEvent.id}`, { method: "DELETE" });
+      const res = await fetch("/api/calendar-events");
+      if (res.ok) {
+        const data = await res.json();
+        setCalendarEvents(data.events || []);
+      }
+      setShowEventModal(false);
+    } catch (error) {
+      console.error("Error deleting event:", error);
+    } finally {
+      setEvSaving(false);
+    }
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   if (isLoading) {
     return (
       <AppLayout>
-        <div className="space-y-4">
+        <div className="space-y-3">
           <h1 className="text-2xl font-bold">Calendar</h1>
           <div className="text-sm text-gray-600">Loading classes...</div>
         </div>
@@ -1364,8 +2174,42 @@ export default function CalendarPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-4">
+      <div className="space-y-3">
         <h1 className="text-2xl font-bold">Calendar</h1>
+
+        {/* Calendar Mode Toggle */}
+        <div className="flex items-center gap-1 rounded-md border border-gray-300 bg-white p-0.5 w-fit">
+          <button
+            onClick={() => setCalendarMode("classes")}
+            className={`rounded px-4 py-1.5 text-xs font-medium ${
+              calendarMode === "classes"
+                ? "bg-primary text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            Classes
+          </button>
+          <button
+            onClick={() => setCalendarMode("appointments")}
+            className={`rounded px-4 py-1.5 text-xs font-medium ${
+              calendarMode === "appointments"
+                ? "bg-primary text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            Appointments
+          </button>
+          <button
+            onClick={() => setCalendarMode("events")}
+            className={`rounded px-4 py-1.5 text-xs font-medium ${
+              calendarMode === "events"
+                ? "bg-primary text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            Events
+          </button>
+        </div>
 
         {/* Calendar Navigation */}
         <div className="flex items-center justify-between">
@@ -1422,67 +2266,133 @@ export default function CalendarPage() {
               </button>
             </div>
           </div>
-          <h2 className="text-lg font-semibold text-gray-900">
-            {getDateRangeText()}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-gray-900">
+              {getDateRangeText()}
+            </h2>
+            <button
+              onClick={() => {
+                window.open("/api/calendar/export", "_blank");
+              }}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              title="Export class schedule as .ics file"
+            >
+              Export .ics
+            </button>
+          </div>
         </div>
 
-        {/* Calendar Grid */}
-        {viewMode === "day" && (
+
+
+        {/* Calendar Grid — Classes Mode */}
+        {calendarMode === "classes" && viewMode === "day" && (
           <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
             <div className="p-4">
               <div className="space-y-2">
-                {getClassesForDate(currentDate).length === 0 ? (
+                {getClassesForDate(currentDate).length === 0 && getApptsForDate(currentDate).length === 0 && getEventsForDate(currentDate).length === 0 ? (
                   <div className="py-8 text-center text-sm text-gray-500">
-                    No classes scheduled for this day
+                    No classes, appointments, or events scheduled for this day
                   </div>
                 ) : (
-                  getClassesForDate(currentDate).map((classSession) => {
-                    const startTime = new Date(classSession.startsAt).toLocaleTimeString("en-US", {
-                      hour: "numeric",
-                      minute: "2-digit",
-                      hour12: true,
-                    });
-                    const endTime = new Date(classSession.endsAt).toLocaleTimeString("en-US", {
-                      hour: "numeric",
-                      minute: "2-digit",
-                      hour12: true,
-                    });
+                  <>
+                    {getClassesForDate(currentDate).map((classSession) => {
+                      const startTime = new Date(classSession.startsAt).toLocaleTimeString("en-US", {
+                        hour: "numeric",
+                        minute: "2-digit",
+                        hour12: true,
+                      });
+                      const endTime = new Date(classSession.endsAt).toLocaleTimeString("en-US", {
+                        hour: "numeric",
+                        minute: "2-digit",
+                        hour12: true,
+                      });
 
-                    const bgColor = classSession.color || "#a3a3a3";
-                    const textColor = getTextColor(bgColor);
+                      const originalColor = classSession.color || "#a3a3a3";
+                      const bgColor = getTintedColor(originalColor, 0.7);
+                      const textColor = getTextColorForTint(originalColor);
+                      const borderColor = originalColor;
 
-                    return (
-                      <button
-                        key={classSession.id}
-                        onClick={() => handleClassClick(classSession, currentDate)}
-                        className="w-full rounded-lg border border-gray-200 p-4 text-left transition-opacity hover:opacity-90"
-                        style={{ backgroundColor: bgColor, color: textColor }}
+                      return (
+                        <button
+                          key={classSession.id}
+                          onClick={() => handleClassClick(classSession, currentDate)}
+                          className="w-full rounded-lg border-l-4 border p-4 text-left transition-opacity hover:opacity-90"
+                          style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: borderColor, borderColor: bgColor }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-sm font-semibold">
+                                {classSession.name}
+                              </div>
+                              <div className="text-xs opacity-80">{classSession.classType}</div>
+                              {getSpaceName(classSession.spaceId) && (
+                                <div className="text-xs opacity-70">{getSpaceName(classSession.spaceId)}</div>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-medium">{startTime} - {endTime}</div>
+                              {classSession.styleNames && (
+                                <div className="text-xs opacity-80">{classSession.styleNames}</div>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {getApptsForDate(currentDate).map((appt) => (
+                      <div
+                        key={appt.id}
+                        className="w-full rounded-lg border-l-4 border border-purple-200 bg-purple-50 p-4 text-left"
+                        style={{ borderLeftColor: "#8b5cf6" }}
                       >
                         <div className="flex items-center justify-between">
                           <div>
-                            <div className="text-sm font-semibold">
-                              {classSession.name}
-                            </div>
-                            <div className="text-xs opacity-80">{classSession.classType}</div>
+                            <div className="text-sm font-semibold text-purple-900">{appt.appointment.title}</div>
+                            {appt.memberName && <div className="text-xs text-purple-600">{appt.memberName}</div>}
+                            {appt.coachName && <div className="text-xs text-purple-500">Coach: {appt.coachName}</div>}
+                            {getSpaceName(appt.spaceId) && <div className="text-xs text-purple-500">{getSpaceName(appt.spaceId)}</div>}
                           </div>
                           <div className="text-right">
-                            <div className="text-sm font-medium">{startTime} - {endTime}</div>
-                            {classSession.styleNames && (
-                              <div className="text-xs opacity-80">{classSession.styleNames}</div>
-                            )}
+                            <div className="text-sm font-medium text-purple-800">{appt.startTime} - {appt.endTime}</div>
+                            <div className="text-xs text-purple-500">Appointment</div>
                           </div>
                         </div>
-                      </button>
-                    );
-                  })
+                      </div>
+                    ))}
+                    {getEventsForDate(currentDate).map((event) => {
+                      const evStartTime = event.isAllDay ? "All Day" : new Date(event.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                      const evEndTime = event.isAllDay ? "" : new Date(event.endsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                      const originalColor = event.color || "#3b82f6";
+                      const bgColor = getTintedColor(originalColor, 0.7);
+                      const textColor = getTextColorForTint(originalColor);
+                      return (
+                        <button
+                          key={`ev-${event.id}`}
+                          onClick={() => openEditEvent(event, currentDate)}
+                          className="w-full rounded-lg border-l-4 border p-4 text-left transition-opacity hover:opacity-90"
+                          style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor, borderColor: bgColor }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-sm font-semibold">{event.title}</div>
+                              {event.description && <div className="text-xs opacity-80">{event.description}</div>}
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-medium">{evStartTime}{evEndTime ? ` - ${evEndTime}` : ""}</div>
+                              <div className="text-xs opacity-70">Event</div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </>
                 )}
               </div>
             </div>
           </div>
         )}
 
-        {viewMode === "week" && (
+        {calendarMode === "classes" && viewMode === "week" && (
           <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
             <div className="grid grid-cols-7 border-b border-gray-300 bg-gray-100">
               {getWeekDays(currentDate).map((date, index) => {
@@ -1504,6 +2414,7 @@ export default function CalendarPage() {
             <div className="grid grid-cols-7">
               {getWeekDays(currentDate).map((date, index) => {
                 const classes = getClassesForDate(date);
+                const appts = getApptsForDate(date);
                 const isToday = date.toISOString().split("T")[0] === today.toISOString().split("T")[0];
 
                 return (
@@ -1523,18 +2434,44 @@ export default function CalendarPage() {
                           hour12: true,
                         });
 
-                        const bgColor = classSession.color || "#a3a3a3";
-                        const textColor = getTextColor(bgColor);
+                        const originalColor = classSession.color || "#a3a3a3";
+                        const bgColor = getTintedColor(originalColor, 0.7);
+                        const textColor = getTextColorForTint(originalColor);
+                        const borderColor = originalColor;
 
                         return (
                           <button
                             key={classSession.id}
                             onClick={() => handleClassClick(classSession, date)}
-                            className="w-full rounded px-2 py-1 text-left text-xs transition-opacity hover:opacity-90"
-                            style={{ backgroundColor: bgColor, color: textColor }}
+                            className="w-full rounded border-l-2 px-2 py-1 text-left text-xs transition-opacity hover:opacity-90"
+                            style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: borderColor }}
                           >
                             <div className="font-medium">{startTime}</div>
                             <div className="truncate">{classSession.name}</div>
+                            {getSpaceName(classSession.spaceId) && <div className="truncate text-[10px] opacity-70">{getSpaceName(classSession.spaceId)}</div>}
+                          </button>
+                        );
+                      })}
+                      {appts.map((appt) => (
+                        <div
+                          key={appt.id}
+                          className="w-full rounded border-l-2 px-2 py-1 text-left text-xs bg-purple-100 border-l-purple-500 text-purple-800"
+                          title={`${appt.appointment.title}\n${appt.startTime} – ${appt.endTime}${appt.memberName ? `\n${appt.memberName}` : ""}${getSpaceName(appt.spaceId) ? `\n${getSpaceName(appt.spaceId)}` : ""}`}
+                        >
+                          <div className="font-medium">{appt.startTime}</div>
+                          <div className="truncate">{appt.appointment.title}</div>
+                          {appt.memberName && <div className="truncate text-purple-600 text-[10px]">{appt.memberName}</div>}
+                        </div>
+                      ))}
+                      {getEventsForDate(date).map((event) => {
+                        const evTime = event.isAllDay ? "All Day" : new Date(event.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                        const originalColor = event.color || "#3b82f6";
+                        const bgColor = getTintedColor(originalColor, 0.7);
+                        const textColor = getTextColorForTint(originalColor);
+                        return (
+                          <button key={`ev-${event.id}`} onClick={() => openEditEvent(event, date)} className="w-full rounded border-l-2 px-2 py-1 text-left text-xs transition-opacity hover:opacity-90" style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor }}>
+                            <div className="font-medium">{evTime}</div>
+                            <div className="truncate">{event.title}</div>
                           </button>
                         );
                       })}
@@ -1546,7 +2483,7 @@ export default function CalendarPage() {
           </div>
         )}
 
-        {viewMode === "month" && (
+        {calendarMode === "classes" && viewMode === "month" && (
           <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
             <div className="grid grid-cols-7 border-b border-gray-300 bg-gray-100">
               {dayNames.map((day) => (
@@ -1590,19 +2527,44 @@ export default function CalendarPage() {
                           hour12: true,
                         });
 
-                        const bgColor = classSession.color || "#a3a3a3";
-                        const textColor = getTextColor(bgColor);
+                        const originalColor = classSession.color || "#a3a3a3";
+                        const bgColor = getTintedColor(originalColor, 0.7);
+                        const textColor = getTextColorForTint(originalColor);
+                        const borderColor = originalColor;
 
                         return (
                           <button
                             key={classSession.id}
                             onClick={() => handleClassClick(classSession, day.date)}
-                            className="w-full rounded px-1 py-0.5 text-left text-[10px] transition-opacity hover:opacity-90"
-                            style={{ backgroundColor: bgColor, color: textColor }}
-                            title={`${classSession.name}\n${startTime}${classSession.isRecurring ? "\n(Recurring)" : ""}`}
+                            className="w-full rounded border-l-2 px-1 py-0.5 text-left text-[10px] transition-opacity hover:opacity-90"
+                            style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: borderColor }}
+                            title={`${classSession.name}\n${startTime}${getSpaceName(classSession.spaceId) ? `\n${getSpaceName(classSession.spaceId)}` : ""}${classSession.isRecurring ? "\n(Recurring)" : ""}`}
                           >
                             <div className="truncate font-medium">{startTime}</div>
                             <div className="truncate">{classSession.name}</div>
+                          </button>
+                        );
+                      })}
+                      {day.appointments.map((appt) => (
+                        <div
+                          key={appt.id}
+                          className="w-full rounded border-l-2 px-1 py-0.5 text-left text-[10px] bg-purple-100 border-l-purple-500 text-purple-800"
+                          title={`${appt.appointment.title}\n${appt.startTime} – ${appt.endTime}${appt.memberName ? `\n${appt.memberName}` : ""}${appt.coachName ? `\nCoach: ${appt.coachName}` : ""}${getSpaceName(appt.spaceId) ? `\n${getSpaceName(appt.spaceId)}` : ""}`}
+                        >
+                          <div className="truncate font-medium">{appt.startTime}</div>
+                          <div className="truncate">{appt.appointment.title}</div>
+                          {appt.memberName && <div className="truncate text-purple-600">{appt.memberName}</div>}
+                        </div>
+                      ))}
+                      {day.events.map((event) => {
+                        const evTime = event.isAllDay ? "All Day" : new Date(event.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                        const originalColor = event.color || "#3b82f6";
+                        const bgColor = getTintedColor(originalColor, 0.7);
+                        const textColor = getTextColorForTint(originalColor);
+                        return (
+                          <button key={`ev-${event.id}`} onClick={() => openEditEvent(event, day.date)} className="w-full rounded border-l-2 px-1 py-0.5 text-left text-[10px] transition-opacity hover:opacity-90" style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor }} title={`${event.title}\n${evTime}${event.isRecurring ? "\n(Recurring)" : ""}`}>
+                            <div className="truncate font-medium">{evTime}</div>
+                            <div className="truncate">{event.title}</div>
                           </button>
                         );
                       })}
@@ -1614,6 +2576,450 @@ export default function CalendarPage() {
           </div>
         )}
 
+
+        {/* ========== Appointments Mode ========== */}
+
+        {/* Appointments Day View */}
+        {calendarMode === "appointments" && viewMode === "day" && (
+          <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-gray-500">
+                  {currentDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => openCreateAvailability(currentDate)}
+                    className="rounded-md bg-gray-600 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700"
+                  >
+                    Add Availability
+                  </button>
+                  <button
+                    onClick={() => openScheduleApptModal(currentDate)}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primaryDark"
+                  >
+                    Schedule Appointment
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {getAvailabilityForDate(currentDate).length === 0 && getApptsForDate(currentDate).length === 0 && getEventsForDate(currentDate).length === 0 ? (
+                  <div className="py-8 text-center text-sm text-gray-500">
+                    No availability, appointments, or events for this day
+                  </div>
+                ) : (
+                  <>
+                    {getAvailabilityForDate(currentDate).map((block) => {
+                      const startTime = new Date(block.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                      const endTime = new Date(block.endsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                      const originalColor = block.color || "#6b7280";
+                      const bgColor = getTintedColor(originalColor, 0.8);
+                      const textColor = getTextColorForTint(originalColor);
+                      const coachLabel = block.coachName || coaches.find(c => c.id === block.coachId)?.firstName || "Unknown";
+
+                      return (
+                        <button
+                          key={block.id}
+                          onClick={() => openViewAvailabilityModal(block, currentDate)}
+                          className="w-full rounded-lg border-l-4 border p-4 text-left transition-opacity hover:opacity-90"
+                          style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor, borderColor: bgColor }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-sm font-semibold">Available: {coachLabel}</div>
+                              {block.notes && <div className="text-xs opacity-80">{block.notes}</div>}
+                              {getSpaceName(block.spaceId) && <div className="text-xs opacity-70">{getSpaceName(block.spaceId)}</div>}
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-medium">{startTime} - {endTime}</div>
+                              {block.isRecurring && <div className="text-xs opacity-70">Recurring</div>}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {getApptsForDate(currentDate).map((appt) => (
+                      <button
+                        key={appt.id}
+                        onClick={() => openViewApptModal(appt)}
+                        className="w-full rounded-lg border-l-4 border border-purple-200 bg-purple-50 p-4 text-left hover:bg-purple-100 transition-colors"
+                        style={{ borderLeftColor: "#8b5cf6" }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-purple-900">{appt.appointment.title}</div>
+                            {appt.memberName && <div className="text-xs text-purple-600">{appt.memberName}</div>}
+                            {appt.coachName && <div className="text-xs text-purple-500">Coach: {appt.coachName}</div>}
+                            {getSpaceName(appt.spaceId) && <div className="text-xs text-purple-500">{getSpaceName(appt.spaceId)}</div>}
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-medium text-purple-800">{appt.startTime} - {appt.endTime}</div>
+                            <div className={`text-xs font-medium ${appt.status === "COMPLETED" ? "text-green-600" : appt.status === "CANCELLED" ? "text-red-500" : "text-purple-500"}`}>
+                              {appt.status}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                    {getEventsForDate(currentDate).map((event) => {
+                      const evStartTime = event.isAllDay ? "All Day" : new Date(event.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                      const evEndTime = event.isAllDay ? "" : new Date(event.endsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                      const originalColor = event.color || "#3b82f6";
+                      const bgColor = getTintedColor(originalColor, 0.7);
+                      const textColor = getTextColorForTint(originalColor);
+                      return (
+                        <button key={`ev-${event.id}`} onClick={() => openEditEvent(event, currentDate)} className="w-full rounded-lg border-l-4 border p-4 text-left transition-opacity hover:opacity-90" style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor, borderColor: bgColor }}>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-sm font-semibold">{event.title}</div>
+                              {event.description && <div className="text-xs opacity-80">{event.description}</div>}
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-medium">{evStartTime}{evEndTime ? ` - ${evEndTime}` : ""}</div>
+                              <div className="text-xs opacity-70">Event</div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Appointments Week View */}
+        {calendarMode === "appointments" && viewMode === "week" && (
+          <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
+            <div className="grid grid-cols-7 border-b border-gray-300 bg-gray-100">
+              {getWeekDays(currentDate).map((date, index) => {
+                const isToday = date.toISOString().split("T")[0] === today.toISOString().split("T")[0];
+                return (
+                  <div
+                    key={index}
+                    className="border-r border-gray-300 px-2 py-2 text-center last:border-r-0"
+                  >
+                    <div className="text-xs font-semibold text-gray-700">{dayNames[date.getDay()]}</div>
+                    <div className={`text-sm font-medium ${isToday ? "text-primary font-bold" : "text-gray-900"}`}>
+                      {date.getDate()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-7">
+              {getWeekDays(currentDate).map((date, index) => {
+                const avails = getAvailabilityForDate(date);
+                const appts = getApptsForDate(date);
+                const isToday = date.toISOString().split("T")[0] === today.toISOString().split("T")[0];
+
+                return (
+                  <div
+                    key={index}
+                    className={`min-h-[200px] p-2 ${
+                      isToday
+                        ? "border-[4px] border-primary"
+                        : "border-r border-gray-300 last:border-r-0"
+                    } bg-white cursor-pointer`}
+                    onDoubleClick={() => openCreateAvailability(date)}
+                  >
+                    <div className="space-y-1">
+                      {avails.map((block) => {
+                        const startTime = new Date(block.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                        const originalColor = block.color || "#6b7280";
+                        const bgColor = getTintedColor(originalColor, 0.8);
+                        const textColor = getTextColorForTint(originalColor);
+                        const coachLabel = block.coachName || coaches.find(c => c.id === block.coachId)?.firstName || "";
+
+                        return (
+                          <button
+                            key={block.id}
+                            onClick={() => openViewAvailabilityModal(block, date)}
+                            className="w-full rounded border-l-2 px-2 py-1 text-left text-xs transition-opacity hover:opacity-90"
+                            style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor }}
+                          >
+                            <div className="font-medium">{startTime}</div>
+                            <div className="truncate">{coachLabel}</div>
+                          </button>
+                        );
+                      })}
+                      {appts.map((appt) => (
+                        <button
+                          key={appt.id}
+                          onClick={() => openViewApptModal(appt)}
+                          className="w-full rounded border-l-2 px-2 py-1 text-left text-xs bg-purple-100 border-l-purple-500 text-purple-800 hover:bg-purple-200 transition-colors"
+                        >
+                          <div className="font-medium">{appt.startTime}</div>
+                          <div className="truncate">{appt.appointment.title}</div>
+                          {appt.memberName && <div className="truncate text-purple-600 text-[10px]">{appt.memberName}</div>}
+                        </button>
+                      ))}
+                      {getEventsForDate(date).map((event) => {
+                        const evTime = event.isAllDay ? "All Day" : new Date(event.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                        const originalColor = event.color || "#3b82f6";
+                        const bgColor = getTintedColor(originalColor, 0.7);
+                        const textColor = getTextColorForTint(originalColor);
+                        return (
+                          <button key={`ev-${event.id}`} onClick={() => openEditEvent(event, date)} className="w-full rounded border-l-2 px-2 py-1 text-left text-xs transition-opacity hover:opacity-90" style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor }}>
+                            <div className="font-medium">{evTime}</div>
+                            <div className="truncate">{event.title}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Appointments Month View */}
+        {calendarMode === "appointments" && viewMode === "month" && (
+          <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
+            <div className="grid grid-cols-7 border-b border-gray-300 bg-gray-100">
+              {dayNames.map((day) => (
+                <div
+                  key={day}
+                  className="border-r border-gray-300 px-2 py-2 text-center text-xs font-semibold text-gray-700 last:border-r-0"
+                >
+                  {day}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7">
+              {calendarDays.map((day, index) => {
+                const isToday = day.date.toISOString().split("T")[0] === today.toISOString().split("T")[0];
+
+                return (
+                  <div
+                    key={index}
+                    className={`min-h-[100px] p-1 ${
+                      isToday
+                        ? "border-[4px] border-primary"
+                        : "border-b border-r border-gray-300 last:border-r-0"
+                    } ${
+                      day.isCurrentMonth ? "bg-white" : "bg-gray-50"
+                    } cursor-pointer`}
+                    onDoubleClick={() => openCreateAvailability(day.date)}
+                  >
+                    <div
+                      className={`mb-1 text-xs font-medium ${
+                        day.isCurrentMonth ? "text-gray-900" : "text-gray-400"
+                      } ${isToday ? "text-primary font-bold" : ""}`}
+                    >
+                      {day.date.getDate()}
+                    </div>
+
+                    <div className="space-y-0.5">
+                      {day.availabilityBlocks.map((block) => {
+                        const startTime = new Date(block.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                        const originalColor = block.color || "#6b7280";
+                        const bgColor = getTintedColor(originalColor, 0.8);
+                        const textColor = getTextColorForTint(originalColor);
+                        const coachLabel = block.coachName || coaches.find(c => c.id === block.coachId)?.firstName || "";
+
+                        return (
+                          <button
+                            key={block.id}
+                            onClick={() => openViewAvailabilityModal(block, day.date)}
+                            className="w-full rounded border-l-2 px-1 py-0.5 text-left text-[10px] transition-opacity hover:opacity-90"
+                            style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor }}
+                            title={`Available: ${coachLabel}\n${startTime}${block.isRecurring ? "\n(Recurring)" : ""}`}
+                          >
+                            <div className="truncate font-medium">{startTime}</div>
+                            <div className="truncate">{coachLabel}</div>
+                          </button>
+                        );
+                      })}
+                      {day.appointments.map((appt) => (
+                        <button
+                          key={appt.id}
+                          onClick={() => openViewApptModal(appt)}
+                          className="w-full rounded border-l-2 px-1 py-0.5 text-left text-[10px] bg-purple-100 border-l-purple-500 text-purple-800 hover:bg-purple-200 transition-colors"
+                          title={`${appt.appointment.title}\n${appt.startTime} – ${appt.endTime}${appt.memberName ? `\n${appt.memberName}` : ""}${appt.coachName ? `\nCoach: ${appt.coachName}` : ""}`}
+                        >
+                          <div className="truncate font-medium">{appt.startTime}</div>
+                          <div className="truncate">{appt.appointment.title}</div>
+                          {appt.memberName && <div className="truncate text-purple-600">{appt.memberName}</div>}
+                        </button>
+                      ))}
+                      {day.events.map((event) => {
+                        const evTime = event.isAllDay ? "All Day" : new Date(event.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                        const originalColor = event.color || "#3b82f6";
+                        const bgColor = getTintedColor(originalColor, 0.7);
+                        const textColor = getTextColorForTint(originalColor);
+                        return (
+                          <button key={`ev-${event.id}`} onClick={() => openEditEvent(event, day.date)} className="w-full rounded border-l-2 px-1 py-0.5 text-left text-[10px] transition-opacity hover:opacity-90" style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor }} title={`${event.title}\n${evTime}${event.isRecurring ? "\n(Recurring)" : ""}`}>
+                            <div className="truncate font-medium">{evTime}</div>
+                            <div className="truncate">{event.title}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ========== Events Mode ========== */}
+
+        {/* Events Day View */}
+        {calendarMode === "events" && viewMode === "day" && (
+          <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-gray-500">
+                  {currentDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                </span>
+                <button
+                  onClick={() => openCreateEvent(currentDate)}
+                  className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  Add Event
+                </button>
+              </div>
+              <div className="space-y-2">
+                {getEventsForDate(currentDate).length === 0 ? (
+                  <div className="py-8 text-center text-sm text-gray-500">
+                    No events for this day
+                  </div>
+                ) : (
+                  getEventsForDate(currentDate).map((event) => {
+                    const startTime = event.isAllDay ? "All Day" : new Date(event.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                    const endTime = event.isAllDay ? "" : new Date(event.endsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                    const originalColor = event.color || "#3b82f6";
+                    const bgColor = getTintedColor(originalColor, 0.7);
+                    const textColor = getTextColorForTint(originalColor);
+
+                    return (
+                      <button
+                        key={event.id}
+                        onClick={() => openEditEvent(event, currentDate)}
+                        className="w-full rounded-lg border-l-4 border p-4 text-left transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor, borderColor: bgColor }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-semibold">{event.title}</div>
+                            {event.description && <div className="text-xs opacity-80">{event.description}</div>}
+                            {getSpaceName(event.spaceId) && <div className="text-xs opacity-70">{getSpaceName(event.spaceId)}</div>}
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-medium">{startTime}{endTime ? ` - ${endTime}` : ""}</div>
+                            {event.isRecurring && <div className="text-xs opacity-70">Recurring</div>}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Events Week View */}
+        {calendarMode === "events" && viewMode === "week" && (
+          <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
+            <div className="grid grid-cols-7 border-b border-gray-300 bg-gray-100">
+              {getWeekDays(currentDate).map((date, index) => {
+                const isToday = date.toISOString().split("T")[0] === today.toISOString().split("T")[0];
+                return (
+                  <div key={index} className="border-r border-gray-300 px-2 py-2 text-center last:border-r-0">
+                    <div className="text-xs font-semibold text-gray-700">{dayNames[date.getDay()]}</div>
+                    <div className={`text-sm font-medium ${isToday ? "text-primary font-bold" : "text-gray-900"}`}>{date.getDate()}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-7">
+              {getWeekDays(currentDate).map((date, index) => {
+                const events = getEventsForDate(date);
+                const isToday = date.toISOString().split("T")[0] === today.toISOString().split("T")[0];
+                return (
+                  <div
+                    key={index}
+                    className={`min-h-[200px] p-2 ${isToday ? "border-[4px] border-primary" : "border-r border-gray-300 last:border-r-0"} bg-white cursor-pointer`}
+                    onDoubleClick={() => openCreateEvent(date)}
+                  >
+                    <div className="space-y-1">
+                      {events.map((event) => {
+                        const startTime = event.isAllDay ? "All Day" : new Date(event.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                        const originalColor = event.color || "#3b82f6";
+                        const bgColor = getTintedColor(originalColor, 0.7);
+                        const textColor = getTextColorForTint(originalColor);
+                        return (
+                          <button
+                            key={event.id}
+                            onClick={() => openEditEvent(event, date)}
+                            className="w-full rounded border-l-2 px-2 py-1 text-left text-xs transition-opacity hover:opacity-90"
+                            style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor }}
+                          >
+                            <div className="font-medium">{startTime}</div>
+                            <div className="truncate">{event.title}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Events Month View */}
+        {calendarMode === "events" && viewMode === "month" && (
+          <div className="overflow-hidden rounded-lg border border-gray-300 bg-white">
+            <div className="grid grid-cols-7 border-b border-gray-300 bg-gray-100">
+              {dayNames.map((day) => (
+                <div key={day} className="border-r border-gray-300 px-2 py-2 text-center text-xs font-semibold text-gray-700 last:border-r-0">{day}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7">
+              {calendarDays.map((day, index) => {
+                const isToday = day.date.toISOString().split("T")[0] === today.toISOString().split("T")[0];
+                return (
+                  <div
+                    key={index}
+                    className={`min-h-[100px] p-1 ${isToday ? "border-[4px] border-primary" : "border-b border-r border-gray-300 last:border-r-0"} ${day.isCurrentMonth ? "bg-white" : "bg-gray-50"} cursor-pointer`}
+                    onDoubleClick={() => openCreateEvent(day.date)}
+                  >
+                    <div className={`mb-1 text-xs font-medium ${day.isCurrentMonth ? "text-gray-900" : "text-gray-400"} ${isToday ? "text-primary font-bold" : ""}`}>
+                      {day.date.getDate()}
+                    </div>
+                    <div className="space-y-0.5">
+                      {day.events.map((event) => {
+                        const startTime = event.isAllDay ? "All Day" : new Date(event.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                        const originalColor = event.color || "#3b82f6";
+                        const bgColor = getTintedColor(originalColor, 0.7);
+                        const textColor = getTextColorForTint(originalColor);
+                        return (
+                          <button
+                            key={event.id}
+                            onClick={() => openEditEvent(event, day.date)}
+                            className="w-full rounded border-l-2 px-1 py-0.5 text-left text-[10px] transition-opacity hover:opacity-90"
+                            style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: originalColor }}
+                            title={`${event.title}\n${startTime}${event.isRecurring ? "\n(Recurring)" : ""}`}
+                          >
+                            <div className="truncate font-medium">{startTime}</div>
+                            <div className="truncate">{event.title}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Class Modal */}
         {showEditModal && selectedClass && (
@@ -1633,13 +3039,23 @@ export default function CalendarPage() {
                     </button>
                   </div>
 
-                  {/* Coach Display */}
-                  {selectedClass.coachName && (
-                    <div className="mb-3 inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1">
-                      <span className="text-xs font-medium text-primary">Coach:</span>
-                      <span className="text-xs font-medium text-primary">{selectedClass.coachName}</span>
-                    </div>
-                  )}
+                  {/* Coach & Location Display */}
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {selectedClass.coachName && (
+                      <div className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1">
+                        <span className="text-xs font-medium text-primary">Coach:</span>
+                        <span className="text-xs font-medium text-primary">{selectedClass.coachName}</span>
+                      </div>
+                    )}
+                    {selectedClass.locationId && (() => {
+                      const loc = locations.find(l => l.id === selectedClass.locationId);
+                      return loc ? (
+                        <div className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1">
+                          <span className="text-xs font-medium text-blue-600">{loc.name}</span>
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
 
                   <div className="mb-4 text-xs text-gray-600">
                     {selectedDate && (
@@ -1678,6 +3094,14 @@ export default function CalendarPage() {
                         type="text"
                         value={memberSearch}
                         onChange={(e) => handleMemberSearch(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && filteredMembers.length > 0) {
+                            e.preventDefault();
+                            handleAddMember(filteredMembers[0]);
+                            setMemberSearch("");
+                            setFilteredMembers([]);
+                          }
+                        }}
                         onBlur={() => {
                           setTimeout(() => {
                             setMemberSearch("");
@@ -1689,14 +3113,14 @@ export default function CalendarPage() {
                       />
                       {filteredMembers.length > 0 && (
                         <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
-                          {filteredMembers.map((member) => (
+                          {filteredMembers.map((member, idx) => (
                             <li
                               key={member.id}
                               onMouseDown={(e) => {
                                 e.preventDefault();
                                 handleAddMember(member);
                               }}
-                              className="cursor-pointer px-3 py-2 text-xs text-gray-700 hover:bg-gray-100"
+                              className={`cursor-pointer px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 ${idx === 0 ? "bg-gray-100" : ""}`}
                             >
                               {member.firstName} {member.lastName}
                             </li>
@@ -1732,24 +3156,30 @@ export default function CalendarPage() {
                                       setConfirmedMembers(new Set());
                                     }
                                   }}
-                                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                  className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600"
                                 />
                                 {confirmedMembers.size === classAttendees.length && classAttendees.length > 0 ? "Deselect All" : "Select All"}
                               </label>
                               <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleBulkConfirm()}
-                                  disabled={confirmedMembers.size === 0}
-                                  className="rounded bg-primary px-2 py-1 text-[10px] font-medium text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  Confirm
-                                </button>
+                                {(() => {
+                                  const selectedIds = Array.from(confirmedMembers);
+                                  const allSelectedConfirmed = selectedIds.length > 0 && selectedIds.every(id => attendanceConfirmed.has(id));
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => allSelectedConfirmed ? handleBulkUnconfirm() : handleBulkConfirm()}
+                                      disabled={confirmedMembers.size === 0}
+                                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                      {allSelectedConfirmed ? "Unconfirm" : "Confirm"}
+                                    </button>
+                                  );
+                                })()}
                                 <button
                                   type="button"
                                   onClick={() => handleBulkMarkAbsent()}
                                   disabled={confirmedMembers.size === 0}
-                                  className="rounded bg-primary px-2 py-1 text-[10px] font-medium text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Mark Absent
                                 </button>
@@ -1757,7 +3187,7 @@ export default function CalendarPage() {
                                   type="button"
                                   onClick={() => handleBulkDelete()}
                                   disabled={confirmedMembers.size === 0}
-                                  className="rounded bg-primary px-2 py-1 text-[10px] font-medium text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Delete
                                 </button>
@@ -1765,7 +3195,7 @@ export default function CalendarPage() {
                                   type="button"
                                   onClick={() => handleBulkMessage()}
                                   disabled={confirmedMembers.size === 0}
-                                  className="rounded bg-primary px-2 py-1 text-[10px] font-medium text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Message
                                 </button>
@@ -1806,7 +3236,7 @@ export default function CalendarPage() {
                                             });
                                           }
                                         }}
-                                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                        className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600"
                                       />
                                     </div>
                                     {/* Warning */}
@@ -1843,7 +3273,7 @@ export default function CalendarPage() {
                                       ) : isAbsent ? (
                                         <span className="text-primary font-medium">Absent</span>
                                       ) : (
-                                        <span className="text-gray-400">-</span>
+                                        <span className="text-gray-400">Unconfirmed</span>
                                       )}
                                     </div>
                                     {/* Messaged Status */}
@@ -1867,16 +3297,16 @@ export default function CalendarPage() {
                   {/* Modal Actions */}
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={handleCloseModal}
-                      className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                    >
-                      Close
-                    </button>
-                    <button
                       onClick={handleEditClick}
                       className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
                       Edit Class
+                    </button>
+                    <button
+                      onClick={handleCloseModal}
+                      className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      Close
                     </button>
                   </div>
                 </>
@@ -2240,12 +3670,130 @@ export default function CalendarPage() {
                       </select>
                     </div>
 
+                    {/* Location Selection */}
+                    {locations.length > 0 && (
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">
+                          Location
+                        </label>
+                        <select
+                          value={selectedLocationId}
+                          onChange={(e) => setSelectedLocationId(e.target.value)}
+                          style={{ width: '200px' }}
+                          className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="">No Location</option>
+                          {locations.map(loc => (
+                            <option key={loc.id} value={loc.id}>
+                              {loc.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Space Selection */}
+                    {spaces.length > 0 && (
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">
+                          Space
+                        </label>
+                        <select
+                          value={selectedSpaceId}
+                          onChange={(e) => setSelectedSpaceId(e.target.value)}
+                          style={{ width: '200px' }}
+                          className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="">No Space</option>
+                          {spaces.map(space => (
+                            <option key={space.id} value={space.id}>
+                              {space.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Portal Booking & Kiosk Settings */}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-6">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="editBookingEnabled"
+                            checked={bookingEnabled}
+                            onChange={(e) => setBookingEnabled(e.target.checked)}
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary"
+                          />
+                          <label htmlFor="editBookingEnabled" className="text-xs font-medium text-gray-700 cursor-pointer">
+                            Enable Portal Booking
+                          </label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="editKioskEnabled"
+                            checked={kioskEnabled}
+                            onChange={(e) => setKioskEnabled(e.target.checked)}
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary"
+                          />
+                          <label htmlFor="editKioskEnabled" className="text-xs font-medium text-gray-700 cursor-pointer">
+                            Allow Kiosk Sign In
+                          </label>
+                        </div>
+                      </div>
+
+                      {bookingEnabled && (
+                        <div className="grid gap-2 grid-cols-3">
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700">
+                              Max Capacity
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={maxCapacity}
+                              onChange={(e) => setMaxCapacity(e.target.value)}
+                              placeholder="No limit"
+                              className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700">
+                              Book Up To (days)
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={bookingAdvanceDays}
+                              onChange={(e) => setBookingAdvanceDays(e.target.value)}
+                              placeholder="No limit"
+                              className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700">
+                              Cutoff (mins)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={bookingCutoffMins}
+                              onChange={(e) => setBookingCutoffMins(e.target.value)}
+                              placeholder="No cutoff"
+                              className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Form Actions */}
                     <div className="flex justify-between pt-4">
                       <button
                         type="button"
                         onClick={() => setShowDeleteConfirm(true)}
-                        className="rounded-md border border-red-600 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                        className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                       >
                         Delete
                       </button>
@@ -2387,6 +3935,504 @@ export default function CalendarPage() {
                 >
                   {sendingMessage ? "Sending..." : "Send Message"}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* ========== Availability Modal ========== */}
+        {showAvailabilityModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">
+                  {availabilityModalMode === "create" ? "Add Availability" : "Edit Availability"}
+                </h2>
+                <button onClick={() => setShowAvailabilityModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Coach */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Coach *</label>
+                  <select value={avCoachId} onChange={(e) => setAvCoachId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs">
+                    <option value="">Select coach...</option>
+                    {coaches.map((c) => (
+                      <option key={c.id} value={c.id}>{c.firstName} {c.lastName}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Appointment Type (optional) */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Restrict to Appointment Type (optional)</label>
+                  <select value={avAppointmentId} onChange={(e) => setAvAppointmentId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs">
+                    <option value="">Any appointment type</option>
+                    {appointmentTypes.map((at) => (
+                      <option key={at.id} value={at.id}>{at.title}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Date */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Date</label>
+                  <input type="date" value={avScheduleStartDate} onChange={(e) => setAvScheduleStartDate(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                </div>
+
+                {/* Time */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Start Time</label>
+                    <input type="time" value={avStartTime} onChange={(e) => setAvStartTime(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">End Time</label>
+                    <input type="time" value={avEndTime} onChange={(e) => setAvEndTime(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                  </div>
+                </div>
+
+                {/* Recurring */}
+                <div>
+                  <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={avIsRecurring} onChange={(e) => setAvIsRecurring(e.target.checked)} className="h-4 w-4 rounded border-gray-300 accent-red-600" />
+                    Recurring
+                  </label>
+                </div>
+
+                {avIsRecurring && (
+                  <div className="space-y-3 rounded-md border border-gray-200 p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600">Every</span>
+                      <input type="number" min="1" value={avFrequencyNumber} onChange={(e) => setAvFrequencyNumber(e.target.value)} className="w-16 rounded-md border border-gray-300 px-2 py-1 text-xs" />
+                      <select value={avFrequencyUnit} onChange={(e) => setAvFrequencyUnit(e.target.value as "Day" | "Week" | "Month")} className="rounded-md border border-gray-300 px-2 py-1 text-xs">
+                        <option value="Day">Day(s)</option>
+                        <option value="Week">Week(s)</option>
+                        <option value="Month">Month(s)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
+                        <input type="checkbox" checked={avIsOngoing} onChange={(e) => setAvIsOngoing(e.target.checked)} className="h-4 w-4 rounded border-gray-300 accent-red-600" />
+                        Ongoing (no end date)
+                      </label>
+                    </div>
+                    {!avIsOngoing && (
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">End Date</label>
+                        <input type="date" value={avScheduleEndDate} onChange={(e) => setAvScheduleEndDate(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Color */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Color</label>
+                  <input type="color" value={avColor} onChange={(e) => setAvColor(e.target.value)} className="h-8 w-12 rounded border border-gray-300 cursor-pointer" />
+                </div>
+
+                {/* Location & Space */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Location</label>
+                    <select value={avLocationId} onChange={(e) => setAvLocationId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs">
+                      <option value="">None</option>
+                      {locations.map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Space</label>
+                    <select value={avSpaceId} onChange={(e) => setAvSpaceId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs">
+                      <option value="">None</option>
+                      {spaces.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Notes</label>
+                  <textarea value={avNotes} onChange={(e) => setAvNotes(e.target.value)} rows={2} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" placeholder="Optional notes..." />
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-between">
+                <div>
+                  {availabilityModalMode === "edit" && (
+                    <button onClick={handleDeleteAvailability} disabled={avSaving} className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:bg-gray-300">
+                      Delete
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowAvailabilityModal(false)} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button onClick={handleSaveAvailability} disabled={avSaving || !avCoachId} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:bg-gray-300">
+                    {avSaving ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========== View Availability Modal ========== */}
+        {showViewAvailabilityModal && viewingAvailability && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+            <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">Coach Availability</h2>
+                <button onClick={() => setShowViewAvailabilityModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+
+              <div className="space-y-2 text-xs text-gray-700">
+                <div><span className="font-medium">Coach:</span> {viewingAvailability.coachName || coaches.find(c => c.id === viewingAvailability.coachId)?.firstName || "Unknown"}</div>
+                <div>
+                  <span className="font-medium">Time:</span>{" "}
+                  {new Date(viewingAvailability.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })} -{" "}
+                  {new Date(viewingAvailability.endsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+                </div>
+                {viewingAvailability.isRecurring && (
+                  <div><span className="font-medium">Recurring:</span> Every {viewingAvailability.frequencyNumber} {viewingAvailability.frequencyUnit}(s)</div>
+                )}
+                {viewingAvailability.notes && <div><span className="font-medium">Notes:</span> {viewingAvailability.notes}</div>}
+                {getSpaceName(viewingAvailability.spaceId) && <div><span className="font-medium">Space:</span> {getSpaceName(viewingAvailability.spaceId)}</div>}
+              </div>
+
+              <div className="mt-6 flex justify-between">
+                <button
+                  onClick={() => {
+                    setShowViewAvailabilityModal(false);
+                    if (viewAvailabilityDate) openScheduleApptModal(viewAvailabilityDate, viewingAvailability);
+                  }}
+                  className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700"
+                >
+                  Schedule Appointment
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowViewAvailabilityModal(false);
+                      if (viewAvailabilityDate) openEditAvailability(viewingAvailability, viewAvailabilityDate);
+                    }}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Edit
+                  </button>
+                  <button onClick={() => setShowViewAvailabilityModal(false)} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark">
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========== Schedule Appointment Modal ========== */}
+        {showScheduleApptModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">Schedule Appointment</h2>
+                <button onClick={() => setShowScheduleApptModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Appointment Type */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Appointment Type *</label>
+                  <select value={schedApptTypeId} onChange={(e) => setSchedApptTypeId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs">
+                    <option value="">Select type...</option>
+                    {appointmentTypes.map((at) => (
+                      <option key={at.id} value={at.id}>{at.title}{at.duration ? ` (${at.duration} min)` : ""}{at.priceCents ? ` - $${(at.priceCents / 100).toFixed(2)}` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Member */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Member</label>
+                  {schedSelectedMember ? (
+                    <div className="flex items-center justify-between rounded-md border border-gray-300 px-3 py-2">
+                      <span className="text-xs font-medium text-gray-900">{schedSelectedMember.firstName} {schedSelectedMember.lastName}</span>
+                      <button onClick={() => setSchedSelectedMember(null)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={schedMemberSearch}
+                        onChange={(e) => handleSchedMemberSearch(e.target.value)}
+                        placeholder="Search by name..."
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      {schedFilteredMembers.length > 0 && (
+                        <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                          {schedFilteredMembers.map((member) => (
+                            <li
+                              key={member.id}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setSchedSelectedMember(member);
+                                setSchedMemberSearch("");
+                                setSchedFilteredMembers([]);
+                              }}
+                              className="cursor-pointer px-3 py-2 text-xs text-gray-700 hover:bg-gray-100"
+                            >
+                              {member.firstName} {member.lastName}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Coach */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Coach</label>
+                  <select value={schedCoachId} onChange={(e) => setSchedCoachId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs">
+                    <option value="">Select coach...</option>
+                    {coaches.map((c) => (
+                      <option key={c.id} value={c.id}>{c.firstName} {c.lastName}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Date & Time */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Date</label>
+                  <input type="date" value={schedDate} onChange={(e) => setSchedDate(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Start Time</label>
+                    <input type="time" value={schedStartTime} onChange={(e) => setSchedStartTime(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">End Time</label>
+                    <input type="time" value={schedEndTime} onChange={(e) => setSchedEndTime(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                  </div>
+                </div>
+
+                {/* Space */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Space</label>
+                  <select value={schedSpaceId} onChange={(e) => setSchedSpaceId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs">
+                    <option value="">None</option>
+                    {spaces.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                  </select>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Notes</label>
+                  <textarea value={schedNotes} onChange={(e) => setSchedNotes(e.target.value)} rows={2} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" placeholder="Optional notes..." />
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-2">
+                <button onClick={() => setShowScheduleApptModal(false)} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                  Cancel
+                </button>
+                <button onClick={handleSaveScheduledAppt} disabled={schedSaving || !schedApptTypeId} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:bg-gray-300">
+                  {schedSaving ? "Scheduling..." : "Schedule"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========== View Appointment Modal ========== */}
+        {showViewApptModal && viewingAppt && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+            <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">{viewingAppt.appointment.title}</h2>
+                <button onClick={() => setShowViewApptModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+
+              <div className="space-y-2 text-xs text-gray-700">
+                {viewingAppt.memberName && <div><span className="font-medium">Member:</span> {viewingAppt.memberName}</div>}
+                {viewingAppt.coachName && <div><span className="font-medium">Coach:</span> {viewingAppt.coachName}</div>}
+                <div>
+                  <span className="font-medium">Date:</span>{" "}
+                  {new Date(viewingAppt.scheduledDate).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+                </div>
+                <div><span className="font-medium">Time:</span> {viewingAppt.startTime} - {viewingAppt.endTime}</div>
+                <div>
+                  <span className="font-medium">Status:</span>{" "}
+                  <span className={`font-semibold ${viewingAppt.status === "COMPLETED" ? "text-green-600" : viewingAppt.status === "CANCELLED" ? "text-red-500" : "text-purple-600"}`}>
+                    {viewingAppt.status}
+                  </span>
+                </div>
+                {viewingAppt.notes && <div><span className="font-medium">Notes:</span> {viewingAppt.notes}</div>}
+                {getSpaceName(viewingAppt.spaceId) && <div><span className="font-medium">Space:</span> {getSpaceName(viewingAppt.spaceId)}</div>}
+              </div>
+
+              <div className="mt-6 flex justify-between">
+                <div className="flex gap-2">
+                  {viewingAppt.status === "SCHEDULED" && (
+                    <>
+                      <button
+                        onClick={() => handleUpdateApptStatus("COMPLETED")}
+                        disabled={viewApptSaving}
+                        className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:bg-gray-300"
+                      >
+                        Complete
+                      </button>
+                      <button
+                        onClick={() => handleUpdateApptStatus("CANCELLED")}
+                        disabled={viewApptSaving}
+                        className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:bg-gray-300"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
+                <button onClick={() => setShowViewApptModal(false)} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========== Event Modal ========== */}
+        {showEventModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">
+                  {eventModalMode === "create" ? "Add Event" : "Edit Event"}
+                </h2>
+                <button onClick={() => setShowEventModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Title */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Title *</label>
+                  <input type="text" value={evTitle} onChange={(e) => setEvTitle(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" placeholder="Event title..." />
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Description</label>
+                  <textarea value={evDescription} onChange={(e) => setEvDescription(e.target.value)} rows={2} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" placeholder="Optional description..." />
+                </div>
+
+                {/* Date */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Date</label>
+                  <input type="date" value={evScheduleStartDate} onChange={(e) => setEvScheduleStartDate(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                </div>
+
+                {/* All Day */}
+                <div>
+                  <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={evIsAllDay} onChange={(e) => setEvIsAllDay(e.target.checked)} className="h-4 w-4 rounded border-gray-300 accent-red-600" />
+                    All Day Event
+                  </label>
+                </div>
+
+                {/* Time (if not all day) */}
+                {!evIsAllDay && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-700">Start Time</label>
+                      <input type="time" value={evStartTime} onChange={(e) => setEvStartTime(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-700">End Time</label>
+                      <input type="time" value={evEndTime} onChange={(e) => setEvEndTime(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Recurring */}
+                <div>
+                  <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={evIsRecurring} onChange={(e) => setEvIsRecurring(e.target.checked)} className="h-4 w-4 rounded border-gray-300 accent-red-600" />
+                    Recurring
+                  </label>
+                </div>
+
+                {evIsRecurring && (
+                  <div className="space-y-3 rounded-md border border-gray-200 p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600">Every</span>
+                      <input type="number" min="1" value={evFrequencyNumber} onChange={(e) => setEvFrequencyNumber(e.target.value)} className="w-16 rounded-md border border-gray-300 px-2 py-1 text-xs" />
+                      <select value={evFrequencyUnit} onChange={(e) => setEvFrequencyUnit(e.target.value as "Day" | "Week" | "Month")} className="rounded-md border border-gray-300 px-2 py-1 text-xs">
+                        <option value="Day">Day(s)</option>
+                        <option value="Week">Week(s)</option>
+                        <option value="Month">Month(s)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
+                        <input type="checkbox" checked={evIsOngoing} onChange={(e) => setEvIsOngoing(e.target.checked)} className="h-4 w-4 rounded border-gray-300 accent-red-600" />
+                        Ongoing (no end date)
+                      </label>
+                    </div>
+                    {!evIsOngoing && (
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">End Date</label>
+                        <input type="date" value={evScheduleEndDate} onChange={(e) => setEvScheduleEndDate(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Color */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Color</label>
+                  <input type="color" value={evColor} onChange={(e) => setEvColor(e.target.value)} className="h-8 w-12 rounded border border-gray-300 cursor-pointer" />
+                </div>
+
+                {/* Location & Space */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Location</label>
+                    <select value={evLocationId} onChange={(e) => setEvLocationId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs">
+                      <option value="">None</option>
+                      {locations.map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Space</label>
+                    <select value={evSpaceId} onChange={(e) => setEvSpaceId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs">
+                      <option value="">None</option>
+                      {spaces.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Notes</label>
+                  <textarea value={evNotes} onChange={(e) => setEvNotes(e.target.value)} rows={2} className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs" placeholder="Optional notes..." />
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-between">
+                <div>
+                  {eventModalMode === "edit" && (
+                    <button onClick={handleDeleteEvent} disabled={evSaving} className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:bg-gray-300">
+                      Delete
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowEventModal(false)} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button onClick={handleSaveEvent} disabled={evSaving || !evTitle.trim()} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:bg-gray-300">
+                    {evSaving ? "Saving..." : "Save"}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

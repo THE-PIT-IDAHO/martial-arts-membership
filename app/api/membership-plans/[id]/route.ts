@@ -65,13 +65,17 @@ export async function PATCH(
       classesPerMonth,
       allowedStyles,
       familyDiscountPercent,
+      rankPromotionDiscountPercent,
+      otherDiscountPercent,
       trialDays,
       promoCode,
       cancellationNoticeDays,
       cancellationFeeCents,
+      contractClauses,
       sortOrder,
       color,
       isActive,
+      availableOnline,
       applyToCurrentMembers,
       updatePlanTemplate = true, // Default to true for backwards compatibility
     } = body;
@@ -98,6 +102,8 @@ export async function PATCH(
           ...(classesPerMonth !== undefined && { classesPerMonth: classesPerMonth ? Number(classesPerMonth) : null }),
           ...(allowedStyles !== undefined && { allowedStyles: allowedStyles || null }),
           ...(familyDiscountPercent !== undefined && { familyDiscountPercent: familyDiscountPercent ? Number(familyDiscountPercent) : null }),
+          ...(rankPromotionDiscountPercent !== undefined && { rankPromotionDiscountPercent: rankPromotionDiscountPercent ? Number(rankPromotionDiscountPercent) : null }),
+          ...(otherDiscountPercent !== undefined && { otherDiscountPercent: otherDiscountPercent ? Number(otherDiscountPercent) : null }),
           ...(trialDays !== undefined && { trialDays: trialDays ? Number(trialDays) : null }),
           ...(promoCode !== undefined && { promoCode: promoCode?.trim() || null }),
           ...(cancellationNoticeDays !== undefined && { cancellationNoticeDays: cancellationNoticeDays ? Number(cancellationNoticeDays) : null }),
@@ -105,6 +111,8 @@ export async function PATCH(
           ...(sortOrder !== undefined && { sortOrder: sortOrder ? Number(sortOrder) : 0 }),
           ...(color !== undefined && { color: color || null }),
           ...(isActive !== undefined && { isActive }),
+          ...(contractClauses !== undefined && { contractClauses: contractClauses || null }),
+          ...(availableOnline !== undefined && { availableOnline }),
         },
       });
     } else {

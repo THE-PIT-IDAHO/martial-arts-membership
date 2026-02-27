@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { writeFile } from "fs/promises";
+import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 
 export async function POST(req: Request) {
@@ -13,6 +13,14 @@ export async function POST(req: Request) {
 
     const uploadedFiles: { name: string; size: number; type: string; url: string }[] = [];
 
+    // Ensure uploads directory exists
+    const uploadDir = path.join(process.cwd(), "public", "uploads");
+    try {
+      await mkdir(uploadDir, { recursive: true });
+    } catch {
+      // Directory may already exist
+    }
+
     for (const file of files) {
       const bytes = await file.arrayBuffer();
       const uint8Array = new Uint8Array(bytes);
@@ -23,7 +31,6 @@ export async function POST(req: Request) {
       const filename = `${timestamp}-${safeName}`;
 
       // Save to public/uploads
-      const uploadDir = path.join(process.cwd(), "public", "uploads");
       const filepath = path.join(uploadDir, filename);
 
       await writeFile(filepath, uint8Array);

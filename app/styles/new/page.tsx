@@ -13,6 +13,7 @@ export default function NewStylePage() {
   const [shortName, setShortName] = useState("");
   const [description, setDescription] = useState("");
   const [beltSystemEnabled, setBeltSystemEnabled] = useState(true);
+  const [testNamingConvention, setTestNamingConvention] = useState<"INTO_RANK" | "FROM_RANK">("INTO_RANK");
 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +39,7 @@ export default function NewStylePage() {
           shortName: shortName.trim() || null,
           description: description.trim() || null,
           beltSystemEnabled: beltSystemEnabled,
+          testNamingConvention: beltSystemEnabled ? testNamingConvention : "INTO_RANK",
         }),
       });
 
@@ -82,6 +84,7 @@ export default function NewStylePage() {
           shortName: shortName.trim() || null,
           description: description.trim() || null,
           beltSystemEnabled: beltSystemEnabled,
+          testNamingConvention: beltSystemEnabled ? testNamingConvention : "INTO_RANK",
         }),
       });
 
@@ -205,6 +208,53 @@ export default function NewStylePage() {
               Enable Rank System
             </label>
           </div>
+
+          {beltSystemEnabled && (
+            <div className="p-4 rounded-md border border-gray-200 bg-gray-50">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Test Naming Convention
+              </label>
+              <p className="text-xs text-gray-500 mb-3">
+                How are rank tests named in this style? This affects how the system interprets test names.
+              </p>
+              <div className="space-y-2">
+                <label className="flex items-start gap-3 p-3 rounded-md border border-gray-200 bg-white hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="testNamingConvention"
+                    value="INTO_RANK"
+                    checked={testNamingConvention === "INTO_RANK"}
+                    onChange={() => setTestNamingConvention("INTO_RANK")}
+                    className="mt-0.5 h-4 w-4 text-primary focus:ring-primary"
+                    disabled={creating}
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-900">Test named for target rank</span>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      &quot;Yellow Belt Test&quot; = white belts testing <strong>for</strong> yellow belt
+                    </p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 p-3 rounded-md border border-gray-200 bg-white hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="testNamingConvention"
+                    value="FROM_RANK"
+                    checked={testNamingConvention === "FROM_RANK"}
+                    onChange={() => setTestNamingConvention("FROM_RANK")}
+                    className="mt-0.5 h-4 w-4 text-primary focus:ring-primary"
+                    disabled={creating}
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-900">Test named for current rank</span>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      &quot;Yellow Belt Test&quot; = yellow belts testing <strong>from</strong> yellow to the next rank
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-2 pt-2">
             <button

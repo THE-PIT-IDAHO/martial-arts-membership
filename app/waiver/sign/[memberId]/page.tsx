@@ -1,0 +1,689 @@
+"use client";
+
+import { useEffect, useState, useRef } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { getTodayString } from "@/lib/dates";
+
+type Member = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  phone?: string | null;
+  dateOfBirth?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  parentGuardianName?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  medicalNotes?: string | null;
+  waiverSigned: boolean;
+  waiverSignedAt?: string | null;
+};
+
+type WaiverSection = {
+  id: string;
+  title: string;
+  content: string;
+};
+
+type GymSettings = {
+  name: string;
+  address: string;
+  phone: string;
+  email: string;
+};
+
+const DEFAULT_GYM_SETTINGS: GymSettings = {
+  name: "Our Martial Arts School",
+  address: "",
+  phone: "",
+  email: "",
+};
+
+// Function to replace placeholders with actual values
+function replacePlaceholders(
+  text: string,
+  member: Member | null,
+  gym: GymSettings,
+  participantName?: string
+): string {
+  if (!text) return text;
+
+  let result = text;
+
+  // Use form values if available, otherwise use member data
+  const fullName = participantName || (member ? `${member.firstName} ${member.lastName}`.trim() : "");
+
+  // Member placeholders
+  result = result.replace(/\{\{MEMBER_NAME\}\}/g, fullName);
+  result = result.replace(/\{\{MEMBER_FIRST_NAME\}\}/g, member?.firstName || "");
+  result = result.replace(/\{\{MEMBER_LAST_NAME\}\}/g, member?.lastName || "");
+  result = result.replace(/\{\{PARENT_GUARDIAN\}\}/g, member?.parentGuardianName || "[Parent/Guardian]");
+
+  // Gym placeholders
+  result = result.replace(/\{\{GYM_NAME\}\}/g, gym.name || "[Gym Name]");
+  result = result.replace(/\{\{GYM_ADDRESS\}\}/g, gym.address || "[Gym Address]");
+  result = result.replace(/\{\{GYM_PHONE\}\}/g, gym.phone || "[Gym Phone]");
+  result = result.replace(/\{\{GYM_EMAIL\}\}/g, gym.email || "[Gym Email]");
+
+  // Date placeholder
+  result = result.replace(/\{\{DATE\}\}/g, new Date().toLocaleDateString());
+
+  return result;
+}
+
+const DEFAULT_WAIVER_SECTIONS: WaiverSection[] = [
+  {
+    id: "assumption_of_risk",
+    title: "ASSUMPTION OF RISK",
+    content: "I understand that martial arts training involves physical contact and strenuous physical activity. I acknowledge that there are inherent risks associated with martial arts training including, but not limited to, bruises, sprains, strains, fractures, and other injuries that may occur during training, sparring, or practice."
+  },
+  {
+    id: "waiver_release",
+    title: "WAIVER AND RELEASE",
+    content: "In consideration of being permitted to participate in martial arts classes, training, and related activities, I hereby waive, release, and discharge the martial arts school, its owners, instructors, employees, and agents from any and all liability, claims, demands, and causes of action arising out of or related to any loss, damage, or injury that may be sustained by me or my minor child while participating in such activities."
+  },
+  {
+    id: "medical_authorization",
+    title: "MEDICAL AUTHORIZATION",
+    content: "I authorize the staff to obtain emergency medical treatment for myself or my minor child if necessary. I understand that I am responsible for any medical expenses incurred."
+  },
+  {
+    id: "photo_video_release",
+    title: "PHOTO/VIDEO RELEASE",
+    content: "I grant permission for photographs and/or videos taken during classes or events to be used for promotional purposes, including but not limited to websites, social media, and marketing materials."
+  },
+  {
+    id: "rules_regulations",
+    title: "RULES AND REGULATIONS",
+    content: "I agree to abide by all rules and regulations of the martial arts school. I understand that failure to follow instructions or rules may result in dismissal from the program without refund."
+  },
+  {
+    id: "health_declaration",
+    title: "HEALTH DECLARATION",
+    content: "I certify that I (or my minor child) am in good physical condition and have no medical conditions that would prevent safe participation in martial arts training. I agree to notify the instructors of any changes in health status."
+  },
+  {
+    id: "closing_statement",
+    title: "",
+    content: "I HAVE READ THIS WAIVER AND RELEASE, FULLY UNDERSTAND ITS TERMS, AND SIGN IT FREELY AND VOLUNTARILY WITHOUT ANY INDUCEMENT."
+  }
+];
+
+export default function WaiverSignPage() {
+  const params = useParams();
+  const router = useRouter();
+  const memberId = params.memberId as string;
+
+  const [member, setMember] = useState<Member | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  // Form fields
+  const [participantName, setParticipantName] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [zipCode, setZipCode] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [emergencyContactName, setEmergencyContactName] = useState("");
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
+  const [medicalNotes, setMedicalNotes] = useState("");
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [signatureName, setSignatureName] = useState("");
+  const [signatureDate, setSignatureDate] = useState(getTodayString());
+  const [waiverSections, setWaiverSections] = useState<WaiverSection[]>(DEFAULT_WAIVER_SECTIONS);
+  const [gymSettings, setGymSettings] = useState<GymSettings>(DEFAULT_GYM_SETTINGS);
+
+  // Signature canvas
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [hasSignature, setHasSignature] = useState(false);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        // Load member
+        const res = await fetch(`/api/members/${memberId}`);
+        if (res.ok) {
+          const data = await res.json();
+          const m = data.member;
+          setMember(m);
+
+          // Pre-fill form with member data
+          setParticipantName(`${m.firstName || ""} ${m.lastName || ""}`.trim());
+          if (m.dateOfBirth) {
+            setDateOfBirth(new Date(m.dateOfBirth).toISOString().split("T")[0]);
+          }
+          setAddress(m.address || "");
+          setCity(m.city || "");
+          setState(m.state || "");
+          setZipCode(m.zipCode || "");
+          setPhone(m.phone || "");
+          setEmail(m.email || "");
+          setEmergencyContactName(m.emergencyContactName || "");
+          setEmergencyContactPhone(m.emergencyContactPhone || "");
+          setMedicalNotes(m.medicalNotes || "");
+        } else {
+          setError("Member not found");
+        }
+
+        // Load waiver content
+        const settingsRes = await fetch("/api/settings?key=waiver_content");
+        if (settingsRes.ok) {
+          const settingsData = await settingsRes.json();
+          if (settingsData.setting?.value) {
+            try {
+              const parsed = JSON.parse(settingsData.setting.value);
+              setWaiverSections(parsed);
+            } catch {
+              // Use defaults if parsing fails
+            }
+          }
+        }
+
+        // Load gym settings
+        const gymRes = await fetch("/api/settings?key=gym_settings");
+        if (gymRes.ok) {
+          const gymData = await gymRes.json();
+          if (gymData.setting?.value) {
+            try {
+              const parsed = JSON.parse(gymData.setting.value);
+              setGymSettings(parsed);
+            } catch {
+              // Use defaults if parsing fails
+            }
+          }
+        }
+      } catch (err) {
+        setError("Failed to load member");
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [memberId]);
+
+  // Canvas drawing functions
+  function startDrawing(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
+    setIsDrawing(true);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    let x, y;
+
+    if ("touches" in e) {
+      x = e.touches[0].clientX - rect.left;
+      y = e.touches[0].clientY - rect.top;
+    } else {
+      x = e.clientX - rect.left;
+      y = e.clientY - rect.top;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  }
+
+  function draw(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
+    if (!isDrawing) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    let x, y;
+
+    if ("touches" in e) {
+      e.preventDefault();
+      x = e.touches[0].clientX - rect.left;
+      y = e.touches[0].clientY - rect.top;
+    } else {
+      x = e.clientX - rect.left;
+      y = e.clientY - rect.top;
+    }
+
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#000";
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    setHasSignature(true);
+  }
+
+  function stopDrawing() {
+    setIsDrawing(false);
+  }
+
+  function clearSignature() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasSignature(false);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!agreedToTerms) {
+      setError("You must agree to the terms and conditions");
+      return;
+    }
+
+    if (!hasSignature && !signatureName) {
+      setError("Please provide a signature");
+      return;
+    }
+
+    setSubmitting(true);
+    setError("");
+
+    try {
+      // Update member with waiver signed and form data
+      const res = await fetch(`/api/members/${memberId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          waiverSigned: true,
+          waiverSignedAt: new Date().toISOString(),
+          dateOfBirth: dateOfBirth || undefined,
+          address: address || undefined,
+          city: city || undefined,
+          state: state || undefined,
+          zipCode: zipCode || undefined,
+          phone: phone || undefined,
+          email: email || undefined,
+          emergencyContactName: emergencyContactName || undefined,
+          emergencyContactPhone: emergencyContactPhone || undefined,
+          medicalNotes: medicalNotes || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        setSuccess(true);
+      } else {
+        setError("Failed to submit waiver");
+      }
+    } catch (err) {
+      setError("Failed to submit waiver");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <p className="text-gray-500">Loading...</p>
+      </div>
+    );
+  }
+
+  if (error && !member) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="bg-white rounded-lg shadow-md p-8 text-center">
+          <p className="text-red-600">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (success) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-md p-8 text-center max-w-md">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Waiver Signed!</h2>
+          <p className="text-gray-600 mb-4">
+            Thank you for completing the liability waiver. You're all set to participate.
+          </p>
+          <p className="text-sm text-gray-500">
+            Signed on {new Date().toLocaleDateString()}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (member?.waiverSigned) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-md p-8 text-center max-w-md">
+          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Waiver Already Signed</h2>
+          <p className="text-gray-600 mb-4">
+            This waiver was signed on {member.waiverSignedAt ? new Date(member.waiverSignedAt).toLocaleDateString() : "a previous date"}.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen h-screen bg-gray-100 py-4 sm:py-8 px-2 sm:px-4 overflow-y-auto">
+      <div className="max-w-3xl mx-auto pb-8">
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          {/* Header */}
+          <div className="bg-primary text-white p-4 sm:p-6 text-center">
+            <h1 className="text-xl sm:text-2xl font-bold">Liability Waiver & Release Form</h1>
+            <p className="text-xs sm:text-sm opacity-90 mt-1">Martial Arts Training Agreement</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-5 sm:space-y-6">
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
+            {/* Participant Information */}
+            <section>
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
+                Participant Information
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={participantName}
+                    onChange={(e) => setParticipantName(e.target.value)}
+                    required
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date of Birth *
+                  </label>
+                  <input
+                    type="date"
+                    value={dateOfBirth}
+                    onChange={(e) => setDateOfBirth(e.target.value)}
+                    required
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Phone
+                  </label>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Street Address
+                  </label>
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    City
+                  </label>
+                  <input
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      State
+                    </label>
+                    <input
+                      type="text"
+                      value={state}
+                      onChange={(e) => setState(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      ZIP Code
+                    </label>
+                    <input
+                      type="text"
+                      value={zipCode}
+                      onChange={(e) => setZipCode(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Emergency Contact */}
+            <section>
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
+                Emergency Contact
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Contact Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={emergencyContactName}
+                    onChange={(e) => setEmergencyContactName(e.target.value)}
+                    required
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Contact Phone *
+                  </label>
+                  <input
+                    type="tel"
+                    value={emergencyContactPhone}
+                    onChange={(e) => setEmergencyContactPhone(e.target.value)}
+                    required
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* Medical Information */}
+            <section>
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
+                Medical Information
+              </h2>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Medical Notes / Health Conditions
+                </label>
+                <textarea
+                  value={medicalNotes}
+                  onChange={(e) => setMedicalNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Please list any medical conditions, allergies, injuries, or other health information the instructors should be aware of..."
+                  className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </section>
+
+            {/* Waiver Terms */}
+            <section>
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
+                Waiver & Release of Liability
+              </h2>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 sm:p-4 max-h-48 sm:max-h-64 overflow-y-auto text-xs sm:text-sm text-gray-700 space-y-2 sm:space-y-3">
+                {waiverSections.map((section) => (
+                  <p key={section.id}>
+                    {section.title && <strong>{section.title}:</strong>} {replacePlaceholders(section.content, member, gymSettings, participantName)}
+                  </p>
+                ))}
+              </div>
+            </section>
+
+            {/* Agreement Checkbox */}
+            <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+              <input
+                type="checkbox"
+                id="agree"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="mt-0.5 h-5 w-5 sm:h-4 sm:w-4 rounded border-gray-300 text-primary focus:ring-primary flex-shrink-0"
+              />
+              <label htmlFor="agree" className="text-xs sm:text-sm text-gray-700">
+                I have read and agree to the terms and conditions stated above. I understand that this is a legally binding agreement and that I am giving up certain legal rights by signing this waiver.
+              </label>
+            </div>
+
+            {/* Signature Section */}
+            <section>
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
+                Signature
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Sign in the box below using your finger or stylus:
+                  </label>
+                  <div className="border-2 border-primary rounded-xl overflow-hidden bg-white shadow-inner relative">
+                    <canvas
+                      ref={canvasRef}
+                      width={600}
+                      height={200}
+                      className="w-full cursor-crosshair touch-none"
+                      style={{ height: "150px", minHeight: "150px" }}
+                      onMouseDown={startDrawing}
+                      onMouseMove={draw}
+                      onMouseUp={stopDrawing}
+                      onMouseLeave={stopDrawing}
+                      onTouchStart={startDrawing}
+                      onTouchMove={draw}
+                      onTouchEnd={stopDrawing}
+                    />
+                    {!hasSignature && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="text-gray-300 text-lg sm:text-xl font-handwriting select-none">Sign Here</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-500">Use your finger or stylus to sign</span>
+                    <button
+                      type="button"
+                      onClick={clearSignature}
+                      className="text-sm text-primary hover:text-primaryDark font-medium flex items-center gap-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 border-t border-gray-300"></div>
+                  <span className="text-xs sm:text-sm text-gray-500 font-medium">OR</span>
+                  <div className="flex-1 border-t border-gray-300"></div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Type your full legal name as signature:
+                  </label>
+                  <input
+                    type="text"
+                    value={signatureName}
+                    onChange={(e) => setSignatureName(e.target.value)}
+                    placeholder="Type your full name"
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-lg sm:text-base focus:outline-none focus:ring-2 focus:ring-primary italic"
+                    style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive" }}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={signatureDate}
+                    onChange={(e) => setSignatureDate(e.target.value)}
+                    required
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* Submit Button */}
+            <div className="pt-4 sm:pt-6 border-t">
+              <button
+                type="submit"
+                disabled={submitting || !agreedToTerms}
+                className="w-full rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {submitting ? "Submitting..." : "Sign Waiver"}
+              </button>
+              <p className="text-center text-xs text-gray-500 mt-3 sm:hidden">
+                Tap the button above to submit your waiver
+              </p>
+            </div>
+          </form>
+        </div>
+
+        <p className="text-center text-xs text-gray-500 mt-4">
+          This form is securely processed. Your information is kept confidential.
+        </p>
+      </div>
+    </div>
+  );
+}

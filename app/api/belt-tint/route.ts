@@ -42,6 +42,10 @@ export async function GET(req: Request) {
       ? "multiply"
       : "normal";
 
+  // Optional two-tone layer
+  const twotoneMask = (searchParams.get("twotoneMask") || "").trim();
+  const twotoneColor = (searchParams.get("twotoneColor") || "").trim();
+
   // Optional linear stripe
   const linearMask = (searchParams.get("linearMask") || "").trim();
   const linearColor = (searchParams.get("linearColor") || "").trim();
@@ -91,28 +95,33 @@ export async function GET(req: Request) {
     addTinted(fabricMask, fabricColor);
   }
 
-  // 2) Optional linear stripe
+  // 2) Optional two-tone layer
+  if (twotoneMask && twotoneColor) {
+    addTinted(twotoneMask, twotoneColor);
+  }
+
+  // 3) Optional linear stripe
   if (linearMask && linearColor) {
     addTinted(linearMask, linearColor);
   }
 
-  // 3) Optional patch (image OR mask+color)
+  // 4) Optional patch (image OR mask+color)
   if (patchImg) {
     addImage(patchImg, 1, "normal");
   } else if (patchMask && patchColor) {
     addTinted(patchMask, patchColor);
   }
 
-  // 4) Individual horizontal stripes
+  // 5) Individual horizontal stripes
   for (const s of stripes) {
     if (s.img) addImage(s.img, 1, "normal");
     else if (s.color) addTinted(s.mask, s.color);
   }
 
-  // 5) Optional camo/pattern overlay (unchanged)
+  // 6) Optional camo/pattern overlay (unchanged)
   if (overlay) addImage(overlay, overlayOpacity, overlayBlend);
 
-  // 6) Outline always on top (unchanged)
+  // 7) Outline always on top (unchanged)
   if (outline) addImage(outline, 1, "normal");
 
   const svg = `

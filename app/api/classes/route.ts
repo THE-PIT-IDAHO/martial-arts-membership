@@ -11,22 +11,29 @@ export async function GET(req: Request) {
     if (getTypes === "true") {
       const classes = await prisma.classSession.findMany({
         where: {
-          classType: {
-            not: null,
-          },
+          OR: [
+            { classType: { not: null } },
+            { classTypes: { not: null } },
+          ],
         },
         select: {
           classType: true,
+          classTypes: true,
         },
-        distinct: ["classType"],
       });
 
-      const classTypes = [...new Set(
-        classes
-          .map((c) => c.classType?.trim())
-          .filter((type): type is string => type !== null && type !== "")
-      )].sort();
+      const allTypes = new Set<string>();
+      for (const c of classes) {
+        if (c.classType?.trim()) allTypes.add(c.classType.trim());
+        if (c.classTypes) {
+          try {
+            const parsed: string[] = JSON.parse(c.classTypes);
+            for (const t of parsed) { if (t.trim()) allTypes.add(t.trim()); }
+          } catch { /* ignore */ }
+        }
+      }
 
+      const classTypes = [...allTypes].sort();
       return NextResponse.json({ classTypes });
     }
 
@@ -49,7 +56,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, startsAt, endsAt, classType, styleIds, styleNames, styleId, styleName, minRankId, minRankName, programId, clientId, isRecurring, frequencyNumber, frequencyUnit, scheduleStartDate, scheduleEndDate, isOngoing, color, coachId, coachName } = body;
+    const { name, startsAt, endsAt, classType, classTypes, styleIds, styleNames, styleId, styleName, minRankId, minRankName, programId, clientId, isRecurring, frequencyNumber, frequencyUnit, scheduleStartDate, scheduleEndDate, isOngoing, color, coachId, coachName, maxCapacity, bookingEnabled, bookingCutoffMins, bookingAdvanceDays, kioskEnabled, locationId, spaceId } = body;
 
     if (!name || typeof name !== "string") {
       return new NextResponse("Name is required", { status: 400 });
@@ -68,6 +75,7 @@ export async function POST(req: Request) {
         startsAt: new Date(startsAt),
         endsAt: new Date(endsAt),
         classType: classType?.trim() || null,
+        classTypes: classTypes || null,
         styleIds: styleIds || null,
         styleNames: styleNames || null,
         styleId: styleId || null,
@@ -85,6 +93,13 @@ export async function POST(req: Request) {
         color: color || "#a3a3a3",
         coachId: coachId || null,
         coachName: coachName || null,
+        maxCapacity: maxCapacity != null ? parseInt(maxCapacity) || null : null,
+        bookingEnabled: bookingEnabled || false,
+        bookingCutoffMins: bookingCutoffMins != null ? parseInt(bookingCutoffMins) || null : null,
+        bookingAdvanceDays: bookingAdvanceDays != null ? parseInt(bookingAdvanceDays) || null : null,
+        kioskEnabled: kioskEnabled || false,
+        locationId: locationId || null,
+        spaceId: spaceId || null,
       },
       include: {
         program: true,

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
+import { getTodayString } from "@/lib/dates";
 
 type Style = {
   id: string;
@@ -35,13 +37,17 @@ type MembershipPlan = {
   classesPerMonth: number | null;
   allowedStyles: string | null;
   familyDiscountPercent: number | null;
+  rankPromotionDiscountPercent: number | null;
+  otherDiscountPercent: number | null;
   trialDays: number | null;
   promoCode: string | null;
   cancellationNoticeDays: number | null;
   cancellationFeeCents: number | null;
+  contractClauses: string | null;
   sortOrder: number;
   color: string | null;
   isActive: boolean;
+  availableOnline: boolean;
   memberships?: Membership[];
 };
 
@@ -94,7 +100,8 @@ export default function MembershipsPage() {
   const [planClassesPerWeek, setPlanClassesPerWeek] = useState("");
   const [planClassesPerMonth, setPlanClassesPerMonth] = useState("");
   const [planAllowedStyles, setPlanAllowedStyles] = useState<string[]>([]);
-  const [planFamilyDiscount, setPlanFamilyDiscount] = useState("");
+  const [planPromotionDiscount, setPlanPromotionDiscount] = useState("");
+  const [planOtherDiscount, setPlanOtherDiscount] = useState("");
   const [planTrialDays, setPlanTrialDays] = useState("");
   const [planPromoCode, setPlanPromoCode] = useState("");
   const [planCancellationDays, setPlanCancellationDays] = useState("");
@@ -102,7 +109,19 @@ export default function MembershipsPage() {
   const [planSortOrder, setPlanSortOrder] = useState("0");
   const [planColor, setPlanColor] = useState("#c41111");
   const [planIsActive, setPlanIsActive] = useState(true);
+  const [planAvailableOnline, setPlanAvailableOnline] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
+  // Per-plan contract clauses
+  type ContractClause = { id: string; title: string; content: string };
+  const [planContractClauses, setPlanContractClauses] = useState<ContractClause[]>([]);
+
+  // Global contract clauses (stored in Settings)
+  const [globalContractClauses, setGlobalContractClauses] = useState<ContractClause[]>([]);
+  const [editingClause, setEditingClause] = useState<ContractClause | null>(null);
+  const [clauseTitle, setClauseTitle] = useState("");
+  const [clauseContent, setClauseContent] = useState("");
+  const [showClauseForm, setShowClauseForm] = useState(false);
+  const [savingClauses, setSavingClauses] = useState(false);
 
   // Update confirmation dialog state
   const [showUpdateConfirm, setShowUpdateConfirm] = useState(false);
@@ -113,12 +132,12 @@ export default function MembershipsPage() {
   const [showAssignForm, setShowAssignForm] = useState(false);
   const [assignPlanId, setAssignPlanId] = useState("");
   const [assignMemberId, setAssignMemberId] = useState("");
-  const [assignStartDate, setAssignStartDate] = useState("");
+  const [assignStartDate, setAssignStartDate] = useState(getTodayString());
   const [assignEndDate, setAssignEndDate] = useState("");
   const [savingAssign, setSavingAssign] = useState(false);
 
   // View mode
-  const [viewMode, setViewMode] = useState<"plans" | "memberships" | "types">("plans");
+  const [viewMode, setViewMode] = useState<"plans" | "memberships" | "types" | "services">("plans");
 
   // Membership Types state
   const [membershipTypes, setMembershipTypes] = useState<MembershipType[]>([]);
@@ -131,21 +150,119 @@ export default function MembershipsPage() {
   const [typeIsActive, setTypeIsActive] = useState(true);
   const [savingType, setSavingType] = useState(false);
 
+  // Appointments state
+  type SvcAppointment = {
+    id: string; title: string; description: string | null;
+    type: string | null; duration: number; priceCents: number | null;
+    color: string | null; coachId: string | null; coachName: string | null;
+    styleId: string | null; styleName: string | null;
+    notes: string | null; isActive: boolean;
+  };
+  type SvcPackage = {
+    id: string; name: string; description: string | null;
+    appointmentId: string | null; sessionsIncluded: number;
+    priceCents: number; expirationDays: number | null;
+    isActive: boolean; availableOnline: boolean; sortOrder: number;
+    appointment: { id: string; title: string } | null;
+  };
+  type Coach = { id: string; firstName: string; lastName: string };
+  type PricingTier = { id?: string; sessions: string; priceDollars: string; posEnabled: boolean; portalEnabled: boolean; expirationDays: string };
+  const [svcPackages, setSvcPackages] = useState<SvcPackage[]>([]);
+  const [svcAppointments, setSvcAppointments] = useState<SvcAppointment[]>([]);
+  const [coaches, setCoaches] = useState<Coach[]>([]);
+  // Appointment type form state (includes pricing tiers)
+  const [showApptModal, setShowApptModal] = useState(false);
+  const [editingAppt, setEditingAppt] = useState<SvcAppointment | null>(null);
+  const [savingAppt, setSavingAppt] = useState(false);
+  const [apptForm, setApptForm] = useState({
+    title: "", description: "", type: "", duration: "60",
+    durationUnit: "minutes" as "minutes" | "hours",
+    priceDollars: "", color: "#6b7280", coachId: "", styleId: "",
+    notes: "", isActive: true,
+  });
+  const [pricingTiers, setPricingTiers] = useState<PricingTier[]>([]);
+  // Expanded row state for viewing tiers inline
+  const [expandedApptId, setExpandedApptId] = useState<string | null>(null);
+
   useEffect(() => {
     loadData();
   }, []);
+
+  // Auto-generate description based on contract settings
+  useEffect(() => {
+    // Only auto-generate if description is empty or was auto-generated
+    if (editingPlan) return; // Don't auto-generate when editing existing plan
+
+    const contractLen = parseInt(planContractLength) || 0;
+    if (contractLen <= 0) {
+      setPlanDescription("");
+      return;
+    }
+
+    // Build contract length text
+    let contractText = "";
+    if (planContractUnit === "days") {
+      contractText = contractLen === 1 ? "1 day" : `${contractLen} day`;
+    } else if (planContractUnit === "weeks") {
+      contractText = contractLen === 1 ? "1 week" : `${contractLen} week`;
+    } else if (planContractUnit === "months") {
+      contractText = contractLen === 1 ? "1 month" : `${contractLen} month`;
+    } else if (planContractUnit === "years") {
+      contractText = contractLen === 1 ? "1 year" : `${contractLen} year`;
+    }
+
+    // Build billing cycle text
+    let billingText = "";
+    switch (planBillingCycle) {
+      case "WEEKLY":
+        billingText = "every week";
+        break;
+      case "MONTHLY":
+        billingText = "every month";
+        break;
+      case "YEARLY":
+        billingText = "every year";
+        break;
+      case "SESSION":
+        billingText = "per session";
+        break;
+      case "ONE_TIME":
+        billingText = "one time";
+        break;
+      default:
+        billingText = "every month";
+    }
+
+    // Build full description
+    let description = `${contractText} contract`;
+    if (planAutoRenew && planBillingCycle !== "ONE_TIME" && planBillingCycle !== "SESSION") {
+      description += ` that is auto billed ${billingText}`;
+    } else if (planBillingCycle === "ONE_TIME") {
+      description += " with one time payment";
+    } else if (planBillingCycle === "SESSION") {
+      description += " billed per session";
+    } else {
+      description += ` billed ${billingText}`;
+    }
+
+    setPlanDescription(description);
+  }, [planContractLength, planContractUnit, planBillingCycle, planAutoRenew, editingPlan]);
 
   async function loadData() {
     try {
       setLoading(true);
       setError(null);
 
-      const [plansRes, membershipsRes, membersRes, stylesRes, typesRes] = await Promise.all([
+      const [plansRes, membershipsRes, membersRes, stylesRes, typesRes, svcRes, aptRes, coachesRes, settingsRes] = await Promise.all([
         fetch("/api/membership-plans"),
         fetch("/api/memberships"),
         fetch("/api/members"),
         fetch("/api/styles"),
         fetch("/api/membership-types"),
+        fetch("/api/service-packages"),
+        fetch("/api/appointments"),
+        fetch("/api/members?status=COACH"),
+        fetch("/api/settings"),
       ]);
 
       if (!plansRes.ok) throw new Error("Failed to load membership plans");
@@ -155,12 +272,28 @@ export default function MembershipsPage() {
       const membersData = membersRes.ok ? await membersRes.json() : { members: [] };
       const stylesData = stylesRes.ok ? await stylesRes.json() : { styles: [] };
       const typesData = typesRes.ok ? await typesRes.json() : { membershipTypes: [] };
+      const svcData = svcRes.ok ? await svcRes.json() : { packages: [] };
+      const aptData = aptRes.ok ? await aptRes.json() : { appointments: [] };
+      const coachesData = coachesRes.ok ? await coachesRes.json() : { members: [] };
+      const settingsData = settingsRes.ok ? await settingsRes.json() : { settings: [] };
+
+      // Load global contract clauses from settings
+      const settingsMap: Record<string, string> = {};
+      for (const s of settingsData.settings || []) settingsMap[s.key] = s.value;
+      if (settingsMap.contract_clauses) {
+        try { setGlobalContractClauses(JSON.parse(settingsMap.contract_clauses)); } catch { /* ignore */ }
+      }
 
       setPlans(plansData.membershipPlans || []);
       setMemberships(membershipsData.memberships || []);
       setMembers(membersData.members || []);
       setStyles(stylesData.styles || []);
       setMembershipTypes(typesData.membershipTypes || []);
+      setSvcPackages(svcData.servicePackages || []);
+      setSvcAppointments(aptData.appointments || []);
+      setCoaches((coachesData.members || []).map((c: { id: string; firstName: string; lastName: string }) => ({
+        id: c.id, firstName: c.firstName, lastName: c.lastName,
+      })));
     } catch (err: any) {
       console.error("Error loading data:", err);
       setError(err.message || "Failed to load data");
@@ -186,7 +319,8 @@ export default function MembershipsPage() {
     setPlanClassesPerWeek("");
     setPlanClassesPerMonth("");
     setPlanAllowedStyles([]);
-    setPlanFamilyDiscount("");
+    setPlanPromotionDiscount("");
+    setPlanOtherDiscount("");
     setPlanTrialDays("");
     setPlanPromoCode("");
     setPlanCancellationDays("");
@@ -194,6 +328,8 @@ export default function MembershipsPage() {
     setPlanSortOrder("0");
     setPlanColor("#c41111");
     setPlanIsActive(true);
+    setPlanAvailableOnline(false);
+    setPlanContractClauses([]);
     setShowPlanForm(false);
   }
 
@@ -351,6 +487,17 @@ export default function MembershipsPage() {
 
   function handleEditPlan(plan: MembershipPlan) {
     setEditingPlan(plan);
+    populatePlanForm(plan);
+  }
+
+  function handleDuplicatePlan(plan: MembershipPlan) {
+    setEditingPlan(null); // null so it creates a new plan instead of updating
+    populatePlanForm(plan);
+    setPlanName(plan.name + " (Copy)"); // Add "(Copy)" suffix to distinguish
+    setPlanMembershipId(""); // Clear membership ID for new plan
+  }
+
+  function populatePlanForm(plan: MembershipPlan) {
     setPlanMembershipId(plan.membershipId || "");
     setPlanMembershipTypeId(plan.membershipTypeId || "");
     setPlanName(plan.name);
@@ -384,7 +531,8 @@ export default function MembershipsPage() {
     setPlanClassesPerWeek(plan.classesPerWeek ? String(plan.classesPerWeek) : "");
     setPlanClassesPerMonth(plan.classesPerMonth ? String(plan.classesPerMonth) : "");
     setPlanAllowedStyles(plan.allowedStyles ? JSON.parse(plan.allowedStyles) : []);
-    setPlanFamilyDiscount(plan.familyDiscountPercent ? String(plan.familyDiscountPercent) : "");
+    setPlanPromotionDiscount(plan.rankPromotionDiscountPercent ? String(plan.rankPromotionDiscountPercent) : "");
+    setPlanOtherDiscount(plan.otherDiscountPercent ? String(plan.otherDiscountPercent) : "");
     setPlanTrialDays(plan.trialDays ? String(plan.trialDays) : "");
     setPlanPromoCode(plan.promoCode || "");
     setPlanCancellationDays(plan.cancellationNoticeDays ? String(plan.cancellationNoticeDays) : "");
@@ -392,6 +540,12 @@ export default function MembershipsPage() {
     setPlanSortOrder(String(plan.sortOrder || 0));
     setPlanColor(plan.color || "#c41111");
     setPlanIsActive(plan.isActive);
+    setPlanAvailableOnline(plan.availableOnline ?? false);
+    if (plan.contractClauses) {
+      try { setPlanContractClauses(JSON.parse(plan.contractClauses)); } catch { setPlanContractClauses([]); }
+    } else {
+      setPlanContractClauses([]);
+    }
     setShowPlanForm(true);
   }
 
@@ -436,7 +590,8 @@ export default function MembershipsPage() {
       classesPerWeek: planClassesPerWeek ? Number(planClassesPerWeek) : null,
       classesPerMonth: planClassesPerMonth ? Number(planClassesPerMonth) : null,
       allowedStyles: planAllowedStyles.length > 0 ? JSON.stringify(planAllowedStyles) : null,
-      familyDiscountPercent: planFamilyDiscount ? Number(planFamilyDiscount) : null,
+      rankPromotionDiscountPercent: planPromotionDiscount ? Number(planPromotionDiscount) : null,
+      otherDiscountPercent: planOtherDiscount ? Number(planOtherDiscount) : null,
       trialDays: planTrialDays ? Number(planTrialDays) : null,
       promoCode: planPromoCode.trim() || null,
       cancellationNoticeDays: planCancellationDays ? Number(planCancellationDays) : null,
@@ -444,6 +599,8 @@ export default function MembershipsPage() {
       sortOrder: planSortOrder ? Number(planSortOrder) : 0,
       color: planColor || null,
       isActive: planIsActive,
+      availableOnline: planAvailableOnline,
+      contractClauses: planContractClauses.length > 0 ? JSON.stringify(planContractClauses) : null,
     };
   }
 
@@ -538,6 +695,66 @@ export default function MembershipsPage() {
     }
   }
 
+  // ── Global Contract Clause Functions ──
+  function openClauseForm(clause?: ContractClause) {
+    if (clause) {
+      setEditingClause(clause);
+      setClauseTitle(clause.title);
+      setClauseContent(clause.content);
+    } else {
+      setEditingClause(null);
+      setClauseTitle("");
+      setClauseContent("");
+    }
+    setShowClauseForm(true);
+  }
+
+  async function saveGlobalClauses(updated: ContractClause[]) {
+    setSavingClauses(true);
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "contract_clauses", value: JSON.stringify(updated) }),
+      });
+      setGlobalContractClauses(updated);
+    } catch { /* ignore */ }
+    setSavingClauses(false);
+  }
+
+  function handleSaveClause() {
+    if (!clauseTitle.trim() || !clauseContent.trim()) return;
+    let updated: ContractClause[];
+    if (editingClause) {
+      updated = globalContractClauses.map((c) =>
+        c.id === editingClause.id ? { ...c, title: clauseTitle.trim(), content: clauseContent.trim() } : c
+      );
+    } else {
+      updated = [...globalContractClauses, { id: `clause-${Date.now()}`, title: clauseTitle.trim(), content: clauseContent.trim() }];
+    }
+    saveGlobalClauses(updated);
+    setShowClauseForm(false);
+    setEditingClause(null);
+    setClauseTitle("");
+    setClauseContent("");
+  }
+
+  function handleDeleteClause(id: string) {
+    if (!window.confirm("Remove this contract clause?")) return;
+    saveGlobalClauses(globalContractClauses.filter((c) => c.id !== id));
+  }
+
+  // Per-plan clause helpers
+  function addPlanClause() {
+    setPlanContractClauses([...planContractClauses, { id: `pc-${Date.now()}`, title: "", content: "" }]);
+  }
+  function updatePlanClause(id: string, field: "title" | "content", value: string) {
+    setPlanContractClauses(planContractClauses.map((c) => (c.id === id ? { ...c, [field]: value } : c)));
+  }
+  function removePlanClause(id: string) {
+    setPlanContractClauses(planContractClauses.filter((c) => c.id !== id));
+  }
+
   function resetAssignForm() {
     setAssignPlanId("");
     setAssignMemberId("");
@@ -571,7 +788,11 @@ export default function MembershipsPage() {
       }
 
       await loadData();
-      resetAssignForm();
+      // Only reset member selection, keep form open for another assignment
+      setAssignMemberId("");
+      // Show success message briefly
+      setError(null);
+      alert("Membership assigned successfully!");
     } catch (err: any) {
       console.error("Error assigning membership:", err);
       setError(err.message || "Failed to assign membership");
@@ -620,6 +841,165 @@ export default function MembershipsPage() {
     }
   }
 
+  // Appointment type CRUD functions
+  function resetApptForm() {
+    setEditingAppt(null);
+    setApptForm({
+      title: "", description: "", type: "", duration: "60",
+      durationUnit: "minutes", priceDollars: "", color: "#6b7280",
+      coachId: "", styleId: "", notes: "", isActive: true,
+    });
+    setPricingTiers([]);
+    setShowApptModal(false);
+  }
+
+  function handleEditApptType(appt: SvcAppointment) {
+    setEditingAppt(appt);
+    const duration = appt.duration || 60;
+    const isHours = duration >= 60 && duration % 60 === 0;
+    setApptForm({
+      title: appt.title,
+      description: appt.description || "",
+      type: appt.type || "",
+      duration: isHours ? String(duration / 60) : String(duration),
+      durationUnit: isHours ? "hours" : "minutes",
+      priceDollars: appt.priceCents ? String(appt.priceCents / 100) : "",
+      color: appt.color || "#6b7280",
+      coachId: appt.coachId || "",
+      styleId: appt.styleId || "",
+      notes: appt.notes || "",
+      isActive: appt.isActive !== false,
+    });
+    // Load existing pricing tiers for this appointment type
+    const existingTiers = svcPackages
+      .filter(p => p.appointmentId === appt.id)
+      .map(p => ({
+        id: p.id,
+        sessions: String(p.sessionsIncluded),
+        priceDollars: String(p.priceCents / 100),
+        posEnabled: p.isActive,
+        portalEnabled: p.availableOnline,
+        expirationDays: p.expirationDays ? String(p.expirationDays) : "",
+      }));
+    setPricingTiers(existingTiers);
+    setShowApptModal(true);
+  }
+
+  function addPricingTier() {
+    setPricingTiers([...pricingTiers, { sessions: "1", priceDollars: "", posEnabled: true, portalEnabled: false, expirationDays: "" }]);
+  }
+
+  function updatePricingTier(index: number, field: keyof PricingTier, value: string | boolean) {
+    const updated = [...pricingTiers];
+    (updated[index] as any)[field] = value;
+    setPricingTiers(updated);
+  }
+
+  function removePricingTier(index: number) {
+    setPricingTiers(pricingTiers.filter((_, i) => i !== index));
+  }
+
+  async function handleSaveApptType(e: React.FormEvent) {
+    e.preventDefault();
+    if (!apptForm.title.trim()) return;
+
+    try {
+      setSavingAppt(true);
+      setError(null);
+
+      const selectedCoach = coaches.find(c => c.id === apptForm.coachId);
+      const selectedStyle = styles.find(s => s.id === apptForm.styleId);
+      const priceCents = apptForm.priceDollars ? Math.round(parseFloat(apptForm.priceDollars) * 100) : null;
+      const durationMinutes = apptForm.durationUnit === "hours"
+        ? (parseInt(apptForm.duration) || 1) * 60
+        : parseInt(apptForm.duration) || 60;
+
+      const apptData = {
+        title: apptForm.title.trim(),
+        description: apptForm.description.trim() || null,
+        type: apptForm.type.trim() || null,
+        duration: durationMinutes,
+        priceCents,
+        color: apptForm.color,
+        coachId: apptForm.coachId || null,
+        coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
+        styleId: apptForm.styleId || null,
+        styleName: selectedStyle ? selectedStyle.name : null,
+        notes: apptForm.notes.trim() || null,
+        isActive: apptForm.isActive,
+      };
+
+      // Save the appointment type
+      const url = editingAppt ? `/api/appointments/${editingAppt.id}` : "/api/appointments";
+      const method = editingAppt ? "PATCH" : "POST";
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(apptData) });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to save appointment type");
+      }
+
+      const savedAppt = await res.json();
+      const apptId = savedAppt.appointment.id;
+
+      // Save pricing tiers as service packages
+      // Get existing packs for this appointment
+      const existingPacks = svcPackages.filter(p => p.appointmentId === (editingAppt?.id || apptId));
+      const existingIds = new Set(pricingTiers.filter(t => t.id).map(t => t.id));
+
+      // Delete removed tiers
+      for (const pack of existingPacks) {
+        if (!existingIds.has(pack.id)) {
+          await fetch(`/api/service-packages/${pack.id}`, { method: "DELETE" });
+        }
+      }
+
+      // Create or update tiers
+      for (let i = 0; i < pricingTiers.length; i++) {
+        const tier = pricingTiers[i];
+        if (!tier.priceDollars || !tier.sessions) continue;
+        const tierPayload = {
+          name: `${apptForm.title.trim()} — ${tier.sessions} session${parseInt(tier.sessions) !== 1 ? "s" : ""}`,
+          description: null,
+          appointmentId: apptId,
+          sessionsIncluded: parseInt(tier.sessions) || 1,
+          priceCents: Math.round(parseFloat(tier.priceDollars) * 100),
+          expirationDays: tier.expirationDays ? parseInt(tier.expirationDays) : null,
+          isActive: tier.posEnabled,
+          availableOnline: tier.portalEnabled,
+          sortOrder: i,
+        };
+        if (tier.id) {
+          await fetch(`/api/service-packages/${tier.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(tierPayload) });
+        } else {
+          await fetch("/api/service-packages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(tierPayload) });
+        }
+      }
+
+      await loadData();
+      resetApptForm();
+    } catch (err: any) {
+      console.error("Error saving appointment type:", err);
+      setError(err.message || "Failed to save appointment type");
+    } finally {
+      setSavingAppt(false);
+    }
+  }
+
+  async function handleDeleteApptType(appt: SvcAppointment) {
+    if (!window.confirm(`Are you sure you want to delete "${appt.title}"? This will also delete any associated pricing.`)) return;
+    try {
+      const res = await fetch(`/api/appointments/${appt.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to delete");
+      }
+      await loadData();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete appointment type");
+    }
+  }
+
   function formatPrice(cents: number | null): string {
     if (cents === null) return "Free";
     return `$${(cents / 100).toFixed(2)}`;
@@ -659,9 +1039,9 @@ export default function MembershipsPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+      <div className="space-y-4">
+        {/* Header with action buttons */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Memberships</h1>
             <p className="mt-1 text-sm text-gray-600">
@@ -670,8 +1050,11 @@ export default function MembershipsPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowAssignForm(true)}
-              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+              onClick={() => {
+                setAssignStartDate(getTodayString());
+                setShowAssignForm(true);
+              }}
+              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
             >
               Assign Membership
             </button>
@@ -706,21 +1089,21 @@ export default function MembershipsPage() {
                 <button
                   onClick={() => handleUpdateConfirmChoice("both")}
                   disabled={savingPlan}
-                  className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
+                  className="w-full rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
                 >
                   {savingPlan ? "Saving..." : "Apply to Current Members & Future Sales"}
                 </button>
                 <button
                   onClick={() => handleUpdateConfirmChoice("current")}
                   disabled={savingPlan}
-                  className="w-full rounded-md border border-primary px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/5 disabled:opacity-60"
+                  className="w-full rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-60"
                 >
                   {savingPlan ? "Saving..." : "Apply to Current Members Only"}
                 </button>
                 <button
                   onClick={() => handleUpdateConfirmChoice("future")}
                   disabled={savingPlan}
-                  className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-60"
+                  className="w-full rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-60"
                 >
                   {savingPlan ? "Saving..." : "Apply to Future Sales Only"}
                 </button>
@@ -767,6 +1150,16 @@ export default function MembershipsPage() {
             }`}
           >
             Membership Types
+          </button>
+          <button
+            onClick={() => setViewMode("services")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+              viewMode === "services"
+                ? "border-primary text-primary"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Appointments ({svcPackages.length})
           </button>
         </div>
 
@@ -871,19 +1264,6 @@ export default function MembershipsPage() {
                       className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                       placeholder="0.00"
                     />
-                    <div className="mt-2">
-                      <label className="mb-1 block text-xs font-medium text-gray-700">
-                        Purchase Limit
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={planPurchaseLimit}
-                        onChange={(e) => setPlanPurchaseLimit(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                        placeholder="Unlimited"
-                      />
-                    </div>
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-700">
@@ -903,6 +1283,19 @@ export default function MembershipsPage() {
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-700">
+                      Purchase Limit
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={planPurchaseLimit}
+                      onChange={(e) => setPlanPurchaseLimit(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Unlimited"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
                       Setup/Registration Fee ($)
                     </label>
                     <input
@@ -915,16 +1308,32 @@ export default function MembershipsPage() {
                       placeholder="0.00"
                     />
                   </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-4 mt-4">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-700">
-                      Family Discount (%)
+                      Promotion Fee Discount (%)
                     </label>
                     <input
                       type="number"
                       min="0"
                       max="100"
-                      value={planFamilyDiscount}
-                      onChange={(e) => setPlanFamilyDiscount(e.target.value)}
+                      value={planPromotionDiscount}
+                      onChange={(e) => setPlanPromotionDiscount(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="e.g., 10"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      Other Discount (%)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={planOtherDiscount}
+                      onChange={(e) => setPlanOtherDiscount(e.target.value)}
                       className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                       placeholder="e.g., 10"
                     />
@@ -1012,7 +1421,57 @@ export default function MembershipsPage() {
                       Auto-renew after contract ends
                     </label>
                   </div>
+                  <div className="flex items-center">
+                    <label className="flex items-center gap-2 text-xs text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={planAvailableOnline}
+                        onChange={(e) => setPlanAvailableOnline(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      Available for online purchase
+                    </label>
+                  </div>
                 </div>
+              </div>
+
+              {/* Plan-Specific Contract Clauses */}
+              <div>
+                <div className="flex items-center justify-between mb-3 border-b pb-1">
+                  <h3 className="text-sm font-semibold text-gray-700">Plan Contract Clauses</h3>
+                  <button type="button" onClick={addPlanClause} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">
+                    Add Clause
+                  </button>
+                </div>
+                {planContractClauses.length === 0 ? (
+                  <p className="text-xs text-gray-400">No plan-specific clauses. Global clauses still apply.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {planContractClauses.map((clause) => (
+                      <div key={clause.id} className="rounded-md border border-gray-200 p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <input
+                            type="text"
+                            value={clause.title}
+                            onChange={(e) => updatePlanClause(clause.id, "title", e.target.value)}
+                            className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                            placeholder="Clause title"
+                          />
+                          <button type="button" onClick={() => removePlanClause(clause.id)} className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100">
+                            Remove
+                          </button>
+                        </div>
+                        <textarea
+                          value={clause.content}
+                          onChange={(e) => updatePlanClause(clause.id, "content", e.target.value)}
+                          rows={3}
+                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Clause content..."
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Access Controls */}
@@ -1358,12 +1817,19 @@ export default function MembershipsPage() {
                                   {formatContractLength(plan.contractLengthMonths)}
                                 </td>
                                 <td className="px-4 py-3">
-                                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                                     {activeCount} active
                                   </span>
                                 </td>
                                 <td className="px-4 py-3 text-right">
                                   <div className="flex justify-end gap-1">
+                                    <button
+                                      onClick={() => handleDuplicatePlan(plan)}
+                                      className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                                      title="Duplicate this plan"
+                                    >
+                                      Duplicate
+                                    </button>
                                     <button
                                       onClick={() => handleEditPlan(plan)}
                                       className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
@@ -1449,6 +1915,94 @@ export default function MembershipsPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Global Contract Clauses */}
+                <div className="mt-6 rounded-lg border border-gray-200 bg-white p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Contract Clauses</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">These clauses appear on all membership and service contracts at point of sale.</p>
+                  </div>
+                  <button
+                    onClick={() => openClauseForm()}
+                    disabled={savingClauses}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                  >
+                    Add Clause
+                  </button>
+                </div>
+
+                {globalContractClauses.length === 0 ? (
+                  <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center">
+                    <p className="text-xs text-gray-400">No contract clauses defined. Add clauses to include in sale contracts.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {globalContractClauses.map((clause) => (
+                      <div key={clause.id} className="rounded-md border border-gray-200 p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <h4 className="text-xs font-semibold text-gray-800">{clause.title}</h4>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => openClauseForm(clause)}
+                              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClause(clause.id)}
+                              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-600 whitespace-pre-wrap">{clause.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Clause Add/Edit Form */}
+                {showClauseForm && (
+                  <div className="mt-3 rounded-md border border-gray-300 bg-gray-50 p-4">
+                    <h4 className="text-xs font-semibold text-gray-700 mb-2">
+                      {editingClause ? "Edit Clause" : "New Clause"}
+                    </h4>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={clauseTitle}
+                        onChange={(e) => setClauseTitle(e.target.value)}
+                        className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                        placeholder="Clause title (e.g., Payment Terms)"
+                      />
+                      <textarea
+                        value={clauseContent}
+                        onChange={(e) => setClauseContent(e.target.value)}
+                        rows={4}
+                        className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                        placeholder="Clause content..."
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleSaveClause}
+                          disabled={!clauseTitle.trim() || !clauseContent.trim()}
+                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                        >
+                          {editingClause ? "Save Changes" : "Add Clause"}
+                        </button>
+                        <button
+                          onClick={() => { setShowClauseForm(false); setEditingClause(null); setClauseTitle(""); setClauseContent(""); }}
+                          className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                </div>
               </div>
             )}
           </>
@@ -1463,7 +2017,10 @@ export default function MembershipsPage() {
                   No memberships assigned yet. Assign a membership plan to a member to get started.
                 </p>
                 <button
-                  onClick={() => setShowAssignForm(true)}
+                  onClick={() => {
+                    setAssignStartDate(getTodayString());
+                    setShowAssignForm(true);
+                  }}
                   className="mt-4 inline-block rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                 >
                   Assign First Membership
@@ -1500,8 +2057,26 @@ export default function MembershipsPage() {
                         <td className="px-4 py-3">
                           {membership.member ? (
                             <div>
-                              <div className="font-medium text-gray-900">
-                                {membership.member.firstName} {membership.member.lastName}
+                              <div className="flex items-center gap-2">
+                                <Link
+                                  href={`/members/${membership.member.id}`}
+                                  className="font-medium text-primary hover:underline"
+                                >
+                                  {membership.member.firstName} {membership.member.lastName}
+                                </Link>
+                                <span
+                                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                    membership.member.status === "ACTIVE"
+                                      ? "bg-primary/10 text-primary"
+                                      : membership.member.status === "PROSPECT"
+                                      ? "bg-blue-100 text-blue-700"
+                                      : membership.member.status === "INACTIVE"
+                                      ? "bg-gray-100 text-gray-600"
+                                      : "bg-gray-100 text-gray-600"
+                                  }`}
+                                >
+                                  {membership.member.status}
+                                </span>
                               </div>
                               {membership.member.email && (
                                 <div className="text-xs text-gray-500">
@@ -1530,7 +2105,7 @@ export default function MembershipsPage() {
                             }
                             className={`rounded-full px-2 py-0.5 text-xs font-medium border-0 focus:ring-2 focus:ring-primary ${
                               membership.status === "ACTIVE"
-                                ? "bg-green-100 text-green-700"
+                                ? "bg-primary/10 text-primary"
                                 : membership.status === "PAUSED"
                                 ? "bg-yellow-100 text-yellow-700"
                                 : membership.status === "CANCELED"
@@ -1763,7 +2338,7 @@ export default function MembershipsPage() {
                           <span
                             className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                               type.isActive
-                                ? "bg-green-100 text-green-700"
+                                ? "bg-primary/10 text-primary"
                                 : "bg-gray-100 text-gray-500"
                             }`}
                           >
@@ -1794,6 +2369,269 @@ export default function MembershipsPage() {
             )}
           </>
         )}
+
+        {/* Appointments View */}
+        {!loading && viewMode === "services" && (
+          <>
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Appointment Types</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Define services, set pricing tiers, and manage sales channels</p>
+                </div>
+                <button
+                  onClick={() => { resetApptForm(); setShowApptModal(true); }}
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark whitespace-nowrap"
+                >
+                  New Appointment
+                </button>
+              </div>
+
+              {svcAppointments.length === 0 ? (
+                <div className="rounded-md border border-gray-100 bg-gray-50 p-4 text-center">
+                  <p className="text-xs text-gray-500">No appointment types yet. Create one to get started.</p>
+                </div>
+              ) : (
+                <div className="space-y-0">
+                  {svcAppointments.map((appt) => {
+                    const apptPacks = svcPackages.filter(p => p.appointmentId === appt.id);
+                    const isExpanded = expandedApptId === appt.id;
+                    return (
+                      <div key={appt.id} className={`border-b border-gray-100 last:border-b-0 ${!appt.isActive ? "opacity-50" : ""}`}>
+                        {/* Appointment type row */}
+                        <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 cursor-pointer"
+                          onClick={() => setExpandedApptId(isExpanded ? null : appt.id)}>
+                          <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: appt.color || "#6b7280" }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-gray-900">{appt.title}</span>
+                              <span className="text-[10px] text-gray-400">{appt.duration} min</span>
+                              {appt.coachName && <span className="text-[10px] text-gray-400">| {appt.coachName}</span>}
+                              {appt.styleName && <span className="text-[10px] text-gray-400">| {appt.styleName}</span>}
+                            </div>
+                            {appt.description && <p className="text-[10px] text-gray-400 truncate max-w-[300px]">{appt.description}</p>}
+                          </div>
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${appt.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                            {appt.isActive ? "Active" : "Inactive"}
+                          </span>
+                          <span className="text-[10px] text-gray-400">{apptPacks.length} {apptPacks.length === 1 ? "tier" : "tiers"}</span>
+                          <button onClick={(e) => { e.stopPropagation(); handleEditApptType(appt); }} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Edit</button>
+                          <button onClick={(e) => { e.stopPropagation(); handleDeleteApptType(appt); }} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100">Delete</button>
+                          <span className={`text-gray-400 text-xs transition-transform ${isExpanded ? "rotate-180" : ""}`}>&#9660;</span>
+                        </div>
+
+                        {/* Expanded pricing tiers */}
+                        {isExpanded && (
+                          <div className="bg-gray-50 px-3 pb-3 pt-1">
+                            {apptPacks.length === 0 ? (
+                              <p className="text-[10px] text-gray-400 py-2 text-center">No pricing tiers. Edit this appointment to add pricing.</p>
+                            ) : (
+                              <div className="overflow-x-auto rounded-md border border-gray-200 bg-white">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-gray-50 text-left">
+                                    <tr>
+                                      <th className="px-3 py-1.5 font-semibold text-gray-600 text-center">Sessions</th>
+                                      <th className="px-3 py-1.5 font-semibold text-gray-600 text-right">Price</th>
+                                      <th className="px-3 py-1.5 font-semibold text-gray-600 text-right">Per Session</th>
+                                      <th className="px-3 py-1.5 font-semibold text-gray-600 text-center">Expires</th>
+                                      <th className="px-3 py-1.5 font-semibold text-gray-600 text-center">POS</th>
+                                      <th className="px-3 py-1.5 font-semibold text-gray-600 text-center">Portal</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {apptPacks.map(pkg => (
+                                      <tr key={pkg.id}>
+                                        <td className="px-3 py-1.5 text-center font-medium">{pkg.sessionsIncluded}</td>
+                                        <td className="px-3 py-1.5 text-right">${(pkg.priceCents / 100).toFixed(2)}</td>
+                                        <td className="px-3 py-1.5 text-right text-gray-500">${(pkg.priceCents / pkg.sessionsIncluded / 100).toFixed(2)}</td>
+                                        <td className="px-3 py-1.5 text-center text-gray-500">{pkg.expirationDays ? `${pkg.expirationDays}d` : "—"}</td>
+                                        <td className="px-3 py-1.5 text-center">{pkg.isActive ? <span className="text-green-600">Yes</span> : <span className="text-gray-400">No</span>}</td>
+                                        <td className="px-3 py-1.5 text-center">{pkg.availableOnline ? <span className="text-green-600">Yes</span> : <span className="text-gray-400">No</span>}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Appointment Type Modal */}
+        {showApptModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto">
+              <h2 className="text-lg font-bold text-gray-900 mb-4">
+                {editingAppt ? "Edit Appointment Type" : "New Appointment Type"}
+              </h2>
+
+              <form onSubmit={handleSaveApptType} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+                    <input type="text" value={apptForm.title} onChange={(e) => setApptForm({ ...apptForm, title: e.target.value })}
+                      placeholder="e.g., Personal Training"
+                      required
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <input type="text" value={apptForm.description} onChange={(e) => setApptForm({ ...apptForm, description: e.target.value })}
+                      placeholder="Brief description of this service"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Duration</label>
+                    <div className="flex items-center gap-1">
+                      <input type="number" min="1" value={apptForm.duration}
+                        onChange={(e) => setApptForm({ ...apptForm, duration: e.target.value })}
+                        className="w-20 rounded-md border border-gray-300 px-2 py-2 text-sm text-center" />
+                      <select value={apptForm.durationUnit}
+                        onChange={(e) => setApptForm({ ...apptForm, durationUnit: e.target.value as "minutes" | "hours" })}
+                        className="rounded-md border border-gray-300 px-2 py-2 text-sm">
+                        <option value="minutes">Min</option>
+                        <option value="hours">Hr</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Default Price ($)</label>
+                    <input type="number" min="0" step="0.01" value={apptForm.priceDollars}
+                      onChange={(e) => setApptForm({ ...apptForm, priceDollars: e.target.value })}
+                      placeholder="0.00"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Style</label>
+                    <select value={apptForm.styleId}
+                      onChange={(e) => setApptForm({ ...apptForm, styleId: e.target.value })}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+                      <option value="">None</option>
+                      {styles.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Coach</label>
+                    <select value={apptForm.coachId}
+                      onChange={(e) => setApptForm({ ...apptForm, coachId: e.target.value })}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+                      <option value="">None</option>
+                      {coaches.map(c => <option key={c.id} value={c.id}>{c.firstName} {c.lastName}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                    <input type="color" value={apptForm.color}
+                      onChange={(e) => setApptForm({ ...apptForm, color: e.target.value })}
+                      className="h-8 w-10 cursor-pointer rounded border border-gray-300" />
+                  </div>
+                  <div className="pt-5">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input type="checkbox" checked={apptForm.isActive}
+                        onChange={(e) => setApptForm({ ...apptForm, isActive: e.target.checked })}
+                        className="accent-primary" />
+                      Active
+                    </label>
+                  </div>
+                </div>
+
+                {/* Pricing Tiers */}
+                <div className="border-t border-gray-200 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">Pricing</h3>
+                      <p className="text-xs text-gray-400">Set volume pricing — e.g., 1 session @ $80, 5 sessions @ $350</p>
+                    </div>
+                    <button type="button" onClick={addPricingTier}
+                      className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100">
+                      Add Tier
+                    </button>
+                  </div>
+
+                  {pricingTiers.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-3 bg-gray-50 rounded-md">
+                      No pricing tiers. Click &quot;Add Tier&quot; to set up volume pricing.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* Header */}
+                      <div className="grid grid-cols-12 gap-2 text-[10px] font-semibold text-gray-500 px-1">
+                        <div className="col-span-2">Sessions</div>
+                        <div className="col-span-2">Price ($)</div>
+                        <div className="col-span-2">Per Session</div>
+                        <div className="col-span-2">Expires (days)</div>
+                        <div className="col-span-1 text-center">POS</div>
+                        <div className="col-span-1 text-center">Portal</div>
+                        <div className="col-span-2"></div>
+                      </div>
+                      {pricingTiers.map((tier, i) => (
+                        <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-2">
+                            <input type="number" min="1" value={tier.sessions}
+                              onChange={(e) => updatePricingTier(i, "sessions", e.target.value)}
+                              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs text-center" />
+                          </div>
+                          <div className="col-span-2">
+                            <input type="number" min="0" step="0.01" value={tier.priceDollars}
+                              onChange={(e) => updatePricingTier(i, "priceDollars", e.target.value)}
+                              placeholder="0.00"
+                              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs" />
+                          </div>
+                          <div className="col-span-2 text-xs text-gray-500 text-center">
+                            {tier.priceDollars && tier.sessions && parseInt(tier.sessions) > 0
+                              ? `$${(parseFloat(tier.priceDollars) / parseInt(tier.sessions)).toFixed(2)}`
+                              : "—"}
+                          </div>
+                          <div className="col-span-2">
+                            <input type="number" min="1" value={tier.expirationDays}
+                              onChange={(e) => updatePricingTier(i, "expirationDays", e.target.value)}
+                              placeholder="No exp."
+                              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs text-center" />
+                          </div>
+                          <div className="col-span-1 flex justify-center">
+                            <input type="checkbox" checked={tier.posEnabled}
+                              onChange={(e) => updatePricingTier(i, "posEnabled", e.target.checked)}
+                              className="accent-primary" />
+                          </div>
+                          <div className="col-span-1 flex justify-center">
+                            <input type="checkbox" checked={tier.portalEnabled}
+                              onChange={(e) => updatePricingTier(i, "portalEnabled", e.target.checked)}
+                              className="accent-primary" />
+                          </div>
+                          <div className="col-span-2 flex justify-end">
+                            <button type="button" onClick={() => removePricingTier(i)}
+                              className="text-xs text-red-500 hover:underline">Remove</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                  <button type="submit" disabled={savingAppt || !apptForm.title.trim()}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                    {savingAppt ? "Saving..." : editingAppt ? "Save Changes" : "Create Appointment"}
+                  </button>
+                  <button type="button" onClick={resetApptForm}
+                    className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
       </div>
     </AppLayout>
   );

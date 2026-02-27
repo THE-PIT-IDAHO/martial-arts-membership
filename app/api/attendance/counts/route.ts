@@ -10,8 +10,9 @@ export async function GET(req: Request) {
 
     // Get all CONFIRMED attendance records with their class session's classType
     // Only confirmed attendance counts toward requirements
-    const whereClause: { memberId?: { in: string[] }; confirmed: boolean } = {
+    const whereClause: { memberId?: { in: string[] }; confirmed: boolean; source: { not: string } } = {
       confirmed: true,
+      source: { not: "IMPORTED" },
     };
     if (memberIds) {
       whereClause.memberId = { in: memberIds.split(",") };
@@ -24,29 +25,45 @@ export async function GET(req: Request) {
         classSession: {
           select: {
             classType: true,
+            classTypes: true,
           },
         },
       },
     });
 
     // Aggregate counts by member and class type
+    // A class with multiple classTypes contributes to ALL of them
     const counts: Record<string, Record<string, number>> = {};
 
     for (const attendance of attendances) {
       const memberId = attendance.memberId;
-      const classType = attendance.classSession?.classType;
 
-      if (!classType) continue;
+      // Get all class types this session counts for
+      let types: string[] = [];
+      if (attendance.classSession?.classTypes) {
+        try {
+          types = JSON.parse(attendance.classSession.classTypes);
+        } catch {
+          types = [];
+        }
+      }
+      // Fallback to legacy single classType
+      if (types.length === 0 && attendance.classSession?.classType) {
+        types = [attendance.classSession.classType];
+      }
+
+      if (types.length === 0) continue;
 
       if (!counts[memberId]) {
         counts[memberId] = {};
       }
 
-      if (!counts[memberId][classType]) {
-        counts[memberId][classType] = 0;
+      for (const classType of types) {
+        if (!counts[memberId][classType]) {
+          counts[memberId][classType] = 0;
+        }
+        counts[memberId][classType]++;
       }
-
-      counts[memberId][classType]++;
     }
 
     return NextResponse.json({ counts });

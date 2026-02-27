@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#c41111" rx="0"/>
+  <!-- Tornado / vortex swirl (centered for maskable safe zone) -->
+  <g fill="none" stroke="white" stroke-linecap="round">
+    <path d="M 116 150 C 160 104, 352 104, 396 150" stroke-width="18"/>
+    <path d="M 132 204 C 168 162, 344 162, 380 204" stroke-width="16"/>
+    <path d="M 154 250 C 186 214, 326 214, 358 250" stroke-width="15"/>
+    <path d="M 182 290 C 204 260, 308 260, 330 290" stroke-width="14"/>
+    <path d="M 208 324 C 226 300, 286 300, 304 324" stroke-width="12"/>
+    <path d="M 230 352 C 240 336, 272 336, 282 352" stroke-width="10"/>
+    <path d="M 250 358 L 256 390" stroke-width="9"/>
+  </g>
+  <text x="256" y="446" text-anchor="middle" fill="white" font-family="Arial,sans-serif" font-size="44" font-weight="bold" letter-spacing="5">DS</text>
+</svg>

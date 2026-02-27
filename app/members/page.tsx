@@ -142,6 +142,32 @@ export default function MembersPage() {
   const [availableStatuses, setAvailableStatuses] = useState<string[]>([]);
   const [activeStatusFilters, setActiveStatusFilters] = useState<string[]>([]);
 
+  // CSV Import state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<any[]>([]);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [importStep, setImportStep] = useState<"upload" | "paste" | "map" | "preview" | "importing" | "done">("upload");
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<{ imported: number } | null>(null);
+  const [pasteText, setPasteText] = useState<string>("");
+
+  // Spreadsheet columns for manual entry
+  const SPREADSHEET_COLUMNS = [
+    { key: "firstName", label: "First Name *", width: "w-28" },
+    { key: "lastName", label: "Last Name *", width: "w-28" },
+    { key: "email", label: "Email", width: "w-40" },
+    { key: "phone", label: "Phone", width: "w-28" },
+    { key: "status", label: "Status", width: "w-24" },
+    { key: "dateOfBirth", label: "DOB", width: "w-28" },
+    { key: "style", label: "Style", width: "w-28" },
+    { key: "rank", label: "Rank", width: "w-28" },
+    { key: "lastPromotionDate", label: "Promotion Date", width: "w-28" },
+  ];
+  const EMPTY_ROW = SPREADSHEET_COLUMNS.reduce((acc, col) => ({ ...acc, [col.key]: "" }), {});
+  const [spreadsheetRows, setSpreadsheetRows] = useState<Record<string, string>[]>([{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]);
+
   // --------------------------------------------------
   // Load members
   // --------------------------------------------------
@@ -209,7 +235,21 @@ export default function MembersPage() {
         });
 
         setAvailableStatuses(statuses);
-        setActiveStatusFilters(statuses); // start with all statuses visible
+
+        // Load saved status filters from localStorage, or default to all statuses
+        const savedFilters = localStorage.getItem("membersStatusFilters");
+        if (savedFilters) {
+          try {
+            const parsed = JSON.parse(savedFilters);
+            // Only use saved filters that are still valid (exist in available statuses)
+            const validFilters = parsed.filter((f: string) => statuses.includes(f));
+            setActiveStatusFilters(validFilters.length > 0 ? validFilters : statuses);
+          } catch {
+            setActiveStatusFilters(statuses);
+          }
+        } else {
+          setActiveStatusFilters(statuses); // start with all statuses visible
+        }
       } catch (err: any) {
         console.error(err);
         setError(err.message || "Failed to load members");
@@ -428,13 +468,17 @@ export default function MembersPage() {
   function toggleStatusFilter(status: string) {
     setActiveStatusFilters((current) => {
       const isActive = current.includes(status);
+      let newFilters: string[];
       if (isActive) {
         // turning OFF this status
-        return current.filter((s) => s !== status);
+        newFilters = current.filter((s) => s !== status);
       } else {
         // turning ON this status
-        return [...current, status];
+        newFilters = [...current, status];
       }
+      // Save to localStorage
+      localStorage.setItem("membersStatusFilters", JSON.stringify(newFilters));
+      return newFilters;
     });
   }
 
@@ -452,6 +496,349 @@ export default function MembersPage() {
       (today.getMonth() === d.getMonth() && today.getDate() >= d.getDate());
     if (!hasHadBirthdayThisYear) age--;
     return age >= 0 ? age : null;
+  }
+
+  // --------------------------------------------------
+  // CSV Import functions
+  // --------------------------------------------------
+  const CSV_FIELD_OPTIONS = [
+    { value: "", label: "-- Skip this column --" },
+    { value: "firstName", label: "First Name *" },
+    { value: "lastName", label: "Last Name *" },
+    { value: "email", label: "Email" },
+    { value: "phone", label: "Phone" },
+    { value: "status", label: "Status" },
+    { value: "dateOfBirth", label: "Date of Birth" },
+    { value: "address", label: "Address" },
+    { value: "city", label: "City" },
+    { value: "state", label: "State" },
+    { value: "zipCode", label: "Zip Code" },
+    { value: "emergencyContactName", label: "Emergency Contact Name" },
+    { value: "emergencyContactPhone", label: "Emergency Contact Phone" },
+    { value: "parentGuardianName", label: "Parent/Guardian Name" },
+    { value: "notes", label: "Notes" },
+    { value: "medicalNotes", label: "Medical Notes" },
+    { value: "style", label: "Style (must exist in system)" },
+    { value: "rank", label: "Rank (must exist in style)" },
+    { value: "lastPromotionDate", label: "Last Promotion Date" },
+  ];
+
+  function parseCSV(text: string): { headers: string[]; rows: string[][] } {
+    const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (lines.length === 0) return { headers: [], rows: [] };
+
+    // Detect delimiter: if first line has tabs, use tab; otherwise use comma
+    const firstLine = lines[0];
+    const delimiter = firstLine.includes('\t') ? '\t' : ',';
+
+    // CSV/TSV parsing (handles quoted fields)
+    function parseLine(line: string): string[] {
+      const result: string[] = [];
+      let current = "";
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === delimiter && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    }
+
+    const headers = parseLine(lines[0]);
+    const rows = lines.slice(1).map(line => parseLine(line));
+
+    return { headers, rows };
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCsvFile(file);
+    setImportError(null);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const { headers, rows } = parseCSV(text);
+
+      if (headers.length === 0) {
+        setImportError("No data found in CSV file");
+        return;
+      }
+
+      setCsvHeaders(headers);
+      setCsvPreview(rows);
+
+      // Auto-map columns based on header names
+      const autoMapping: Record<string, string> = {};
+      headers.forEach((header) => {
+        const h = header.toLowerCase().replace(/[^a-z]/g, "");
+        if (h.includes("first") && h.includes("name")) autoMapping[header] = "firstName";
+        else if (h.includes("last") && h.includes("name")) autoMapping[header] = "lastName";
+        else if (h === "firstname" || h === "first") autoMapping[header] = "firstName";
+        else if (h === "lastname" || h === "last") autoMapping[header] = "lastName";
+        else if (h === "name" && !autoMapping["firstName"]) autoMapping[header] = "firstName";
+        else if (h.includes("email")) autoMapping[header] = "email";
+        else if (h.includes("phone") && !h.includes("emergency")) autoMapping[header] = "phone";
+        else if (h === "status") autoMapping[header] = "status";
+        else if (h.includes("dob") || h.includes("birth") || h.includes("birthday")) autoMapping[header] = "dateOfBirth";
+        else if (h.includes("address") && !h.includes("city") && !h.includes("state") && !h.includes("zip")) autoMapping[header] = "address";
+        else if (h === "city") autoMapping[header] = "city";
+        else if (h === "state") autoMapping[header] = "state";
+        else if (h.includes("zip") || h.includes("postal")) autoMapping[header] = "zipCode";
+        else if (h.includes("emergency") && h.includes("name")) autoMapping[header] = "emergencyContactName";
+        else if (h.includes("emergency") && h.includes("phone")) autoMapping[header] = "emergencyContactPhone";
+        else if (h.includes("parent") || h.includes("guardian")) autoMapping[header] = "parentGuardianName";
+        else if (h.includes("note") && !h.includes("medical")) autoMapping[header] = "notes";
+        else if (h.includes("medical")) autoMapping[header] = "medicalNotes";
+        else if (h === "style" || h.includes("martial") && h.includes("art")) autoMapping[header] = "style";
+        else if (h === "rank" || h === "belt" || h.includes("belt") && !h.includes("size")) autoMapping[header] = "rank";
+        else if (h.includes("promotion") || (h.includes("last") && h.includes("date"))) autoMapping[header] = "lastPromotionDate";
+      });
+
+      setColumnMapping(autoMapping);
+      setImportStep("map");
+    };
+    reader.readAsText(file);
+  }
+
+  function handlePasteSubmit() {
+    if (!pasteText.trim()) {
+      setImportError("Please paste some data");
+      return;
+    }
+
+    setImportError(null);
+    const { headers, rows } = parseCSV(pasteText);
+
+    if (headers.length === 0) {
+      setImportError("No data found. Make sure to include headers in the first row.");
+      return;
+    }
+
+    if (rows.length === 0) {
+      setImportError("No data rows found. Make sure your data has at least one row after the header.");
+      return;
+    }
+
+    setCsvHeaders(headers);
+    setCsvPreview(rows);
+
+    // Auto-map columns based on header names
+    const autoMapping: Record<string, string> = {};
+    headers.forEach((header) => {
+      const h = header.toLowerCase().replace(/[^a-z]/g, "");
+      if (h.includes("first") && h.includes("name")) autoMapping[header] = "firstName";
+      else if (h.includes("last") && h.includes("name")) autoMapping[header] = "lastName";
+      else if (h === "firstname" || h === "first") autoMapping[header] = "firstName";
+      else if (h === "lastname" || h === "last") autoMapping[header] = "lastName";
+      else if (h === "name" && !autoMapping["firstName"]) autoMapping[header] = "firstName";
+      else if (h.includes("email")) autoMapping[header] = "email";
+      else if (h.includes("phone") && !h.includes("emergency")) autoMapping[header] = "phone";
+      else if (h === "status") autoMapping[header] = "status";
+      else if (h.includes("dob") || h.includes("birth") || h.includes("birthday")) autoMapping[header] = "dateOfBirth";
+      else if (h.includes("address") && !h.includes("city") && !h.includes("state") && !h.includes("zip")) autoMapping[header] = "address";
+      else if (h === "city") autoMapping[header] = "city";
+      else if (h === "state") autoMapping[header] = "state";
+      else if (h.includes("zip") || h.includes("postal")) autoMapping[header] = "zipCode";
+      else if (h.includes("emergency") && h.includes("name")) autoMapping[header] = "emergencyContactName";
+      else if (h.includes("emergency") && h.includes("phone")) autoMapping[header] = "emergencyContactPhone";
+      else if (h.includes("parent") || h.includes("guardian")) autoMapping[header] = "parentGuardianName";
+      else if (h.includes("note") && !h.includes("medical")) autoMapping[header] = "notes";
+      else if (h.includes("medical")) autoMapping[header] = "medicalNotes";
+      else if (h === "style" || h.includes("martial") && h.includes("art")) autoMapping[header] = "style";
+      else if (h === "rank" || h === "belt" || h.includes("belt") && !h.includes("size")) autoMapping[header] = "rank";
+      else if (h.includes("promotion") || (h.includes("last") && h.includes("date"))) autoMapping[header] = "lastPromotionDate";
+    });
+
+    setColumnMapping(autoMapping);
+    setImportStep("map");
+  }
+
+  function getMappedData(): any[] {
+    return csvPreview.map((row) => {
+      const member: any = {};
+      csvHeaders.forEach((header, idx) => {
+        const field = columnMapping[header];
+        if (field && row[idx]) {
+          member[field] = row[idx];
+        }
+      });
+      return member;
+    }).filter(m => m.firstName && m.lastName); // Only include rows with required fields
+  }
+
+  async function handleImport() {
+    setImportStep("importing");
+    setImportError(null);
+
+    const members = getMappedData();
+
+    if (members.length === 0) {
+      setImportError("No valid members to import. Ensure First Name and Last Name are mapped.");
+      setImportStep("preview");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/members/bulk-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ members }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setImportError(data.error || "Failed to import members");
+        setImportStep("preview");
+        return;
+      }
+
+      setImportResult({ imported: data.imported });
+      setImportStep("done");
+
+      // Refresh member list
+      const membersRes = await fetch("/api/members");
+      const membersData = await membersRes.json();
+      const rows: MemberRow[] = (membersData.members || []).map((m: any) => ({
+        id: m.id,
+        firstName: m.firstName,
+        lastName: m.lastName,
+        email: m.email ?? null,
+        phone: m.phone ?? null,
+        status: m.status ?? "PROSPECT",
+        createdAt: m.createdAt,
+        memberNumber: m.memberNumber ?? null,
+        city: m.city ?? null,
+        state: m.state ?? null,
+        dateOfBirth: m.dateOfBirth ?? null,
+        membershipType: m.membershipType ?? null,
+        primaryStyle: m.primaryStyle ?? null,
+        waiverSigned: m.waiverSigned ?? null,
+      }));
+      setMembers(rows);
+
+    } catch (err) {
+      setImportError("Network error. Please try again.");
+      setImportStep("preview");
+    }
+  }
+
+  function resetImport() {
+    setCsvFile(null);
+    setCsvPreview([]);
+    setCsvHeaders([]);
+    setColumnMapping({});
+    setImportStep("upload");
+    setImportError(null);
+    setImportResult(null);
+    setPasteText("");
+    setSpreadsheetRows([{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]);
+  }
+
+  function updateSpreadsheetCell(rowIndex: number, key: string, value: string) {
+    setSpreadsheetRows(prev => {
+      const updated = [...prev];
+      updated[rowIndex] = { ...updated[rowIndex], [key]: value };
+      return updated;
+    });
+  }
+
+  // Handle paste from spreadsheet (Excel, Google Sheets, etc.)
+  function handleSpreadsheetPaste(e: React.ClipboardEvent<HTMLInputElement>, rowIndex: number, colIndex: number) {
+    const pastedText = e.clipboardData.getData("text");
+
+    // Check if this looks like multi-cell data (contains tabs or newlines)
+    if (!pastedText.includes("\t") && !pastedText.includes("\n")) {
+      // Single cell paste - let default behavior handle it
+      return;
+    }
+
+    e.preventDefault();
+
+    // Parse the pasted data - rows are separated by newlines, columns by tabs
+    const pastedRows = pastedText.split(/\r?\n/).filter(row => row.trim() !== "");
+    const columnKeys = SPREADSHEET_COLUMNS.map(col => col.key);
+
+    setSpreadsheetRows(prev => {
+      const updated = [...prev];
+
+      pastedRows.forEach((pastedRow, pastedRowIdx) => {
+        const targetRowIndex = rowIndex + pastedRowIdx;
+        const cells = pastedRow.split("\t");
+
+        // Add new rows if needed
+        while (updated.length <= targetRowIndex) {
+          updated.push({ ...EMPTY_ROW });
+        }
+
+        // Fill in the cells starting from the current column
+        cells.forEach((cellValue, cellIdx) => {
+          const targetColIndex = colIndex + cellIdx;
+          if (targetColIndex < columnKeys.length) {
+            const key = columnKeys[targetColIndex];
+            updated[targetRowIndex] = { ...updated[targetRowIndex], [key]: cellValue.trim() };
+          }
+        });
+      });
+
+      return updated;
+    });
+  }
+
+  function addSpreadsheetRow() {
+    setSpreadsheetRows(prev => [...prev, { ...EMPTY_ROW }]);
+  }
+
+  function removeSpreadsheetRow(rowIndex: number) {
+    if (spreadsheetRows.length <= 1) return;
+    setSpreadsheetRows(prev => prev.filter((_, i) => i !== rowIndex));
+  }
+
+  function handleSpreadsheetSubmit() {
+    // Filter rows that have at least first name and last name
+    const validRows = spreadsheetRows.filter(row => row.firstName?.trim() && row.lastName?.trim());
+
+    if (validRows.length === 0) {
+      setImportError("Please enter at least one member with First Name and Last Name.");
+      return;
+    }
+
+    setImportError(null);
+
+    // Convert spreadsheet rows to format expected by the rest of the flow
+    const headers = SPREADSHEET_COLUMNS.map(col => col.key);
+    const rows = validRows.map(row => headers.map(h => row[h] || ""));
+
+    setCsvHeaders(headers);
+    setCsvPreview(rows);
+
+    // Auto-map columns (they're already in the right format)
+    const autoMapping: Record<string, string> = {};
+    headers.forEach(h => { autoMapping[h] = h; });
+
+    setColumnMapping(autoMapping);
+    setImportStep("preview");
+  }
+
+  function closeImportModal() {
+    setShowImportModal(false);
+    resetImport();
   }
 
   // --------------------------------------------------
@@ -599,6 +986,8 @@ export default function MembersPage() {
       return { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-300" };
     } else if (normalized === "BANNED") {
       return { bg: "bg-gray-200", text: "text-gray-900", border: "border-gray-400" };
+    } else if (normalized === "CANCELED") {
+      return { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-300" };
     }
 
     return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-300" };
@@ -745,21 +1134,37 @@ export default function MembersPage() {
   // --------------------------------------------------
   return (
     <AppLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="space-y-4">
+        {/* Header row with action buttons */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold">Members</h1>
             <p className="text-sm text-gray-600">
               Full member list with sortable, customizable columns.
             </p>
           </div>
-          <Link
-            href="/members/new"
-            className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
-          >
-            Add Member
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => window.open("/api/export/members", "_blank")}
+              className="text-xs rounded-md border border-gray-300 bg-white px-3 py-1 font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowImportModal(true)}
+              className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
+            >
+              Import CSV
+            </button>
+            <Link
+              href="/members/new"
+              className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
+            >
+              Add Member
+            </Link>
+          </div>
         </div>
 
         {/* Search + column config */}
@@ -776,7 +1181,7 @@ export default function MembersPage() {
               <button
                 type="button"
                 onClick={() => setShowColumnConfig(true)}
-                className="flex items-center gap-1 rounded-md border border-primary bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primaryDark"
+                className="flex items-center gap-1 rounded-md border border-primary bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
               >
                 Customize Columns
               </button>
@@ -1030,6 +1435,314 @@ export default function MembersPage() {
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-lg bg-white shadow-lg flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Import Members from CSV</h2>
+              <button
+                type="button"
+                onClick={closeImportModal}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {importError && (
+                <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                  {importError}
+                </div>
+              )}
+
+              {/* Step 1: Upload */}
+              {importStep === "upload" && (
+                <div className="text-center py-8">
+                  <div className="mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Import your member data</h3>
+                  <p className="text-sm text-gray-900 mb-4">
+                    The first row should contain column headers (e.g., First Name, Last Name, Email).
+                  </p>
+                  <div className="flex items-center justify-center gap-4">
+                    <label className="inline-flex items-center gap-2 cursor-pointer rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      Choose CSV File
+                      <input
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                      />
+                    </label>
+                    <span className="text-sm text-gray-500 font-medium">or</span>
+                    <button
+                      type="button"
+                      onClick={() => setImportStep("paste")}
+                      className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      Enter Manually
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-900 mt-4">
+                    Supported fields: First Name, Last Name, Email, Phone, Status, Date of Birth, Address, City, State, Zip Code, Emergency Contact, Parent/Guardian, Notes, Style, Rank, Last Promotion Date
+                  </p>
+                </div>
+              )}
+
+              {/* Step 1b: Enter data in spreadsheet */}
+              {importStep === "paste" && (
+                <div className="py-4">
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Enter your member data</h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Fill in the spreadsheet below. First Name and Last Name are required.
+                  </p>
+
+                  {/* Spreadsheet table */}
+                  <div className="overflow-x-auto border border-gray-200 rounded-md max-h-64 overflow-y-auto">
+                    <table className="text-xs">
+                      <thead className="bg-gray-100 sticky top-0">
+                        <tr>
+                          <th className="px-1 py-2 text-center text-gray-500 font-medium w-8">#</th>
+                          {SPREADSHEET_COLUMNS.map(col => (
+                            <th key={col.key} className={`px-1 py-2 text-left text-gray-700 font-medium ${col.width}`}>
+                              {col.label}
+                            </th>
+                          ))}
+                          <th className="px-1 py-2 w-8"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {spreadsheetRows.map((row, rowIndex) => (
+                          <tr key={rowIndex} className="border-t border-gray-100 hover:bg-gray-50">
+                            <td className="px-1 py-1 text-center text-gray-400">{rowIndex + 1}</td>
+                            {SPREADSHEET_COLUMNS.map((col, colIndex) => (
+                              <td key={col.key} className="px-0.5 py-0.5">
+                                <input
+                                  type="text"
+                                  value={row[col.key] || ""}
+                                  onChange={(e) => updateSpreadsheetCell(rowIndex, col.key, e.target.value)}
+                                  onPaste={(e) => handleSpreadsheetPaste(e, rowIndex, colIndex)}
+                                  className={`${col.width} px-1.5 py-1 text-xs border border-gray-200 rounded focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none`}
+                                  placeholder={col.key === "status" ? "ACTIVE" : col.key === "dateOfBirth" || col.key === "lastPromotionDate" ? "MM/DD/YYYY" : ""}
+                                />
+                              </td>
+                            ))}
+                            <td className="px-1 py-1">
+                              <button
+                                type="button"
+                                onClick={() => removeSpreadsheetRow(rowIndex)}
+                                className="text-gray-400 hover:text-primary"
+                                title="Remove row"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Add row button */}
+                  <button
+                    type="button"
+                    onClick={addSpreadsheetRow}
+                    className="mt-2 text-xs text-primary hover:text-primaryDark font-medium flex items-center gap-1"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add Row
+                  </button>
+
+                  <div className="flex items-center justify-between mt-4">
+                    <button
+                      type="button"
+                      onClick={() => { setImportStep("upload"); setSpreadsheetRows([{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]); }}
+                      className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSpreadsheetSubmit}
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                    >
+                      Continue
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Map columns */}
+              {importStep === "map" && (
+                <div>
+                  <div className="mb-4">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1">Map CSV Columns to Member Fields</h3>
+                    <p className="text-xs text-gray-500">
+                      We&apos;ve automatically matched some columns. Review and adjust the mappings below.
+                      <span className="text-red-600 font-medium"> First Name and Last Name are required.</span>
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                    {csvHeaders.map((header) => (
+                      <div key={header} className="flex items-center gap-2">
+                        <div className="w-1/2">
+                          <div className="text-xs font-medium text-gray-700 truncate" title={header}>
+                            {header}
+                          </div>
+                          <div className="text-[10px] text-gray-400 truncate">
+                            e.g. {csvPreview[0]?.[csvHeaders.indexOf(header)] || "—"}
+                          </div>
+                        </div>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        </svg>
+                        <select
+                          value={columnMapping[header] || ""}
+                          onChange={(e) => setColumnMapping({ ...columnMapping, [header]: e.target.value })}
+                          className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                        >
+                          {CSV_FIELD_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={resetImport}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      &larr; Choose different file
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImportStep("preview")}
+                      disabled={!columnMapping[Object.keys(columnMapping).find(k => columnMapping[k] === "firstName") || ""] || !columnMapping[Object.keys(columnMapping).find(k => columnMapping[k] === "lastName") || ""]}
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Preview Import &rarr;
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Preview */}
+              {importStep === "preview" && (
+                <div>
+                  <div className="mb-4">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1">Preview Import</h3>
+                    <p className="text-xs text-gray-500">
+                      Review the data below. {getMappedData().length} members will be imported.
+                    </p>
+                  </div>
+
+                  <div className="border border-gray-200 rounded-lg overflow-hidden mb-4">
+                    <div className="max-h-64 overflow-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">First Name</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Last Name</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Email</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Phone</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {getMappedData().slice(0, 50).map((member, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50">
+                              <td className="px-3 py-2">{member.firstName || "—"}</td>
+                              <td className="px-3 py-2">{member.lastName || "—"}</td>
+                              <td className="px-3 py-2">{member.email || "—"}</td>
+                              <td className="px-3 py-2">{member.phone || "—"}</td>
+                              <td className="px-3 py-2">{member.status || "PROSPECT"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {getMappedData().length > 50 && (
+                      <div className="px-3 py-2 bg-gray-50 text-xs text-gray-500 border-t">
+                        Showing first 50 of {getMappedData().length} members...
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setImportStep("map")}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      &larr; Back to mapping
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleImport}
+                      className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
+                    >
+                      Import {getMappedData().length} Members
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 4: Importing */}
+              {importStep === "importing" && (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                  <h3 className="text-lg font-medium text-gray-900">Importing members...</h3>
+                  <p className="text-sm text-gray-500">Please wait while we add your members.</p>
+                </div>
+              )}
+
+              {/* Step 5: Done */}
+              {importStep === "done" && importResult && (
+                <div className="text-center py-8">
+                  <div className="mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Import Complete!</h3>
+                  <p className="text-sm text-gray-500 mb-6">
+                    Successfully imported <span className="font-semibold text-green-600">{importResult.imported}</span> members.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={closeImportModal}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
