@@ -33,11 +33,11 @@ export default function LoginPage() {
 
       // Force password change on first login
       if (data.mustChangePassword) {
-        router.push("/change-password");
+        window.location.href = "/change-password";
         return;
       }
 
-      router.push("/dashboard");
+      window.location.href = "/dashboard";
     } catch {
       setError("Network error. Please try again.");
     } finally {
