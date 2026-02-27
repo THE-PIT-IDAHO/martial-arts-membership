@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 type RouteParams = {
   params: Promise<{
@@ -124,6 +125,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
   const { id } = await params;
 
   try {
+    await getClientId(_req); // validate tenant
     const style = await prisma.style.findUnique({
       where: { id },
       include: {
@@ -148,6 +150,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   const { id } = await params;
 
   try {
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { name, shortName, description, beltSystemEnabled, beltConfig, gradingDates, testNamingConvention } = body;
 
@@ -271,6 +274,7 @@ export async function DELETE(_req: Request, { params }: RouteParams) {
   const { id } = await params;
 
   try {
+    await getClientId(_req); // validate tenant
     // First, get the style name before deleting
     const style = await prisma.style.findUnique({
       where: { id },

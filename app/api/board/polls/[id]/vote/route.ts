@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/board/polls/[id]/vote
 export async function POST(
@@ -8,6 +9,7 @@ export async function POST(
 ) {
   try {
     const { id: pollId } = await params;
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { optionId, optionIds, odentifier, voterId, voterName } = body;
 
@@ -116,6 +118,7 @@ export async function DELETE(
 ) {
   try {
     const { id: pollId } = await params;
+    await getClientId(req); // validate tenant
     const { searchParams } = new URL(req.url);
     const identifier = searchParams.get("voterId") || searchParams.get("odentifier");
 

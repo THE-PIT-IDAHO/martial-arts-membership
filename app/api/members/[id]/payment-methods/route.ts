@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getStripeClient } from "@/lib/stripe";
+import { getClientId } from "@/lib/tenant";
 
 type Params = { params: Promise<{ id: string }> };
 
 // GET /api/members/[id]/payment-methods — list saved cards for a member
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id: memberId } = await params;
+  const clientId = await getClientId(_req);
 
   const member = await prisma.member.findUnique({
     where: { id: memberId },
-    select: { stripeCustomerId: true, defaultPaymentMethodId: true },
+    select: { clientId: true, stripeCustomerId: true, defaultPaymentMethodId: true },
   });
+
+  if (!member || member.clientId !== clientId) {
+    return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  }
 
   if (!member?.stripeCustomerId) {
     return NextResponse.json({ paymentMethods: [], defaultId: null });
@@ -49,11 +55,13 @@ export async function GET(_req: NextRequest, { params }: Params) {
 // POST /api/members/[id]/payment-methods — create Stripe Setup session to add a card
 export async function POST(_req: NextRequest, { params }: Params) {
   const { id: memberId } = await params;
+  const clientId = await getClientId(_req);
 
   const member = await prisma.member.findUnique({
     where: { id: memberId },
     select: {
       id: true,
+      clientId: true,
       firstName: true,
       lastName: true,
       email: true,
@@ -61,7 +69,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
     },
   });
 
-  if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  if (!member || member.clientId !== clientId) {
+    return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  }
 
   const stripeClient = await getStripeClient();
   if (!stripeClient) {

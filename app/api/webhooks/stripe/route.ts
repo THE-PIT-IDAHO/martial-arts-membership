@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing signature" }, { status: 400 });
   }
 
-  const whSecretSetting = await prisma.settings.findUnique({
+  const whSecretSetting = await prisma.settings.findFirst({
     where: { key: "payment_stripe_webhook_secret" },
   });
   const webhookSecret = whSecretSetting?.value || process.env.STRIPE_WEBHOOK_SECRET;

@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const DEFAULT_CLIENT_ID = "default-client";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/membership-types
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const membershipTypes = await prisma.membershipType.findMany({
-      where: { clientId: DEFAULT_CLIENT_ID },
+      where: { clientId },
       include: {
         _count: {
           select: { membershipPlans: true },
@@ -26,6 +26,7 @@ export async function GET() {
 // POST /api/membership-types
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, description, color, sortOrder, isActive } = body;
 
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
         color: color || null,
         sortOrder: sortOrder ? Number(sortOrder) : 0,
         isActive: isActive ?? true,
-        clientId: DEFAULT_CLIENT_ID,
+        clientId,
       },
     });
 

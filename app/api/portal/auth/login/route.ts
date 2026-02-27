@@ -8,6 +8,7 @@ import {
 } from "@/lib/portal-auth";
 import { sendMagicLinkEmail } from "@/lib/notifications";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { getClientId } from "@/lib/tenant";
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,8 +26,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    // Resolve tenant from subdomain to scope member lookup
+    let clientId: string | undefined;
+    try {
+      clientId = await getClientId(req);
+    } catch {
+      // Fall back to unscoped lookup
+    }
+
     const member = await prisma.member.findFirst({
-      where: { email: email.toLowerCase().trim(), status: { not: "INACTIVE" } },
+      where: {
+        email: email.toLowerCase().trim(),
+        status: { not: "INACTIVE" },
+        ...(clientId ? { clientId } : {}),
+      },
       select: {
         id: true,
         firstName: true,

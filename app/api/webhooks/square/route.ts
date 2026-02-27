@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   const body = await req.text();
 
   // Verify webhook signature
-  const sigKeySetting = await prisma.settings.findUnique({
+  const sigKeySetting = await prisma.settings.findFirst({
     where: { key: "payment_square_webhook_signature_key" },
   });
   const signatureKey = sigKeySetting?.value;

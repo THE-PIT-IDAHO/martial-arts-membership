@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import {
   getActiveProcessor,
   createCheckoutSession,
@@ -14,6 +15,7 @@ import { getStripeClient } from "@/lib/stripe";
  * Accepts the same body as the old /api/pos/stripe-checkout route.
  */
 export async function POST(req: Request) {
+  await getClientId(req); // validate tenant
   const body = await req.json();
   const {
     memberId,
@@ -206,7 +208,7 @@ async function handleStripeFullCheckout(params: {
   }
 
   // Tax rate
-  const taxSetting = await prisma.settings.findUnique({ where: { key: "taxRate" } });
+  const taxSetting = await prisma.settings.findFirst({ where: { key: "taxRate" } });
   const taxRatePercent = taxSetting ? Number(taxSetting.value) : 0;
 
   let finalLineItems = stripeLineItems.map((li) => ({ ...li }));

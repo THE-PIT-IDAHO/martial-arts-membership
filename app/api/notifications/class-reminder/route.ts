@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { sendClassReminderEmail } from "@/lib/notifications";
 import { formatInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
@@ -8,6 +9,7 @@ import { getSetting } from "@/lib/email";
 // Sends reminder emails for classes happening within the next N hours.
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json().catch(() => ({}));
     const hoursAhead = body.hoursAhead || 24;
 
@@ -18,6 +20,7 @@ export async function POST(req: Request) {
     const upcomingClasses = await prisma.classSession.findMany({
       where: {
         startsAt: { gte: now, lte: cutoff },
+        clientId,
       },
       select: {
         id: true,
@@ -37,6 +40,7 @@ export async function POST(req: Request) {
         status: "ACTIVE",
         emailOptIn: true,
         email: { not: null },
+        clientId,
       },
       select: { id: true, firstName: true, lastName: true },
     });

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { cookies } from "next/headers";
-
-const DEFAULT_CLIENT_ID = "default-client";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/portal/appointments/slots?date=YYYY-MM-DD&appointmentId=xxx&duration=60
 // Returns available coach time slots for a given date (portal/member-facing)
@@ -35,9 +34,11 @@ export async function GET(req: Request) {
     const targetDate = new Date(dateStr + "T00:00:00");
     const targetDayOfWeek = targetDate.getDay();
 
+    const clientId = await getClientId(req);
+
     // 1. Get all coach availability blocks
     const allAvailability = await prisma.coachAvailability.findMany({
-      where: { clientId: DEFAULT_CLIENT_ID },
+      where: { clientId },
     });
 
     // 2. Filter to those that apply on the target date
@@ -92,7 +93,7 @@ export async function GET(req: Request) {
       where: {
         scheduledDate: { gte: dayStart, lte: dayEnd },
         status: { notIn: ["CANCELLED"] },
-        clientId: DEFAULT_CLIENT_ID,
+        clientId,
       },
       select: {
         startTime: true,

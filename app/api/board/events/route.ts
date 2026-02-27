@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { formatInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
 
@@ -13,8 +14,9 @@ function formatTime12h(time: string): string {
 }
 
 // GET /api/board/events — fetch all upcoming system events + which are posted
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const today = new Date(new Date().setHours(0, 0, 0, 0));
 
     // Fetch upcoming testing events and promotion events in parallel
@@ -83,6 +85,7 @@ export async function GET() {
 // POST /api/board/events — post an existing event to the board
 export async function POST(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { sourceType, sourceId, channelId } = body;
 
@@ -158,6 +161,7 @@ export async function POST(req: Request) {
 // DELETE /api/board/events — unpost an event from the board
 export async function DELETE(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const { searchParams } = new URL(req.url);
     const sourceType = searchParams.get("sourceType");
     const sourceId = searchParams.get("sourceId");

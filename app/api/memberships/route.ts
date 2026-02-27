@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/dates";
 import { calculateNextPaymentDate } from "@/lib/billing";
 import { calculateContractEndDate } from "@/lib/contracts";
+import { getClientId } from "@/lib/tenant";
 
 type RankPdf = {
   name: string;
@@ -94,12 +95,15 @@ function addRankPdfsToDocuments(
 // GET /api/memberships
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const memberId = searchParams.get("memberId");
     const planId = searchParams.get("planId");
     const status = searchParams.get("status");
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      member: { clientId },
+    };
     if (memberId) where.memberId = memberId;
     if (planId) where.membershipPlanId = planId;
     if (status) where.status = status;
@@ -132,6 +136,7 @@ export async function GET(req: Request) {
 // POST /api/memberships - Assign a membership plan to a member
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { memberId, membershipPlanId, startDate, endDate, status } = body;
 
@@ -143,6 +148,22 @@ export async function POST(req: Request) {
     }
     if (!startDate) {
       return new NextResponse("Start date is required", { status: 400 });
+    }
+
+    // Verify the member and plan belong to this tenant
+    const memberCheck = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { clientId: true },
+    });
+    if (!memberCheck || memberCheck.clientId !== clientId) {
+      return new NextResponse("Member not found", { status: 404 });
+    }
+    const planCheck = await prisma.membershipPlan.findUnique({
+      where: { id: membershipPlanId },
+      select: { clientId: true },
+    });
+    if (!planCheck || planCheck.clientId !== clientId) {
+      return new NextResponse("Membership plan not found", { status: 404 });
     }
 
     // Check if member already has an active membership for this plan

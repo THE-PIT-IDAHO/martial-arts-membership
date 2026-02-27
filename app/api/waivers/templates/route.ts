@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const clientId = await getClientId(req);
   const templates = await prisma.waiverTemplate.findMany({
+    where: { clientId },
     orderBy: { createdAt: "desc" },
     include: { _count: { select: { signedWaivers: true } } },
   });
@@ -12,6 +15,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const clientId = await getClientId(request);
     const { name, content, isDefault } = await request.json();
     if (!name || !content) {
       return NextResponse.json({ error: "Name and content are required" }, { status: 400 });
@@ -20,13 +24,13 @@ export async function POST(request: Request) {
     // If setting as default, unset other defaults
     if (isDefault) {
       await prisma.waiverTemplate.updateMany({
-        where: { isDefault: true },
+        where: { isDefault: true, clientId },
         data: { isDefault: false },
       });
     }
 
     const template = await prisma.waiverTemplate.create({
-      data: { name, content, isDefault: !!isDefault, clientId: "default-client" },
+      data: { name, content, isDefault: !!isDefault, clientId },
     });
 
     logAudit({

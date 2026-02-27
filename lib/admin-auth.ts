@@ -37,11 +37,12 @@ export async function createAdminSessionToken(
   role: string,
   name: string,
   permissions: string[],
-  rememberMe = false
+  rememberMe = false,
+  clientId?: string
 ): Promise<string> {
   const days = rememberMe ? SESSION_LONG_DAYS : SESSION_SHORT_DAYS;
   const expiresAt = Date.now() + days * 24 * 60 * 60 * 1000;
-  const payload = JSON.stringify({ userId, role, name, permissions, expiresAt });
+  const payload = JSON.stringify({ userId, role, name, permissions, expiresAt, clientId });
   const encoded = btoa(payload)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
@@ -52,7 +53,7 @@ export async function createAdminSessionToken(
 
 export async function validateAdminSessionToken(
   token: string
-): Promise<{ userId: string; role: string; name: string; permissions: string[] } | null> {
+): Promise<{ userId: string; role: string; name: string; permissions: string[]; clientId?: string } | null> {
   const parts = token.split(".");
   if (parts.length !== 2) return null;
   const [encoded, sig] = parts;
@@ -67,6 +68,7 @@ export async function validateAdminSessionToken(
       role: payload.role,
       name: payload.name || "",
       permissions: payload.permissions || [],
+      clientId: payload.clientId,
     };
   } catch {
     return null;
@@ -75,7 +77,7 @@ export async function validateAdminSessionToken(
 
 export async function getAdminSessionFromRequest(
   request: NextRequest
-): Promise<{ userId: string; role: string; name: string; permissions: string[] } | null> {
+): Promise<{ userId: string; role: string; name: string; permissions: string[]; clientId?: string } | null> {
   const cookie = request.cookies.get(ADMIN_COOKIE);
   if (!cookie?.value) return null;
   return validateAdminSessionToken(cookie.value);
@@ -111,15 +113,21 @@ export function clearAdminSessionCookie(response: NextResponse): void {
 
 export async function verifyPassword(
   email: string,
-  password: string
-): Promise<{ userId: string; role: string; name: string; mustChangePassword: boolean } | null> {
+  password: string,
+  clientId?: string
+): Promise<{ userId: string; role: string; name: string; mustChangePassword: boolean; clientId: string } | null> {
   const { prisma } = await import("@/lib/prisma");
   const { compare } = await import("bcryptjs");
-  const user = await prisma.user.findUnique({ where: { email } });
+
+  // If clientId provided, use compound unique; otherwise fall back to first match
+  const user = clientId
+    ? await prisma.user.findUnique({ where: { email_clientId: { email, clientId } } })
+    : await prisma.user.findFirst({ where: { email } });
+
   if (!user) return null;
   const valid = await compare(password, user.passwordHash);
   if (!valid) return null;
-  return { userId: user.id, role: user.role, name: user.name || "", mustChangePassword: user.mustChangePassword };
+  return { userId: user.id, role: user.role, name: user.name || "", mustChangePassword: user.mustChangePassword, clientId: user.clientId };
 }
 
 export async function hashPassword(password: string): Promise<string> {

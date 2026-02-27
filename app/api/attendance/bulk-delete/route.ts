@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // DELETE /api/attendance/bulk-delete
 // Deletes all imported attendance records for a member and class type
 export async function DELETE(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const memberId = searchParams.get("memberId");
     const classType = searchParams.get("classType");
@@ -27,6 +29,7 @@ export async function DELETE(req: Request) {
     const importedClassSessions = await prisma.classSession.findMany({
       where: {
         classType: classType,
+        clientId,
       },
       select: { id: true },
     });

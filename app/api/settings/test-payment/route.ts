@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 async function getSetting(key: string): Promise<string | null> {
-  const row = await prisma.settings.findUnique({ where: { key } });
+  const row = await prisma.settings.findFirst({ where: { key } });
   return row?.value ?? null;
 }
 

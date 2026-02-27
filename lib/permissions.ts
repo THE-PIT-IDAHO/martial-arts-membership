@@ -85,7 +85,7 @@ export async function getRolePermissions(role: string): Promise<string[]> {
   if (role === "OWNER") return [...ALL_PERMISSION_KEYS];
   try {
     const { prisma } = await import("@/lib/prisma");
-    const setting = await prisma.settings.findUnique({
+    const setting = await prisma.settings.findFirst({
       where: { key: "role_permissions" },
     });
     if (setting?.value) {

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 export async function POST(request: Request) {
   try {
+    const clientId = await getClientId(request);
     const body = await request.json();
     const { fromMemberId, toMemberId, relationship } = body;
 
@@ -10,6 +12,18 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
+      );
+    }
+
+    // Verify both members belong to this tenant
+    const members = await prisma.member.findMany({
+      where: { id: { in: [fromMemberId, toMemberId] }, clientId },
+      select: { id: true },
+    });
+    if (members.length !== 2) {
+      return NextResponse.json(
+        { error: "One or both members not found" },
+        { status: 404 }
       );
     }
 
@@ -51,6 +65,7 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
+    const clientId = await getClientId(request);
     const { searchParams } = new URL(request.url);
     const memberId = searchParams.get("memberId");
 
@@ -58,6 +73,18 @@ export async function GET(request: Request) {
       return NextResponse.json(
         { error: "Missing memberId parameter" },
         { status: 400 }
+      );
+    }
+
+    // Verify member belongs to this tenant
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { clientId: true },
+    });
+    if (!member || member.clientId !== clientId) {
+      return NextResponse.json(
+        { error: "Member not found" },
+        { status: 404 }
       );
     }
 

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/classes
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const getTypes = searchParams.get("types");
 
@@ -11,6 +13,7 @@ export async function GET(req: Request) {
     if (getTypes === "true") {
       const classes = await prisma.classSession.findMany({
         where: {
+          clientId,
           OR: [
             { classType: { not: null } },
             { classTypes: { not: null } },
@@ -39,6 +42,7 @@ export async function GET(req: Request) {
 
     // Otherwise, return all classes
     const classes = await prisma.classSession.findMany({
+      where: { clientId },
       include: {
         program: true,
       },
@@ -55,8 +59,9 @@ export async function GET(req: Request) {
 // POST /api/classes
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
-    const { name, startsAt, endsAt, classType, classTypes, styleIds, styleNames, styleId, styleName, minRankId, minRankName, programId, clientId, isRecurring, frequencyNumber, frequencyUnit, scheduleStartDate, scheduleEndDate, isOngoing, color, coachId, coachName, maxCapacity, bookingEnabled, bookingCutoffMins, bookingAdvanceDays, kioskEnabled, locationId, spaceId } = body;
+    const { name, startsAt, endsAt, classType, classTypes, styleIds, styleNames, styleId, styleName, minRankId, minRankName, programId, isRecurring, frequencyNumber, frequencyUnit, scheduleStartDate, scheduleEndDate, isOngoing, color, coachId, coachName, maxCapacity, bookingEnabled, bookingCutoffMins, bookingAdvanceDays, kioskEnabled, locationId, spaceId } = body;
 
     if (!name || typeof name !== "string") {
       return new NextResponse("Name is required", { status: 400 });
@@ -65,9 +70,6 @@ export async function POST(req: Request) {
     if (!startsAt || !endsAt) {
       return new NextResponse("Start and end times are required", { status: 400 });
     }
-
-    // Use the existing client ID (you'll want to get this from session/auth later)
-    const defaultClientId = clientId || "cmii78uxm0000twe60c5dgycd";
 
     const classSession = await prisma.classSession.create({
       data: {
@@ -83,7 +85,7 @@ export async function POST(req: Request) {
         minRankId: minRankId || null,
         minRankName: minRankName || null,
         programId: programId || null,
-        clientId: clientId || defaultClientId,
+        clientId,
         isRecurring: isRecurring || false,
         frequencyNumber: frequencyNumber || null,
         frequencyUnit: frequencyUnit || null,

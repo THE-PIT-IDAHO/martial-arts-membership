@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const DEFAULT_CLIENT_ID = "default-client";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/coach-availability/slots?date=YYYY-MM-DD&appointmentId=xxx&duration=60
 // Returns available time slots for a given date based on coach availability
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const dateStr = searchParams.get("date");
     const appointmentId = searchParams.get("appointmentId");
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
     // 1. Get all coach availability blocks
     const allAvailability = await prisma.coachAvailability.findMany({
-      where: { clientId: DEFAULT_CLIENT_ID },
+      where: { clientId },
     });
 
     // 2. Filter to those that apply on the target date
@@ -84,7 +84,7 @@ export async function GET(req: Request) {
       where: {
         scheduledDate: { gte: dayStart, lte: dayEnd },
         status: { notIn: ["CANCELLED"] },
-        clientId: DEFAULT_CLIENT_ID,
+        clientId,
       },
       select: {
         startTime: true,

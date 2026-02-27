@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/membership-plans/[id]
 export async function GET(
@@ -7,6 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
 
     const membershipPlan = await prisma.membershipPlan.findUnique({
@@ -30,7 +32,7 @@ export async function GET(
       },
     });
 
-    if (!membershipPlan) {
+    if (!membershipPlan || membershipPlan.clientId !== clientId) {
       return new NextResponse("Membership plan not found", { status: 404 });
     }
 
@@ -47,7 +49,18 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    // Verify the plan belongs to this tenant
+    const existingPlan = await prisma.membershipPlan.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existingPlan || existingPlan.clientId !== clientId) {
+      return new NextResponse("Membership plan not found", { status: 404 });
+    }
+
     const body = await req.json();
     const {
       membershipId,
@@ -219,7 +232,17 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    // Verify the plan belongs to this tenant
+    const existingPlan = await prisma.membershipPlan.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existingPlan || existingPlan.clientId !== clientId) {
+      return new NextResponse("Membership plan not found", { status: 404 });
+    }
 
     // Check if there are any active memberships using this plan
     const activeMemberships = await prisma.membership.count({

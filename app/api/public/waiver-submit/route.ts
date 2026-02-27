@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { sendWaiverWelcomeEmail } from "@/lib/notifications";
-
-const DEFAULT_CLIENT_ID = "default-client";
 
 async function getNextMemberNumber(): Promise<number> {
   const lastMember = await prisma.member.findFirst({
@@ -35,13 +34,14 @@ async function savePdfToMember(memberId: string, pdfBase64: string) {
 // Handles both adult and guardian waiver submissions
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { type = "adult" } = body;
 
     if (type === "guardian") {
-      return handleGuardianSubmit(body);
+      return handleGuardianSubmit(body, clientId);
     }
-    return handleAdultSubmit(body);
+    return handleAdultSubmit(body, clientId);
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("Error submitting waiver:", msg, error);
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   }
 }
 
-async function handleAdultSubmit(body: Record<string, string>) {
+async function handleAdultSubmit(body: Record<string, string>, clientId: string) {
   const { firstName, lastName, email, phone, dateOfBirth, address, city, state, zipCode, emergencyContactName, emergencyContactPhone, medicalNotes, pdfBase64 } = body;
 
   if (!firstName || !lastName) {
@@ -76,7 +76,7 @@ async function handleAdultSubmit(body: Record<string, string>) {
       waiverSignedAt: new Date(),
       status: "PROSPECT",
       memberNumber,
-      clientId: DEFAULT_CLIENT_ID,
+      clientId,
     },
   });
 
@@ -98,7 +98,7 @@ async function handleAdultSubmit(body: Record<string, string>) {
   return NextResponse.json({ member: { id: member.id } }, { status: 201 });
 }
 
-async function handleGuardianSubmit(body: Record<string, string>) {
+async function handleGuardianSubmit(body: Record<string, string>, clientId: string) {
   const {
     dependentFirstName, dependentLastName, dependentEmail, dependentDateOfBirth,
     guardianFirstName, guardianLastName, relationship,
@@ -131,7 +131,7 @@ async function handleGuardianSubmit(body: Record<string, string>) {
       waiverSignedAt: new Date(),
       status: "PROSPECT",
       memberNumber: depNumber,
-      clientId: DEFAULT_CLIENT_ID,
+      clientId,
     },
   });
 
@@ -152,7 +152,7 @@ async function handleGuardianSubmit(body: Record<string, string>) {
         zipCode: zipCode || null,
         status: "PARENT",
         memberNumber: guardianNumber,
-        clientId: DEFAULT_CLIENT_ID,
+        clientId,
       },
     });
 

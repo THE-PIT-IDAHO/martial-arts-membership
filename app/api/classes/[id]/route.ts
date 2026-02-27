@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 type Params = {
   params: Promise<{ id: string }>;
 };
 
 // GET /api/classes/:id
-export async function GET(_req: Request, { params }: Params) {
+export async function GET(req: Request, { params }: Params) {
   const { id } = await params;
 
   try {
+    const clientId = await getClientId(req);
     const classSession = await prisma.classSession.findUnique({
       where: { id },
       include: {
@@ -22,7 +24,7 @@ export async function GET(_req: Request, { params }: Params) {
       },
     });
 
-    if (!classSession) {
+    if (!classSession || classSession.clientId !== clientId) {
       return NextResponse.json(
         { error: "Class not found" },
         { status: 404 }
@@ -44,6 +46,17 @@ export async function PATCH(req: Request, { params }: Params) {
   const { id } = await params;
 
   try {
+    const clientId = await getClientId(req);
+
+    // Verify the class belongs to this tenant
+    const existing = await prisma.classSession.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existing || existing.clientId !== clientId) {
+      return NextResponse.json({ error: "Class not found" }, { status: 404 });
+    }
+
     const body = await req.json().catch(() => ({}));
 
     const {
@@ -184,10 +197,21 @@ export async function PATCH(req: Request, { params }: Params) {
 }
 
 // DELETE /api/classes/:id
-export async function DELETE(_req: Request, { params }: Params) {
+export async function DELETE(req: Request, { params }: Params) {
   const { id } = await params;
 
   try {
+    const clientId = await getClientId(req);
+
+    // Verify the class belongs to this tenant
+    const existing = await prisma.classSession.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existing || existing.clientId !== clientId) {
+      return NextResponse.json({ error: "Class not found" }, { status: 404 });
+    }
+
     await prisma.classSession.delete({
       where: { id },
     });

@@ -1,21 +1,25 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/settings?key=waiver_content
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const key = searchParams.get("key");
 
     if (key) {
       const setting = await prisma.settings.findUnique({
-        where: { key },
+        where: { key_clientId: { key, clientId } },
       });
       return NextResponse.json({ setting });
     }
 
-    const settings = await prisma.settings.findMany();
+    const settings = await prisma.settings.findMany({
+      where: { clientId },
+    });
     return NextResponse.json({ settings });
   } catch (error) {
     console.error("Error fetching settings:", error);
@@ -26,6 +30,7 @@ export async function GET(req: Request) {
 // PUT /api/settings - Save multiple settings at once (key-value object)
 export async function PUT(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
 
     // body is an object like { gymName: "My Gym", gymAddress: "123 St", ... }
@@ -36,9 +41,9 @@ export async function PUT(req: Request) {
 
     for (const [key, value] of entries) {
       await prisma.settings.upsert({
-        where: { key },
+        where: { key_clientId: { key, clientId } },
         update: { value: String(value ?? "") },
-        create: { key, value: String(value ?? "") },
+        create: { key, value: String(value ?? ""), clientId },
       });
     }
 
@@ -60,6 +65,7 @@ export async function PUT(req: Request) {
 // POST /api/settings
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { key, value } = body;
 
@@ -68,9 +74,9 @@ export async function POST(req: Request) {
     }
 
     const setting = await prisma.settings.upsert({
-      where: { key },
+      where: { key_clientId: { key, clientId } },
       update: { value },
-      create: { key, value },
+      create: { key, value, clientId },
     });
 
     return NextResponse.json({ setting }, { status: 201 });

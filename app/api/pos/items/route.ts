@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/pos/items
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const items = await prisma.pOSItem.findMany({
+      where: { clientId },
       orderBy: { name: "asc" },
       include: { variants: true },
     });
@@ -19,6 +22,7 @@ export async function GET() {
 // POST /api/pos/items
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, description, sku, priceCents, quantity, category, sizes, colors, variantLabel1, variantLabel2, itemType, isActive, availableOnline, variants, reorderThreshold } = body;
 
@@ -59,6 +63,7 @@ export async function POST(req: Request) {
       data: {
         id: crypto.randomUUID(),
         name,
+        clientId,
         description: description || null,
         sku: sku || null,
         priceCents,

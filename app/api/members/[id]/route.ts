@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit, computeChanges } from "@/lib/audit";
+import { getClientId } from "@/lib/tenant";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -150,8 +151,9 @@ export async function GET(_req: Request, { params }: Params) {
   const { id } = await params;
 
   try {
+    const clientId = await getClientId(_req);
     const member = await prisma.member.findUnique({
-      where: { id },
+      where: { id, clientId },
       include: {
         attendances: {
           where: {
@@ -282,6 +284,17 @@ export async function PATCH(req: Request, { params }: Params) {
   const { id } = await params;
 
   try {
+    const clientId = await getClientId(req);
+
+    // Verify member belongs to this tenant
+    const existing = await prisma.member.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existing || existing.clientId !== clientId) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+
     const body = await req.json().catch(() => ({}));
 
     const {
@@ -560,6 +573,17 @@ export async function DELETE(_req: Request, { params }: Params) {
   const { id } = await params;
 
   try {
+    const clientId = await getClientId(_req);
+
+    // Verify member belongs to this tenant
+    const existingMember = await prisma.member.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existingMember || existingMember.clientId !== clientId) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+
     // Delete related records first (due to foreign key constraints)
     // Delete relationships where this member is involved
     await prisma.memberRelationship.deleteMany({

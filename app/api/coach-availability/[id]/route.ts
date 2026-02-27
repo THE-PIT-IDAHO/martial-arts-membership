@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // PATCH /api/coach-availability/[id]
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    // Verify tenant ownership
+    const existing = await prisma.coachAvailability.findFirst({ where: { id, clientId } });
+    if (!existing) return new NextResponse("Not found", { status: 404 });
+
     const body = await req.json();
 
     const data: Record<string, unknown> = {};
@@ -39,9 +46,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 // DELETE /api/coach-availability/[id]
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    // Verify tenant ownership
+    const existing = await prisma.coachAvailability.findFirst({ where: { id, clientId } });
+    if (!existing) return new NextResponse("Not found", { status: 404 });
+
     await prisma.coachAvailability.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {

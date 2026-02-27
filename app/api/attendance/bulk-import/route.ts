@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/attendance/bulk-import
 // Creates multiple "imported" attendance records for a member
 // These records count toward promotion requirements but aren't tied to actual calendar classes
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { memberId, classType, count } = body;
 
@@ -30,9 +32,9 @@ export async function POST(req: Request) {
       );
     }
 
-    // Verify member exists
-    const member = await prisma.member.findUnique({
-      where: { id: memberId },
+    // Verify member exists and belongs to this tenant
+    const member = await prisma.member.findFirst({
+      where: { id: memberId, clientId },
     });
 
     if (!member) {
@@ -50,6 +52,7 @@ export async function POST(req: Request) {
       where: {
         name: importedClassName,
         classType: classType,
+        clientId,
       },
     });
 

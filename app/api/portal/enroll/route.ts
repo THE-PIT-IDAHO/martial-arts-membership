@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     // Validate and process promo code if provided
     let promoDiscountCents: number | null = null;
     if (promoCode) {
-      const promo = await prisma.promoCode.findUnique({
+      const promo = await prisma.promoCode.findFirst({
         where: { code: promoCode.toUpperCase() },
       });
       if (promo && promo.isActive) {

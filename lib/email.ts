@@ -1,35 +1,47 @@
 import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
 
-let cachedResend: Resend | null = null;
-let cachedApiKey: string | null = null;
+// Per-tenant Resend client cache
+const resendCache = new Map<string, { client: Resend; apiKey: string }>();
 
-// Load a single setting by key
-export async function getSetting(key: string): Promise<string | null> {
-  const row = await prisma.settings.findUnique({ where: { key } });
+// Load a single setting by key, optionally scoped to a client
+export async function getSetting(key: string, clientId?: string): Promise<string | null> {
+  if (clientId) {
+    const row = await prisma.settings.findUnique({
+      where: { key_clientId: { key, clientId } },
+    });
+    return row?.value ?? null;
+  }
+  // Fallback: unscoped (backward compat during migration)
+  const row = await prisma.settings.findFirst({ where: { key } });
   return row?.value ?? null;
 }
 
-// Load multiple settings by keys
-export async function getSettings(keys: string[]): Promise<Record<string, string>> {
+// Load multiple settings by keys, optionally scoped to a client
+export async function getSettings(keys: string[], clientId?: string): Promise<Record<string, string>> {
   const rows = await prisma.settings.findMany({
-    where: { key: { in: keys } },
+    where: {
+      key: { in: keys },
+      ...(clientId ? { clientId } : {}),
+    },
   });
   const map: Record<string, string> = {};
   for (const r of rows) map[r.key] = r.value;
   return map;
 }
 
-// Get or create the Resend client (cached, invalidated if key changes)
-async function getResendClient(): Promise<Resend | null> {
-  const apiKey = await getSetting("resend_api_key");
+// Get or create the Resend client (cached per tenant)
+async function getResendClient(clientId?: string): Promise<Resend | null> {
+  const apiKey = await getSetting("resend_api_key", clientId);
   if (!apiKey) return null;
 
-  if (cachedResend && cachedApiKey === apiKey) return cachedResend;
+  const cacheKey = clientId || "__global__";
+  const cached = resendCache.get(cacheKey);
+  if (cached && cached.apiKey === apiKey) return cached.client;
 
-  cachedResend = new Resend(apiKey);
-  cachedApiKey = apiKey;
-  return cachedResend;
+  const client = new Resend(apiKey);
+  resendCache.set(cacheKey, { client, apiKey });
+  return client;
 }
 
 // Resolve which email addresses to send to for a given member,
@@ -87,15 +99,16 @@ export async function sendEmail(params: {
   subject: string;
   html: string;
   attachments?: Array<{ filename: string; content: string }>;
+  clientId?: string;
 }): Promise<boolean> {
   try {
-    const resend = await getResendClient();
+    const resend = await getResendClient(params.clientId);
     if (!resend) return false;
 
-    const globalEnabled = await getSetting("notify_email_enabled");
+    const globalEnabled = await getSetting("notify_email_enabled", params.clientId);
     if (globalEnabled === "false") return false;
 
-    const settings = await getSettings(["gymName", "gymEmail"]);
+    const settings = await getSettings(["gymName", "gymEmail"], params.clientId);
     const gymName = settings.gymName || "Our Gym";
     const gymEmail = settings.gymEmail;
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/board/posts/[id]
 export async function GET(
@@ -8,6 +9,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    await getClientId(req); // validate tenant
 
     const post = await prisma.boardPost.findUnique({
       where: { id },
@@ -41,6 +43,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { type, title, content, isPriority, styleTags, reactions } = body;
 
@@ -80,6 +83,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    await getClientId(req); // validate tenant
 
     // Delete the post (files and replies will cascade delete)
     await prisma.boardPost.delete({

@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/board/posts
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const channelId = searchParams.get("channelId");
 
-    const where = channelId ? { channelId } : {};
+    const where = channelId
+      ? { channelId, channel: { clientId } }
+      : { channel: { clientId } };
 
     const posts = await prisma.boardPost.findMany({
       where,
@@ -34,6 +38,7 @@ export async function GET(req: Request) {
 // POST /api/board/posts
 export async function POST(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const {
       type,

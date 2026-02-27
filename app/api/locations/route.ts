@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const locations = await prisma.location.findMany({
+      where: { clientId },
       orderBy: { name: "asc" },
     });
     return NextResponse.json({ locations });
@@ -16,6 +19,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, address, city, state, zipCode, phone } = body;
 
@@ -31,7 +35,7 @@ export async function POST(req: Request) {
         state: state?.trim() || null,
         zipCode: zipCode?.trim() || null,
         phone: phone?.trim() || null,
-        clientId: "default-client",
+        clientId,
       },
     });
 

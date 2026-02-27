@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const spaces = await prisma.space.findMany({
+      where: { clientId },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
     return NextResponse.json({ spaces });
@@ -16,6 +19,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, locationId, sortOrder } = body;
 
@@ -28,7 +32,7 @@ export async function POST(req: Request) {
         name: name.trim(),
         locationId: locationId || null,
         sortOrder: sortOrder ?? 0,
-        clientId: "default-client",
+        clientId,
       },
     });
 

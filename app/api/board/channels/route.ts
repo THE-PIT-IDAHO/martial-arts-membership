@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const DEFAULT_CLIENT_ID = "default-client";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/board/channels
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const channels = await prisma.boardChannel.findMany({
-      where: { clientId: DEFAULT_CLIENT_ID },
+      where: { clientId },
       orderBy: { createdAt: "asc" },
       include: {
         _count: {
@@ -26,6 +26,7 @@ export async function GET() {
 // POST /api/board/channels
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, description, type, visibility } = body;
 
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
         description: description?.trim() || null,
         type: type || "custom",
         visibility: visibility ? JSON.stringify(visibility) : null,
-        clientId: DEFAULT_CLIENT_ID,
+        clientId,
       },
     });
 

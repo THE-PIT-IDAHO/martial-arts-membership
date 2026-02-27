@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { getActiveProcessor, getCheckoutStatus } from "@/lib/payment";
 
 /**
@@ -8,6 +9,7 @@ import { getActiveProcessor, getCheckoutStatus } from "@/lib/payment";
  * POS frontend polls this every 2s while the payment popup is open.
  */
 export async function GET(req: NextRequest) {
+  await getClientId(req); // validate tenant
   const sessionId = req.nextUrl.searchParams.get("session_id");
   const orderId = req.nextUrl.searchParams.get("order_id");
 

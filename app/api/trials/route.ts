@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
+import { getClientId } from "@/lib/tenant";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
 
-  const where: Record<string, unknown> = { clientId: "default-client" };
+  const clientId = await getClientId(request);
+  const where: Record<string, unknown> = { clientId };
   if (status) where.status = status;
 
   const trials = await prisma.trialPass.findMany({
@@ -31,13 +33,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const clientId = await getClientId(request);
+
     const trial = await prisma.trialPass.create({
       data: {
         memberId,
         maxClasses: maxClasses || 3,
         expiresAt: new Date(expiresAt),
         notes,
-        clientId: "default-client",
+        clientId,
         updatedAt: new Date(),
       },
     });

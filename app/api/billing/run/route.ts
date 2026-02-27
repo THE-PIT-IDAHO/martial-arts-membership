@@ -7,19 +7,21 @@ import {
   generateInvoiceNumber,
 } from "@/lib/billing";
 import { sendInvoiceCreatedEmail } from "@/lib/notifications";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/billing/run
 // Scans active memberships where nextPaymentDate <= today and autoRenew = true.
 // Creates PENDING invoices and advances nextPaymentDate.
 // Idempotent: @@unique([membershipId, billingPeriodStart]) prevents duplicates.
-export async function POST() {
+export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const today = new Date();
     today.setHours(23, 59, 59, 999);
 
     // Read grace period from settings
     const graceSetting = await prisma.settings.findFirst({
-      where: { key: "billing_grace_period_days" },
+      where: { key: "billing_grace_period_days", clientId },
     });
     const gracePeriodDays = graceSetting ? parseInt(graceSetting.value) || 7 : 7;
 
@@ -29,6 +31,7 @@ export async function POST() {
         status: "ACTIVE",
         nextPaymentDate: { lte: today },
         membershipPlan: { autoRenew: true },
+        member: { clientId },
       },
       include: {
         membershipPlan: {
@@ -78,7 +81,7 @@ export async function POST() {
               billingPeriodStart,
               billingPeriodEnd,
               dueDate,
-              clientId: "default-client",
+              clientId,
             },
           });
           created++;

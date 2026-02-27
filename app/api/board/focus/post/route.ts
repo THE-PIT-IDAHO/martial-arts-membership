@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/board/focus/post — post the active focus to the board feed
 export async function POST(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { pinnedUntilDay, pinnedUntilHour, channelId } = body;
 
@@ -90,6 +92,7 @@ export async function POST(req: Request) {
 // PATCH /api/board/focus/post — update the pin time on an already-posted focus
 export async function PATCH(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { pinnedUntilDay, pinnedUntilHour } = body;
 
@@ -138,8 +141,9 @@ export async function PATCH(req: Request) {
 }
 
 // DELETE /api/board/focus/post — unpost the focus from the board
-export async function DELETE() {
+export async function DELETE(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const focus = await prisma.weeklyFocus.findFirst({
       where: { isActive: true, postedAt: { not: null } },
       orderBy: { createdAt: "desc" },

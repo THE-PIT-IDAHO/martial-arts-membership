@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
  * Returns null if no key is configured anywhere.
  */
 export async function getStripeClient(): Promise<Stripe | null> {
-  const row = await prisma.settings.findUnique({
+  const row = await prisma.settings.findFirst({
     where: { key: "payment_stripe_secret_key" },
   });
   const key = row?.value || process.env.STRIPE_SECRET_KEY;

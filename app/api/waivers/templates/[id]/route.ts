@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
 
 export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
-  const template = await prisma.waiverTemplate.findUnique({ where: { id: params.id } });
+  const clientId = await getClientId(_req);
+  const template = await prisma.waiverTemplate.findFirst({ where: { id: params.id, clientId } });
   if (!template) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ template });
 }
@@ -12,12 +14,17 @@ export async function GET(_req: Request, props: { params: Promise<{ id: string }
 export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, content, isActive, isDefault } = body;
 
+    // Verify template belongs to tenant
+    const check = await prisma.waiverTemplate.findFirst({ where: { id: params.id, clientId }, select: { id: true } });
+    if (!check) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
     if (isDefault) {
       await prisma.waiverTemplate.updateMany({
-        where: { isDefault: true, id: { not: params.id } },
+        where: { isDefault: true, id: { not: params.id }, clientId },
         data: { isDefault: false },
       });
     }
@@ -53,6 +60,11 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
 export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const clientId = await getClientId(_req);
+    // Verify template belongs to tenant
+    const check = await prisma.waiverTemplate.findFirst({ where: { id: params.id, clientId }, select: { id: true } });
+    if (!check) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
     // Soft delete — mark inactive
     await prisma.waiverTemplate.update({
       where: { id: params.id },

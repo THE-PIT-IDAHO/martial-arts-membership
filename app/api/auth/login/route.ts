@@ -7,6 +7,7 @@ import {
 } from "@/lib/admin-auth";
 import { getRolePermissions } from "@/lib/permissions";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { getClientId } from "@/lib/tenant";
 
 export async function POST(request: Request) {
   try {
@@ -37,7 +38,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const user = await verifyPassword(email.toLowerCase().trim(), password);
+    // Resolve tenant from subdomain
+    let clientId: string | undefined;
+    try {
+      clientId = await getClientId(request);
+    } catch {
+      // Tenant not resolved — fall back to email-only lookup
+    }
+
+    const user = await verifyPassword(email.toLowerCase().trim(), password, clientId);
     if (!user) {
       return NextResponse.json(
         { error: "Invalid email or password" },
@@ -51,7 +60,8 @@ export async function POST(request: Request) {
       user.role,
       user.name,
       permissions,
-      !!rememberMe
+      !!rememberMe,
+      user.clientId
     );
 
     const response = NextResponse.json({

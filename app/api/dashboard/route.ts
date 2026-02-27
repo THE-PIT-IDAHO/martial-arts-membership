@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/dashboard
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const now = new Date();
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
@@ -13,19 +15,19 @@ export async function GET() {
     const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
 
     // --- Members ---
-    const totalMembers = await prisma.member.count();
+    const totalMembers = await prisma.member.count({ where: { clientId } });
     const activeMembers = await prisma.member.count({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", clientId },
     });
     const prospectMembers = await prisma.member.count({
-      where: { status: "PROSPECT" },
+      where: { status: "PROSPECT", clientId },
     });
 
     // Recently added members (last 7 days)
     const weekAgo = new Date(todayStart);
     weekAgo.setDate(weekAgo.getDate() - 7);
     const recentMembers = await prisma.member.findMany({
-      where: { createdAt: { gte: weekAgo } },
+      where: { createdAt: { gte: weekAgo }, clientId },
       select: {
         id: true,
         firstName: true,
@@ -40,6 +42,7 @@ export async function GET() {
     // --- Today's Classes ---
     // Get all class sessions and filter for ones that occur today
     const allClasses = await prisma.classSession.findMany({
+      where: { clientId },
       select: {
         id: true,
         name: true,
@@ -203,12 +206,14 @@ export async function GET() {
     const todayAttendanceCount = await prisma.attendance.count({
       where: {
         attendanceDate: { gte: todayStart, lte: todayEnd },
+        member: { clientId },
       },
     });
 
     const recentCheckins = await prisma.attendance.findMany({
       where: {
         attendanceDate: { gte: todayStart, lte: todayEnd },
+        member: { clientId },
       },
       select: {
         id: true,
@@ -234,7 +239,7 @@ export async function GET() {
 
     // --- Tasks ---
     const openTasks = await prisma.task.findMany({
-      where: { status: "OPEN" },
+      where: { status: "OPEN", clientId },
       select: {
         id: true,
         title: true,
@@ -256,6 +261,7 @@ export async function GET() {
       where: {
         scheduledDate: { gte: todayStart, lte: todayEnd },
         status: { not: "CANCELLED" },
+        clientId,
       },
       select: {
         id: true,
@@ -280,6 +286,7 @@ export async function GET() {
       where: {
         createdAt: { gte: todayStart, lte: todayEnd },
         status: "COMPLETED",
+        clientId,
       },
       select: {
         totalCents: true,
@@ -294,6 +301,7 @@ export async function GET() {
       where: {
         createdAt: { gte: monthStart, lte: todayEnd },
         status: "COMPLETED",
+        clientId,
       },
       _sum: { totalCents: true },
       _count: true,
@@ -301,7 +309,7 @@ export async function GET() {
 
     // Active memberships with recurring revenue
     const activeMemberships = await prisma.membership.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", member: { clientId } },
       select: {
         customPriceCents: true,
         membershipPlan: {
@@ -334,6 +342,7 @@ export async function GET() {
         status: "ACTIVE",
         endDate: { lt: todayStart },
         membershipPlan: { autoRenew: false },
+        member: { clientId },
       },
       select: {
         id: true,
@@ -357,7 +366,7 @@ export async function GET() {
 
     // --- Billing ---
     const pastDueCount = await prisma.invoice.count({
-      where: { status: "PAST_DUE" },
+      where: { status: "PAST_DUE", member: { clientId } },
     });
 
     const sevenDaysFromNow = new Date(todayEnd);
@@ -369,6 +378,7 @@ export async function GET() {
           gte: todayStart,
           lte: sevenDaysFromNow,
         },
+        member: { clientId },
       },
       select: {
         id: true,
@@ -386,7 +396,7 @@ export async function GET() {
     });
 
     const pastDueInvoices = await prisma.invoice.findMany({
-      where: { status: "PAST_DUE" },
+      where: { status: "PAST_DUE", member: { clientId } },
       select: {
         id: true,
         amountCents: true,
@@ -435,6 +445,7 @@ export async function GET() {
           where: {
             status: "ACTIVE",
             stylesNotes: { not: null },
+            clientId,
           },
           select: {
             id: true,
@@ -557,7 +568,7 @@ export async function GET() {
 
     // --- Low Stock Items ---
     const allPosItems = await prisma.pOSItem.findMany({
-      where: { isActive: true },
+      where: { isActive: true, clientId },
       select: {
         id: true,
         name: true,
@@ -583,7 +594,7 @@ export async function GET() {
 
     // --- Active Trial Passes ---
     const activeTrials = await prisma.trialPass.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", member: { clientId } },
       include: {
         member: { select: { id: true, firstName: true, lastName: true } },
       },

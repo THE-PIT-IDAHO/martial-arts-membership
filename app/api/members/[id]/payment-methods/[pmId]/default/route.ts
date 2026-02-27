@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getStripeClient } from "@/lib/stripe";
+import { getClientId } from "@/lib/tenant";
 
 type Params = { params: Promise<{ id: string; pmId: string }> };
 
 // PUT /api/members/[id]/payment-methods/[pmId]/default — set as default payment method
 export async function PUT(_req: NextRequest, { params }: Params) {
   const { id: memberId, pmId: paymentMethodId } = await params;
+  const clientId = await getClientId(_req);
 
   const member = await prisma.member.findUnique({
     where: { id: memberId },
-    select: { stripeCustomerId: true },
+    select: { clientId: true, stripeCustomerId: true },
   });
+
+  if (!member || member.clientId !== clientId) {
+    return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  }
 
   if (!member?.stripeCustomerId) {
     return NextResponse.json({ error: "No Stripe customer" }, { status: 400 });

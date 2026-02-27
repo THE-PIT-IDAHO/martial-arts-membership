@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
 
 export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, address, city, state, zipCode, phone, isActive } = body;
+
+    // Verify location belongs to tenant
+    const existing = await prisma.location.findFirst({ where: { id: params.id, clientId }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: "Location not found" }, { status: 404 });
 
     const location = await prisma.location.update({
       where: { id: params.id },
@@ -38,6 +44,11 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
 export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const clientId = await getClientId(_req);
+    // Verify location belongs to tenant
+    const existing = await prisma.location.findFirst({ where: { id: params.id, clientId }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: "Location not found" }, { status: 404 });
+
     const location = await prisma.location.findUnique({
       where: { id: params.id },
       select: { name: true },

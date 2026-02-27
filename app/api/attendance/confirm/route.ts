@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/attendance/confirm - Confirm attendance for members
 // Body: { memberIds: string[], classSessionId: string, date: string }
 export async function POST(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { memberIds, classSessionId, date } = body;
 
@@ -50,6 +52,7 @@ export async function POST(req: Request) {
 // Body: { memberIds: string[], classSessionId: string, date: string }
 export async function DELETE(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { memberIds, classSessionId, date } = body;
 

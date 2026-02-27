@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/attendance/counts - Get attendance counts by member and class type
 // Returns: { counts: { [memberId]: { [classType]: count } } }
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const memberIds = searchParams.get("memberIds"); // Optional: comma-separated member IDs
 
     // Get all CONFIRMED attendance records with their class session's classType
     // Only confirmed attendance counts toward requirements
-    const whereClause: { memberId?: { in: string[] }; confirmed: boolean; source: { not: string } } = {
+    const whereClause: { memberId?: { in: string[] }; confirmed: boolean; source: { not: string }; member: { clientId: string } } = {
       confirmed: true,
       source: { not: "IMPORTED" },
+      member: { clientId },
     };
     if (memberIds) {
       whereClause.memberId = { in: memberIds.split(",") };

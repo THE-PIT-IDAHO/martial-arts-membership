@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/membership-types/[id]
 export async function GET(
@@ -7,6 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
 
     const membershipType = await prisma.membershipType.findUnique({
@@ -22,7 +24,7 @@ export async function GET(
       },
     });
 
-    if (!membershipType) {
+    if (!membershipType || membershipType.clientId !== clientId) {
       return new NextResponse("Membership type not found", { status: 404 });
     }
 
@@ -39,7 +41,18 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    // Verify the type belongs to this tenant
+    const existingType = await prisma.membershipType.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existingType || existingType.clientId !== clientId) {
+      return new NextResponse("Membership type not found", { status: 404 });
+    }
+
     const body = await req.json();
     const { name, description, color, sortOrder, isActive } = body;
 
@@ -67,7 +80,17 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    // Verify the type belongs to this tenant
+    const existingType = await prisma.membershipType.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existingType || existingType.clientId !== clientId) {
+      return new NextResponse("Membership type not found", { status: 404 });
+    }
 
     // Check if any membership plans are using this type
     const plansUsingType = await prisma.membershipPlan.count({

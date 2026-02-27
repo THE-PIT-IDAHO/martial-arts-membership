@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma"; // adjust path if needed
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/styles
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const styles = await prisma.style.findMany({
       include: {
         ranks: {
@@ -29,6 +31,7 @@ export async function GET() {
 // POST /api/styles
 export async function POST(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { name, shortName, description, beltSystemEnabled, testNamingConvention } = body;
 

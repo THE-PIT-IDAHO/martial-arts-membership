@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateInvoiceNumber } from "@/lib/billing";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/invoices?memberId=&status=&from=&to=
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const url = new URL(req.url);
     const memberId = url.searchParams.get("memberId");
     const status = url.searchParams.get("status");
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { clientId };
     if (memberId) where.memberId = memberId;
     if (status) where.status = status;
     if (from || to) {
@@ -59,6 +61,7 @@ export async function GET(req: Request) {
 // POST /api/invoices — manual invoice creation
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { membershipId, memberId, amountCents, billingPeriodStart, billingPeriodEnd, dueDate, notes } = body;
 
@@ -76,7 +79,7 @@ export async function POST(req: Request) {
         billingPeriodEnd: new Date(billingPeriodEnd),
         dueDate: new Date(dueDate || billingPeriodStart),
         notes: notes || null,
-        clientId: "default-client",
+        clientId,
       },
     });
 

@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const DEFAULT_CLIENT_ID = "default-client";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/scheduled-appointments
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
 
-    const where: Record<string, unknown> = { clientId: DEFAULT_CLIENT_ID };
+    const where: Record<string, unknown> = { clientId };
 
     if (startDate && endDate) {
       where.scheduledDate = {
@@ -40,6 +40,7 @@ export async function GET(req: Request) {
 // POST /api/scheduled-appointments
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const {
       appointmentId,
@@ -100,7 +101,7 @@ export async function POST(req: Request) {
             status: status || "SCHEDULED",
             memberServiceCreditId,
             spaceId: spaceId || null,
-            clientId: DEFAULT_CLIENT_ID,
+            clientId,
           },
           include: { appointment: true },
         });
@@ -133,7 +134,7 @@ export async function POST(req: Request) {
         notes: notes?.trim() || null,
         status: status || "SCHEDULED",
         spaceId: spaceId || null,
-        clientId: DEFAULT_CLIENT_ID,
+        clientId,
       },
       include: {
         appointment: true,

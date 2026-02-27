@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { sendMembershipExpiryWarningEmail } from "@/lib/notifications";
 
 // POST /api/notifications/expiry-warning
 // Sends warning emails for non-recurring memberships expiring within N days.
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json().catch(() => ({}));
     const daysAhead = body.daysAhead || 14;
 
@@ -17,6 +19,7 @@ export async function POST(req: Request) {
         status: "ACTIVE",
         endDate: { gte: now, lte: cutoff },
         membershipPlan: { autoRenew: false },
+        member: { clientId },
       },
       include: {
         member: {

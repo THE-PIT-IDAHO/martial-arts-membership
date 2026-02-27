@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const DEFAULT_CLIENT_ID = "default-client";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/calendar-events
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
+
     const events = await prisma.calendarEvent.findMany({
-      where: { clientId: DEFAULT_CLIENT_ID },
+      where: { clientId },
       orderBy: { startsAt: "asc" },
     });
 
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
         locationId: locationId || null,
         spaceId: spaceId || null,
         notes: notes?.trim() || null,
-        clientId: DEFAULT_CLIENT_ID,
+        clientId: await getClientId(req),
       },
     });
 

@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/calendar/export — returns an iCal (.ics) file of class schedule
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const styleFilter = searchParams.get("styleId");
 
     const classes = await prisma.classSession.findMany({
+      where: { clientId },
       select: {
         id: true,
         name: true,

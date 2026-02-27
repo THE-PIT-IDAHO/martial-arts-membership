@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sendEmail, getSettings } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { getDefaultTemplate } from "@/lib/email-template-defaults";
 
 function interpolate(template: string, variables: Record<string, string>): string {
@@ -9,6 +10,7 @@ function interpolate(template: string, variables: Record<string, string>): strin
 
 // POST — send a test email to a specified address
 export async function POST(req: Request) {
+  const clientId = await getClientId(req);
   const { eventKey, toEmail } = await req.json();
 
   if (!eventKey || !toEmail) {
@@ -19,7 +21,7 @@ export async function POST(req: Request) {
   let subject: string;
   let bodyHtml: string;
 
-  const dbTpl = await prisma.emailTemplate.findUnique({ where: { eventKey } });
+  const dbTpl = await prisma.emailTemplate.findFirst({ where: { eventKey, clientId } });
   if (dbTpl) {
     subject = dbTpl.subject;
     bodyHtml = dbTpl.bodyHtml;

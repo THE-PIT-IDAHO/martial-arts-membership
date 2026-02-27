@@ -25,7 +25,7 @@ export type ProcessorType = "stripe" | "paypal" | "square";
 // ---------------------------------------------------------------------------
 
 export async function getActiveProcessor(): Promise<ProcessorType | null> {
-  const row = await prisma.settings.findUnique({
+  const row = await prisma.settings.findFirst({
     where: { key: "payment_active_processor" },
   });
   if (row?.value && row.value !== "none") {
@@ -859,13 +859,13 @@ async function processAdminPOSCheckout(params: {
 
   // Handle gift certificate redemption
   if (redeemedGiftCode && redeemedGiftAmountCents > 0) {
-    const gc = await prisma.giftCertificate.findUnique({
+    const gc = await prisma.giftCertificate.findFirst({
       where: { code: redeemedGiftCode },
     });
     if (gc) {
       const newBalance = gc.balanceCents - redeemedGiftAmountCents;
       await prisma.giftCertificate.update({
-        where: { code: redeemedGiftCode },
+        where: { id: gc.id },
         data: {
           balanceCents: Math.max(0, newBalance),
           status: newBalance <= 0 ? "REDEEMED" : "ACTIVE",
@@ -1156,6 +1156,6 @@ export async function handleRefundCompleted(params: {
 // ---------------------------------------------------------------------------
 
 export async function getCurrency(): Promise<string> {
-  const row = await prisma.settings.findUnique({ where: { key: "currency" } });
+  const row = await prisma.settings.findFirst({ where: { key: "currency" } });
   return (row?.value || "USD").toLowerCase();
 }

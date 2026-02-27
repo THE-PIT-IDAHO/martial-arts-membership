@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/pos/items/[id]
 export async function GET(
@@ -8,9 +9,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
 
-    const item = await prisma.pOSItem.findUnique({
-      where: { id },
+    const item = await prisma.pOSItem.findFirst({
+      where: { id, clientId },
       include: { variants: true },
     });
 
@@ -32,8 +34,13 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, description, sku, priceCents, quantity, category, sizes, colors, variantLabel1, variantLabel2, itemType, isActive, availableOnline, variants, reorderThreshold } = body;
+
+    // Verify item belongs to tenant
+    const existing = await prisma.pOSItem.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!existing) return new NextResponse("Item not found", { status: 404 });
 
     const item = await prisma.pOSItem.update({
       where: { id },
@@ -93,6 +100,11 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
+
+    // Verify item belongs to tenant
+    const existing = await prisma.pOSItem.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!existing) return new NextResponse("Item not found", { status: 404 });
 
     await prisma.pOSItem.delete({
       where: { id },

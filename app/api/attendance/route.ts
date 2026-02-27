@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/attendance?classSessionId=xxx&date=yyyy-mm-dd
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const classSessionId = searchParams.get("classSessionId");
     const dateStr = searchParams.get("date");
@@ -25,6 +27,7 @@ export async function GET(req: Request) {
           lte: endOfDay,
         },
         source: { not: "IMPORTED" },
+        member: { clientId },
       },
       include: {
         member: {

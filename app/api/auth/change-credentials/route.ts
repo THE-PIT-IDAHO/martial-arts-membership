@@ -45,7 +45,7 @@ export async function PATCH(request: NextRequest) {
     if (newEmail && newEmail.trim()) {
       const email = newEmail.toLowerCase().trim();
       // Check if email is already taken by another user
-      const existing = await prisma.user.findUnique({ where: { email } });
+      const existing = await prisma.user.findFirst({ where: { email, clientId: user.clientId } });
       if (existing && existing.id !== user.id) {
         return NextResponse.json(
           { error: "That email is already in use" },

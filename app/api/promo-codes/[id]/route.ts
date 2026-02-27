@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // PATCH /api/promo-codes/[id]
 export async function PATCH(
@@ -8,6 +9,12 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
+
+    // Verify promo code belongs to tenant
+    const check = await prisma.promoCode.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!check) return new NextResponse("Promo code not found", { status: 404 });
+
     const body = await req.json();
     const {
       code,
@@ -52,6 +59,12 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(_req);
+
+    // Verify promo code belongs to tenant
+    const check = await prisma.promoCode.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!check) return new NextResponse("Promo code not found", { status: 404 });
+
     await prisma.promoCode.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error) {

@@ -2,16 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generatePasswordResetToken } from "@/lib/portal-auth";
 import { sendPasswordResetEmail } from "@/lib/notifications";
+import { getClientId } from "@/lib/tenant";
 
 export async function POST(_request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const clientId = await getClientId(_request);
     const member = await prisma.member.findUnique({
       where: { id: params.id },
-      select: { id: true, firstName: true, lastName: true, email: true, status: true },
+      select: { id: true, clientId: true, firstName: true, lastName: true, email: true, status: true },
     });
 
-    if (!member) {
+    if (!member || member.clientId !== clientId) {
       return NextResponse.json({ error: "Member not found" }, { status: 404 });
     }
 

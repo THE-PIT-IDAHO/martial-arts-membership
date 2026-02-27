@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { getClientId } from "@/lib/tenant";
 import { sendEmail, resolveRecipientEmails } from "@/lib/email";
 
 // POST /api/contracts/email
 export async function POST(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { memberId, pdfBase64, contractTitle } = body;
 

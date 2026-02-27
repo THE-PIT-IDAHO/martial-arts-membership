@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 type RouteParams = {
   params: Promise<{ id: string }>;
 };
 
 // GET /api/service-packages/:id
-export async function GET(_req: Request, { params }: RouteParams) {
+export async function GET(req: Request, { params }: RouteParams) {
+  const clientId = await getClientId(req);
   const { id } = await params;
   try {
-    const pkg = await prisma.servicePackage.findUnique({
-      where: { id },
+    const pkg = await prisma.servicePackage.findFirst({
+      where: { id, clientId },
       include: {
         appointment: { select: { id: true, title: true } },
       },
@@ -25,8 +27,13 @@ export async function GET(_req: Request, { params }: RouteParams) {
 
 // PATCH /api/service-packages/:id
 export async function PATCH(req: Request, { params }: RouteParams) {
+  const clientId = await getClientId(req);
   const { id } = await params;
   try {
+    // Verify tenant ownership
+    const existing = await prisma.servicePackage.findFirst({ where: { id, clientId } });
+    if (!existing) return new NextResponse("Not found", { status: 404 });
+
     const body = await req.json();
     const data: Record<string, unknown> = {};
 
@@ -61,9 +68,13 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 }
 
 // DELETE /api/service-packages/:id
-export async function DELETE(_req: Request, { params }: RouteParams) {
+export async function DELETE(req: Request, { params }: RouteParams) {
+  const clientId = await getClientId(req);
   const { id } = await params;
   try {
+    // Verify tenant ownership
+    const existing = await prisma.servicePackage.findFirst({ where: { id, clientId } });
+    if (!existing) return new NextResponse("Not found", { status: 404 });
     // Check for active credits
     const activeCredits = await prisma.memberServiceCredit.count({
       where: { servicePackageId: id, status: "ACTIVE" },

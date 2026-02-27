@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
 
 export async function POST(request: Request) {
   try {
+    const clientId = await getClientId(request);
     const { memberId, templateId, signatureData } = await request.json();
 
     if (!memberId || !signatureData) {
@@ -33,7 +35,7 @@ export async function POST(request: Request) {
         templateName,
         waiverContent,
         signatureData,
-        clientId: "default-client",
+        clientId,
       },
     });
 

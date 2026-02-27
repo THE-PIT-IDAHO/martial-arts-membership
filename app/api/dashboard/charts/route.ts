@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const now = new Date();
 
     // --- 1. Monthly Revenue (last 12 months) ---
@@ -12,6 +14,7 @@ export async function GET() {
       where: {
         status: "COMPLETED",
         createdAt: { gte: twelveMonthsAgo },
+        clientId,
       },
       select: { totalCents: true, createdAt: true },
     });
@@ -20,6 +23,7 @@ export async function GET() {
       where: {
         status: "PAID",
         paidAt: { gte: twelveMonthsAgo },
+        member: { clientId },
       },
       select: { amountCents: true, paidAt: true },
     });
@@ -53,6 +57,7 @@ export async function GET() {
     const memberships = await prisma.membership.findMany({
       where: {
         startDate: { lte: endOfCurrentMonth },
+        member: { clientId },
       },
       select: { startDate: true, endDate: true, status: true },
     });
@@ -80,6 +85,7 @@ export async function GET() {
     const attendances = await prisma.attendance.findMany({
       where: {
         attendanceDate: { gte: twelveWeeksAgo },
+        member: { clientId },
       },
       select: { attendanceDate: true },
     });
@@ -103,7 +109,7 @@ export async function GET() {
 
     // --- 4. Lead Source Breakdown ---
     const members = await prisma.member.findMany({
-      where: { leadSource: { not: null } },
+      where: { leadSource: { not: null }, clientId },
       select: { leadSource: true },
     });
 

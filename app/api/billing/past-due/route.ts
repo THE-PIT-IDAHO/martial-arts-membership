@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendPastDueAlertEmail } from "@/lib/notifications";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/billing/past-due
 // Marks PENDING invoices whose dueDate has passed as PAST_DUE.
-export async function POST() {
+export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const now = new Date();
 
     // Find individual invoices so we can send per-member notifications
     const pastDueInvoices = await prisma.invoice.findMany({
       where: {
+        clientId,
         status: "PENDING",
         dueDate: { lt: now },
       },

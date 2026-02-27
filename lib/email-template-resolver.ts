@@ -12,7 +12,7 @@ export async function resolveTemplate(
   variables: Record<string, string>
 ): Promise<{ subject: string; bodyHtml: string } | null> {
   // Try DB first
-  const dbTemplate = await prisma.emailTemplate.findUnique({
+  const dbTemplate = await prisma.emailTemplate.findFirst({
     where: { eventKey },
   });
 

@@ -8,13 +8,14 @@ import {
 } from "@/lib/notifications";
 import { getTodayInTimezone, formatDateInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
+import { getClientId } from "@/lib/tenant";
 
-export async function POST() {
+export async function POST(req: Request) {
   const tz = (await getSetting("timezone")) || "America/Denver";
   const today = getTodayInTimezone(tz);
 
   // Check if already run today
-  const lastRun = await prisma.settings.findUnique({
+  const lastRun = await prisma.settings.findFirst({
     where: { key: "lifecycle_last_auto_run" },
   });
   if (lastRun?.value === today) {
@@ -53,7 +54,7 @@ export async function POST() {
 
   // --- 2. Inactive Re-engagement ---
   try {
-    const thresholdSetting = await prisma.settings.findUnique({
+    const thresholdSetting = await prisma.settings.findFirst({
       where: { key: "inactive_threshold_days" },
     });
     const thresholdDays = thresholdSetting ? parseInt(thresholdSetting.value) || 30 : 30;
@@ -166,11 +167,13 @@ export async function POST() {
   }
 
   // Mark as run today
-  await prisma.settings.upsert({
-    where: { key: "lifecycle_last_auto_run" },
-    update: { value: today },
-    create: { key: "lifecycle_last_auto_run", value: today, clientId: "default-client" },
-  });
+  const existingLifecycleRun = await prisma.settings.findFirst({ where: { key: "lifecycle_last_auto_run" } });
+  if (existingLifecycleRun) {
+    await prisma.settings.update({ where: { id: existingLifecycleRun.id }, data: { value: today } });
+  } else {
+    const clientId = await getClientId(req);
+    await prisma.settings.create({ data: { key: "lifecycle_last_auto_run", value: today, clientId } });
+  }
 
   return NextResponse.json({
     success: true,

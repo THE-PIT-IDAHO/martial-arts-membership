@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/tasks/seed — populate default tasks if none exist
-export async function POST() {
+export async function POST(req: Request) {
   try {
-    const count = await prisma.task.count();
+    const clientId = await getClientId(req);
+    const count = await prisma.task.count({ where: { clientId } });
     if (count > 0) {
       return NextResponse.json({ seeded: false, message: "Tasks already exist" });
     }
@@ -31,7 +33,7 @@ export async function POST() {
       await prisma.task.create({
         data: {
           ...task,
-          clientId: "default-client",
+          clientId,
         },
       });
     }

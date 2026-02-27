@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -7,6 +8,16 @@ type RouteContext = { params: Promise<{ id: string }> };
 export async function GET(_req: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
+    const clientId = await getClientId(_req);
+
+    // Verify member belongs to this tenant
+    const member = await prisma.member.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!member || member.clientId !== clientId) {
+      return new NextResponse("Member not found", { status: 404 });
+    }
 
     // Auto-expire any appointment credits that are past their expiresAt
     await prisma.memberServiceCredit.updateMany({

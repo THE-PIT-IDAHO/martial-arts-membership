@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/public/waiver-data
 // Returns only the settings needed for waiver pages (no sensitive data)
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const settings = await prisma.settings.findMany({
       where: {
+        clientId,
         key: { in: ["waiver_content", "gym_settings", "gymLogo", "waiver_options"] },
       },
     });

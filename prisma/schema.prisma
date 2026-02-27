@@ -25,7 +25,7 @@ model Client {
 
 model User {
   id                 String   @id @default(cuid())
-  email              String   @unique
+  email              String
   passwordHash       String
   name               String?
   role               String   @default("COACH")
@@ -34,6 +34,8 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   client             Client   @relation(fields: [clientId], references: [id])
+
+  @@unique([email, clientId])
 }
 
 model Member {
@@ -68,8 +70,8 @@ model Member {
   clientId              String
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
-  /// Member number – unique, starts at 10000000 and up (enforced in API logic)
-  memberNumber          Int?                 @unique
+  /// Member number – unique per client, starts at 10000001 and up (enforced in API logic)
+  memberNumber          Int?
   styleDocuments        String?
   accountCreditCents    Int                  @default(0)
   accessRole            String?              // "OWNER", "ADMIN", "COACH", "FRONT_DESK"
@@ -95,6 +97,8 @@ model Member {
   signedContracts       SignedContract[]
   trialPasses           TrialPass[]
   serviceCredits        MemberServiceCredit[]
+
+  @@unique([memberNumber, clientId])
 }
 
 model MemberRelationship {
@@ -472,7 +476,7 @@ model POSItem {
   id              String           @id
   name            String
   description     String?
-  sku             String?          @unique
+  sku             String?
   priceCents      Int
   quantity        Int              @default(0)
   category        String?
@@ -489,6 +493,8 @@ model POSItem {
   updatedAt       DateTime
   POSLineItem     POSLineItem[]
   variants        POSItemVariant[]
+
+  @@unique([sku, clientId])
 }
 
 model POSItemVariant {
@@ -546,11 +552,13 @@ model POSTransaction {
 
 model Settings {
   id        String   @id @default(cuid())
-  key       String   @unique
+  key       String
   value     String
   clientId  String   @default("default-client")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([key, clientId])
 }
 
 model TestingEvent {
@@ -649,7 +657,7 @@ model WeeklyFocus {
 
 model GiftCertificate {
   id            String   @id @default(cuid())
-  code          String   @unique
+  code          String
   amountCents   Int
   balanceCents  Int
   purchasedBy   String?
@@ -659,6 +667,8 @@ model GiftCertificate {
   clientId      String   @default("default-client")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@unique([code, clientId])
 }
 
 model DirectConversation {
@@ -787,7 +797,7 @@ model EnrollmentSubmission {
 
 model PromoCode {
   id                String    @id @default(cuid())
-  code              String    @unique
+  code              String
   description       String?
   discountType      String    @default("PERCENT") // PERCENT or FIXED
   discountValue     Int                            // percent (0-100) or cents
@@ -800,6 +810,8 @@ model PromoCode {
   clientId          String    @default("default-client")
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  @@unique([code, clientId])
 }
 
 model AuditLog {
@@ -815,7 +827,7 @@ model AuditLog {
 
 model EmailTemplate {
   id        String   @id @default(cuid())
-  eventKey  String   @unique
+  eventKey  String
   name      String
   subject   String
   bodyHtml  String
@@ -825,6 +837,8 @@ model EmailTemplate {
   clientId  String   @default("default-client")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([eventKey, clientId])
 }
 
 model Location {

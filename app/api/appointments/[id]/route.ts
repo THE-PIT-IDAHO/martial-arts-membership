@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 type RouteParams = {
   params: Promise<{
@@ -8,15 +9,16 @@ type RouteParams = {
 };
 
 // GET /api/appointments/:id
-export async function GET(_req: Request, { params }: RouteParams) {
+export async function GET(req: Request, { params }: RouteParams) {
   const { id } = await params;
 
   try {
+    const clientId = await getClientId(req);
     const appointment = await prisma.appointment.findUnique({
       where: { id },
     });
 
-    if (!appointment) {
+    if (!appointment || appointment.clientId !== clientId) {
       return new NextResponse("Appointment not found", { status: 404 });
     }
 
@@ -32,6 +34,17 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   const { id } = await params;
 
   try {
+    const clientId = await getClientId(req);
+
+    // Verify the appointment belongs to this tenant
+    const existing = await prisma.appointment.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existing || existing.clientId !== clientId) {
+      return new NextResponse("Appointment not found", { status: 404 });
+    }
+
     const body = await req.json();
     const {
       title,
@@ -94,10 +107,21 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 }
 
 // DELETE /api/appointments/:id
-export async function DELETE(_req: Request, { params }: RouteParams) {
+export async function DELETE(req: Request, { params }: RouteParams) {
   const { id } = await params;
 
   try {
+    const clientId = await getClientId(req);
+
+    // Verify the appointment belongs to this tenant
+    const existing = await prisma.appointment.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existing || existing.clientId !== clientId) {
+      return new NextResponse("Appointment not found", { status: 404 });
+    }
+
     await prisma.appointment.delete({
       where: { id },
     });

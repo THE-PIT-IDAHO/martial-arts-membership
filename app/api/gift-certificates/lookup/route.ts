@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/gift-certificates/lookup?code=GC-XXXXXX
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const code = searchParams.get("code");
 
@@ -11,8 +13,8 @@ export async function GET(req: Request) {
       return new NextResponse("Gift certificate code is required", { status: 400 });
     }
 
-    const certificate = await prisma.giftCertificate.findUnique({
-      where: { code: code.toUpperCase() },
+    const certificate = await prisma.giftCertificate.findFirst({
+      where: { code: code.toUpperCase(), clientId },
     });
 
     if (!certificate) {

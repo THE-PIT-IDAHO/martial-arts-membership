@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { getDefaultTemplate } from "@/lib/email-template-defaults";
 
 // GET — get a single template by eventKey
-export async function GET(_req: Request, props: { params: Promise<{ eventKey: string }> }) {
+export async function GET(req: Request, props: { params: Promise<{ eventKey: string }> }) {
+  const clientId = await getClientId(req);
   const params = await props.params;
   const { eventKey } = params;
 
-  const dbTpl = await prisma.emailTemplate.findUnique({ where: { eventKey } });
+  const dbTpl = await prisma.emailTemplate.findFirst({ where: { eventKey, clientId } });
   if (dbTpl) return NextResponse.json(dbTpl);
 
   // Fall back to default

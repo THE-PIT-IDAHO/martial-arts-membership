@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/tasks
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     // Spawn next occurrences for completed recurring tasks whose reset time has arrived
     const completedRecurring = await prisma.task.findMany({
       where: {
         status: "COMPLETED",
         recurrence: { not: null },
+        clientId,
       },
     });
 
@@ -50,6 +53,7 @@ export async function GET() {
     }
 
     const tasks = await prisma.task.findMany({
+      where: { clientId },
       orderBy: [{ status: "asc" }, { priority: "asc" }, { dueDate: "asc" }],
     });
     return NextResponse.json({ tasks });
@@ -62,6 +66,7 @@ export async function GET() {
 // POST /api/tasks
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { title, description, dueDate, priority, recurrence, assignedRole } = body;
 
@@ -77,7 +82,7 @@ export async function POST(req: Request) {
         priority: priority || "MEDIUM",
         recurrence: recurrence || null,
         assignedRole: assignedRole || null,
-        clientId: "default-client",
+        clientId,
       },
     });
 

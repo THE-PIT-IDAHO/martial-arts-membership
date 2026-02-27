@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { sendCustomMessageEmail } from "@/lib/notifications";
 
 // POST /api/notifications/send-message
 // Sends a custom email to specified members.
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { memberIds, subject, message } = body;
 
@@ -17,7 +19,7 @@ export async function POST(req: Request) {
     }
 
     const members = await prisma.member.findMany({
-      where: { id: { in: memberIds } },
+      where: { id: { in: memberIds }, clientId },
       select: { id: true, firstName: true, lastName: true },
     });
 

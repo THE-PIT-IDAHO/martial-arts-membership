@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/classes/rename-type
 // Renames a class type and updates all styles' beltConfig that reference it
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { oldClassType, newClassType } = body;
 
@@ -22,6 +24,7 @@ export async function POST(req: Request) {
     // Update all classes with the old class type (legacy single field)
     const updatedClasses = await prisma.classSession.updateMany({
       where: {
+        clientId,
         classType: oldClassType,
       },
       data: {
@@ -32,6 +35,7 @@ export async function POST(req: Request) {
     // Also update classTypes JSON arrays that contain the old name
     const classesWithTypes = await prisma.classSession.findMany({
       where: {
+        clientId,
         classTypes: { not: null },
       },
       select: { id: true, classTypes: true },

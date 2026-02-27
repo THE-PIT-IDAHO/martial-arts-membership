@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 type RouteParams = {
   params: Promise<{ id: string }>;
@@ -53,6 +54,16 @@ async function ensureSymmetricRelationship(
 
 export async function GET(req: NextRequest, { params }: RouteParams) {
   const { id: memberId } = await params;
+  const clientId = await getClientId(req);
+
+  // Verify member belongs to this tenant
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { clientId: true },
+  });
+  if (!member || member.clientId !== clientId) {
+    return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  }
 
   const relationships = await prisma.memberRelationship.findMany({
     where: {
@@ -70,6 +81,17 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
 export async function POST(req: NextRequest, { params }: RouteParams) {
   const { id: currentMemberId } = await params;
+  const clientId = await getClientId(req);
+
+  // Verify member belongs to this tenant
+  const memberCheck = await prisma.member.findUnique({
+    where: { id: currentMemberId },
+    select: { clientId: true },
+  });
+  if (!memberCheck || memberCheck.clientId !== clientId) {
+    return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  }
+
   const body = await req.json();
 
   const targetMemberId: string = body.targetMemberId;
@@ -175,6 +197,17 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const { id: memberId } = await params;
+  const clientId = await getClientId(req);
+
+  // Verify member belongs to this tenant
+  const memberCheck = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { clientId: true },
+  });
+  if (!memberCheck || memberCheck.clientId !== clientId) {
+    return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  }
+
   const body = await req.json();
   const id = body.id as string;
 

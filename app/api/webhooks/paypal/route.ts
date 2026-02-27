@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Verify webhook signature
-  const webhookIdSetting = await prisma.settings.findUnique({
+  const webhookIdSetting = await prisma.settings.findFirst({
     where: { key: "payment_paypal_webhook_id" },
   });
   const webhookId = webhookIdSetting?.value;

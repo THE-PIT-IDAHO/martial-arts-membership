@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/board/channels/[id]
 export async function GET(
@@ -8,9 +9,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
 
-    const channel = await prisma.boardChannel.findUnique({
-      where: { id },
+    const channel = await prisma.boardChannel.findFirst({
+      where: { id, clientId },
       include: {
         posts: {
           orderBy: { createdAt: "desc" },
@@ -53,8 +55,13 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, description, type, visibility, hasUpdates } = body;
+
+    // Verify channel belongs to tenant
+    const check = await prisma.boardChannel.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!check) return new NextResponse("Channel not found", { status: 404 });
 
     const channel = await prisma.boardChannel.update({
       where: { id },
@@ -81,6 +88,11 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
+
+    // Verify channel belongs to tenant
+    const check = await prisma.boardChannel.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!check) return new NextResponse("Channel not found", { status: 404 });
 
     await prisma.boardChannel.delete({
       where: { id },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { parseLocalDate } from "@/lib/dates";
 import { calculateNextPaymentDate } from "@/lib/billing";
 import { getAccountPaymentAmount } from "@/lib/payment-utils";
@@ -94,11 +95,12 @@ function addRankPdfsToDocuments(
 // GET /api/pos/transactions
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const memberId = searchParams.get("memberId");
 
     const transactions = await prisma.pOSTransaction.findMany({
-      where: memberId ? { memberId } : undefined,
+      where: { clientId, ...(memberId ? { memberId } : {}) },
       include: {
         POSLineItem: true,
       },
@@ -115,6 +117,7 @@ export async function GET(req: Request) {
 // POST /api/pos/transactions
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { memberId, memberName, lineItems, paymentMethod, notes, discountCents = 0, taxCents = 0 } = body;
 
@@ -151,6 +154,7 @@ export async function POST(req: Request) {
       data: {
         id: crypto.randomUUID(),
         transactionNumber,
+        clientId,
         memberId: memberId || null,
         memberName: memberName || null,
         subtotalCents,
@@ -497,13 +501,13 @@ export async function POST(req: Request) {
     // Handle gift certificate redemption
     const { redeemedGiftCode, redeemedGiftAmountCents } = body;
     if (redeemedGiftCode && redeemedGiftAmountCents > 0) {
-      const giftCert = await prisma.giftCertificate.findUnique({
+      const giftCert = await prisma.giftCertificate.findFirst({
         where: { code: redeemedGiftCode },
       });
       if (giftCert && giftCert.status === "ACTIVE") {
         const newBalance = giftCert.balanceCents - redeemedGiftAmountCents;
         await prisma.giftCertificate.update({
-          where: { code: redeemedGiftCode },
+          where: { id: giftCert.id },
           data: {
             balanceCents: Math.max(0, newBalance),
             status: newBalance <= 0 ? "REDEEMED" : "ACTIVE",

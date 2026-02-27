@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 export async function GET(request: NextRequest) {
   const auth = await getAuthenticatedMember(request);
@@ -41,6 +42,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const clientId = await getClientId(request);
+
     const signed = await prisma.signedWaiver.create({
       data: {
         memberId: auth.memberId,
@@ -48,7 +51,7 @@ export async function POST(request: NextRequest) {
         templateName: template?.name || "General Waiver",
         waiverContent: template?.content || "Standard liability waiver",
         signatureData,
-        clientId: "default-client",
+        clientId,
       },
     });
 

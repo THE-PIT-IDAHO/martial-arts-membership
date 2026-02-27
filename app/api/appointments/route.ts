@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const DEFAULT_CLIENT_ID = "default-client";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/appointments
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const appointments = await prisma.appointment.findMany({
-      where: { clientId: DEFAULT_CLIENT_ID },
+      where: { clientId },
       orderBy: { title: "asc" },
     });
 
@@ -21,6 +21,7 @@ export async function GET() {
 // POST /api/appointments
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const {
       title,
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
         styleName: styleName?.trim() || null,
         notes: notes?.trim() || null,
         isActive: isActive !== false,
-        clientId: DEFAULT_CLIENT_ID,
+        clientId,
       },
     });
 

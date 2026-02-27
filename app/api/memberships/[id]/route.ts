@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/dates";
 import { isUnderContract, calculateEarlyTerminationFee, calculateCancellationEffectiveDate } from "@/lib/contracts";
 import { logAudit } from "@/lib/audit";
+import { getClientId } from "@/lib/tenant";
 
 type RankPdf = {
   name: string;
@@ -335,6 +336,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
 
     const membership = await prisma.membership.findUnique({
@@ -348,13 +350,14 @@ export async function GET(
             email: true,
             phone: true,
             status: true,
+            clientId: true,
           },
         },
         membershipPlan: true,
       },
     });
 
-    if (!membership) {
+    if (!membership || membership.member.clientId !== clientId) {
       return new NextResponse("Membership not found", { status: 404 });
     }
 
@@ -371,7 +374,18 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    // Verify the membership belongs to this tenant
+    const membershipCheck = await prisma.membership.findUnique({
+      where: { id },
+      select: { member: { select: { clientId: true } } },
+    });
+    if (!membershipCheck || membershipCheck.member.clientId !== clientId) {
+      return new NextResponse("Membership not found", { status: 404 });
+    }
+
     const body = await req.json();
     const { startDate, endDate, status, customPriceCents, lastPaymentDate, nextPaymentDate, pauseEndDate, membershipPlanId, cancellationReason } = body;
 
@@ -938,6 +952,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
 
     // Get membership info before deleting (including plan's allowed styles and member's styles)
@@ -945,12 +960,12 @@ export async function DELETE(
       where: { id },
       include: {
         member: {
-          select: { id: true, status: true },
+          select: { id: true, status: true, clientId: true },
         },
       },
     });
 
-    if (!membership) {
+    if (!membership || membership.member.clientId !== clientId) {
       return new NextResponse("Membership not found", { status: 404 });
     }
 

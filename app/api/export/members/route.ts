@@ -2,12 +2,14 @@ import { prisma } from "@/lib/prisma";
 import { toCsv, csvResponse } from "@/lib/csv";
 import { formatInTimezone, getTodayInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
+import { getClientId } from "@/lib/tenant";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
 
-  const where: Record<string, unknown> = { clientId: "default-client" };
+  const clientId = await getClientId(request);
+  const where: Record<string, unknown> = { clientId };
   if (status) where.status = { contains: status };
 
   const members = await prisma.member.findMany({

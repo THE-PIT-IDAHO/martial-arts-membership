@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -7,8 +8,13 @@ type RouteContext = { params: Promise<{ id: string }> };
 export async function PATCH(req: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, locationId, isActive, sortOrder } = body;
+
+    // Verify space belongs to tenant
+    const existing = await prisma.space.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: "Space not found" }, { status: 404 });
 
     const space = await prisma.space.update({
       where: { id },
@@ -37,6 +43,12 @@ export async function PATCH(req: Request, context: RouteContext) {
 export async function DELETE(_req: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
+    const clientId = await getClientId(_req);
+
+    // Verify space belongs to tenant
+    const existing = await prisma.space.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!existing) return NextResponse.json({ error: "Space not found" }, { status: 404 });
+
     const space = await prisma.space.findUnique({
       where: { id },
       select: { name: true },

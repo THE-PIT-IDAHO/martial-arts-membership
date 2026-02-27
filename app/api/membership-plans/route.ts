@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
-const DEFAULT_CLIENT_ID = "default-client";
 const MIN_MEMBERSHIP_NUMBER = 20000000;
 
 // Find lowest free membershipId >= MIN_MEMBERSHIP_NUMBER
@@ -31,10 +31,11 @@ async function getNextMembershipId(): Promise<string> {
 }
 
 // GET /api/membership-plans
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const membershipPlans = await prisma.membershipPlan.findMany({
-      where: { clientId: DEFAULT_CLIENT_ID },
+      where: { clientId },
       include: {
         membershipType: true,
         memberships: {
@@ -62,6 +63,7 @@ export async function GET() {
 // POST /api/membership-plans
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const {
       membershipId,
@@ -127,7 +129,7 @@ export async function POST(req: Request) {
         color: color || null,
         isActive: isActive ?? true,
         availableOnline: availableOnline ?? false,
-        clientId: DEFAULT_CLIENT_ID,
+        clientId,
       },
     });
 

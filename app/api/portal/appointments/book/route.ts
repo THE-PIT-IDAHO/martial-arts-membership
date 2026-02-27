@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
-
-const DEFAULT_CLIENT_ID = "default-client";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/portal/appointments/book — book an appointment, optionally using a credit
 export async function POST(req: NextRequest) {
@@ -26,6 +25,7 @@ export async function POST(req: NextRequest) {
   }
 
   const memberName = `${member.firstName} ${member.lastName}`;
+  const clientId = await getClientId(req);
 
   // If using a credit, validate and deduct in a transaction
   if (memberServiceCreditId) {
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
           status: "SCHEDULED",
           memberServiceCreditId,
           spaceId: spaceId || null,
-          clientId: DEFAULT_CLIENT_ID,
+          clientId,
         },
         include: { appointment: true },
       });
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
       notes: notes?.trim() || null,
       status: "SCHEDULED",
       spaceId: spaceId || null,
-      clientId: DEFAULT_CLIENT_ID,
+      clientId,
     },
     include: { appointment: true },
   });

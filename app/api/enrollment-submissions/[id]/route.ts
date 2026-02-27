@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendWelcomeEmail } from "@/lib/notifications";
+import { getClientId } from "@/lib/tenant";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,6 +22,8 @@ export async function PATCH(req: Request, { params }: Params) {
     }
 
     if (action === "approve") {
+      const clientId = await getClientId(req);
+
       // Create the member
       const member = await prisma.member.create({
         data: {
@@ -40,7 +43,7 @@ export async function PATCH(req: Request, { params }: Params) {
           waiverSigned: submission.waiverSigned,
           waiverSignedAt: submission.waiverSignedAt,
           status: "ACTIVE",
-          clientId: submission.clientId || "default-client",
+          clientId,
         },
       });
 

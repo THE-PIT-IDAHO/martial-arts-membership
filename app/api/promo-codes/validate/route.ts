@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/promo-codes/validate
 // Body: { code: string, planId?: string }
 // Returns discount info or error
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { code, planId } = body;
 
@@ -13,8 +15,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ valid: false, error: "Code is required" }, { status: 400 });
     }
 
-    const promo = await prisma.promoCode.findUnique({
-      where: { code: code.toUpperCase() },
+    const promo = await prisma.promoCode.findFirst({
+      where: { code: code.toUpperCase(), clientId },
     });
 
     if (!promo) {

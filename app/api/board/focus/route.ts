@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/board/focus — get the current active weekly focus
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const focus = await prisma.weeklyFocus.findFirst({
       where: { isActive: true },
       orderBy: { createdAt: "desc" },
@@ -49,6 +51,7 @@ export async function GET() {
 // POST /api/board/focus — create a new weekly focus (deactivates previous)
 export async function POST(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     const body = await req.json();
     const { title, description, videoUrl, rankTestItemId } = body;
 
@@ -81,8 +84,9 @@ export async function POST(req: Request) {
 }
 
 // DELETE /api/board/focus — clear the current weekly focus
-export async function DELETE() {
+export async function DELETE(req: Request) {
   try {
+    await getClientId(req); // validate tenant
     await prisma.weeklyFocus.updateMany({
       where: { isActive: true },
       data: { isActive: false },

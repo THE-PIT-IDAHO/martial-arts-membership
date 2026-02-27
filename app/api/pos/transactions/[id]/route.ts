@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { getAccountPaymentAmount } from "@/lib/payment-utils";
 import { createRefund, getCurrency, type ProcessorType } from "@/lib/payment";
 
@@ -10,9 +11,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
 
-    const transaction = await prisma.pOSTransaction.findUnique({
-      where: { id },
+    const transaction = await prisma.pOSTransaction.findFirst({
+      where: { id, clientId },
       include: {
         POSLineItem: true,
       },
@@ -36,8 +38,13 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { status, notes } = body;
+
+    // Verify transaction belongs to tenant
+    const existingTxn = await prisma.pOSTransaction.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!existingTxn) return new NextResponse("Transaction not found", { status: 404 });
 
     const transaction = await prisma.pOSTransaction.update({
       where: { id },

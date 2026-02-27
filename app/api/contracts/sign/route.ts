@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const DEFAULT_CLIENT_ID = "default-client";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/contracts/sign
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { memberId, membershipId, transactionId, planName, itemsSummary, contractContent, signatureData } = body;
 
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
         itemsSummary: itemsSummary || "[]",
         contractContent,
         signatureData,
-        clientId: DEFAULT_CLIENT_ID,
+        clientId,
       },
     });
 

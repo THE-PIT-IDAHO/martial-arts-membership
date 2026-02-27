@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/testing - List all testing events
 export async function GET(req: Request) {
@@ -31,11 +32,13 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, date, time, styleId, styleName, location, notes, clientId } = body;
+    const { name, date, time, styleId, styleName, location, notes } = body;
 
     if (!name || !date || !styleId || !styleName) {
       return new NextResponse("Name, date, styleId, and styleName are required", { status: 400 });
     }
+
+    const clientId = await getClientId(req);
 
     const event = await prisma.testingEvent.create({
       data: {
@@ -46,7 +49,7 @@ export async function POST(req: Request) {
         styleName,
         location: location?.trim() || null,
         notes: notes?.trim() || null,
-        clientId: clientId || "default-client",
+        clientId,
         status: "SCHEDULED",
       },
       include: {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // PATCH /api/tasks/:id
 export async function PATCH(
@@ -8,6 +9,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { title, description, dueDate, priority, recurrence, assignedRole, status } = body;
 
@@ -26,6 +28,10 @@ export async function PATCH(
         data.completedAt = null;
       }
     }
+
+    // Verify task belongs to tenant
+    const existingTask = await prisma.task.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!existingTask) return new NextResponse("Task not found", { status: 404 });
 
     const task = await prisma.task.update({
       where: { id },
@@ -49,6 +55,12 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(_req);
+
+    // Verify task belongs to tenant
+    const existingTask = await prisma.task.findFirst({ where: { id, clientId }, select: { id: true } });
+    if (!existingTask) return new NextResponse("Task not found", { status: 404 });
+
     await prisma.task.delete({ where: { id } });
     return new NextResponse(null, { status: 204 });
   } catch (error) {

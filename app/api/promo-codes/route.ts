@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/promo-codes
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const codes = await prisma.promoCode.findMany({
+      where: { clientId },
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({ codes });
@@ -17,6 +20,7 @@ export async function GET() {
 // POST /api/promo-codes
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const {
       code,
@@ -34,8 +38,8 @@ export async function POST(req: Request) {
       return new NextResponse("Code and discount value are required", { status: 400 });
     }
 
-    // Check for duplicate code
-    const existing = await prisma.promoCode.findUnique({ where: { code: code.toUpperCase() } });
+    // Check for duplicate code within tenant
+    const existing = await prisma.promoCode.findFirst({ where: { code: code.toUpperCase(), clientId } });
     if (existing) {
       return new NextResponse("Promo code already exists", { status: 400 });
     }
@@ -43,6 +47,7 @@ export async function POST(req: Request) {
     const promoCode = await prisma.promoCode.create({
       data: {
         code: code.toUpperCase(),
+        clientId,
         description: description || null,
         discountType: discountType || "PERCENT",
         discountValue,

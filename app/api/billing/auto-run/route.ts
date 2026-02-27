@@ -13,18 +13,20 @@ import { calculateNextRetryDate, getDunningEmailLevel, shouldSuspendMembership }
 import { getTodayInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
 import { getActiveProcessor, chargeStoredPaymentMethod, getCurrency, type ProcessorType } from "@/lib/payment";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/billing/auto-run
 // Called automatically from the dashboard on first load of the day.
 // Checks if billing has already run today; if not, runs billing + past-due sweep.
-export async function POST() {
+export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const tz = (await getSetting("timezone")) || "America/Denver";
     const today = getTodayInTimezone(tz); // YYYY-MM-DD in gym's timezone
 
     // Check if already run today
-    const lastRunSetting = await prisma.settings.findUnique({
-      where: { key: "billing_last_auto_run" },
+    const lastRunSetting = await prisma.settings.findFirst({
+      where: { key: "billing_last_auto_run", clientId },
     });
 
     if (lastRunSetting?.value === today) {
@@ -32,8 +34,8 @@ export async function POST() {
     }
 
     // Check if auto-generate is enabled
-    const autoGenSetting = await prisma.settings.findUnique({
-      where: { key: "billing_auto_generate" },
+    const autoGenSetting = await prisma.settings.findFirst({
+      where: { key: "billing_auto_generate", clientId },
     });
     if (autoGenSetting?.value === "false") {
       return NextResponse.json({ skipped: true, message: "Auto-generate disabled" });
@@ -44,7 +46,7 @@ export async function POST() {
     now.setHours(23, 59, 59, 999);
 
     const graceSetting = await prisma.settings.findFirst({
-      where: { key: "billing_grace_period_days" },
+      where: { key: "billing_grace_period_days", clientId },
     });
     const gracePeriodDays = graceSetting ? parseInt(graceSetting.value) || 7 : 7;
 
@@ -57,6 +59,7 @@ export async function POST() {
         status: "ACTIVE",
         nextPaymentDate: { lte: now },
         membershipPlan: { autoRenew: true },
+        member: { clientId },
       },
       include: {
         membershipPlan: {
@@ -131,7 +134,7 @@ export async function POST() {
               billingPeriodEnd,
               dueDate,
               notes: familyDiscountNote || null,
-              clientId: "default-client",
+              clientId,
             },
           });
           invoicesCreated++;
@@ -198,6 +201,7 @@ export async function POST() {
     // --- Run past-due sweep ---
     const pastDueInvoices = await prisma.invoice.findMany({
       where: {
+        clientId,
         status: "PENDING",
         dueDate: { lt: new Date() },
       },
@@ -232,20 +236,21 @@ export async function POST() {
     let dunningProcessed = 0;
     let membershipsSuspended = 0;
 
-    const dunningSetting = await prisma.settings.findUnique({
-      where: { key: "dunning_enabled" },
+    const dunningSetting = await prisma.settings.findFirst({
+      where: { key: "dunning_enabled", clientId },
     });
     const dunningEnabled = dunningSetting?.value !== "false"; // default enabled
 
     if (dunningEnabled) {
-      const maxRetriesSetting = await prisma.settings.findUnique({
-        where: { key: "dunning_max_retries" },
+      const maxRetriesSetting = await prisma.settings.findFirst({
+        where: { key: "dunning_max_retries", clientId },
       });
       const maxRetries = maxRetriesSetting ? parseInt(maxRetriesSetting.value) || 4 : 4;
 
       // Find past-due or failed invoices due for retry
       const dunningInvoices = await prisma.invoice.findMany({
         where: {
+          clientId,
           status: { in: ["PAST_DUE", "FAILED"] },
           nextRetryDate: { lte: new Date() },
         },
@@ -374,6 +379,7 @@ export async function POST() {
       where: {
         status: "ACTIVE",
         cancellationEffectiveDate: { lte: new Date() },
+        member: { clientId },
       },
     });
 
@@ -392,7 +398,7 @@ export async function POST() {
     // --- Expire trial passes ---
     try {
       const expired = await prisma.trialPass.updateMany({
-        where: { status: "ACTIVE", expiresAt: { lt: new Date() } },
+        where: { clientId, status: "ACTIVE", expiresAt: { lt: new Date() } },
         data: { status: "EXPIRED" },
       });
       if (expired.count > 0) {
@@ -405,12 +411,12 @@ export async function POST() {
     // --- Send promotion eligibility alert (fire-and-forget) ---
     try {
       const stylesWithBelts = await prisma.style.findMany({
-        where: { beltSystemEnabled: true },
+        where: { clientId, beltSystemEnabled: true },
         select: { name: true, beltConfig: true, ranks: { select: { name: true, order: true, classRequirement: true }, orderBy: { order: "asc" } } },
       });
       if (stylesWithBelts.length > 0) {
         const membersWithStyles = await prisma.member.findMany({
-          where: { status: "ACTIVE", stylesNotes: { not: null } },
+          where: { clientId, status: "ACTIVE", stylesNotes: { not: null } },
           select: {
             firstName: true, lastName: true, stylesNotes: true,
             attendances: { select: { attendanceDate: true, checkedInAt: true, source: true, classSession: { select: { classType: true, styleName: true, styleNames: true } } } },
@@ -461,8 +467,8 @@ export async function POST() {
 
         // Deduplication: only email NEWLY eligible members
         if (eligible.length > 0) {
-          const lastNotifiedSetting = await prisma.settings.findUnique({
-            where: { key: "promotion_eligible_last_notified" },
+          const lastNotifiedSetting = await prisma.settings.findFirst({
+            where: { key: "promotion_eligible_last_notified", clientId },
           });
           const previousKeys = new Set<string>();
           if (lastNotifiedSetting?.value) {
@@ -482,11 +488,12 @@ export async function POST() {
             sendPromotionEligibilityAlertEmail({ eligible: newlyEligible }).catch(() => {});
           }
 
-          await prisma.settings.upsert({
-            where: { key: "promotion_eligible_last_notified" },
-            update: { value: JSON.stringify(currentKeys) },
-            create: { key: "promotion_eligible_last_notified", value: JSON.stringify(currentKeys), clientId: "default-client" },
-          });
+          const existingPromoSetting = await prisma.settings.findFirst({ where: { key: "promotion_eligible_last_notified", clientId } });
+          if (existingPromoSetting) {
+            await prisma.settings.update({ where: { id: existingPromoSetting.id }, data: { value: JSON.stringify(currentKeys) } });
+          } else {
+            await prisma.settings.create({ data: { key: "promotion_eligible_last_notified", value: JSON.stringify(currentKeys), clientId } });
+          }
         }
       }
     } catch (err) {
@@ -494,11 +501,12 @@ export async function POST() {
     }
 
     // Mark as run today
-    await prisma.settings.upsert({
-      where: { key: "billing_last_auto_run" },
-      update: { value: today },
-      create: { key: "billing_last_auto_run", value: today, clientId: "default-client" },
-    });
+    const existingLastRun = await prisma.settings.findFirst({ where: { key: "billing_last_auto_run", clientId } });
+    if (existingLastRun) {
+      await prisma.settings.update({ where: { id: existingLastRun.id }, data: { value: today } });
+    } else {
+      await prisma.settings.create({ data: { key: "billing_last_auto_run", value: today, clientId } });
+    }
 
     logAudit({
       entityType: "Billing",

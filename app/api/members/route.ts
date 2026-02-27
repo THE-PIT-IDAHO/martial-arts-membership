@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendWelcomeEmail } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";
+import { getClientId } from "@/lib/tenant";
 
 const MIN_MEMBER_NUMBER = 10000000;
 
@@ -41,6 +42,7 @@ async function getNextMemberNumber() {
 // GET /api/members
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
     const search = searchParams.get("search");
@@ -48,7 +50,7 @@ export async function GET(req: Request) {
     const styleName = searchParams.get("styleName");
     const styleId = searchParams.get("styleId"); // Filter by membership that allows this style
 
-    const whereClause: any = {};
+    const whereClause: any = { clientId };
     if (status) {
       whereClause.status = status;
     }
@@ -243,7 +245,6 @@ export async function POST(req: Request) {
       leadSource,
       referredByMemberId,
 
-      clientId: incomingClientId,
     } = body || {};
 
     if (!firstName || !lastName) {
@@ -253,18 +254,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // pick a client
-    let clientId = incomingClientId as string | undefined;
-    if (!clientId) {
-      const existingClient = await prisma.client.findFirst();
-      if (!existingClient) {
-        return NextResponse.json(
-          { error: "No client found. Please create a Client first." },
-          { status: 400 }
-        );
-      }
-      clientId = existingClient.id;
-    }
+    // Resolve tenant clientId from request header
+    const clientId = await getClientId(req);
 
     const memberNumber = await getNextMemberNumber();
 

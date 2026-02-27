@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 // GET /api/scheduled-appointments/[id]
-export async function GET(_req: Request, context: RouteContext) {
+export async function GET(req: Request, context: RouteContext) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await context.params;
     const appt = await prisma.scheduledAppointment.findUnique({
       where: { id },
@@ -15,7 +17,7 @@ export async function GET(_req: Request, context: RouteContext) {
       },
     });
 
-    if (!appt) {
+    if (!appt || appt.clientId !== clientId) {
       return new NextResponse("Not found", { status: 404 });
     }
 
@@ -29,6 +31,7 @@ export async function GET(_req: Request, context: RouteContext) {
 // PATCH /api/scheduled-appointments/[id]
 export async function PATCH(req: Request, context: RouteContext) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await context.params;
     const body = await req.json();
     const { scheduledDate, startTime, endTime, coachId, coachName, notes, status, memberId, memberName, spaceId } = body;
@@ -37,7 +40,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       where: { id },
     });
 
-    if (!existing) {
+    if (!existing || existing.clientId !== clientId) {
       return new NextResponse("Not found", { status: 404 });
     }
 
@@ -106,15 +109,16 @@ export async function PATCH(req: Request, context: RouteContext) {
 }
 
 // DELETE /api/scheduled-appointments/[id]
-export async function DELETE(_req: Request, context: RouteContext) {
+export async function DELETE(req: Request, context: RouteContext) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await context.params;
 
     const existing = await prisma.scheduledAppointment.findUnique({
       where: { id },
     });
 
-    if (!existing) {
+    if (!existing || existing.clientId !== clientId) {
       return new NextResponse("Not found", { status: 404 });
     }
 

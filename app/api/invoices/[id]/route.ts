@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendPaymentReceivedEmail } from "@/lib/notifications";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/invoices/:id
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
     const invoice = await prisma.invoice.findUnique({
       where: { id },
@@ -24,7 +26,7 @@ export async function GET(
       },
     });
 
-    if (!invoice) {
+    if (!invoice || invoice.clientId !== clientId) {
       return new NextResponse("Invoice not found", { status: 404 });
     }
 
@@ -41,6 +43,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
     const body = await req.json();
     const { status, paymentMethod, notes } = body;
@@ -55,7 +58,7 @@ export async function PATCH(
       },
     });
 
-    if (!invoice) {
+    if (!invoice || invoice.clientId !== clientId) {
       return new NextResponse("Invoice not found", { status: 404 });
     }
 
@@ -82,7 +85,7 @@ export async function PATCH(
           paymentMethod: paymentMethod || "CASH",
           status: "COMPLETED",
           notes: `Invoice ${invoice.invoiceNumber || id} — ${invoice.membership.membershipPlan.name}`,
-          clientId: "default-client",
+          clientId,
           updatedAt: new Date(),
           POSLineItem: {
             create: {

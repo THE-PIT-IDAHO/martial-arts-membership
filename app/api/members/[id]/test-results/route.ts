@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/members/[id]/test-results - Get test results for a member
 export async function GET(
@@ -8,6 +9,17 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
+
+    // Verify member belongs to this tenant
+    const member = await prisma.member.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!member || member.clientId !== clientId) {
+      return new NextResponse("Member not found", { status: 404 });
+    }
+
     const { searchParams } = new URL(req.url);
     const styleName = searchParams.get("styleName");
     const limit = searchParams.get("limit");

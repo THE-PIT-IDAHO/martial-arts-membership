@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 const MIN_MEMBER_NUMBER = 10000000;
 
@@ -107,15 +108,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get a client
-    const existingClient = await prisma.client.findFirst();
-    if (!existingClient) {
-      return NextResponse.json(
-        { error: "No client found. Please create a Client first." },
-        { status: 400 }
-      );
-    }
-    const clientId = existingClient.id;
+    // Resolve tenant clientId from request header
+    const clientId = await getClientId(req);
 
     // Get member numbers for all imports
     const memberNumbers = await getNextMemberNumbers(importMembers.length);

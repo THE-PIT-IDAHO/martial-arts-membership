@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 import { getDefaultTemplate } from "@/lib/email-template-defaults";
 import { getSettings } from "@/lib/email";
 
@@ -9,6 +10,7 @@ function interpolate(template: string, variables: Record<string, string>): strin
 
 // POST — render a preview of a template with sample data
 export async function POST(req: Request) {
+  const clientId = await getClientId(req);
   const { eventKey, subject: overrideSubject, bodyHtml: overrideBody } = await req.json();
 
   if (!eventKey) {
@@ -23,7 +25,7 @@ export async function POST(req: Request) {
     subject = overrideSubject;
     bodyHtml = overrideBody;
   } else {
-    const dbTpl = await prisma.emailTemplate.findUnique({ where: { eventKey } });
+    const dbTpl = await prisma.emailTemplate.findFirst({ where: { eventKey, clientId } });
     if (dbTpl) {
       subject = dbTpl.subject;
       bodyHtml = dbTpl.bodyHtml;
