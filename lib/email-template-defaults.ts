@@ -369,7 +369,7 @@ export function getDefaultTemplate(eventKey: string): DefaultEmailTemplate | und
 export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
   {
     label: "Member Lifecycle",
-    keys: ["welcome", "enrollment_confirmation", "birthday", "inactive_reengagement", "promotion_congrats"],
+    keys: ["welcome", "enrollment_confirmation", "waiver_welcome", "waiver_confirmed", "birthday", "inactive_reengagement", "promotion_congrats"],
   },
   {
     label: "Billing",
@@ -382,10 +382,6 @@ export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
   {
     label: "Classes",
     keys: ["class_reminder", "booking_confirmed", "booking_waitlisted", "waitlist_promotion"],
-  },
-  {
-    label: "Enrollment",
-    keys: ["waiver_welcome", "waiver_confirmed"],
   },
   {
     label: "Auth",
