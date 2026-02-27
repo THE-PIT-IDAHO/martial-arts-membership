@@ -4,6 +4,14 @@ import { useEffect, useState, useRef } from "react";
 import { AppLayout } from "@/components/app-layout";
 import Link from "next/link";
 
+function formatPhoneNumber(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+}
+
 type Member = {
   id: string;
   firstName: string;
@@ -881,7 +889,7 @@ export default function WaiversPage() {
                     <input
                       type="tel"
                       value={editingGymSettings.phone}
-                      onChange={(e) => setEditingGymSettings(prev => ({ ...prev, phone: e.target.value }))}
+                      onChange={(e) => setEditingGymSettings(prev => ({ ...prev, phone: formatPhoneNumber(e.target.value) }))}
                       placeholder="(555) 123-4567"
                       className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     />

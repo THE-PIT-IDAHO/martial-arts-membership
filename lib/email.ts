@@ -77,6 +77,10 @@ export async function resolveRecipientEmails(memberId: string): Promise<string[]
   return [...new Set(emails)]; // deduplicate
 }
 
+// Platform sender address — all emails send FROM this verified domain.
+// Client gym email is used as reply-to so member replies go to the gym.
+const PLATFORM_SENDER = "notifications@dojostormsoftware.com";
+
 // Core send function — never throws, returns true on success
 export async function sendEmail(params: {
   to: string | string[];
@@ -95,9 +99,8 @@ export async function sendEmail(params: {
     const gymName = settings.gymName || "Our Gym";
     const gymEmail = settings.gymEmail;
 
-    if (!gymEmail) return false;
-
-    const fromAddress = `${gymName} <${gymEmail}>`;
+    // Gym email is used as reply-to; platform sender handles "from"
+    const fromAddress = `${gymName} <${PLATFORM_SENDER}>`;
     const recipients = Array.isArray(params.to) ? params.to : [params.to];
     if (recipients.length === 0) return false;
 
@@ -106,6 +109,7 @@ export async function sendEmail(params: {
       to: recipients,
       subject: params.subject,
       html: params.html,
+      reply_to: gymEmail || undefined,
     };
 
     if (params.attachments && params.attachments.length > 0) {

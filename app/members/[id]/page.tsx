@@ -1205,7 +1205,7 @@ export default function MemberProfilePage() {
     setFirstName(m.firstName);
     setLastName(m.lastName);
     setEmail(m.email || "");
-    setPhone(m.phone || "");
+    setPhone(formatPhoneNumber(m.phone || ""));
     // Parse status - can be comma-separated or single value
     const statusValue = m.status || "PROSPECT";
     const statusArray = statusValue.includes(",")
@@ -1224,7 +1224,7 @@ export default function MemberProfilePage() {
     setStateValue(m.state || "");
     setZipCode(m.zipCode || "");
     setEmergencyContactNameState(m.emergencyContactName || "");
-    setEmergencyContactPhoneState(m.emergencyContactPhone || "");
+    setEmergencyContactPhoneState(formatPhoneNumber(m.emergencyContactPhone || ""));
     setParentGuardianName(m.parentGuardianName || "");
     setMinorCommsMode(m.minorCommsMode || "both");
     setEmailOptIn(m.emailOptIn !== false);

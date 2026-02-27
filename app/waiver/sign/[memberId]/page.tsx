@@ -5,6 +5,14 @@ import { useParams, useRouter } from "next/navigation";
 import { getTodayString } from "@/lib/dates";
 import { DateOfBirthPicker } from "@/components/date-of-birth-picker";
 
+function formatPhoneNumber(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+}
+
 type Member = {
   id: string;
   firstName: string;
@@ -452,7 +460,9 @@ export default function WaiverSignPage() {
                   <input
                     type="tel"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
+                    placeholder="(123) 456-7890"
+                    maxLength={14}
                     className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -541,7 +551,9 @@ export default function WaiverSignPage() {
                   <input
                     type="tel"
                     value={emergencyContactPhone}
-                    onChange={(e) => setEmergencyContactPhone(e.target.value)}
+                    onChange={(e) => setEmergencyContactPhone(formatPhoneNumber(e.target.value))}
+                    placeholder="(123) 456-7890"
+                    maxLength={14}
                     required
                     className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
