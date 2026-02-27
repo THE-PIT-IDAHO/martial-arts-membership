@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { jsPDF } from "jspdf";
 import { getTodayString } from "@/lib/dates";
+import { DateOfBirthPicker } from "@/components/date-of-birth-picker";
 
 type WaiverSection = {
   id: string;
@@ -737,16 +738,14 @@ export default function GuardianWaiverPage() {
                     className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Date of Birth *
                   </label>
-                  <input
-                    type="date"
+                  <DateOfBirthPicker
                     value={dependentDateOfBirth}
-                    onChange={(e) => setDependentDateOfBirth(e.target.value)}
+                    onChange={setDependentDateOfBirth}
                     required
-                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                   {minorAge > 0 && (
                     <p className="text-xs text-gray-500 mt-1">

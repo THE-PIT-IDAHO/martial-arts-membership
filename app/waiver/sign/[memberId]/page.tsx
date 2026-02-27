@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getTodayString } from "@/lib/dates";
+import { DateOfBirthPicker } from "@/components/date-of-birth-picker";
 
 type Member = {
   id: string;
@@ -424,16 +425,14 @@ export default function WaiverSignPage() {
                     className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
-                <div>
+                <div className="sm:col-span-3">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Date of Birth *
                   </label>
-                  <input
-                    type="date"
+                  <DateOfBirthPicker
                     value={dateOfBirth}
-                    onChange={(e) => setDateOfBirth(e.target.value)}
+                    onChange={setDateOfBirth}
                     required
-                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
                 <div>
