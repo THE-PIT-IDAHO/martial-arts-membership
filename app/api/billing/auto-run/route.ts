@@ -411,7 +411,7 @@ export async function POST(req: Request) {
     // --- Send promotion eligibility alert (fire-and-forget) ---
     try {
       const stylesWithBelts = await prisma.style.findMany({
-        where: { clientId, beltSystemEnabled: true },
+        where: { beltSystemEnabled: true },
         select: { name: true, beltConfig: true, ranks: { select: { name: true, order: true, classRequirement: true }, orderBy: { order: "asc" } } },
       });
       if (stylesWithBelts.length > 0) {
