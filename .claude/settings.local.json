@@ -92,7 +92,8 @@
       "Bash(\"$FNM\" install 20)",
       "Bash(\"$FNM\" use 20)",
       "Bash(\"$FNM\" current)",
-      "Bash(sed -n '2000,2200p' /g/martial-arts-membership/app/members/[id]/page.tsx)"
+      "Bash(sed -n '2000,2200p' /g/martial-arts-membership/app/members/[id]/page.tsx)",
+      "Bash(git rm -r --cached public/uploads/)"
     ],
     "deny": [],
     "ask": [],

@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
+  output: undefined,
   reactStrictMode: true,
   async headers() {
     return [
