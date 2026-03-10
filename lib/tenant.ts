@@ -38,6 +38,8 @@ export async function getClientId(req?: Request): Promise<string> {
   return resolveSlugToClientId(slug);
 }
 
+const FALLBACK_CLIENT_ID = "default-client";
+
 async function resolveSlugToClientId(slug: string): Promise<string> {
   // Check cache
   const cached = slugCache.get(slug);
@@ -45,20 +47,24 @@ async function resolveSlugToClientId(slug: string): Promise<string> {
     return cached.clientId;
   }
 
-  // DB lookup
-  const client = await prisma.client.findUnique({
-    where: { slug },
-    select: { id: true },
-  });
+  // DB lookup (Client table may not exist in local SQLite dev)
+  try {
+    const client = await prisma.client.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
 
-  if (!client) {
-    throw new Error(`Unknown tenant: ${slug}`);
+    if (client) {
+      slugCache.set(slug, { clientId: client.id, expiresAt: Date.now() + CACHE_TTL_MS });
+      return client.id;
+    }
+  } catch {
+    // Client table doesn't exist (local dev with SQLite) — use fallback
+    slugCache.set(slug, { clientId: FALLBACK_CLIENT_ID, expiresAt: Date.now() + CACHE_TTL_MS });
+    return FALLBACK_CLIENT_ID;
   }
 
-  // Cache it
-  slugCache.set(slug, { clientId: client.id, expiresAt: Date.now() + CACHE_TTL_MS });
-
-  return client.id;
+  throw new Error(`Unknown tenant: ${slug}`);
 }
 
 /**

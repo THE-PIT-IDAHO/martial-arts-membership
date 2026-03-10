@@ -7,7 +7,8 @@ const ADMIN_COOKIE = "admin_session";
 const TENANT_SLUG_HEADER = "x-tenant-slug";
 
 // Default slug for localhost / bare domain / "app" subdomain
-const DEFAULT_SLUG = "thepitidaho";
+// The Client record in DB was created with slug "app" by migrate-tenant.ts
+const DEFAULT_SLUG = "app";
 
 // Portal public routes (no auth required)
 const PUBLIC_PORTAL_PAGES = ["/portal/login", "/portal/verify", "/portal/enroll", "/portal/reset-password"];
