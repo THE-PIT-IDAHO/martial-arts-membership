@@ -988,18 +988,20 @@ export default function DojoBoardTab() {
 
     let fileRecords: { name: string; size: number; type: string; url: string; uploadedBy: string }[] = [];
 
-    // Upload files to local storage
+    // Convert files to base64 data URLs
     if (newBulletinAttachments.length > 0) {
-      const formData = new FormData();
-      newBulletinAttachments.forEach((file) => formData.append("files", file));
       try {
-        const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
-        if (uploadRes.ok) {
-          const data = await uploadRes.json();
-          fileRecords = data.files.map((f: { name: string; size: number; type: string; url: string }) => ({ ...f, uploadedBy: "You" }));
+        for (const file of newBulletinAttachments) {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error("Failed to read file"));
+            reader.readAsDataURL(file);
+          });
+          fileRecords.push({ name: file.name, size: file.size, type: file.type, url: dataUrl, uploadedBy: "You" });
         }
       } catch (err) {
-        console.error("Upload failed:", err);
+        console.error("File read failed:", err);
       }
     }
 

@@ -64,21 +64,11 @@ export async function GET(req: Request) {
     }
 
     // Add search filter for name or member number
-    // Note: SQLite doesn't support mode: "insensitive", so we search both lower and original case
     if (search && search.length >= 2) {
-      const searchLower = search.toLowerCase();
-      const searchUpper = search.toUpperCase();
-      const searchCapitalized = search.charAt(0).toUpperCase() + search.slice(1).toLowerCase();
-
       const searchConditions = [
-        { firstName: { contains: search } },
-        { firstName: { contains: searchLower } },
-        { firstName: { contains: searchCapitalized } },
-        { lastName: { contains: search } },
-        { lastName: { contains: searchLower } },
-        { lastName: { contains: searchCapitalized } },
-        { email: { contains: search } },
-        { email: { contains: searchLower } },
+        { firstName: { contains: search, mode: "insensitive" as const } },
+        { lastName: { contains: search, mode: "insensitive" as const } },
+        { email: { contains: search, mode: "insensitive" as const } },
       ];
       // Also search by member number if the search is numeric
       const searchNum = parseInt(search, 10);

@@ -716,39 +716,33 @@ export default function TestingPage() {
 
     setUploadingPdf(true);
     try {
-      const formData = new FormData();
-      formData.append("files", file);
-
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
+      // Read file as base64 data URL
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
       });
 
-      if (uploadRes.ok) {
-        const data = await uploadRes.json();
-        if (data.files && data.files.length > 0) {
-          const uploadedUrl = data.files[0].url;
-          setParticipantPdfUrl(uploadedUrl);
+      setParticipantPdfUrl(dataUrl);
 
-          // Also save to participant immediately
-          if (selectedEvent) {
-            await fetch(`/api/testing/${selectedEvent.id}/participants`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                participantId: editingParticipant.id,
-                resultPdfUrl: uploadedUrl,
-              }),
-            });
+      // Save to participant immediately
+      if (selectedEvent) {
+        await fetch(`/api/testing/${selectedEvent.id}/participants`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            participantId: editingParticipant.id,
+            resultPdfUrl: dataUrl,
+          }),
+        });
 
-            // Also add to member's styleDocuments
-            await addPdfToMemberDocuments(
-              editingParticipant.memberId,
-              uploadedUrl,
-              `${selectedEvent.name} - ${editingParticipant.testingForRank || "Test"} Results`
-            );
-          }
-        }
+        // Also add to member's styleDocuments
+        await addPdfToMemberDocuments(
+          editingParticipant.memberId,
+          dataUrl,
+          `${selectedEvent.name} - ${editingParticipant.testingForRank || "Test"} Results`
+        );
       }
     } catch (err) {
       console.error("Error uploading PDF:", err);
@@ -814,7 +808,7 @@ export default function TestingPage() {
     scores: ItemScores,
     overallScore: number,
     passed: boolean
-  ): Blob => {
+  ): string => {
     const pdf = new jsPDF();
     const pageWidth = pdf.internal.pageSize.getWidth();
     const margin = 20;
@@ -1068,60 +1062,37 @@ export default function TestingPage() {
     pdf.setTextColor(128, 128, 128);
     pdf.text(`Graded on: ${new Date().toLocaleString()}`, margin, yPos);
 
-    // Return as blob
-    return pdf.output("blob");
+    // Return as base64 data URL
+    return pdf.output("datauristring");
   };
 
-  // Upload PDF and save to participant/member
+  // Save PDF data URL to participant/member records
   const uploadAndSavePdf = async (
-    pdfBlob: Blob,
+    pdfDataUrl: string,
     participant: TestingParticipant,
     event: TestingEvent
   ): Promise<string | null> => {
     try {
-      // Create form data with the PDF
-      const formData = new FormData();
-      const fileName = `${participant.memberName.replace(/\s+/g, "_")}_${event.name.replace(/\s+/g, "_")}_Results.pdf`;
-      formData.append("files", pdfBlob, fileName);
-
-      // Upload
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadRes.ok) {
-        console.error("Failed to upload PDF");
-        return null;
-      }
-
-      const uploadData = await uploadRes.json();
-      if (!uploadData.files || uploadData.files.length === 0) {
-        return null;
-      }
-
-      const pdfUrl = uploadData.files[0].url;
-
       // Save to participant record
       await fetch(`/api/testing/${event.id}/participants`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           participantId: participant.id,
-          resultPdfUrl: pdfUrl,
+          resultPdfUrl: pdfDataUrl,
         }),
       });
 
       // Add to member's documents
       await addPdfToMemberDocuments(
         participant.memberId,
-        pdfUrl,
+        pdfDataUrl,
         `${event.name} - ${participant.testingForRank || "Test"} Results`
       );
 
-      return pdfUrl;
+      return pdfDataUrl;
     } catch (err) {
-      console.error("Error uploading PDF:", err);
+      console.error("Error saving PDF:", err);
       return null;
     }
   };

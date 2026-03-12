@@ -1313,7 +1313,7 @@ export default function CurriculumPage() {
   }
 
   // Generate a curriculum PDF for a single rank (matches belt color, fills full page)
-  function generateCurriculumPdf(styleName: string, rankName: string, tests: RankTest[], beltColor: string, logoImg?: HTMLImageElement): Blob {
+  function generateCurriculumPdf(styleName: string, rankName: string, tests: RankTest[], beltColor: string, logoImg?: HTMLImageElement): string {
     const rawRgb = hexToRgb(beltColor);
 
     // Detect near-white and near-black belts for special treatment
@@ -2076,7 +2076,7 @@ export default function CurriculumPage() {
     // === FOOTER (on last page) ===
     drawFooter();
 
-    return pdf.output("blob");
+    return pdf.output("datauristring");
   }
 
   // Publish curriculum as PDFs to rank documents
@@ -2126,42 +2126,23 @@ export default function CurriculumPage() {
         }
       }
 
-      // Generate and upload PDFs for each rank with curriculum
+      // Generate PDFs for each rank with curriculum (stored as base64 data URLs)
       for (const rank of ranksWithCurriculum) {
         const tests = testsByRank[rank.id];
         // Get the belt color from the rank's layer config
         const configRank = beltConfig.ranks?.find(r => r.name === rank.name);
         const beltColor = (configRank?.layers as Record<string, unknown>)?.fabricColor as string || "#ffffff";
-        const pdfBlob = generateCurriculumPdf(selectedStyle.name, rank.name, tests, beltColor, logoImg);
+        const pdfDataUrl = generateCurriculumPdf(selectedStyle.name, rank.name, tests, beltColor, logoImg);
 
-        // Upload PDF to server
-        const formData = new FormData();
-        const fileName = `${selectedStyle.name} - ${rank.name} Curriculum.pdf`;
-        formData.append("files", pdfBlob, fileName);
-
-        const uploadRes = await fetch("/api/upload", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!uploadRes.ok) {
-          console.error(`Failed to upload PDF for ${rank.name}`);
-          continue;
-        }
-
-        const uploadData = await uploadRes.json();
-        if (!uploadData.files || uploadData.files.length === 0) continue;
-
-        const pdfUrl = uploadData.files[0].url;
         const docName = `${rank.name} Curriculum`;
 
-        // Add new curriculum PDF to this rank's docs
+        // Add PDF as base64 data URL directly to rank's docs
         if (configRank) {
           if (!configRank.pdfDocuments) configRank.pdfDocuments = [];
           configRank.pdfDocuments.push({
             id: `curriculum-${rank.id}`,
             name: docName,
-            url: pdfUrl,
+            url: pdfDataUrl,
           });
         }
       }

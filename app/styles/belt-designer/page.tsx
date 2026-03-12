@@ -2081,17 +2081,25 @@ export default function BeltDesignerPage() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      // Convert data URL to blob and open in new window
-                                      const byteString = atob(doc.url.split(',')[1]);
-                                      const mimeString = doc.url.split(',')[0].split(':')[1].split(';')[0];
-                                      const ab = new ArrayBuffer(byteString.length);
-                                      const ia = new Uint8Array(ab);
-                                      for (let i = 0; i < byteString.length; i++) {
-                                        ia[i] = byteString.charCodeAt(i);
+                                      try {
+                                        if (doc.url.startsWith('/') || doc.url.startsWith('http')) {
+                                          window.open(doc.url, '_blank', 'noopener,noreferrer');
+                                        } else {
+                                          // Base64 data URL - convert to blob
+                                          const byteString = atob(doc.url.split(',')[1]);
+                                          const mimeString = doc.url.split(',')[0].split(':')[1].split(';')[0];
+                                          const ab = new ArrayBuffer(byteString.length);
+                                          const ia = new Uint8Array(ab);
+                                          for (let i = 0; i < byteString.length; i++) {
+                                            ia[i] = byteString.charCodeAt(i);
+                                          }
+                                          const blob = new Blob([ab], { type: mimeString });
+                                          const blobUrl = URL.createObjectURL(blob);
+                                          window.open(blobUrl, '_blank', 'noopener,noreferrer');
+                                        }
+                                      } catch (e) {
+                                        console.error("Failed to open document:", e);
                                       }
-                                      const blob = new Blob([ab], { type: mimeString });
-                                      const blobUrl = URL.createObjectURL(blob);
-                                      window.open(blobUrl, '_blank', 'noopener,noreferrer');
                                     }}
                                     className="text-blue-600 hover:text-blue-800 hover:underline truncate max-w-[100px] text-left"
                                     title={doc.name}

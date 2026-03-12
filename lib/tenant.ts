@@ -47,7 +47,7 @@ async function resolveSlugToClientId(slug: string): Promise<string> {
     return cached.clientId;
   }
 
-  // DB lookup (Client table may not exist in local SQLite dev)
+  // DB lookup (Client table may not exist or be empty in local SQLite dev)
   try {
     const client = await prisma.client.findUnique({
       where: { slug },
@@ -59,12 +59,12 @@ async function resolveSlugToClientId(slug: string): Promise<string> {
       return client.id;
     }
   } catch {
-    // Client table doesn't exist (local dev with SQLite) — use fallback
-    slugCache.set(slug, { clientId: FALLBACK_CLIENT_ID, expiresAt: Date.now() + CACHE_TTL_MS });
-    return FALLBACK_CLIENT_ID;
+    // Client table doesn't exist (local dev with SQLite)
   }
 
-  throw new Error(`Unknown tenant: ${slug}`);
+  // No Client found — fall back to default-client (local dev / empty Client table)
+  slugCache.set(slug, { clientId: FALLBACK_CLIENT_ID, expiresAt: Date.now() + CACHE_TTL_MS });
+  return FALLBACK_CLIENT_ID;
 }
 
 /**
