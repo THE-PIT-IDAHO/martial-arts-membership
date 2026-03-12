@@ -29,6 +29,12 @@ async function syncRankDocumentsToMembers(
   ranks: Array<{ name: string; order: number; pdfDocuments?: RankDocument[] }>
 ) {
   try {
+    // Fetch DB ranks to include curriculum PDFs stored on Rank.pdfDocument
+    const dbRanks = await prisma.rank.findMany({
+      where: { styleId },
+      select: { id: true, name: true, order: true, pdfDocument: true },
+    });
+
     // Find all members who have this style in their stylesNotes
     const members = await prisma.member.findMany({
       where: {
@@ -74,13 +80,26 @@ async function syncRankDocumentsToMembers(
       // Build the list of documents that should be in the member's styleDocuments
       const rankDocuments: StyleDocument[] = [];
       for (const rank of ranksToInclude) {
-        if (!rank.pdfDocuments || rank.pdfDocuments.length === 0) continue;
+        // Add pdfDocuments from beltConfig
+        if (rank.pdfDocuments && rank.pdfDocuments.length > 0) {
+          for (const doc of rank.pdfDocuments) {
+            rankDocuments.push({
+              id: `rank-${rank.name}-${doc.id}`,
+              name: doc.name,
+              url: doc.url,
+              uploadedAt: new Date().toISOString(),
+              fromRank: rank.name,
+            });
+          }
+        }
 
-        for (const doc of rank.pdfDocuments) {
+        // Add curriculum PDF from DB Rank.pdfDocument field
+        const dbRank = dbRanks.find(dr => dr.name === rank.name);
+        if (dbRank?.pdfDocument) {
           rankDocuments.push({
-            id: `rank-${rank.name}-${doc.id}`,
-            name: doc.name,
-            url: doc.url,
+            id: `rank-${rank.name}-curriculum-db`,
+            name: `${rank.name} Curriculum`,
+            url: dbRank.pdfDocument,
             uploadedAt: new Date().toISOString(),
             fromRank: rank.name,
           });

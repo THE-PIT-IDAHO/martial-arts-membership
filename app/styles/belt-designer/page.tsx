@@ -98,6 +98,7 @@ type Style = {
   id: string;
   name: string;
   beltConfig?: string | null;
+  ranks?: Array<{ id: string; name: string; pdfDocument?: string | null }>;
 };
 
 // Popup target for editable pop-out
@@ -277,19 +278,31 @@ export default function BeltDesignerPage() {
               const parsedRanks: BeltRank[] =
                 parsed.ranks || parsed.levels || [];
               if (Array.isArray(parsedRanks)) {
-                const hydrated = parsedRanks
-                  .map((r) => ({
-                    ...r,
-                    classRequirements: r.classRequirements || [],
-                    minDuration: r.minDuration || {
-                      value: null,
-                      unit: "months" as DurationUnit,
-                    },
-                    attendanceWindow: r.attendanceWindow || {
-                      value: null,
-                      unit: "months" as DurationUnit,
-                    },
-                  }))
+                // Merge curriculum PDFs from DB Rank.pdfDocument into beltConfig ranks
+              const dbRanks: Array<{ id: string; name: string; pdfDocument?: string | null }> = s.ranks || [];
+              const hydrated = parsedRanks
+                  .map((r) => {
+                    const dbRank = dbRanks.find(dr => dr.id === r.id)
+                      || dbRanks.find(dr => dr.name.toLowerCase() === (r.name || "").toLowerCase());
+                    const pdfDocs = r.pdfDocuments ? [...r.pdfDocuments] : [];
+                    // Add curriculum PDF from DB if present and not already in the list
+                    if (dbRank?.pdfDocument && !pdfDocs.some(d => d.id === "curriculum-db")) {
+                      pdfDocs.push({ id: "curriculum-db", name: `${r.name} Curriculum`, url: dbRank.pdfDocument });
+                    }
+                    return {
+                      ...r,
+                      pdfDocuments: pdfDocs.length > 0 ? pdfDocs : r.pdfDocuments,
+                      classRequirements: r.classRequirements || [],
+                      minDuration: r.minDuration || {
+                        value: null,
+                        unit: "months" as DurationUnit,
+                      },
+                      attendanceWindow: r.attendanceWindow || {
+                        value: null,
+                        unit: "months" as DurationUnit,
+                      },
+                    };
+                  })
                   .sort((a, b) => a.order - b.order);
                 setRanks(hydrated);
                 setRankOrder(getNextOrder(hydrated));
