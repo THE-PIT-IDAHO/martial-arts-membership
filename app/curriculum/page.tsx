@@ -2129,22 +2129,28 @@ export default function CurriculumPage() {
       // Generate PDFs for each rank with curriculum (stored as base64 data URLs)
       for (const rank of ranksWithCurriculum) {
         const tests = testsByRank[rank.id];
-        // Get the belt color from the rank's layer config
-        const configRank = beltConfig.ranks?.find(r => r.name === rank.name);
+        // Match by name (case-insensitive) or by id
+        let configRank = beltConfig.ranks?.find(r => r.id === rank.id)
+          || beltConfig.ranks?.find(r => r.name.toLowerCase() === rank.name.toLowerCase());
+
+        // If no matching rank in beltConfig, create one
+        if (!configRank) {
+          configRank = { id: rank.id, name: rank.name, order: rank.order };
+          if (!beltConfig.ranks) beltConfig.ranks = [];
+          beltConfig.ranks.push(configRank);
+        }
+
         const beltColor = (configRank?.layers as Record<string, unknown>)?.fabricColor as string || "#ffffff";
         const pdfDataUrl = generateCurriculumPdf(selectedStyle.name, rank.name, tests, beltColor, logoImg);
 
         const docName = `${rank.name} Curriculum`;
 
-        // Add PDF as base64 data URL directly to rank's docs
-        if (configRank) {
-          if (!configRank.pdfDocuments) configRank.pdfDocuments = [];
-          configRank.pdfDocuments.push({
-            id: `curriculum-${rank.id}`,
-            name: docName,
-            url: pdfDataUrl,
-          });
-        }
+        if (!configRank.pdfDocuments) configRank.pdfDocuments = [];
+        configRank.pdfDocuments.push({
+          id: `curriculum-${rank.id}`,
+          name: docName,
+          url: pdfDataUrl,
+        });
       }
 
       // Save updated beltConfig to style (triggers syncRankDocumentsToMembers)
@@ -2154,12 +2160,16 @@ export default function CurriculumPage() {
         body: JSON.stringify({ beltConfig: JSON.stringify(beltConfig) }),
       });
 
-      if (!patchRes.ok) throw new Error("Failed to update style with curriculum PDFs");
+      if (!patchRes.ok) {
+        const errText = await patchRes.text().catch(() => "Unknown error");
+        throw new Error(`Failed to update style (${patchRes.status}): ${errText}`);
+      }
 
       alert(`Curriculum published! ${ranksWithCurriculum.length} rank PDF${ranksWithCurriculum.length !== 1 ? "s" : ""} generated and synced to members.`);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Error publishing curriculum:", err);
-      alert("Failed to publish curriculum. Check console for details.");
+      const message = err instanceof Error ? err.message : "Unknown error";
+      alert(`Failed to publish curriculum: ${message}`);
     } finally {
       setPublishing(false);
     }
