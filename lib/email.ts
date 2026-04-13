@@ -1,8 +1,8 @@
 import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
 
-// Per-tenant Resend client cache
-const resendCache = new Map<string, { client: Resend; apiKey: string }>();
+// Single platform-wide Resend client (API key from environment variable)
+let resendClient: Resend | null = null;
 
 // Load a single setting by key, optionally scoped to a client
 export async function getSetting(key: string, clientId?: string): Promise<string | null> {
@@ -30,18 +30,18 @@ export async function getSettings(keys: string[], clientId?: string): Promise<Re
   return map;
 }
 
-// Get or create the Resend client (cached per tenant)
-async function getResendClient(clientId?: string): Promise<Resend | null> {
-  const apiKey = await getSetting("resend_api_key", clientId);
-  if (!apiKey) return null;
+// Get or create the Resend client (single platform-wide key from env)
+function getResendClient(): Resend | null {
+  if (resendClient) return resendClient;
 
-  const cacheKey = clientId || "__global__";
-  const cached = resendCache.get(cacheKey);
-  if (cached && cached.apiKey === apiKey) return cached.client;
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.warn("[Email] RESEND_API_KEY environment variable not set");
+    return null;
+  }
 
-  const client = new Resend(apiKey);
-  resendCache.set(cacheKey, { client, apiKey });
-  return client;
+  resendClient = new Resend(apiKey);
+  return resendClient;
 }
 
 // Resolve which email addresses to send to for a given member,
@@ -102,7 +102,7 @@ export async function sendEmail(params: {
   clientId?: string;
 }): Promise<boolean> {
   try {
-    const resend = await getResendClient(params.clientId);
+    const resend = getResendClient();
     if (!resend) return false;
 
     const globalEnabled = await getSetting("notify_email_enabled", params.clientId);

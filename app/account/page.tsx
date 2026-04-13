@@ -96,7 +96,6 @@ export default function AccountPage() {
     notify_renewal_reminder: true,
     notify_trial_expiring: true,
   });
-  const [resendApiKey, setResendApiKey] = useState("");
   const [savingNotifications, setSavingNotifications] = useState(false);
 
   // Display settings
@@ -196,7 +195,6 @@ export default function AccountPage() {
               }
             }
             // Load notification settings
-            setResendApiKey(map.resend_api_key || "");
             setNotifySettings({
               notify_email_enabled: map.notify_email_enabled !== "false",
               notify_welcome_email: map.notify_welcome_email !== "false",
@@ -254,9 +252,7 @@ export default function AccountPage() {
   async function handleSaveNotifications() {
     setSavingNotifications(true);
     try {
-      const payload: Record<string, string> = {
-        resend_api_key: resendApiKey,
-      };
+      const payload: Record<string, string> = {};
       for (const [key, val] of Object.entries(notifySettings)) {
         payload[key] = val ? "true" : "false";
       }
@@ -1413,23 +1409,8 @@ export default function AccountPage() {
             <div className="rounded-lg border border-gray-200 bg-white p-6">
               <h3 className="text-lg font-semibold mb-2">Email Notifications</h3>
               <p className="text-sm text-gray-500 mb-4">
-                Configure email notifications sent to members via Resend.
+                Configure which email notifications are sent to members. Emails are sent from your gym name via the platform.
               </p>
-
-              {/* Resend API Key */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Resend API Key</label>
-                <input
-                  type="password"
-                  value={resendApiKey}
-                  onChange={(e) => setResendApiKey(e.target.value)}
-                  placeholder="re_xxxxxxxxxxxx"
-                  className="w-full max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Get your API key from resend.com. Required for email notifications.
-                </p>
-              </div>
 
               {/* Master toggle */}
               <div className="space-y-4">
