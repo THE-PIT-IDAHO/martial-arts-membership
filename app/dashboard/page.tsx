@@ -23,6 +23,8 @@ type ClassToday = {
   startsAt: string;
   endsAt: string;
   styleName: string | null;
+  styleIds?: string | null;
+  styleId?: string | null;
   classType: string | null;
   color: string | null;
   coachName: string | null;
@@ -137,10 +139,51 @@ type SearchMember = {
   lastName: string;
 };
 
+type DashboardSection = {
+  id: string;
+  label: string;
+  visible: boolean;
+};
+
+const DEFAULT_SECTIONS: DashboardSection[] = [
+  { id: "stats", label: "Stat Cards", visible: true },
+  { id: "schedule", label: "Today's Schedule & Attendance", visible: true },
+  { id: "revenue", label: "Revenue Summary", visible: true },
+  { id: "tasks", label: "Tasks", visible: true },
+  { id: "checkins", label: "Recent Check-ins", visible: true },
+  { id: "pastdue", label: "Past Due Members", visible: true },
+  { id: "billing", label: "Upcoming Billings", visible: true },
+  { id: "promotions", label: "Promotion Eligible", visible: true },
+  { id: "trials", label: "Trial Members", visible: true },
+  { id: "expiring", label: "Expiring Memberships", visible: true },
+  { id: "lowstock", label: "Low Stock Items", visible: true },
+  { id: "newmembers", label: "New Members This Week", visible: true },
+  { id: "charts", label: "Analytics Charts", visible: true },
+];
+
+function loadSections(): DashboardSection[] {
+  try {
+    const saved = localStorage.getItem("dashboard.sections");
+    if (saved) {
+      const parsed: DashboardSection[] = JSON.parse(saved);
+      // Merge with defaults to pick up new sections
+      const ids = new Set(parsed.map(s => s.id));
+      const merged = [...parsed];
+      for (const def of DEFAULT_SECTIONS) {
+        if (!ids.has(def.id)) merged.push(def);
+      }
+      return merged;
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_SECTIONS.map(s => ({ ...s }));
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const [sections, setSections] = useState<DashboardSection[]>(loadSections);
+  const [showSectionConfig, setShowSectionConfig] = useState(false);
 
   // Class attendance modal state
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
@@ -148,6 +191,32 @@ export default function DashboardPage() {
   const [searchResults, setSearchResults] = useState<SearchMember[]>([]);
   const [searching, setSearching] = useState(false);
   const [checkedMembers, setCheckedMembers] = useState<Set<string>>(new Set());
+  const [styleMembers, setStyleMembers] = useState<{ styleName: string; styleId: string; members: { id: string; firstName: string; lastName: string; photoUrl?: string | null; rank?: string }[] }[]>([]);
+  const [showStyleMembersModal, setShowStyleMembersModal] = useState(false);
+  const [styleModalFilter, setStyleModalFilter] = useState<string | null>(null);
+
+  const isSectionVisible = (id: string) => sections.find(s => s.id === id)?.visible !== false;
+
+  function saveSections(updated: DashboardSection[]) {
+    setSections(updated);
+    localStorage.setItem("dashboard.sections", JSON.stringify(updated));
+  }
+
+  function toggleSection(id: string) {
+    saveSections(sections.map(s => s.id === id ? { ...s, visible: !s.visible } : s));
+  }
+
+  function moveSection(index: number, direction: "up" | "down") {
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= sections.length) return;
+    const updated = [...sections];
+    [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
+    saveSections(updated);
+  }
+
+  function resetSections() {
+    saveSections(DEFAULT_SECTIONS.map(s => ({ ...s })));
+  }
 
   const loadDashboard = useCallback(() => {
     fetch("/api/dashboard")
@@ -303,11 +372,71 @@ export default function DashboardPage() {
 
   const selectedClass = data?.classesToday.find((c) => c.id === selectedClassId) ?? null;
 
-  function openClassModal(cls: ClassToday) {
+  async function openClassModal(cls: ClassToday) {
     setSelectedClassId(cls.id);
     setMemberSearch("");
     setSearchResults([]);
     setCheckedMembers(new Set());
+    setStyleMembers([]);
+
+    // Load style-filtered members for the modal
+    try {
+      const [membersRes, stylesRes] = await Promise.all([
+        fetch("/api/members"),
+        fetch("/api/styles"),
+      ]);
+      if (membersRes.ok && stylesRes.ok) {
+        const membersData = await membersRes.json();
+        const stylesData = await stylesRes.json();
+        const allStyles: { id: string; name: string }[] = stylesData.styles || [];
+        const allMembers: { id: string; firstName: string; lastName: string; photoUrl?: string | null; primaryStyle?: string; stylesNotes?: string; rank?: string }[] = membersData.members || [];
+
+        // Use class style requirements if set, otherwise all styles
+        let classStyleIds: string[] = [];
+        if (cls.styleIds) {
+          try { classStyleIds = JSON.parse(cls.styleIds); } catch { /* ignore */ }
+        } else if (cls.styleId) {
+          classStyleIds = [cls.styleId];
+        }
+        classStyleIds = classStyleIds.filter(id => id && id !== "NO_STYLE");
+
+        const styleIdsToLoad = classStyleIds.length > 0 ? classStyleIds : allStyles.map(s => s.id);
+
+        const groups = styleIdsToLoad.map(styleId => {
+          const style = allStyles.find(s => s.id === styleId);
+          if (!style) return null;
+          const members = allMembers.filter(m => {
+            if (m.stylesNotes) {
+              try {
+                const parsed = JSON.parse(m.stylesNotes);
+                if (Array.isArray(parsed) && parsed.some((s: { name?: string }) => s.name?.toLowerCase() === style.name.toLowerCase())) return true;
+              } catch { /* ignore */ }
+            }
+            return m.primaryStyle?.toLowerCase() === style.name.toLowerCase();
+          }).sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+          return {
+            styleName: style.name,
+            styleId: style.id,
+            members: members.map(m => {
+              let rank = "";
+              if (m.stylesNotes) {
+                try {
+                  const parsed = JSON.parse(m.stylesNotes);
+                  if (Array.isArray(parsed)) {
+                    const entry = parsed.find((s: { name?: string }) => s.name?.toLowerCase() === style.name.toLowerCase());
+                    if (entry?.rank) rank = entry.rank;
+                  }
+                } catch { /* ignore */ }
+              }
+              if (!rank && m.rank) rank = m.rank;
+              return { id: m.id, firstName: m.firstName, lastName: m.lastName, photoUrl: m.photoUrl, rank };
+            })
+          };
+        }).filter(Boolean) as { styleName: string; styleId: string; members: { id: string; firstName: string; lastName: string; photoUrl?: string | null; rank?: string }[] }[];
+
+        setStyleMembers(groups);
+      }
+    } catch { /* ignore */ }
   }
 
   function closeClassModal() {
@@ -387,9 +516,21 @@ export default function DashboardPage() {
     <AppLayout>
       <div className="space-y-4">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-sm text-gray-500">{dateStr}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Dashboard</h1>
+            <p className="text-sm text-gray-500">{dateStr}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowSectionConfig(true)}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-1.5"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+            </svg>
+            Customize
+          </button>
         </div>
 
         {loading ? (
@@ -399,7 +540,7 @@ export default function DashboardPage() {
         ) : (
           <>
             {/* Stat Cards */}
-            <div className="grid gap-4 grid-cols-2 md:grid-cols-6">
+            <div className="grid gap-4 grid-cols-2 md:grid-cols-6" style={{ display: isSectionVisible("stats") ? undefined : "none" }}>
               <div
                 className="rounded-lg border border-gray-200 bg-white p-4 cursor-pointer hover:border-primary transition-colors"
                 onClick={() => router.push("/members")}
@@ -475,7 +616,7 @@ export default function DashboardPage() {
             {/* Main Content Grid */}
             <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
               {/* Today's Schedule + Attendance Detail (side-by-side) */}
-              <div className="lg:col-span-2 grid gap-4 grid-cols-1 lg:grid-cols-2">
+              <div className="lg:col-span-2 grid gap-4 grid-cols-1 lg:grid-cols-2" style={{ display: isSectionVisible("schedule") ? undefined : "none" }}>
                 {/* Schedule List */}
                 <div className="rounded-lg border border-gray-200 bg-white">
                   <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -652,6 +793,41 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
+                      {/* Style-Filtered Quick Add Buttons */}
+                      {styleMembers.length > 0 && (() => {
+                        let classStyleIds: string[] = [];
+                        if (selectedClass.styleIds) {
+                          try { classStyleIds = JSON.parse(selectedClass.styleIds); } catch { /* ignore */ }
+                        } else if (selectedClass.styleId) {
+                          classStyleIds = [selectedClass.styleId];
+                        }
+                        classStyleIds = classStyleIds.filter(id => id && id !== "NO_STYLE");
+
+                        return (
+                          <div className="border-b border-gray-100 px-4 py-2 flex flex-wrap justify-center gap-2">
+                            {classStyleIds.length === 0 && (
+                              <button
+                                type="button"
+                                onClick={() => { setStyleModalFilter(null); setShowStyleMembersModal(true); }}
+                                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark"
+                              >
+                                All Students
+                              </button>
+                            )}
+                            {styleMembers.map(g => (
+                              <button
+                                key={g.styleName}
+                                type="button"
+                                onClick={() => { setStyleModalFilter(g.styleName); setShowStyleMembersModal(true); }}
+                                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark"
+                              >
+                                {g.styleName} Students
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
+
                       {/* Select All + Bulk Actions */}
                       <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
                         <div className="flex items-center justify-between">
@@ -766,7 +942,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Revenue Summary */}
-              <div className="rounded-lg border border-gray-200 bg-white">
+              <div className="rounded-lg border border-gray-200 bg-white" style={{ display: isSectionVisible("revenue") ? undefined : "none" }}>
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                   <h2 className="text-sm font-semibold text-gray-900">Revenue</h2>
                   <span className="text-xs text-gray-400">This Month</span>
@@ -803,7 +979,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Tasks */}
-              <div className="rounded-lg border border-gray-200 bg-white">
+              <div className="rounded-lg border border-gray-200 bg-white" style={{ display: isSectionVisible("tasks") ? undefined : "none" }}>
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                   <h2 className="text-sm font-semibold text-gray-900">Tasks</h2>
                   <button
@@ -845,7 +1021,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Recent Check-ins */}
-              <div className="rounded-lg border border-gray-200 bg-white">
+              <div className="rounded-lg border border-gray-200 bg-white" style={{ display: isSectionVisible("checkins") ? undefined : "none" }}>
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                   <h2 className="text-sm font-semibold text-gray-900">Recent Check-ins</h2>
                   <span className="text-xs text-gray-400">Today</span>
@@ -890,7 +1066,7 @@ export default function DashboardPage() {
               {/* Alerts & Notices */}
               <div className="space-y-4">
                 {/* Past Due Members */}
-                {data.billing.pastDueInvoices.length > 0 && (
+                {isSectionVisible("pastdue") && data.billing.pastDueInvoices.length > 0 && (
                   <div className="rounded-lg border border-red-200 bg-white">
                     <div className="flex items-center justify-between border-b border-red-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-red-700">Past Due</h2>
@@ -920,7 +1096,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* Upcoming Billings */}
-                {data.billing.upcomingBillings.length > 0 && (
+                {isSectionVisible("billing") && data.billing.upcomingBillings.length > 0 && (
                   <div className="rounded-lg border border-gray-200 bg-white">
                     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-gray-900">Upcoming Billings</h2>
@@ -952,7 +1128,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* Promotion Eligible */}
-                {data.eligibleForPromotion.length > 0 && (
+                {isSectionVisible("promotions") && data.eligibleForPromotion.length > 0 && (
                   <div className="rounded-lg border border-green-200 bg-white">
                     <div className="flex items-center justify-between border-b border-green-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-green-700">Promotion Eligible</h2>
@@ -986,7 +1162,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* Trial Members */}
-                {data.activeTrials && data.activeTrials.length > 0 && (
+                {isSectionVisible("trials") && data.activeTrials && data.activeTrials.length > 0 && (
                   <div className="rounded-lg border border-purple-200 bg-white">
                     <div className="flex items-center justify-between border-b border-purple-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-purple-700">Trial Members</h2>
@@ -1019,7 +1195,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* Expiring Memberships */}
-                <div className="rounded-lg border border-gray-200 bg-white">
+                <div className="rounded-lg border border-gray-200 bg-white" style={{ display: isSectionVisible("expiring") ? undefined : "none" }}>
                   <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                     <h2 className="text-sm font-semibold text-gray-900">Expired Memberships</h2>
                     <span className="text-xs text-gray-400">Non-recurring</span>
@@ -1052,7 +1228,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Low Stock Items */}
-                {data.lowStockItems.length > 0 && (
+                {isSectionVisible("lowstock") && data.lowStockItems.length > 0 && (
                   <div className="rounded-lg border border-yellow-200 bg-white">
                     <div className="flex items-center justify-between border-b border-yellow-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-yellow-700">Low Stock</h2>
@@ -1081,7 +1257,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* New Members This Week */}
-                <div className="rounded-lg border border-gray-200 bg-white">
+                <div className="rounded-lg border border-gray-200 bg-white" style={{ display: isSectionVisible("newmembers") ? undefined : "none" }}>
                   <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                     <h2 className="text-sm font-semibold text-gray-900">New This Week</h2>
                     <button
@@ -1118,11 +1294,169 @@ export default function DashboardPage() {
             </div>
 
             {/* Analytics Charts */}
-            <DashboardCharts />
+            {isSectionVisible("charts") && <DashboardCharts />}
           </>
         )}
       </div>
 
+      {/* Section Config Modal */}
+      {showSectionConfig && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white shadow-xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <h2 className="text-lg font-bold text-gray-900">Customize Dashboard</h2>
+              <button
+                onClick={() => setShowSectionConfig(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <p className="text-xs text-gray-500 mb-4">Toggle sections on or off. Use arrows to reorder.</p>
+              <div className="space-y-1">
+                {sections.map((section, idx) => (
+                  <div
+                    key={section.id}
+                    className={`flex items-center justify-between rounded-lg border px-4 py-3 ${
+                      section.visible ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 opacity-60"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={section.visible}
+                        onChange={() => toggleSection(section.id)}
+                        className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600"
+                      />
+                      <span className="text-sm font-medium text-gray-800">{section.label}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => moveSection(idx, "up")}
+                        disabled={idx === 0}
+                        className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveSection(idx, "down")}
+                        disabled={idx === sections.length - 1}
+                        className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="border-t border-gray-200 px-5 py-3 flex items-center justify-between">
+              <button
+                onClick={resetSections}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                Reset to Default
+              </button>
+              <button
+                onClick={() => setShowSectionConfig(false)}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Style Members Modal */}
+      {showStyleMembersModal && selectedClass && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-lg rounded-lg bg-white shadow-xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <h2 className="text-lg font-bold text-gray-900">Add Students to Class</h2>
+              <button
+                onClick={() => setShowStyleMembersModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {styleMembers.filter(g => !styleModalFilter || g.styleName === styleModalFilter).map(({ styleName, members }) => {
+                const attendeeIds = new Set(selectedClass.attendees.map(a => a.memberId));
+                const available = members.filter(m => !attendeeIds.has(m.id));
+                return (
+                  <div key={styleName} className="mb-6 last:mb-0">
+                    <h3 className="text-sm font-bold text-gray-800 mb-3 border-b border-gray-200 pb-2">
+                      {styleName} ({available.length} available)
+                    </h3>
+                    {available.length === 0 ? (
+                      <p className="text-sm text-gray-400 italic">All students already signed in</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {available.map(member => (
+                          <div
+                            key={member.id}
+                            className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50"
+                          >
+                            <div className="flex items-center gap-3">
+                              {member.photoUrl ? (
+                                <img
+                                  src={member.photoUrl}
+                                  alt={`${member.firstName} ${member.lastName}`}
+                                  className="h-10 w-10 rounded-full object-cover border border-gray-200"
+                                />
+                              ) : (
+                                <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold text-gray-500">
+                                  {member.firstName[0]}{member.lastName[0]}
+                                </div>
+                              )}
+                              <div>
+                                <p className="text-sm font-semibold text-gray-900">{member.firstName} {member.lastName}</p>
+                                {member.rank && (
+                                  <p className="text-xs text-gray-500">{member.rank}</p>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                addMemberToClass(selectedClass.id, member.id);
+                              }}
+                              className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="border-t border-gray-200 px-5 py-3 flex justify-end">
+              <button
+                onClick={() => setShowStyleMembersModal(false)}
+                className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

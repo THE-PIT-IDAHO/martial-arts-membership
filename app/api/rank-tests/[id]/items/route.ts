@@ -8,7 +8,7 @@ export async function POST(
 ) {
   try {
     const body = await req.json();
-    const { categoryId, name, description, type, required, reps, sets, duration, distance, timeLimit, timeLimitOperator, videoUrl, imageUrl, showTitleInPdf } = body;
+    const { categoryId, name, description, type, required, reps, sets, rounds, roundDuration, duration, distance, timeLimit, timeLimitOperator, videoUrl, imageUrl, showTitleInPdf } = body;
 
     if (!categoryId) {
       return new NextResponse("categoryId is required", { status: 400 });
@@ -25,6 +25,8 @@ export async function POST(
         required: required ?? true,
         reps: reps || null,
         sets: sets || null,
+        rounds: rounds || null,
+        roundDuration: roundDuration?.trim() || null,
         duration: duration?.trim() || null,
         distance: distance?.trim() || null,
         timeLimit: timeLimit?.trim() || null,
@@ -51,7 +53,7 @@ export async function PATCH(
 ) {
   try {
     const body = await req.json();
-    const { itemId, name, description, type, required, reps, sets, duration, distance, timeLimit, timeLimitOperator, videoUrl, imageUrl, sortOrder, showTitleInPdf } = body;
+    const { itemId, name, description, type, required, reps, sets, rounds, roundDuration, duration, distance, timeLimit, timeLimitOperator, videoUrl, imageUrl, sortOrder, showTitleInPdf } = body;
 
     if (!itemId) {
       return new NextResponse("itemId is required", { status: 400 });
@@ -64,6 +66,8 @@ export async function PATCH(
     if (required !== undefined) updateData.required = required;
     if (reps !== undefined) updateData.reps = reps || null;
     if (sets !== undefined) updateData.sets = sets || null;
+    if (rounds !== undefined) updateData.rounds = rounds || null;
+    if (roundDuration !== undefined) updateData.roundDuration = roundDuration?.trim() || null;
     if (duration !== undefined) updateData.duration = duration?.trim() || null;
     if (distance !== undefined) updateData.distance = distance?.trim() || null;
     if (timeLimit !== undefined) updateData.timeLimit = timeLimit?.trim() || null;

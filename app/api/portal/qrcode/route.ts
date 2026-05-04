@@ -1,29 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import QRCode from "qrcode";
-import { prisma } from "@/lib/prisma";
-import { getClientId } from "@/lib/tenant";
+import { getAuthenticatedMember } from "@/lib/portal-auth";
 
-// GET /api/members/[id]/qrcode — generate QR code PNG for a member
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-
-  // Verify member belongs to this tenant
-  const clientId = await getClientId(_request);
-  const member = await prisma.member.findUnique({
-    where: { id },
-    select: { clientId: true },
-  });
-  if (!member || member.clientId !== clientId) {
-    return NextResponse.json({ error: "Member not found" }, { status: 404 });
+// GET /api/portal/qrcode — generate QR code PNG for the authenticated portal member
+export async function GET(_request: NextRequest) {
+  const auth = await getAuthenticatedMember(_request);
+  if (!auth) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Build check-in URL from request origin
   const host = _request.headers.get("x-forwarded-host") || _request.headers.get("host") || "localhost:3000";
   const protocol = _request.headers.get("x-forwarded-proto") || "http";
-  const qrData = `${protocol}://${host}/kiosk/checkin?member=${id}`;
+  const qrData = `${protocol}://${host}/kiosk/checkin?member=${auth.memberId}`;
 
   try {
     const pngBuffer = await QRCode.toBuffer(qrData, {

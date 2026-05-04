@@ -221,6 +221,8 @@ model ClassSession {
   bookingCutoffMins Int?
   bookingAdvanceDays Int?
   kioskEnabled      Boolean      @default(false)
+  minAge            Int?
+  maxAge            Int?
   attendances       Attendance[]
   bookings          ClassBooking[]
   locationId        String?
@@ -322,6 +324,8 @@ model RankTestItem {
   sortOrder         Int              @default(0)
   reps              Int?
   sets              Int?
+  rounds            Int?
+  roundDuration     String?
   duration          String?
   distance          String?
   timeLimit         String?

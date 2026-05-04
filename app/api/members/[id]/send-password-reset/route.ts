@@ -34,11 +34,6 @@ export async function POST(_request: NextRequest, props: { params: Promise<{ id:
     const protocol = _request.headers.get("x-forwarded-proto") || "http";
     const resetUrl = `${protocol}://${origin}/portal/reset-password?token=${token}`;
 
-    // In dev mode, return the reset URL directly (no email needed)
-    if (process.env.NODE_ENV !== "production") {
-      return NextResponse.json({ success: true, devResetUrl: resetUrl });
-    }
-
     await sendPasswordResetEmail({
       email: member.email,
       memberName: `${member.firstName} ${member.lastName}`.trim(),

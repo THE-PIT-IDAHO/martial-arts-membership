@@ -126,6 +126,8 @@ type ClassSession = {
   coachId?: string | null;
   coachName?: string | null;
   maxCapacity?: number | null;
+  minAge?: number | null;
+  maxAge?: number | null;
   bookingEnabled?: boolean;
   bookingCutoffMins?: number | null;
   bookingAdvanceDays?: number | null;
@@ -202,6 +204,7 @@ export default function ClassesPage() {
   // Form fields
   const [name, setName] = useState("");
   const [selectedClassTypes, setSelectedClassTypes] = useState<string[]>([]);
+  const [customClassTypes, setCustomClassTypes] = useState<string[]>([]);
   const [originalClassType, setOriginalClassType] = useState<string | null>(null); // Track original classType for rename detection
   const [selectedStyleIds, setSelectedStyleIds] = useState<string[]>([""]);
   const [minRankId, setMinRankId] = useState("");
@@ -218,6 +221,8 @@ export default function ClassesPage() {
   const [kioskEnabled, setKioskEnabled] = useState(false);
   const [maxCapacity, setMaxCapacity] = useState("");
   const [bookingCutoffMins, setBookingCutoffMins] = useState("");
+  const [minAge, setMinAge] = useState("");
+  const [maxAge, setMaxAge] = useState("");
   const [bookingAdvanceDays, setBookingAdvanceDays] = useState("");
   const [daySchedules, setDaySchedules] = useState<{
     day: DayOfWeek;
@@ -284,6 +289,8 @@ export default function ClassesPage() {
         } catch { /* ignore */ }
       }
     }
+    // Include custom types added via the Manage Class Types modal
+    for (const t of customClassTypes) all.add(t);
     return [...all].sort();
   })();
 
@@ -361,6 +368,8 @@ export default function ClassesPage() {
     setBookingEnabled(false);
     setKioskEnabled(false);
     setMaxCapacity("");
+    setMinAge("");
+    setMaxAge("");
     setBookingCutoffMins("");
     setBookingAdvanceDays("");
     setDaySchedules([{ day: "Monday", times: [{ startTime: "09:00", endTime: "10:00" }] }]);
@@ -445,6 +454,8 @@ export default function ClassesPage() {
     setBookingEnabled(classSession.bookingEnabled || false);
     setKioskEnabled(classSession.kioskEnabled || false);
     setMaxCapacity(classSession.maxCapacity != null ? String(classSession.maxCapacity) : "");
+    setMinAge(classSession.minAge != null ? String(classSession.minAge) : "");
+    setMaxAge(classSession.maxAge != null ? String(classSession.maxAge) : "");
     setBookingCutoffMins(classSession.bookingCutoffMins != null ? String(classSession.bookingCutoffMins) : "");
     setBookingAdvanceDays(classSession.bookingAdvanceDays != null ? String(classSession.bookingAdvanceDays) : "");
 
@@ -630,6 +641,8 @@ export default function ClassesPage() {
                 bookingEnabled,
                 kioskEnabled,
                 maxCapacity: maxCapacity || null,
+                minAge: minAge || null,
+                maxAge: maxAge || null,
                 bookingCutoffMins: bookingCutoffMins || null,
                 bookingAdvanceDays: bookingAdvanceDays || null,
                 locationId: selectedLocationId || null,
@@ -700,6 +713,8 @@ export default function ClassesPage() {
                 bookingEnabled,
                 kioskEnabled,
                 maxCapacity: maxCapacity || null,
+                minAge: minAge || null,
+                maxAge: maxAge || null,
                 bookingCutoffMins: bookingCutoffMins || null,
                 bookingAdvanceDays: bookingAdvanceDays || null,
                 locationId: selectedLocationId || null,
@@ -911,8 +926,12 @@ export default function ClassesPage() {
         });
       }
 
+      // Remove from custom class types and current form selection
+      setCustomClassTypes(prev => prev.filter(t => t !== typeToDelete));
+      setSelectedClassTypes(prev => prev.filter(t => t !== typeToDelete));
+
       // Update local state (both classType and classTypes)
-      setClasses(classes.map(c => {
+      setClasses(prev => prev.map(c => {
         let updated = { ...c };
         if (c.classType === typeToDelete) {
           updated.classType = null;
@@ -1740,10 +1759,6 @@ export default function ClassesPage() {
                   )}
                 </div>
 
-              </div>
-
-              {/* Portal Booking & Kiosk Settings */}
-              <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
                 <div>
                   <div className="mb-1 flex items-center gap-2">
                     <input
@@ -1771,6 +1786,38 @@ export default function ClassesPage() {
                     <label htmlFor="kioskEnabled" className="text-xs font-medium text-gray-700 cursor-pointer">
                       Allow Kiosk Sign In
                     </label>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Age Requirement & Booking Settings */}
+              <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Age Requirement
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      value={minAge}
+                      onChange={(e) => setMinAge(e.target.value)}
+                      placeholder="Min"
+                      className="no-spinner w-16 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <span className="text-xs text-gray-400">to</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="99"
+                      value={maxAge}
+                      onChange={(e) => setMaxAge(e.target.value)}
+                      placeholder="Max"
+                      className="no-spinner w-16 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <span className="text-xs text-gray-400">years</span>
                   </div>
                 </div>
 
@@ -2487,10 +2534,11 @@ export default function ClassesPage() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      if (newClassTypeName.trim() && !uniqueClassTypes.includes(newClassTypeName.trim())) {
-                        setSelectedClassTypes(prev => [...prev, newClassTypeName.trim()]);
+                      const trimmed = newClassTypeName.trim();
+                      if (trimmed && !uniqueClassTypes.includes(trimmed)) {
+                        setCustomClassTypes(prev => [...prev, trimmed]);
+                        setSelectedClassTypes(prev => [...prev, trimmed]);
                         setNewClassTypeName("");
-                        setShowClassTypesModal(false);
                       }
                     }
                   }}
@@ -2500,18 +2548,19 @@ export default function ClassesPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (newClassTypeName.trim() && !uniqueClassTypes.includes(newClassTypeName.trim())) {
-                      setSelectedClassTypes(prev => [...prev, newClassTypeName.trim()]);
+                    const trimmed = newClassTypeName.trim();
+                    if (trimmed && !uniqueClassTypes.includes(trimmed)) {
+                      setCustomClassTypes(prev => [...prev, trimmed]);
+                      setSelectedClassTypes(prev => [...prev, trimmed]);
                       setNewClassTypeName("");
-                      setShowClassTypesModal(false);
-                    } else if (uniqueClassTypes.includes(newClassTypeName.trim())) {
+                    } else if (uniqueClassTypes.includes(trimmed)) {
                       setError("This class type already exists");
                     }
                   }}
                   disabled={!newClassTypeName.trim()}
                   className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Add & Select
+                  Save
                 </button>
               </div>
               <p className="mt-1 text-[10px] text-gray-400">

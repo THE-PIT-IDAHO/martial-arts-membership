@@ -144,6 +144,8 @@ export default function MembersPage() {
 
   // CSV Import state
   const [showImportModal, setShowImportModal] = useState(false);
+  const [portalLinkCopied, setPortalLinkCopied] = useState(false);
+  const [showPortalMenu, setShowPortalMenu] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvPreview, setCsvPreview] = useState<any[]>([]);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
@@ -1164,6 +1166,45 @@ export default function MembersPage() {
             >
               Add Member
             </Link>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowPortalMenu(!showPortalMenu)}
+                className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
+              >
+                Member Portal
+              </button>
+              {showPortalMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowPortalMenu(false)} />
+                  <div className="absolute right-0 z-20 mt-1 w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.open("/portal/login", "_blank");
+                        setShowPortalMenu(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-xs text-gray-700 hover:bg-gray-100"
+                    >
+                      Open Portal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = `${window.location.origin}/portal/login`;
+                        navigator.clipboard.writeText(url);
+                        setPortalLinkCopied(true);
+                        setTimeout(() => setPortalLinkCopied(false), 2000);
+                        setShowPortalMenu(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-xs text-gray-700 hover:bg-gray-100"
+                    >
+                      {portalLinkCopied ? "Link Copied!" : "Copy Portal Link"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 

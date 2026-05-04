@@ -33,6 +33,8 @@ interface ClassSession {
   coachId: string | null;
   coachName: string | null;
   maxCapacity: number | null;
+  minAge: number | null;
+  maxAge: number | null;
   bookingEnabled: boolean;
   bookingCutoffMins: number | null;
   bookingAdvanceDays: number | null;
@@ -146,6 +148,8 @@ interface MemberWithStyles {
   id: string;
   firstName: string;
   lastName: string;
+  dateOfBirth?: string | null;
+  photoUrl?: string | null;
   primaryStyle?: string | null;
   styles?: MemberStyle[];
 }
@@ -293,6 +297,8 @@ export default function CalendarPage() {
   const [filteredMembers, setFilteredMembers] = useState<MemberWithStyles[]>([]);
   const [memberClassCounts, setMemberClassCounts] = useState<Record<string, Record<string, number>>>({});
   const [showRequirementError, setShowRequirementError] = useState(false);
+  const [showStyleMembersModal, setShowStyleMembersModal] = useState(false);
+  const [styleModalFilter, setStyleModalFilter] = useState<string | null>(null); // null = all styles
   const [requirementErrorMessage, setRequirementErrorMessage] = useState("");
   const [pendingMember, setPendingMember] = useState<MemberWithStyles | null>(null);
   const [membersWithWarnings, setMembersWithWarnings] = useState<Set<string>>(new Set());
@@ -390,7 +396,7 @@ export default function CalendarPage() {
         setAllClasses(classesData.classes || []);
         const loadedStyles = stylesData.styles || [];
         setStyles(loadedStyles);
-        setAllMembers((membersData.members || []).map((m: { id: string; firstName: string; lastName: string; primaryStyle?: string | null; stylesNotes?: string | null; rank?: string | null }) => {
+        setAllMembers((membersData.members || []).map((m: { id: string; firstName: string; lastName: string; dateOfBirth?: string | null; photoUrl?: string | null; primaryStyle?: string | null; stylesNotes?: string | null; rank?: string | null }) => {
           // Parse styles from stylesNotes JSON array (contains style name and rank)
           let memberStyles: MemberStyle[] = [];
 
@@ -444,6 +450,8 @@ export default function CalendarPage() {
             id: m.id,
             firstName: m.firstName,
             lastName: m.lastName,
+            dateOfBirth: m.dateOfBirth,
+            photoUrl: m.photoUrl,
             primaryStyle: m.primaryStyle,
             styles: memberStyles
           };
@@ -921,12 +929,38 @@ export default function CalendarPage() {
     setFilteredMembers(filtered.slice(0, 5)); // Limit to 5 results
   }
 
-  // Check if member meets class requirements (style and minimum rank)
+  // Calculate member's age from date of birth
+  function getMemberAge(dateOfBirth: string | null | undefined): number | null {
+    if (!dateOfBirth) return null;
+    const dob = new Date(dateOfBirth);
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+    return age;
+  }
+
+  // Check if member meets class requirements (style, rank, and age)
   // Returns all missing requirements in a single message
   function checkMemberRequirements(member: MemberWithStyles): { meets: boolean; reason: string } {
     if (!selectedClass) return { meets: true, reason: "" };
 
     const missingRequirements: string[] = [];
+
+    // Check age requirement
+    if (selectedClass.minAge != null || selectedClass.maxAge != null) {
+      const age = getMemberAge(member.dateOfBirth);
+      if (age === null) {
+        missingRequirements.push("No date of birth on file (age requirement applies)");
+      } else {
+        if (selectedClass.minAge != null && age < selectedClass.minAge) {
+          missingRequirements.push(`Must be at least ${selectedClass.minAge} years old (member is ${age})`);
+        }
+        if (selectedClass.maxAge != null && age > selectedClass.maxAge) {
+          missingRequirements.push(`Must be ${selectedClass.maxAge} or younger (member is ${age})`);
+        }
+      }
+    }
 
     // Parse class style requirements
     let classStyleIds: string[] = [];
@@ -946,9 +980,14 @@ export default function CalendarPage() {
     console.log("checkMemberRequirements - classStyleIds:", classStyleIds);
     console.log("checkMemberRequirements - styles state length:", styles.length);
 
-    // If no style requirements, member can join
+    // If no style requirements, check age only
     if (classStyleIds.length === 0) {
-      console.log("No style requirements - allowing");
+      if (missingRequirements.length > 0) {
+        return {
+          meets: false,
+          reason: `${member.firstName} ${member.lastName}:\n• ${missingRequirements.join("\n• ")}`,
+        };
+      }
       return { meets: true, reason: "" };
     }
 
@@ -3130,6 +3169,47 @@ export default function CalendarPage() {
                     </div>
                   </div>
 
+                  {/* Style-Filtered Quick Add Buttons */}
+                  {(() => {
+                    let classStyleIds: string[] = [];
+                    if (selectedClass.styleIds) {
+                      try { classStyleIds = JSON.parse(selectedClass.styleIds); } catch { /* ignore */ }
+                    } else if (selectedClass.styleId) {
+                      classStyleIds = [selectedClass.styleId];
+                    }
+                    classStyleIds = classStyleIds.filter(id => id && id !== "NO_STYLE");
+
+                    // Show buttons: required styles only, or all styles if no requirement
+                    const styleList = classStyleIds.length > 0
+                      ? classStyleIds.map(id => styles.find(s => s.id === id)).filter(Boolean) as Style[]
+                      : styles;
+                    if (styleList.length === 0) return null;
+
+                    return (
+                      <div className="mb-4 flex flex-wrap justify-center gap-2">
+                        {classStyleIds.length === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => { setStyleModalFilter(null); setShowStyleMembersModal(true); }}
+                            className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark"
+                          >
+                            All Students
+                          </button>
+                        )}
+                        {styleList.map(s => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => { setStyleModalFilter(s.id); setShowStyleMembersModal(true); }}
+                            className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark"
+                          >
+                            {s.name} Students
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
                   {/* Member List */}
                   <div className="mb-4">
                     <h3 className="mb-2 text-sm font-semibold text-gray-900">
@@ -4437,6 +4517,116 @@ export default function CalendarPage() {
             </div>
           </div>
         )}
+        {/* Style Members Modal */}
+        {showStyleMembersModal && selectedClass && (() => {
+          let classStyleIds: string[] = [];
+          if (selectedClass.styleIds) {
+            try { classStyleIds = JSON.parse(selectedClass.styleIds); } catch { /* ignore */ }
+          } else if (selectedClass.styleId) {
+            classStyleIds = [selectedClass.styleId];
+          }
+          classStyleIds = classStyleIds.filter(id => id && id !== "NO_STYLE");
+
+          // Determine which styles to show
+          let showStyleIds: string[];
+          if (classStyleIds.length > 0) {
+            // Class has requirements — show required styles
+            showStyleIds = classStyleIds;
+          } else if (styleModalFilter) {
+            // Specific style selected
+            showStyleIds = [styleModalFilter];
+          } else {
+            // All styles
+            showStyleIds = styles.map(s => s.id);
+          }
+
+          const attendeeIds = new Set(classAttendees.map(a => a.id));
+          const styleGroups = showStyleIds.map(styleId => {
+            const style = styles.find(s => s.id === styleId);
+            if (!style) return null;
+            const members = allMembers.filter(m =>
+              !attendeeIds.has(m.id) &&
+              m.styles?.some(ms => ms.styleId === styleId || ms.styleName?.toLowerCase() === style.name.toLowerCase())
+            ).sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+            return { style, members };
+          }).filter(Boolean) as { style: Style; members: MemberWithStyles[] }[];
+
+          return (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+              <div className="w-full max-w-lg rounded-lg bg-white shadow-xl max-h-[85vh] flex flex-col">
+                <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                  <h2 className="text-lg font-bold text-gray-900">Add Students to Class</h2>
+                  <button
+                    onClick={() => setShowStyleMembersModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-5">
+                  {styleGroups.map(({ style, members }) => (
+                    <div key={style.id} className="mb-6 last:mb-0">
+                      <h3 className="text-sm font-bold text-gray-800 mb-3 border-b border-gray-200 pb-2">
+                        {style.name} ({members.length} available)
+                      </h3>
+                      {members.length === 0 ? (
+                        <p className="text-sm text-gray-400 italic">All students already signed in</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {members.map(member => (
+                            <div
+                              key={member.id}
+                              className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 hover:bg-gray-50"
+                            >
+                              <div className="flex items-center gap-3">
+                                {member.photoUrl ? (
+                                  <img
+                                    src={member.photoUrl}
+                                    alt={`${member.firstName} ${member.lastName}`}
+                                    className="h-10 w-10 rounded-full object-cover border border-gray-200"
+                                  />
+                                ) : (
+                                  <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold text-gray-500">
+                                    {member.firstName[0]}{member.lastName[0]}
+                                  </div>
+                                )}
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900">{member.firstName} {member.lastName}</p>
+                                  {member.styles?.find(ms => ms.styleId === style.id || ms.styleName?.toLowerCase() === style.name.toLowerCase())?.rank && (
+                                    <p className="text-xs text-gray-500">
+                                      {member.styles.find(ms => ms.styleId === style.id || ms.styleName?.toLowerCase() === style.name.toLowerCase())?.rank}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleAddMember(member)}
+                                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark"
+                              >
+                                Add
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="border-t border-gray-200 px-5 py-3 flex justify-end">
+                  <button
+                    onClick={() => setShowStyleMembersModal(false)}
+                    className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </AppLayout>
   );

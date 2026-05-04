@@ -44,6 +44,8 @@ type RankTestItem = {
   sortOrder: number;
   reps?: number | null;
   sets?: number | null;
+  rounds?: number | null;
+  roundDuration?: string | null;
   duration?: string | null;
   distance?: string | null;
   timeLimit?: string | null;
@@ -154,7 +156,11 @@ function SortableItem({
           {(item.reps || item.sets || item.duration || item.distance || item.timeLimit) && (
             <p className="text-xs text-gray-500 mt-1">
               {item.sets && `${item.sets} sets`}
-              {item.sets && item.reps && " × "}
+              {item.sets && (item.rounds || item.reps) && " × "}
+              {item.rounds && `${item.rounds} rounds`}
+              {item.rounds && item.roundDuration && ` (${item.roundDuration}/rd)`}
+              {item.rounds && item.reps && " × "}
+              {!item.rounds && item.sets && item.reps && ""}
               {item.reps && `${item.reps} reps`}
               {item.duration && ` • ${item.duration}`}
               {item.distance && ` • ${item.distance}`}
@@ -327,6 +333,8 @@ export default function CurriculumPage() {
   const [itemRequired, setItemRequired] = useState(true);
   const [itemReps, setItemReps] = useState("");
   const [itemSets, setItemSets] = useState("");
+  const [itemRounds, setItemRounds] = useState("");
+  const [itemRoundDuration, setItemRoundDuration] = useState("");
   const [itemDuration, setItemDuration] = useState("");
   const [itemDistance, setItemDistance] = useState("");
   const [itemTimeLimit, setItemTimeLimit] = useState("");
@@ -740,6 +748,8 @@ export default function CurriculumPage() {
                 required: itemRequired,
                 reps: itemReps ? parseInt(itemReps) : null,
                 sets: itemSets ? parseInt(itemSets) : null,
+                rounds: itemRounds ? parseInt(itemRounds) : null,
+                roundDuration: itemRoundDuration || null,
                 duration: itemDuration,
                 distance: itemDistance,
                 timeLimit: itemTimeLimit,
@@ -763,6 +773,8 @@ export default function CurriculumPage() {
       setItemRequired(true);
       setItemReps("");
       setItemSets("");
+      setItemRounds("");
+      setItemRoundDuration("");
       setItemDuration("");
       setItemDistance("");
       setItemTimeLimit("");
@@ -905,6 +917,8 @@ export default function CurriculumPage() {
           required: itemRequired,
           reps: itemReps ? parseInt(itemReps) : null,
           sets: itemSets ? parseInt(itemSets) : null,
+          rounds: itemRounds ? parseInt(itemRounds) : null,
+          roundDuration: itemRoundDuration || null,
           duration: itemDuration,
           distance: itemDistance,
           timeLimit: itemTimeLimit,
@@ -941,6 +955,8 @@ export default function CurriculumPage() {
           required: itemRequired,
           reps: itemReps ? parseInt(itemReps) : null,
           sets: itemSets ? parseInt(itemSets) : null,
+          rounds: itemRounds ? parseInt(itemRounds) : null,
+          roundDuration: itemRoundDuration || null,
           duration: itemDuration,
           distance: itemDistance,
           timeLimit: itemTimeLimit,
@@ -953,9 +969,14 @@ export default function CurriculumPage() {
       if (res.ok) {
         closeItemModal();
         await loadRankTests();
+      } else {
+        const errText = await res.text().catch(() => "Unknown error");
+        console.error("Error updating item:", res.status, errText);
+        alert(`Failed to save item: ${errText}`);
       }
     } catch (err) {
       console.error("Error updating item:", err);
+      alert("Failed to save item. Check console for details.");
     } finally {
       setSaving(false);
     }
@@ -1066,6 +1087,8 @@ export default function CurriculumPage() {
     setItemRequired(item.required);
     setItemReps(item.reps?.toString() || "");
     setItemSets(item.sets?.toString() || "");
+    setItemRounds(item.rounds?.toString() || "");
+    setItemRoundDuration(item.roundDuration || "");
     setItemDuration(item.duration || "");
     setItemDistance(item.distance || "");
     setItemTimeLimit(item.timeLimit || "");
@@ -1086,6 +1109,8 @@ export default function CurriculumPage() {
     setItemRequired(true);
     setItemReps("");
     setItemSets("");
+    setItemRounds("");
+    setItemRoundDuration("");
     setItemDuration("");
     setItemDistance("");
     setItemTimeLimit("");
@@ -2239,6 +2264,8 @@ export default function CurriculumPage() {
                   setItemType("skill");
                   setItemRequired(true);
                   setItemSets("");
+                  setItemRounds("");
+                  setItemRoundDuration("");
                   setItemReps("");
                   setItemDuration("");
                   setItemDistance("");
@@ -2402,7 +2429,9 @@ export default function CurriculumPage() {
                                                     <th className="px-2 py-1.5 text-left text-[11px] font-semibold uppercase text-gray-500 w-36">Type</th>
                                                     <th className="px-2 py-1.5 text-left text-[11px] font-semibold uppercase text-gray-500">Name</th>
                                                     <th className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Sets</th>
+                                                    <th className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Rounds</th>
                                                     <th className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Reps</th>
+                                                    <th className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Min/Rd</th>
                                                     <th className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Duration</th>
                                                     <th className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Distance</th>
                                                     <th className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase text-gray-500 w-44">Time Limit</th>
@@ -2453,12 +2482,35 @@ export default function CurriculumPage() {
                                                         <input
                                                           type="number"
                                                           min={0}
+                                                          value={item.rounds ?? ""}
+                                                          onChange={(e) => updateItemFieldInline(test.id, item.id, "rounds", e.target.value === "" ? null : Number(e.target.value))}
+                                                          onBlur={(e) => handleInlineBlur(test.id, item.id, "rounds", e.target.value)}
+                                                          onKeyDown={(e) => handleInlineKeyDown(e, test.id, item.id, "rounds", e.currentTarget.value)}
+                                                          className="no-spinner w-12 rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                                                          placeholder="#"
+                                                        />
+                                                      </td>
+                                                      <td className="px-2 py-1.5 text-center">
+                                                        <input
+                                                          type="number"
+                                                          min={0}
                                                           value={item.reps ?? ""}
                                                           onChange={(e) => updateItemFieldInline(test.id, item.id, "reps", e.target.value === "" ? null : Number(e.target.value))}
                                                           onBlur={(e) => handleInlineBlur(test.id, item.id, "reps", e.target.value)}
                                                           onKeyDown={(e) => handleInlineKeyDown(e, test.id, item.id, "reps", e.currentTarget.value)}
                                                           className="no-spinner w-12 rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                                                           placeholder="#"
+                                                        />
+                                                      </td>
+                                                      <td className="px-2 py-1.5 text-center">
+                                                        <input
+                                                          type="text"
+                                                          value={item.roundDuration || ""}
+                                                          onChange={(e) => updateItemFieldInline(test.id, item.id, "roundDuration", e.target.value)}
+                                                          onBlur={(e) => handleInlineBlur(test.id, item.id, "roundDuration", e.target.value)}
+                                                          onKeyDown={(e) => handleInlineKeyDown(e, test.id, item.id, "roundDuration", e.currentTarget.value)}
+                                                          className="w-16 rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                                                          placeholder="e.g. 3m"
                                                         />
                                                       </td>
                                                       <td className="px-2 py-1.5 text-center">
@@ -2521,9 +2573,10 @@ export default function CurriculumPage() {
                                                           </button>
                                                           <button
                                                             onClick={() => handleDeleteItem(test.id, item.id)}
-                                                            className="text-primary hover:text-primaryDark text-xs"
+                                                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                                                            title="Delete item"
                                                           >
-                                                            ✕
+                                                            Delete
                                                           </button>
                                                         </div>
                                                       </td>
@@ -2629,7 +2682,7 @@ export default function CurriculumPage() {
                     setTestDescription("");
                     setTestRankId("");
                   }}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -2732,7 +2785,7 @@ export default function CurriculumPage() {
                     setCategoryDescription("");
                     setSelectedRankIds(new Set());
                   }}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -2825,13 +2878,27 @@ export default function CurriculumPage() {
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Sets/Rounds
+                          Sets
                         </label>
                         <input
                           type="number"
                           value={itemSets}
                           onChange={(e) => setItemSets(e.target.value)}
                           placeholder="e.g., 3"
+                          min="0"
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Rounds
+                        </label>
+                        <input
+                          type="number"
+                          value={itemRounds}
+                          onChange={(e) => setItemRounds(e.target.value)}
+                          placeholder="e.g., 5"
                           min="0"
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
@@ -2847,6 +2914,19 @@ export default function CurriculumPage() {
                           onChange={(e) => setItemReps(e.target.value)}
                           placeholder="e.g., 10"
                           min="0"
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Min Per Round
+                        </label>
+                        <input
+                          type="text"
+                          value={itemRoundDuration}
+                          onChange={(e) => setItemRoundDuration(e.target.value)}
+                          placeholder="e.g., 3 min"
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                       </div>
@@ -2983,6 +3063,7 @@ export default function CurriculumPage() {
                     setItemType("skill");
                     setItemRequired(true);
                     setItemSets("");
+                    setItemRoundDuration("");
                     setItemReps("");
                     setItemDuration("");
                     setItemDistance("");
@@ -2990,7 +3071,7 @@ export default function CurriculumPage() {
                     setItemTimeLimitOperator("lte");
                     setSelectedRankIds(new Set());
                   }}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -3051,7 +3132,7 @@ export default function CurriculumPage() {
                     setEditingCategoryId(null);
                     setEditingCategoryTestId(null);
                   }}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -3138,13 +3219,27 @@ export default function CurriculumPage() {
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Sets/Rounds
+                          Sets
                         </label>
                         <input
                           type="number"
                           value={itemSets}
                           onChange={(e) => setItemSets(e.target.value)}
                           placeholder="e.g., 3"
+                          min="0"
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Rounds
+                        </label>
+                        <input
+                          type="number"
+                          value={itemRounds}
+                          onChange={(e) => setItemRounds(e.target.value)}
+                          placeholder="e.g., 5"
                           min="0"
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
@@ -3160,6 +3255,19 @@ export default function CurriculumPage() {
                           onChange={(e) => setItemReps(e.target.value)}
                           placeholder="e.g., 10"
                           min="0"
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Min Per Round
+                        </label>
+                        <input
+                          type="text"
+                          value={itemRoundDuration}
+                          onChange={(e) => setItemRoundDuration(e.target.value)}
+                          placeholder="e.g., 3 min"
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                       </div>
@@ -3246,7 +3354,7 @@ export default function CurriculumPage() {
                 </button>
                 <button
                   onClick={closeItemModal}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -3345,7 +3453,7 @@ export default function CurriculumPage() {
                     setBulkRemoveCategoryName("");
                     setSelectedRankIds(new Set());
                   }}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
@@ -3462,7 +3570,7 @@ export default function CurriculumPage() {
                     setBulkItemCategoryName("");
                     setSelectedRankIds(new Set());
                   }}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </button>

@@ -527,10 +527,27 @@ export default function KioskPage() {
 
   // Handle QR code scan result
   const handleQrScan = useCallback((decodedText: string) => {
+    let memberId: string | null = null;
+
+    // Try URL format: .../kiosk/checkin?member=abc123
     try {
-      const data = JSON.parse(decodedText);
-      const memberId = data.memberId;
-      if (!memberId) return;
+      const url = new URL(decodedText);
+      memberId = url.searchParams.get("member");
+    } catch {
+      // Not a URL
+    }
+
+    // Try JSON format: {"memberId":"abc123"}
+    if (!memberId) {
+      try {
+        const data = JSON.parse(decodedText);
+        memberId = data.memberId || null;
+      } catch {
+        // Not JSON
+      }
+    }
+
+    if (memberId) {
       const found = members.find((m) => m.id === memberId);
       if (found) {
         handleSelectMember(found);
@@ -538,12 +555,13 @@ export default function KioskPage() {
         setErrorMessage("Member not found");
         setCheckInState("error");
       }
-    } catch {
-      // Try matching by member number
-      const found = members.find((m) => m.memberNumber?.toString() === decodedText);
-      if (found) {
-        handleSelectMember(found);
-      }
+      return;
+    }
+
+    // Try matching by member number
+    const found = members.find((m) => m.memberNumber?.toString() === decodedText);
+    if (found) {
+      handleSelectMember(found);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members]);

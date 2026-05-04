@@ -1026,17 +1026,6 @@ export default function AccountPage() {
               </div>
             </div>
 
-            {/* Save Button */}
-            <div className="flex justify-end">
-              <button
-                onClick={handleSaveBusinessDetails}
-                disabled={saving}
-                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
-              >
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
-            </div>
-
             {/* Locations */}
             <div className="rounded-lg border border-gray-200 bg-white p-6">
               <div className="flex items-center justify-between mb-4">
@@ -1177,6 +1166,17 @@ export default function AccountPage() {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Save Button */}
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveBusinessDetails}
+                disabled={saving}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
             </div>
           </div>
         )}

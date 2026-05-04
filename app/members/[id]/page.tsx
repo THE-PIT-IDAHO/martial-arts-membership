@@ -1826,12 +1826,7 @@ export default function MemberProfilePage() {
         throw new Error(data.error || "Failed to send reset email");
       }
 
-      if (data.devResetUrl) {
-        // Dev mode: open the reset page directly
-        window.open(data.devResetUrl, "_blank");
-      } else {
-        alert(`Password reset email sent to ${member.email}`);
-      }
+      alert(`Password reset email sent to ${member.email}`);
     } catch (err: any) {
       console.error("Error sending password reset:", err);
       setError(err.message || "Failed to send password reset email");
@@ -2290,7 +2285,7 @@ export default function MemberProfilePage() {
                           disabled={sendingReset}
                           className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                         >
-                          {sendingReset ? "Sending..." : "Reset Password"}
+                          {sendingReset ? "Sending..." : "Send Password Link"}
                         </button>
                       )}
                       <button

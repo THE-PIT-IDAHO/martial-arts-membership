@@ -83,6 +83,8 @@ export async function PATCH(req: Request, { params }: Params) {
       kioskEnabled,
       locationId,
       spaceId,
+      minAge,
+      maxAge,
     } = body || {};
 
     // If classType is being changed, get the old value first
@@ -120,6 +122,8 @@ export async function PATCH(req: Request, { params }: Params) {
     if (locationId !== undefined) updateData.locationId = locationId || null;
     if (spaceId !== undefined) updateData.spaceId = spaceId || null;
     if (kioskEnabled !== undefined) updateData.kioskEnabled = kioskEnabled;
+    if (minAge !== undefined) updateData.minAge = minAge != null ? parseInt(minAge) || null : null;
+    if (maxAge !== undefined) updateData.maxAge = maxAge != null ? parseInt(maxAge) || null : null;
 
     const classSession = await prisma.classSession.update({
       where: { id },
