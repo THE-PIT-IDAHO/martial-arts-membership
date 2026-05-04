@@ -27,12 +27,14 @@ const navItems: NavItem[] = [
   { label: "Communication", href: "/communication", permissionKey: "communication" },
   { label: "Kiosk Mode", href: "/kiosk/settings", permissionKey: "kiosk" },
   { label: "Audit Log", href: "/audit-log", permissionKey: "audit-log" },
+  { label: "Manage Gyms", href: "/admin/gyms", permissionKey: "manage-gyms" },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [logo, setLogo] = useState("");
   const [permissions, setPermissions] = useState<string[] | null>(null);
+  const [trial, setTrial] = useState<{ isTrial: boolean; expired?: boolean; daysRemaining?: number | null; currentMembers?: number; maxMembers?: number; currentStyles?: number; maxStyles?: number } | null>(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -52,6 +54,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
           setPermissions(data.user.permissions);
         }
       })
+      .catch(() => {});
+
+    fetch("/api/trial")
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data) setTrial(data); })
       .catch(() => {});
   }, []);
 
@@ -100,7 +107,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* MAIN CONTENT - scrollable */}
-      <section className="flex-1 min-w-0 w-full overflow-y-auto">{children}</section>
+      <section className="flex-1 min-w-0 w-full overflow-y-auto">
+        {trial?.isTrial && (
+          <div className={`px-4 py-2 text-center text-xs font-semibold ${trial.expired ? "bg-red-600 text-white" : trial.daysRemaining != null && trial.daysRemaining <= 7 ? "bg-yellow-400 text-yellow-900" : "bg-blue-500 text-white"}`}>
+            {trial.expired
+              ? "Your trial has expired. Contact us to upgrade your plan."
+              : `Trial: ${trial.daysRemaining} day${trial.daysRemaining === 1 ? "" : "s"} remaining \u2022 ${trial.currentMembers}/${trial.maxMembers} members \u2022 ${trial.currentStyles}/${trial.maxStyles} styles`}
+          </div>
+        )}
+        {children}
+      </section>
     </div>
   );
 }

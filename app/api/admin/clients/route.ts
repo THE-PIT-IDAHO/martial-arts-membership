@@ -23,7 +23,7 @@ export async function GET() {
 // POST /api/admin/clients — create a new gym client
 export async function POST(req: Request) {
   try {
-    const { name, adminEmail, adminPassword, adminName } = await req.json();
+    const { name, adminEmail, adminPassword, adminName, maxMembers, maxStyles, trialMonths } = await req.json();
 
     if (!name || !adminEmail || !adminPassword) {
       return NextResponse.json(
@@ -48,8 +48,18 @@ export async function POST(req: Request) {
 
     // Create client + admin user in a transaction
     const result = await prisma.$transaction(async (tx) => {
+      const trialExpiresAt = trialMonths
+        ? new Date(Date.now() + trialMonths * 30 * 24 * 60 * 60 * 1000)
+        : null;
+
       const client = await tx.client.create({
-        data: { name, slug },
+        data: {
+          name,
+          slug,
+          maxMembers: maxMembers || 10,
+          maxStyles: maxStyles || 3,
+          trialExpiresAt,
+        },
       });
 
       const passwordHash = await hashPassword(adminPassword);
@@ -81,5 +91,35 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("Error creating client:", error);
     return NextResponse.json({ error: "Failed to create client" }, { status: 500 });
+  }
+}
+
+// PATCH /api/admin/clients — update a gym client's trial settings
+export async function PATCH(req: Request) {
+  try {
+    const { clientId, maxMembers, maxStyles, trialExpiresAt, removeTrial } = await req.json();
+
+    if (!clientId) {
+      return NextResponse.json({ error: "clientId is required" }, { status: 400 });
+    }
+
+    const data: Record<string, unknown> = {};
+    if (maxMembers !== undefined) data.maxMembers = parseInt(maxMembers) || 10;
+    if (maxStyles !== undefined) data.maxStyles = parseInt(maxStyles) || 3;
+    if (removeTrial) {
+      data.trialExpiresAt = null;
+    } else if (trialExpiresAt !== undefined) {
+      data.trialExpiresAt = trialExpiresAt ? new Date(trialExpiresAt) : null;
+    }
+
+    const client = await prisma.client.update({
+      where: { id: clientId },
+      data,
+    });
+
+    return NextResponse.json({ client });
+  } catch (error) {
+    console.error("Error updating client:", error);
+    return NextResponse.json({ error: "Failed to update client" }, { status: 500 });
   }
 }

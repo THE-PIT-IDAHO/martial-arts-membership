@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { sendWelcomeEmail } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
+import { canAddMember } from "@/lib/trial";
 
 const MIN_MEMBER_NUMBER = 10000000;
 
@@ -246,6 +247,12 @@ export async function POST(req: Request) {
 
     // Resolve tenant clientId from request header
     const clientId = await getClientId(req);
+
+    // Check trial limits
+    const memberCheck = await canAddMember(clientId);
+    if (!memberCheck.allowed) {
+      return NextResponse.json({ error: memberCheck.reason }, { status: 403 });
+    }
 
     const memberNumber = await getNextMemberNumber();
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma"; // adjust path if needed
 import { getClientId } from "@/lib/tenant";
+import { canAddStyle } from "@/lib/trial";
 
 // GET /api/styles
 export async function GET(req: Request) {
@@ -31,12 +32,17 @@ export async function GET(req: Request) {
 // POST /api/styles
 export async function POST(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { name, shortName, description, beltSystemEnabled, testNamingConvention } = body;
 
     if (!name || typeof name !== "string") {
       return new NextResponse("Name is required", { status: 400 });
+    }
+
+    const styleCheck = await canAddStyle(clientId);
+    if (!styleCheck.allowed) {
+      return NextResponse.json({ error: styleCheck.reason }, { status: 403 });
     }
 
     const style = await prisma.style.create({

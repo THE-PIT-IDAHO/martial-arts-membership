@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { canAddMember } from "@/lib/trial";
 
 async function getNextMemberNumber(): Promise<number> {
   const lastMember = await prisma.member.findFirst({
@@ -52,6 +53,11 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
 
   if (!firstName || !lastName) {
     return NextResponse.json({ error: "First and last name are required" }, { status: 400 });
+  }
+
+  const memberCheck = await canAddMember(clientId);
+  if (!memberCheck.allowed) {
+    return NextResponse.json({ error: memberCheck.reason }, { status: 403 });
   }
 
   const memberNumber = await getNextMemberNumber();

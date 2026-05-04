@@ -16,13 +16,14 @@ export const ALL_PERMISSION_KEYS = [
   "kiosk",
   "account",
   "audit-log",
+  "manage-gyms",
 ] as const;
 
 export type PermissionKey = (typeof ALL_PERMISSION_KEYS)[number];
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
   OWNER: [...ALL_PERMISSION_KEYS],
-  ADMIN: ALL_PERMISSION_KEYS.filter((k) => k !== "account"),
+  ADMIN: ALL_PERMISSION_KEYS.filter((k) => k !== "account" && k !== "manage-gyms"),
   COACH: [
     "dashboard",
     "members",

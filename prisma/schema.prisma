@@ -12,6 +12,9 @@ model Client {
   id              String           @id @default(cuid())
   name            String
   slug            String           @unique
+  maxMembers      Int              @default(10)
+  maxStyles       Int              @default(3)
+  trialExpiresAt  DateTime?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   appointments    Appointment[]
