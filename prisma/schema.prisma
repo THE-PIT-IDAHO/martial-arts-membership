@@ -26,6 +26,19 @@ model Client {
   users           User[]
 }
 
+model SignupLink {
+  id             String    @id @default(cuid())
+  token          String    @unique @default(cuid())
+  maxMembers     Int       @default(10)
+  maxStyles      Int       @default(3)
+  trialMonths    Int       @default(3)
+  expiresAt      DateTime?
+  active         Boolean   @default(true)
+  useCount       Int       @default(0)
+  note           String?
+  createdAt      DateTime  @default(now())
+}
+
 model User {
   id                 String   @id @default(cuid())
   email              String

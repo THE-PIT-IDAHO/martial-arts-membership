@@ -14,34 +14,54 @@ type GymClient = {
   _count: { members: number; users: number };
 };
 
+type SignupLink = {
+  id: string;
+  token: string;
+  maxMembers: number;
+  maxStyles: number;
+  trialMonths: number;
+  expiresAt: string | null;
+  active: boolean;
+  useCount: number;
+  note: string | null;
+  createdAt: string;
+};
+
 export default function ManageGymsPage() {
   const [clients, setClients] = useState<GymClient[]>([]);
+  const [links, setLinks] = useState<SignupLink[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Create form
-  const [showCreate, setShowCreate] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [newAdminName, setNewAdminName] = useState("");
-  const [newMaxMembers, setNewMaxMembers] = useState("10");
-  const [newMaxStyles, setNewMaxStyles] = useState("3");
-  const [newTrialMonths, setNewTrialMonths] = useState("3");
-  const [creating, setCreating] = useState(false);
+  // Create link form
+  const [showCreateLink, setShowCreateLink] = useState(false);
+  const [linkMaxMembers, setLinkMaxMembers] = useState("10");
+  const [linkMaxStyles, setLinkMaxStyles] = useState("3");
+  const [linkTrialMonths, setLinkTrialMonths] = useState("3");
+  const [linkExpiresInDays, setLinkExpiresInDays] = useState("");
+  const [linkNote, setLinkNote] = useState("");
+  const [creatingLink, setCreatingLink] = useState(false);
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
 
-  // Edit form
+  // Edit gym
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editMaxMembers, setEditMaxMembers] = useState("");
   const [editMaxStyles, setEditMaxStyles] = useState("");
   const [editTrialExpires, setEditTrialExpires] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function loadClients() {
+  async function loadData() {
     try {
-      const res = await fetch("/api/admin/clients");
-      if (res.ok) {
-        const data = await res.json();
+      const [clientsRes, linksRes] = await Promise.all([
+        fetch("/api/admin/clients"),
+        fetch("/api/admin/signup-links"),
+      ]);
+      if (clientsRes.ok) {
+        const data = await clientsRes.json();
         setClients(data.clients || []);
+      }
+      if (linksRes.ok) {
+        const data = await linksRes.json();
+        setLinks(data.links || []);
       }
     } catch {
       // ignore
@@ -50,39 +70,46 @@ export default function ManageGymsPage() {
     }
   }
 
-  useEffect(() => { loadClients(); }, []);
+  useEffect(() => { loadData(); }, []);
 
-  async function handleCreate() {
-    if (!newName || !newEmail || !newPassword) return;
-    setCreating(true);
+  async function handleCreateLink() {
+    setCreatingLink(true);
     try {
-      const res = await fetch("/api/admin/clients", {
+      const res = await fetch("/api/admin/signup-links", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: newName,
-          adminEmail: newEmail,
-          adminPassword: newPassword,
-          adminName: newAdminName || "Owner",
-          maxMembers: parseInt(newMaxMembers) || 10,
-          maxStyles: parseInt(newMaxStyles) || 3,
-          trialMonths: parseInt(newTrialMonths) || 3,
+          maxMembers: linkMaxMembers,
+          maxStyles: linkMaxStyles,
+          trialMonths: linkTrialMonths,
+          expiresInDays: linkExpiresInDays ? parseInt(linkExpiresInDays) : null,
+          note: linkNote,
         }),
       });
       if (res.ok) {
-        setShowCreate(false);
-        setNewName(""); setNewEmail(""); setNewPassword(""); setNewAdminName("");
-        setNewMaxMembers("10"); setNewMaxStyles("3"); setNewTrialMonths("3");
-        loadClients();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || "Failed to create gym");
+        setShowCreateLink(false);
+        setLinkMaxMembers("10"); setLinkMaxStyles("3"); setLinkTrialMonths("3");
+        setLinkExpiresInDays(""); setLinkNote("");
+        loadData();
       }
     } catch {
-      alert("Failed to create gym");
+      alert("Failed to create link");
     } finally {
-      setCreating(false);
+      setCreatingLink(false);
     }
+  }
+
+  async function deleteLink(id: string) {
+    if (!confirm("Delete this signup link?")) return;
+    await fetch(`/api/admin/signup-links?id=${id}`, { method: "DELETE" });
+    loadData();
+  }
+
+  function copyLink(token: string, id: string) {
+    const url = `${window.location.origin}/signup?token=${token}`;
+    navigator.clipboard.writeText(url);
+    setCopiedLinkId(id);
+    setTimeout(() => setCopiedLinkId(null), 2000);
   }
 
   function openEdit(client: GymClient) {
@@ -109,7 +136,7 @@ export default function ManageGymsPage() {
       });
       if (res.ok) {
         setEditingId(null);
-        loadClients();
+        loadData();
       }
     } catch {
       alert("Failed to update");
@@ -135,116 +162,161 @@ export default function ManageGymsPage() {
   return (
     <AppLayout>
       <div className="space-y-6 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Manage Gyms</h1>
-            <p className="text-sm text-gray-500">Create and manage trial gym accounts</p>
-          </div>
-          <button
-            onClick={() => setShowCreate(!showCreate)}
-            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
-          >
-            {showCreate ? "Cancel" : "Create Gym"}
-          </button>
+        <div>
+          <h1 className="text-2xl font-bold">Manage Gyms</h1>
+          <p className="text-sm text-gray-500">Create signup links and manage trial gym accounts</p>
         </div>
 
-        {/* Create Form */}
-        {showCreate && (
-          <div className="rounded-lg border border-gray-200 bg-white p-6">
-            <h2 className="text-sm font-bold mb-4">New Gym Account</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Gym Name</label>
-                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Iron Dragon MMA" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Admin Name</label>
-                <input value={newAdminName} onChange={e => setNewAdminName(e.target.value)} placeholder="Owner name" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Admin Email</label>
-                <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="owner@gym.com" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Admin Password</label>
-                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Initial password" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Max Members</label>
-                <input type="number" value={newMaxMembers} onChange={e => setNewMaxMembers(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Max Styles</label>
-                <input type="number" value={newMaxStyles} onChange={e => setNewMaxStyles(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Trial Duration (months)</label>
-                <input type="number" value={newTrialMonths} onChange={e => setNewTrialMonths(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end">
-              <button onClick={handleCreate} disabled={creating || !newName || !newEmail || !newPassword} className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
-                {creating ? "Creating..." : "Create Gym"}
-              </button>
-            </div>
+        {/* Signup Links Section */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Signup Links</h2>
+            <button
+              onClick={() => setShowCreateLink(!showCreateLink)}
+              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+            >
+              {showCreateLink ? "Cancel" : "Create Link"}
+            </button>
           </div>
-        )}
 
-        {/* Gym List */}
-        {loading ? (
-          <p className="text-sm text-gray-500">Loading...</p>
-        ) : clients.length === 0 ? (
-          <p className="text-sm text-gray-500">No gym accounts yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {clients.map(client => (
-              <div key={client.id} className="rounded-lg border border-gray-200 bg-white p-4">
-                {editingId === client.id ? (
-                  <div>
-                    <h3 className="text-sm font-bold mb-3">{client.name}</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Max Members</label>
-                        <input type="number" value={editMaxMembers} onChange={e => setEditMaxMembers(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+          {/* Create Link Form */}
+          {showCreateLink && (
+            <div className="rounded-lg border border-gray-200 bg-white p-5 mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Max Members</label>
+                  <input type="number" value={linkMaxMembers} onChange={e => setLinkMaxMembers(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Max Styles</label>
+                  <input type="number" value={linkMaxStyles} onChange={e => setLinkMaxStyles(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Trial (months)</label>
+                  <input type="number" value={linkTrialMonths} onChange={e => setLinkTrialMonths(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Link Expires (days)</label>
+                  <input type="number" value={linkExpiresInDays} onChange={e => setLinkExpiresInDays(e.target.value)} placeholder="Never" min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="block text-xs font-medium text-gray-700 mb-1">Note (for your reference)</label>
+                <input type="text" value={linkNote} onChange={e => setLinkNote(e.target.value)} placeholder="e.g., Facebook promo, gym conference" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button onClick={handleCreateLink} disabled={creatingLink} className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                  {creatingLink ? "Creating..." : "Create Signup Link"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Links List */}
+          {links.length === 0 ? (
+            <p className="text-sm text-gray-500">No signup links yet. Create one to get started.</p>
+          ) : (
+            <div className="space-y-2">
+              {links.map(link => {
+                const expired = link.expiresAt && new Date() > new Date(link.expiresAt);
+                return (
+                  <div key={link.id} className={`rounded-lg border bg-white p-4 ${!link.active || expired ? "border-gray-100 opacity-60" : "border-gray-200"}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-gray-900">
+                            {link.maxMembers} members, {link.maxStyles} styles, {link.trialMonths}mo trial
+                          </span>
+                          {!link.active && <span className="text-xs text-red-500 font-semibold">Disabled</span>}
+                          {expired && <span className="text-xs text-red-500 font-semibold">Link Expired</span>}
+                          <span className="text-xs text-gray-400">{link.useCount} signups</span>
+                        </div>
+                        {link.note && <p className="text-xs text-gray-500 mt-0.5">{link.note}</p>}
+                        <p className="text-xs text-gray-400">
+                          Created {formatDate(link.createdAt)}
+                          {link.expiresAt && ` \u2022 Link expires ${formatDate(link.expiresAt)}`}
+                        </p>
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Max Styles</label>
-                        <input type="number" value={editMaxStyles} onChange={e => setEditMaxStyles(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Trial Expires (leave empty for full plan)</label>
-                        <input type="date" value={editTrialExpires} onChange={e => setEditTrialExpires(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                      <div className="flex items-center gap-2 ml-4">
+                        <button
+                          onClick={() => copyLink(link.token, link.id)}
+                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                        >
+                          {copiedLinkId === link.id ? "Copied!" : "Copy Link"}
+                        </button>
+                        <button
+                          onClick={() => deleteLink(link.id)}
+                          className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
-                    <div className="mt-3 flex justify-end gap-2">
-                      <button onClick={() => setEditingId(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-                      <button onClick={handleSave} disabled={saving} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
-                        {saving ? "Saving..." : "Save"}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Existing Gyms Section */}
+        <div>
+          <h2 className="text-lg font-semibold mb-3">Active Gyms</h2>
+          {loading ? (
+            <p className="text-sm text-gray-500">Loading...</p>
+          ) : clients.length === 0 ? (
+            <p className="text-sm text-gray-500">No gym accounts yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {clients.map(client => (
+                <div key={client.id} className="rounded-lg border border-gray-200 bg-white p-4">
+                  {editingId === client.id ? (
+                    <div>
+                      <h3 className="text-sm font-bold mb-3">{client.name}</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Max Members</label>
+                          <input type="number" value={editMaxMembers} onChange={e => setEditMaxMembers(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Max Styles</label>
+                          <input type="number" value={editMaxStyles} onChange={e => setEditMaxStyles(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Trial Expires (blank = full plan)</label>
+                          <input type="date" value={editTrialExpires} onChange={e => setEditTrialExpires(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                      </div>
+                      <div className="mt-3 flex justify-end gap-2">
+                        <button onClick={() => setEditingId(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+                        <button onClick={handleSave} disabled={saving} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                          {saving ? "Saving..." : "Save"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-bold text-gray-900">{client.name}</h3>
+                          {trialBadge(client)}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {client.slug}.dojostormsoftware.com &middot; {client._count.members} members &middot; {client._count.users} users
+                          {client.trialExpiresAt && ` \u2022 Limits: ${client.maxMembers} members, ${client.maxStyles} styles`}
+                        </p>
+                        <p className="text-xs text-gray-400">Created {formatDate(client.createdAt)}</p>
+                      </div>
+                      <button onClick={() => openEdit(client)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                        Edit
                       </button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-bold text-gray-900">{client.name}</h3>
-                        {trialBadge(client)}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {client.slug}.dojostormsoftware.com &middot; {client._count.members} members &middot; {client._count.users} users
-                        {client.trialExpiresAt && ` \u2022 Limits: ${client.maxMembers} members, ${client.maxStyles} styles`}
-                      </p>
-                      <p className="text-xs text-gray-400">Created {formatDate(client.createdAt)}</p>
-                    </div>
-                    <button onClick={() => openEdit(client)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                      Edit
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </AppLayout>
   );

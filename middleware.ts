@@ -19,7 +19,7 @@ const PUBLIC_API_PREFIXES = [
 ];
 
 // Admin public routes (no auth required)
-const ADMIN_PUBLIC = ["/login", "/kiosk", "/waivers/new", "/waiver/sign"];
+const ADMIN_PUBLIC = ["/login", "/signup", "/kiosk", "/waivers/new", "/waiver/sign"];
 const ADMIN_PUBLIC_API_PREFIXES = ["/api/auth/", "/api/public/"];
 
 function isPublicPortalPath(pathname: string): boolean {
