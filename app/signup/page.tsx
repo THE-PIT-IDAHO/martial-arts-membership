@@ -106,14 +106,15 @@ export default function SignupPage() {
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Welcome to Dojo Storm!</h1>
           <p className="text-gray-600 mb-1">Your gym <strong>{success.gymName}</strong> has been created.</p>
           <p className="text-sm text-gray-500 mb-6">
-            Includes up to {linkInfo?.maxMembers} members and {linkInfo?.maxStyles} styles{linkInfo?.trialMonths ? ` for ${linkInfo.trialMonths} months` : ""}.
+            Includes up to {linkInfo?.maxMembers} members and {linkInfo?.maxStyles} styles{linkInfo?.trialMonths ? ` for ${linkInfo.trialMonths} week${linkInfo.trialMonths === 1 ? "" : "s"}` : ""}.
           </p>
           <a
-            href="/login"
+            href={success.loginUrl}
             className="inline-block rounded-md bg-red-600 px-6 py-3 text-sm font-semibold text-white hover:bg-red-700"
           >
             Log In to Your Dashboard
           </a>
+          <p className="text-xs text-gray-400 mt-3">Your login URL: {success.loginUrl}</p>
         </div>
       </div>
     );
@@ -153,7 +154,7 @@ export default function SignupPage() {
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-6 space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-            Includes up to {linkInfo?.maxMembers} members and {linkInfo?.maxStyles} styles{linkInfo?.trialMonths ? ` for ${linkInfo.trialMonths} months` : ""}.
+            Includes up to {linkInfo?.maxMembers} members and {linkInfo?.maxStyles} styles{linkInfo?.trialMonths ? ` for ${linkInfo.trialMonths} week${linkInfo.trialMonths === 1 ? "" : "s"}` : ""}.
           </div>
 
           {error && (

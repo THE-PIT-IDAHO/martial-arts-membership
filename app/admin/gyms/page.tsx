@@ -242,7 +242,7 @@ export default function ManageGymsPage() {
               <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Duration</h3>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Trial (months, blank = no expiration)</label>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Trial (weeks, blank = no expiration)</label>
                   <input type="number" value={linkTrialMonths} onChange={e => setLinkTrialMonths(e.target.value)} placeholder="No expiration" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div>
@@ -275,7 +275,7 @@ export default function ManageGymsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-gray-900">
-                            {link.maxMembers} members, {link.maxStyles} styles{link.trialMonths > 0 ? `, ${link.trialMonths}mo trial` : ""}
+                            {link.maxMembers} members, {link.maxStyles} styles{link.trialMonths > 0 ? `, ${link.trialMonths}wk trial` : ""}
                           </span>
                           {!link.active && <span className="text-xs text-red-500 font-semibold">Disabled</span>}
                           {expired && <span className="text-xs text-red-500 font-semibold">Link Expired</span>}

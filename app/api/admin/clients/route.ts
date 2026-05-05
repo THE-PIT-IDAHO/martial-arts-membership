@@ -49,7 +49,7 @@ export async function POST(req: Request) {
     // Create client + admin user in a transaction
     const result = await prisma.$transaction(async (tx) => {
       const trialExpiresAt = trialMonths
-        ? new Date(Date.now() + trialMonths * 30 * 24 * 60 * 60 * 1000)
+        ? new Date(Date.now() + trialMonths * 7 * 24 * 60 * 60 * 1000)
         : null;
 
       const client = await tx.client.create({

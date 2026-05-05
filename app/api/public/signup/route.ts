@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     }
 
     const trialExpiresAt = link.trialMonths > 0
-      ? new Date(Date.now() + link.trialMonths * 30 * 24 * 60 * 60 * 1000)
+      ? new Date(Date.now() + link.trialMonths * 7 * 24 * 60 * 60 * 1000)
       : null;
 
     // Create client + admin user + mark link as used
