@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getTodayInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
+import { getClientId } from "@/lib/tenant";
 
-// GET /api/export/full-backup — exports ALL tables as JSON
-export async function GET() {
+// GET /api/export/full-backup — exports tenant-scoped tables as JSON
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
+
     const [
       members,
       memberships,
@@ -34,32 +37,32 @@ export async function GET() {
       settings,
       auditLogs,
     ] = await Promise.all([
-      prisma.member.findMany(),
-      prisma.membership.findMany(),
-      prisma.membershipPlan.findMany(),
-      prisma.memberRelationship.findMany(),
-      prisma.invoice.findMany(),
-      prisma.classSession.findMany(),
-      prisma.classBooking.findMany(),
-      prisma.attendance.findMany(),
-      prisma.style.findMany(),
-      prisma.rank.findMany(),
-      prisma.program.findMany(),
-      prisma.testingEvent.findMany(),
-      prisma.testingParticipant.findMany(),
-      prisma.promotionEvent.findMany(),
-      prisma.promotionParticipant.findMany(),
-      prisma.pOSItem.findMany(),
-      prisma.pOSTransaction.findMany(),
-      prisma.boardEvent.findMany(),
-      prisma.boardPost.findMany(),
-      prisma.waiverTemplate.findMany(),
-      prisma.signedWaiver.findMany(),
-      prisma.trialPass.findMany(),
-      prisma.enrollmentSubmission.findMany(),
-      prisma.user.findMany({ select: { id: true, email: true, name: true, role: true, createdAt: true } }), // exclude passwordHash
-      prisma.settings.findMany(),
-      prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 5000 }),
+      prisma.member.findMany({ where: { clientId } }),
+      prisma.membership.findMany({ where: { member: { clientId } } }),
+      prisma.membershipPlan.findMany({ where: { clientId } }),
+      prisma.memberRelationship.findMany({ where: { fromMember: { clientId } } }),
+      prisma.invoice.findMany({ where: { member: { clientId } } }),
+      prisma.classSession.findMany({ where: { clientId } }),
+      prisma.classBooking.findMany({ where: { classSession: { clientId } } }),
+      prisma.attendance.findMany({ where: { member: { clientId } } }),
+      prisma.style.findMany({ where: { clientId } }),
+      prisma.rank.findMany({ where: { style: { clientId } } }),
+      prisma.program.findMany({ where: { clientId } }),
+      prisma.testingEvent.findMany({ where: { clientId } }),
+      prisma.testingParticipant.findMany({ where: { testingEvent: { clientId } } }),
+      prisma.promotionEvent.findMany({ where: { clientId } }),
+      prisma.promotionParticipant.findMany({ where: { promotionEvent: { clientId } } }),
+      prisma.pOSItem.findMany({ where: { clientId } }),
+      prisma.pOSTransaction.findMany({ where: { clientId } }),
+      prisma.boardEvent.findMany({ where: { clientId } }),
+      prisma.boardPost.findMany({ where: { channel: { clientId } } }),
+      prisma.waiverTemplate.findMany({ where: { clientId } }),
+      prisma.signedWaiver.findMany({ where: { clientId } }),
+      prisma.trialPass.findMany({ where: { member: { clientId } } }),
+      prisma.enrollmentSubmission.findMany({ where: { clientId } }),
+      prisma.user.findMany({ where: { clientId }, select: { id: true, email: true, name: true, role: true, createdAt: true } }),
+      prisma.settings.findMany({ where: { clientId } }),
+      prisma.auditLog.findMany({ where: { clientId }, orderBy: { createdAt: "desc" }, take: 5000 }),
     ]);
 
     const backup = {
