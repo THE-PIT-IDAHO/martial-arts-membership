@@ -10,6 +10,11 @@ const TENANT_SLUG_HEADER = "x-tenant-slug";
 // The Client record in DB was created with slug "app" by migrate-tenant.ts
 const DEFAULT_SLUG = "app";
 
+// Map gym-specific subdomains to their DB slug if different
+const SLUG_ALIASES: Record<string, string> = {
+  thepitidaho: "app",
+};
+
 // Portal public routes (no auth required)
 const PUBLIC_PORTAL_PAGES = ["/portal/login", "/portal/verify", "/portal/enroll", "/portal/reset-password"];
 const PUBLIC_API_PREFIXES = [
@@ -73,8 +78,9 @@ export async function middleware(request: NextRequest) {
   // --- Resolve tenant slug from subdomain ---
   const host = request.headers.get("host") || "localhost:3000";
   const subdomain = extractSubdomain(host);
-  // Treat "app" subdomain as default (legacy — before gym-specific subdomains)
-  const tenantSlug = (!subdomain || subdomain === "app") ? DEFAULT_SLUG : subdomain;
+  // Treat "app" subdomain as default, and resolve aliases for branded subdomains
+  const rawSlug = (!subdomain || subdomain === "app") ? DEFAULT_SLUG : subdomain;
+  const tenantSlug = SLUG_ALIASES[rawSlug] || rawSlug;
 
   // --- Portal routes ---
   const isPortalPage = pathname.startsWith("/portal");
