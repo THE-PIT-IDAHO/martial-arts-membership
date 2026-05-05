@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { generateSlug } from "@/lib/tenant";
-import { hashPassword } from "@/lib/admin-auth";
+import { hashPassword, requireOwner } from "@/lib/admin-auth";
 
-// GET /api/admin/clients — list all gym clients (super-admin only)
-export async function GET() {
+// GET /api/admin/clients — list all gym clients (OWNER only)
+export async function GET(req: Request) {
   try {
+    const owner = await requireOwner(req);
+    if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const clients = await prisma.client.findMany({
       orderBy: { createdAt: "desc" },
       include: {
@@ -20,9 +22,12 @@ export async function GET() {
   }
 }
 
-// POST /api/admin/clients — create a new gym client
+// POST /api/admin/clients — create a new gym client (OWNER only)
 export async function POST(req: Request) {
   try {
+    const owner = await requireOwner(req);
+    if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const { name, adminEmail, adminPassword, adminName, maxMembers, maxStyles, trialMonths } = await req.json();
 
     if (!name || !adminEmail || !adminPassword) {
@@ -94,9 +99,12 @@ export async function POST(req: Request) {
   }
 }
 
-// PATCH /api/admin/clients — update a gym client's trial settings
+// PATCH /api/admin/clients — update a gym client's trial settings (OWNER only)
 export async function PATCH(req: Request) {
   try {
+    const owner = await requireOwner(req);
+    if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const { clientId, maxMembers, maxStyles, trialExpiresAt, removeTrial } = await req.json();
 
     if (!clientId) {
@@ -124,9 +132,12 @@ export async function PATCH(req: Request) {
   }
 }
 
-// DELETE /api/admin/clients — delete a gym client and all its data
+// DELETE /api/admin/clients — delete a gym client and all its data (OWNER only)
 export async function DELETE(req: Request) {
   try {
+    const owner = await requireOwner(req);
+    if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("id");
     if (!clientId) {

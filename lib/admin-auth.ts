@@ -83,6 +83,16 @@ export async function getAdminSessionFromRequest(
   return validateAdminSessionToken(cookie.value);
 }
 
+/** Verify the caller is an OWNER. Returns session or null. Works with plain Request. */
+export async function requireOwner(req: Request): Promise<{ userId: string; role: string; clientId?: string } | null> {
+  const cookieHeader = req.headers.get("cookie") || "";
+  const match = cookieHeader.match(new RegExp(`${ADMIN_COOKIE}=([^;]+)`));
+  if (!match) return null;
+  const session = await validateAdminSessionToken(match[1]);
+  if (!session || session.role !== "OWNER") return null;
+  return session;
+}
+
 export function setAdminSessionCookie(
   response: NextResponse,
   token: string,

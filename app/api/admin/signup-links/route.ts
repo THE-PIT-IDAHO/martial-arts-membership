@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireOwner } from "@/lib/admin-auth";
 
-// GET /api/admin/signup-links — list all signup links
-export async function GET() {
+// GET /api/admin/signup-links — list all signup links (OWNER only)
+export async function GET(req: Request) {
   try {
+    const owner = await requireOwner(req);
+    if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const links = await prisma.signupLink.findMany({
       orderBy: { createdAt: "desc" },
     });
@@ -14,9 +17,12 @@ export async function GET() {
   }
 }
 
-// POST /api/admin/signup-links — create a new signup link
+// POST /api/admin/signup-links — create a new signup link (OWNER only)
 export async function POST(req: Request) {
   try {
+    const owner = await requireOwner(req);
+    if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const body = await req.json();
     const parse = (v: unknown, def: number) => v !== undefined && v !== "" ? parseInt(String(v)) || def : def;
 
@@ -52,9 +58,12 @@ export async function POST(req: Request) {
   }
 }
 
-// PATCH /api/admin/signup-links — update a signup link
+// PATCH /api/admin/signup-links — update a signup link (OWNER only)
 export async function PATCH(req: Request) {
   try {
+    const owner = await requireOwner(req);
+    if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const body = await req.json();
     const { id, ...fields } = body;
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
@@ -83,9 +92,12 @@ export async function PATCH(req: Request) {
   }
 }
 
-// DELETE /api/admin/signup-links — delete a signup link
+// DELETE /api/admin/signup-links — delete a signup link (OWNER only)
 export async function DELETE(req: Request) {
   try {
+    const owner = await requireOwner(req);
+    if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
