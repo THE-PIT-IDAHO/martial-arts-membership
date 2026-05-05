@@ -84,7 +84,7 @@ export async function middleware(request: NextRequest) {
   if (subdomain === "admin") {
     // Only allow /admin/* paths and /login on the admin subdomain
     if (!pathname.startsWith("/admin") && pathname !== "/login" && !pathname.startsWith("/api/auth") && !pathname.startsWith("/api/admin")) {
-      return NextResponse.redirect(new URL("/admin/gyms", request.url));
+      return NextResponse.redirect(new URL("/admin/dashboard", request.url));
     }
     // Route to platform owner's client
     return nextWithTenant(request, "thepitidaho");
