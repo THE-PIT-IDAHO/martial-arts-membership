@@ -56,10 +56,16 @@ export default function PricingTiersPage() {
   function openEdit(tier: Tier) {
     setForm({
       name: tier.name, description: tier.description || "", priceCents: tier.priceCents > 0 ? String(tier.priceCents) : "",
-      billingPeriod: tier.billingPeriod, maxMembers: String(tier.maxMembers), maxStyles: String(tier.maxStyles),
-      maxRanksPerStyle: String(tier.maxRanksPerStyle), maxMembershipPlans: String(tier.maxMembershipPlans),
-      maxClasses: String(tier.maxClasses), maxUsers: String(tier.maxUsers), maxLocations: String(tier.maxLocations),
-      maxReports: String(tier.maxReports), maxPOSItems: String(tier.maxPOSItems),
+      billingPeriod: tier.billingPeriod,
+      maxMembers: tier.maxMembers >= 999999 ? "" : String(tier.maxMembers),
+      maxStyles: tier.maxStyles >= 999999 ? "" : String(tier.maxStyles),
+      maxRanksPerStyle: tier.maxRanksPerStyle >= 999999 ? "" : String(tier.maxRanksPerStyle),
+      maxMembershipPlans: tier.maxMembershipPlans >= 999999 ? "" : String(tier.maxMembershipPlans),
+      maxClasses: tier.maxClasses >= 999999 ? "" : String(tier.maxClasses),
+      maxUsers: tier.maxUsers >= 999999 ? "" : String(tier.maxUsers),
+      maxLocations: tier.maxLocations >= 999999 ? "" : String(tier.maxLocations),
+      maxReports: tier.maxReports >= 999999 ? "" : String(tier.maxReports),
+      maxPOSItems: tier.maxPOSItems >= 999999 ? "" : String(tier.maxPOSItems),
       allowStripe: tier.allowStripe, allowPaypal: tier.allowPaypal, allowSquare: tier.allowSquare,
     });
     setEditingId(tier.id);
@@ -128,13 +134,13 @@ export default function PricingTiersPage() {
               {[
                 { label: "Members", key: "maxMembers" }, { label: "Styles", key: "maxStyles" },
                 { label: "Ranks/Style", key: "maxRanksPerStyle" }, { label: "Membership Plans", key: "maxMembershipPlans" },
-                { label: "Classes", key: "maxClasses" }, { label: "Staff", key: "maxUsers" },
+                { label: "Class Types", key: "maxClasses" }, { label: "Staff", key: "maxUsers" },
                 { label: "Locations", key: "maxLocations" }, { label: "Reports", key: "maxReports" },
                 { label: "POS Items", key: "maxPOSItems" },
               ].map(f => (
                 <div key={f.key}>
                   <label className="block text-[11px] font-medium text-gray-600 mb-1">{f.label}</label>
-                  <input type="number" value={form[f.key] as string || ""} onChange={e => setF(f.key, e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                  <input type="number" value={form[f.key] as string || ""} onChange={e => setF(f.key, e.target.value)} min="1" placeholder="Unlimited" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
               ))}
             </div>
@@ -176,9 +182,14 @@ export default function PricingTiersPage() {
                 </p>
                 {tier.description && <p className="text-xs text-gray-500 mb-3">{tier.description}</p>}
                 <div className="space-y-1 text-xs text-gray-600 mb-4">
-                  <p>{tier.maxMembers} members &middot; {tier.maxStyles} styles &middot; {tier.maxClasses} classes</p>
-                  <p>{tier.maxUsers} staff &middot; {tier.maxLocations} locations &middot; {tier.maxReports} reports</p>
-                  <p>{tier.maxRanksPerStyle} ranks/style &middot; {tier.maxPOSItems} POS items</p>
+                  {(() => {
+                    const u = (v: number) => v >= 999999 ? "Unlimited" : String(v);
+                    return (<>
+                      <p>{u(tier.maxMembers)} members &middot; {u(tier.maxStyles)} styles &middot; {u(tier.maxClasses)} class types</p>
+                      <p>{u(tier.maxUsers)} staff &middot; {u(tier.maxLocations)} locations &middot; {u(tier.maxReports)} reports</p>
+                      <p>{u(tier.maxRanksPerStyle)} ranks/style &middot; {u(tier.maxPOSItems)} POS items</p>
+                    </>);
+                  })()}
                   {(tier.allowStripe || tier.allowPaypal || tier.allowSquare) && (
                     <p className="text-primary font-semibold">
                       {[tier.allowStripe && "Stripe", tier.allowPaypal && "PayPal", tier.allowSquare && "Square"].filter(Boolean).join(" + ")}

@@ -122,8 +122,13 @@ export async function canAddMembershipPlan(clientId: string): Promise<{ allowed:
 }
 
 export async function canAddClass(clientId: string): Promise<{ allowed: boolean; reason?: string }> {
-  const count = await prisma.classSession.count({ where: { clientId } });
-  return checkLimit(clientId, "maxClasses", count, "Class");
+  // Count unique class types, not total sessions
+  const classes = await prisma.classSession.findMany({
+    where: { clientId, classType: { not: null } },
+    select: { classType: true },
+    distinct: ["classType"],
+  });
+  return checkLimit(clientId, "maxClasses", classes.length, "Class type");
 }
 
 export async function canAddUser(clientId: string): Promise<{ allowed: boolean; reason?: string }> {
