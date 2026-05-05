@@ -11,18 +11,15 @@ import { getClientId } from "@/lib/tenant";
 
 export async function POST(request: Request) {
   try {
-    // Rate limit: 10 attempts per 15 minutes per IP
-    const ip = getClientIp(request);
-    const { limited, resetAt } = rateLimit(`admin-login:${ip}`, 10, 15 * 60 * 1000);
-    if (limited) {
-      return NextResponse.json(
-        { error: "Too many login attempts. Please try again later." },
-        {
-          status: 429,
-          headers: { "Retry-After": String(Math.ceil((resetAt - Date.now()) / 1000)) },
-        }
-      );
-    }
+    // Rate limit disabled for now
+    // const ip = getClientIp(request);
+    // const { limited, resetAt } = rateLimit(`admin-login:${ip}`, 10, 15 * 60 * 1000);
+    // if (limited) {
+    //   return NextResponse.json(
+    //     { error: "Too many login attempts. Please try again later." },
+    //     { status: 429 }
+    //   );
+    // }
 
     // Ensure default admin exists on first-ever login attempt
     const created = await ensureDefaultAdmin();
