@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AppLayout } from "@/components/app-layout";
+import { AdminLayout } from "@/components/admin-layout";
 
 type GymClient = {
   id: string;
@@ -211,7 +211,7 @@ export default function ManageGymsPage() {
   }
 
   return (
-    <AppLayout>
+    <AdminLayout>
       <div className="space-y-6 p-6">
         <div>
           <h1 className="text-2xl font-bold">Manage Gyms</h1>
@@ -410,6 +410,6 @@ export default function ManageGymsPage() {
           )}
         </div>
       </div>
-    </AppLayout>
+    </AdminLayout>
   );
 }
