@@ -56,11 +56,22 @@ export async function GET(req: Request) {
 // POST /api/attendance
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { memberId, classSessionId, attendanceDate, requirementOverride, source } = body;
 
     if (!memberId || !classSessionId || !attendanceDate) {
       return new NextResponse("memberId, classSessionId, and attendanceDate are required", { status: 400 });
+    }
+
+    // Verify member and class belong to this gym
+    const member = await prisma.member.findUnique({ where: { id: memberId }, select: { clientId: true } });
+    if (!member || member.clientId !== clientId) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+    const classSession = await prisma.classSession.findUnique({ where: { id: classSessionId }, select: { clientId: true } });
+    if (!classSession || classSession.clientId !== clientId) {
+      return NextResponse.json({ error: "Class not found" }, { status: 404 });
     }
 
     // Parse the date string to extract year/month/day components
