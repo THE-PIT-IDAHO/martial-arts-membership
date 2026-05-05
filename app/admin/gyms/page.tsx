@@ -388,7 +388,8 @@ export default function ManageGymsPage() {
                           {trialBadge(client)}
                         </div>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          {client.slug}.dojostormsoftware.com &middot; {client._count.members} members &middot; {client._count.users} users
+                          <a href={`https://${client.slug}.dojostormsoftware.com/login`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{client.slug}.dojostormsoftware.com</a>
+                          {` \u00b7 ${client._count.members} members \u00b7 ${client._count.users} users`}
                           {client.trialExpiresAt && ` \u2022 Limits: ${client.maxMembers} members, ${client.maxStyles} styles`}
                         </p>
                         <p className="text-xs text-gray-400">Created {formatDate(client.createdAt)}</p>
