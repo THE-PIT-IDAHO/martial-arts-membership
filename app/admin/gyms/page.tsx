@@ -9,6 +9,17 @@ type GymClient = {
   slug: string;
   maxMembers: number;
   maxStyles: number;
+  maxRanksPerStyle: number;
+  maxMembershipPlans: number;
+  maxClasses: number;
+  maxUsers: number;
+  maxLocations: number;
+  maxReports: number;
+  maxPOSItems: number;
+  allowStripe: boolean;
+  allowPaypal: boolean;
+  allowSquare: boolean;
+  priceCents: number;
   trialExpiresAt: string | null;
   createdAt: string;
   _count: { members: number; users: number };
@@ -69,9 +80,7 @@ export default function ManageGymsPage() {
 
   // Edit gym
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editMaxMembers, setEditMaxMembers] = useState("");
-  const [editMaxStyles, setEditMaxStyles] = useState("");
-  const [editTrialExpires, setEditTrialExpires] = useState("");
+  const [editGym, setEditGym] = useState<Record<string, string | boolean>>({});
   const [saving, setSaving] = useState(false);
 
   async function loadData() {
@@ -194,9 +203,22 @@ export default function ManageGymsPage() {
 
   function openEdit(client: GymClient) {
     setEditingId(client.id);
-    setEditMaxMembers(String(client.maxMembers));
-    setEditMaxStyles(String(client.maxStyles));
-    setEditTrialExpires(client.trialExpiresAt ? client.trialExpiresAt.split("T")[0] : "");
+    setEditGym({
+      maxMembers: String(client.maxMembers),
+      maxStyles: String(client.maxStyles),
+      maxRanksPerStyle: String(client.maxRanksPerStyle),
+      maxMembershipPlans: String(client.maxMembershipPlans),
+      maxClasses: String(client.maxClasses),
+      maxUsers: String(client.maxUsers),
+      maxLocations: String(client.maxLocations),
+      maxReports: String(client.maxReports),
+      maxPOSItems: String(client.maxPOSItems),
+      allowStripe: client.allowStripe,
+      allowPaypal: client.allowPaypal,
+      allowSquare: client.allowSquare,
+      priceCents: client.priceCents > 0 ? String(client.priceCents) : "",
+      trialExpiresAt: client.trialExpiresAt ? client.trialExpiresAt.split("T")[0] : "",
+    });
   }
 
   async function handleSave() {
@@ -208,10 +230,8 @@ export default function ManageGymsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientId: editingId,
-          maxMembers: parseInt(editMaxMembers) || 10,
-          maxStyles: parseInt(editMaxStyles) || 3,
-          trialExpiresAt: editTrialExpires || null,
-          removeTrial: !editTrialExpires,
+          ...editGym,
+          removeTrial: !editGym.trialExpiresAt,
         }),
       });
       if (res.ok) {
@@ -475,18 +495,47 @@ export default function ManageGymsPage() {
                   {editingId === client.id ? (
                     <div>
                       <h3 className="text-sm font-bold mb-3">{client.name}</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <h4 className="text-sm font-bold text-gray-800 mb-3">Limits</h4>
+                      <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+                        {[
+                          { label: "Members", key: "maxMembers" },
+                          { label: "Styles", key: "maxStyles" },
+                          { label: "Ranks/Style", key: "maxRanksPerStyle" },
+                          { label: "Membership Plans", key: "maxMembershipPlans" },
+                          { label: "Classes", key: "maxClasses" },
+                          { label: "Staff Accounts", key: "maxUsers" },
+                          { label: "Locations", key: "maxLocations" },
+                          { label: "Reports", key: "maxReports" },
+                          { label: "POS Items", key: "maxPOSItems" },
+                        ].map(f => (
+                          <div key={f.key}>
+                            <label className="block text-[11px] font-medium text-gray-600 mb-1">{f.label}</label>
+                            <input type="number" value={editGym[f.key] as string || ""} onChange={ev => setEditGym(prev => ({ ...prev, [f.key]: ev.target.value }))} min="1" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                          </div>
+                        ))}
+                      </div>
+                      <h4 className="text-sm font-bold text-gray-800 mt-4 mb-3">Payment Processors</h4>
+                      <div className="flex flex-wrap gap-4">
+                        {[
+                          { label: "Stripe", key: "allowStripe" },
+                          { label: "PayPal", key: "allowPaypal" },
+                          { label: "Square", key: "allowSquare" },
+                        ].map(p => (
+                          <label key={p.key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input type="checkbox" checked={!!editGym[p.key]} onChange={ev => setEditGym(prev => ({ ...prev, [p.key]: ev.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600" />
+                            {p.label}
+                          </label>
+                        ))}
+                      </div>
+                      <h4 className="text-sm font-bold text-gray-800 mt-4 mb-3">Pricing & Duration</h4>
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Max Members</label>
-                          <input type="number" value={editMaxMembers} onChange={e => setEditMaxMembers(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                          <label className="block text-[11px] font-medium text-gray-600 mb-1">Price ($/month, blank = free)</label>
+                          <input type="number" value={editGym.priceCents as string || ""} onChange={ev => setEditGym(prev => ({ ...prev, priceCents: ev.target.value }))} placeholder="Free" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Max Styles</label>
-                          <input type="number" value={editMaxStyles} onChange={e => setEditMaxStyles(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Trial Expires (blank = full plan)</label>
-                          <input type="date" value={editTrialExpires} onChange={e => setEditTrialExpires(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                          <label className="block text-[11px] font-medium text-gray-600 mb-1">Trial Expires (blank = full plan)</label>
+                          <input type="date" value={editGym.trialExpiresAt as string || ""} onChange={ev => setEditGym(prev => ({ ...prev, trialExpiresAt: ev.target.value }))} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                         </div>
                       </div>
                       <div className="mt-3 flex justify-end gap-2">

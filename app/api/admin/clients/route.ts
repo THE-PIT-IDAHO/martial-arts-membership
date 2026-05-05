@@ -105,19 +105,33 @@ export async function PATCH(req: Request) {
     const owner = await requireOwner(req);
     if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const { clientId, maxMembers, maxStyles, trialExpiresAt, removeTrial } = await req.json();
+    const body = await req.json();
+    const { clientId } = body;
 
     if (!clientId) {
       return NextResponse.json({ error: "clientId is required" }, { status: 400 });
     }
 
+    const parse = (v: unknown, def: number) => v !== undefined ? parseInt(String(v)) || def : undefined;
     const data: Record<string, unknown> = {};
-    if (maxMembers !== undefined) data.maxMembers = parseInt(maxMembers) || 10;
-    if (maxStyles !== undefined) data.maxStyles = parseInt(maxStyles) || 3;
-    if (removeTrial) {
+
+    if (body.maxMembers !== undefined) data.maxMembers = parse(body.maxMembers, 10);
+    if (body.maxStyles !== undefined) data.maxStyles = parse(body.maxStyles, 3);
+    if (body.maxRanksPerStyle !== undefined) data.maxRanksPerStyle = parse(body.maxRanksPerStyle, 10);
+    if (body.maxMembershipPlans !== undefined) data.maxMembershipPlans = parse(body.maxMembershipPlans, 3);
+    if (body.maxClasses !== undefined) data.maxClasses = parse(body.maxClasses, 5);
+    if (body.maxUsers !== undefined) data.maxUsers = parse(body.maxUsers, 2);
+    if (body.maxLocations !== undefined) data.maxLocations = parse(body.maxLocations, 1);
+    if (body.maxReports !== undefined) data.maxReports = parse(body.maxReports, 3);
+    if (body.maxPOSItems !== undefined) data.maxPOSItems = parse(body.maxPOSItems, 10);
+    if (body.allowStripe !== undefined) data.allowStripe = !!body.allowStripe;
+    if (body.allowPaypal !== undefined) data.allowPaypal = !!body.allowPaypal;
+    if (body.allowSquare !== undefined) data.allowSquare = !!body.allowSquare;
+    if (body.priceCents !== undefined) data.priceCents = body.priceCents !== "" ? parseInt(body.priceCents) || 0 : 0;
+    if (body.removeTrial) {
       data.trialExpiresAt = null;
-    } else if (trialExpiresAt !== undefined) {
-      data.trialExpiresAt = trialExpiresAt ? new Date(trialExpiresAt) : null;
+    } else if (body.trialExpiresAt !== undefined) {
+      data.trialExpiresAt = body.trialExpiresAt ? new Date(body.trialExpiresAt) : null;
     }
 
     const client = await prisma.client.update({
