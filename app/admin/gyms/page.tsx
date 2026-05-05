@@ -401,22 +401,29 @@ export default function ManageGymsPage() {
                   );
                 }
 
+                // Find matching tier name
+                const tierName = tiers.find(t =>
+                  t.maxMembers === link.maxMembers && t.maxStyles === link.maxStyles && t.priceCents === link.priceCents
+                )?.name || link.note || "Custom";
+
                 return (
                   <div key={link.id} className={`rounded-lg border bg-white p-4 ${!link.active || expired ? "border-gray-100 opacity-60" : "border-gray-200"}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold text-gray-900">
-                            {link.maxMembers} members, {link.maxStyles} styles{link.trialMonths > 0 ? `, ${link.trialMonths}wk trial` : ""}{link.priceCents > 0 ? `, $${(link.priceCents / 100).toFixed(2)}/mo` : ", Free"}
+                          <span className="text-sm font-bold text-gray-900">{tierName}</span>
+                          <span className="text-xs text-gray-500">
+                            {link.priceCents > 0 ? `$${(link.priceCents / 100).toFixed(2)}/mo` : "Free"}
                           </span>
+                          {link.trialMonths > 0 && <span className="text-xs text-blue-600 font-semibold">{link.trialMonths}wk trial</span>}
                           {!link.active && <span className="text-xs text-red-500 font-semibold">Disabled</span>}
                           {expired && <span className="text-xs text-red-500 font-semibold">Link Expired</span>}
                           <span className="text-xs text-gray-400">{link.useCount} signups</span>
                         </div>
-                        {link.note && <p className="text-xs text-gray-500 mt-0.5">{link.note}</p>}
-                        <p className="text-xs text-gray-400">
-                          Created {formatDate(link.createdAt)}
-                          {link.expiresAt && ` \u2022 Link expires ${formatDate(link.expiresAt)}`}
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {link.maxMembers >= 999999 ? "Unlimited" : link.maxMembers} members &middot; {link.maxStyles >= 999999 ? "Unlimited" : link.maxStyles} styles &middot; {link.maxClasses >= 999999 ? "Unlimited" : link.maxClasses} class types
+                          {` \u2022 Created ${formatDate(link.createdAt)}`}
+                          {link.expiresAt && ` \u2022 Expires ${formatDate(link.expiresAt)}`}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 ml-4">
