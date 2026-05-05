@@ -136,8 +136,8 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-xs text-gray-400 text-center mt-6">
-            First time? Check the server console for your temporary password.
+          <p className="text-xs text-center mt-6">
+            <a href="/forgot-password" className="text-primary hover:underline">Forgot password?</a>
           </p>
         </div>
       </div>

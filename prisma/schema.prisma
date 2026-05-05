@@ -54,6 +54,15 @@ model User {
   @@unique([email, clientId])
 }
 
+model AdminResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique @default(cuid())
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
 model Member {
   id                    String               @id @default(cuid())
   firstName             String
