@@ -426,10 +426,10 @@ export default function ManageGymsPage() {
                         <input type="text" value={e.note as string || ""} onChange={ev => setE("note", ev.target.value)} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                       </div>
                       <div className="mt-4 flex justify-end gap-2">
-                        <button onClick={() => setEditingLinkId(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
                         <button onClick={handleSaveLink} disabled={savingLink} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
                           {savingLink ? "Saving..." : "Save"}
                         </button>
+                        <button onClick={() => setEditingLinkId(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
                       </div>
                     </div>
                   );
