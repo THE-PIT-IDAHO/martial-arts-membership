@@ -19,6 +19,13 @@ type SignupLink = {
   token: string;
   maxMembers: number;
   maxStyles: number;
+  maxRanksPerStyle: number;
+  maxMembershipPlans: number;
+  maxClasses: number;
+  maxUsers: number;
+  maxLocations: number;
+  maxReports: number;
+  maxPOSItems: number;
   trialMonths: number;
   expiresAt: string | null;
   active: boolean;
@@ -36,7 +43,14 @@ export default function ManageGymsPage() {
   const [showCreateLink, setShowCreateLink] = useState(false);
   const [linkMaxMembers, setLinkMaxMembers] = useState("10");
   const [linkMaxStyles, setLinkMaxStyles] = useState("3");
-  const [linkTrialMonths, setLinkTrialMonths] = useState("3");
+  const [linkMaxRanksPerStyle, setLinkMaxRanksPerStyle] = useState("10");
+  const [linkMaxMembershipPlans, setLinkMaxMembershipPlans] = useState("3");
+  const [linkMaxClasses, setLinkMaxClasses] = useState("5");
+  const [linkMaxUsers, setLinkMaxUsers] = useState("2");
+  const [linkMaxLocations, setLinkMaxLocations] = useState("1");
+  const [linkMaxReports, setLinkMaxReports] = useState("3");
+  const [linkMaxPOSItems, setLinkMaxPOSItems] = useState("10");
+  const [linkTrialMonths, setLinkTrialMonths] = useState("");
   const [linkExpiresInDays, setLinkExpiresInDays] = useState("");
   const [linkNote, setLinkNote] = useState("");
   const [creatingLink, setCreatingLink] = useState(false);
@@ -81,6 +95,13 @@ export default function ManageGymsPage() {
         body: JSON.stringify({
           maxMembers: linkMaxMembers,
           maxStyles: linkMaxStyles,
+          maxRanksPerStyle: linkMaxRanksPerStyle,
+          maxMembershipPlans: linkMaxMembershipPlans,
+          maxClasses: linkMaxClasses,
+          maxUsers: linkMaxUsers,
+          maxLocations: linkMaxLocations,
+          maxReports: linkMaxReports,
+          maxPOSItems: linkMaxPOSItems,
           trialMonths: linkTrialMonths,
           expiresInDays: linkExpiresInDays ? parseInt(linkExpiresInDays) : null,
           note: linkNote,
@@ -88,8 +109,10 @@ export default function ManageGymsPage() {
       });
       if (res.ok) {
         setShowCreateLink(false);
-        setLinkMaxMembers("10"); setLinkMaxStyles("3"); setLinkTrialMonths("3");
-        setLinkExpiresInDays(""); setLinkNote("");
+        setLinkMaxMembers("10"); setLinkMaxStyles("3"); setLinkMaxRanksPerStyle("10");
+        setLinkMaxMembershipPlans("3"); setLinkMaxClasses("5"); setLinkMaxUsers("2");
+        setLinkMaxLocations("1"); setLinkMaxReports("3"); setLinkMaxPOSItems("10");
+        setLinkTrialMonths(""); setLinkExpiresInDays(""); setLinkNote("");
         loadData();
       }
     } catch {
@@ -182,27 +205,39 @@ export default function ManageGymsPage() {
           {/* Create Link Form */}
           {showCreateLink && (
             <div className="rounded-lg border border-gray-200 bg-white p-5 mb-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <h3 className="text-sm font-bold text-gray-800 mb-3">Limits</h3>
+              <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+                {[
+                  { label: "Members", value: linkMaxMembers, set: setLinkMaxMembers },
+                  { label: "Styles", value: linkMaxStyles, set: setLinkMaxStyles },
+                  { label: "Ranks/Style", value: linkMaxRanksPerStyle, set: setLinkMaxRanksPerStyle },
+                  { label: "Membership Plans", value: linkMaxMembershipPlans, set: setLinkMaxMembershipPlans },
+                  { label: "Classes", value: linkMaxClasses, set: setLinkMaxClasses },
+                  { label: "Staff Accounts", value: linkMaxUsers, set: setLinkMaxUsers },
+                  { label: "Locations", value: linkMaxLocations, set: setLinkMaxLocations },
+                  { label: "Reports", value: linkMaxReports, set: setLinkMaxReports },
+                  { label: "POS Items", value: linkMaxPOSItems, set: setLinkMaxPOSItems },
+                ].map(f => (
+                  <div key={f.label}>
+                    <label className="block text-[11px] font-medium text-gray-600 mb-1">{f.label}</label>
+                    <input type="number" value={f.value} onChange={e => f.set(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                  </div>
+                ))}
+              </div>
+              <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Duration</h3>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Max Members</label>
-                  <input type="number" value={linkMaxMembers} onChange={e => setLinkMaxMembers(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Trial (months, blank = no expiration)</label>
+                  <input type="number" value={linkTrialMonths} onChange={e => setLinkTrialMonths(e.target.value)} placeholder="No expiration" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Max Styles</label>
-                  <input type="number" value={linkMaxStyles} onChange={e => setLinkMaxStyles(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Trial (months)</label>
-                  <input type="number" value={linkTrialMonths} onChange={e => setLinkTrialMonths(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Link Expires (days)</label>
-                  <input type="number" value={linkExpiresInDays} onChange={e => setLinkExpiresInDays(e.target.value)} placeholder="Never" min="1" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Link Expires (days, blank = never)</label>
+                  <input type="number" value={linkExpiresInDays} onChange={e => setLinkExpiresInDays(e.target.value)} placeholder="Never" min="1" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
               </div>
               <div className="mt-3">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Note (for your reference)</label>
-                <input type="text" value={linkNote} onChange={e => setLinkNote(e.target.value)} placeholder="e.g., Facebook promo, gym conference" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                <label className="block text-[11px] font-medium text-gray-600 mb-1">Note (for your reference)</label>
+                <input type="text" value={linkNote} onChange={e => setLinkNote(e.target.value)} placeholder="e.g., Basic Trial, Premium Demo, Facebook promo" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
               </div>
               <div className="mt-4 flex justify-end">
                 <button onClick={handleCreateLink} disabled={creatingLink} className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
@@ -225,7 +260,7 @@ export default function ManageGymsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-gray-900">
-                            {link.maxMembers} members, {link.maxStyles} styles, {link.trialMonths}mo trial
+                            {link.maxMembers} members, {link.maxStyles} styles{link.trialMonths > 0 ? `, ${link.trialMonths}mo trial` : ""}
                           </span>
                           {!link.active && <span className="text-xs text-red-500 font-semibold">Disabled</span>}
                           {expired && <span className="text-xs text-red-500 font-semibold">Link Expired</span>}

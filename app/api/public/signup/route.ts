@@ -73,9 +73,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const trialExpiresAt = new Date(
-      Date.now() + link.trialMonths * 30 * 24 * 60 * 60 * 1000
-    );
+    const trialExpiresAt = link.trialMonths > 0
+      ? new Date(Date.now() + link.trialMonths * 30 * 24 * 60 * 60 * 1000)
+      : null;
 
     // Create client + admin user + mark link as used
     const result = await prisma.$transaction(async (tx) => {
@@ -85,6 +85,13 @@ export async function POST(req: Request) {
           slug,
           maxMembers: link.maxMembers,
           maxStyles: link.maxStyles,
+          maxRanksPerStyle: link.maxRanksPerStyle,
+          maxMembershipPlans: link.maxMembershipPlans,
+          maxClasses: link.maxClasses,
+          maxUsers: link.maxUsers,
+          maxLocations: link.maxLocations,
+          maxReports: link.maxReports,
+          maxPOSItems: link.maxPOSItems,
           trialExpiresAt,
         },
       });

@@ -106,7 +106,7 @@ export default function SignupPage() {
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Welcome to Dojo Storm!</h1>
           <p className="text-gray-600 mb-1">Your gym <strong>{success.gymName}</strong> has been created.</p>
           <p className="text-sm text-gray-500 mb-6">
-            Trial includes {linkInfo?.maxMembers} members, {linkInfo?.maxStyles} styles, for {linkInfo?.trialMonths} months.
+            Includes up to {linkInfo?.maxMembers} members and {linkInfo?.maxStyles} styles{linkInfo?.trialMonths ? ` for ${linkInfo.trialMonths} months` : ""}.
           </p>
           <a
             href="/login"
@@ -153,7 +153,7 @@ export default function SignupPage() {
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-6 space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-            Trial includes up to {linkInfo?.maxMembers} members, {linkInfo?.maxStyles} styles, for {linkInfo?.trialMonths} months.
+            Includes up to {linkInfo?.maxMembers} members and {linkInfo?.maxStyles} styles{linkInfo?.trialMonths ? ` for ${linkInfo.trialMonths} months` : ""}.
           </div>
 
           {error && (

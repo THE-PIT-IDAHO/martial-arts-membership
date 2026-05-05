@@ -13,8 +13,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ isTrial: false });
     }
 
-    const currentMembers = await prisma.member.count({ where: { clientId } });
-    const currentStyles = await prisma.style.count();
+    const [currentMembers, currentStyles] = await Promise.all([
+      prisma.member.count({ where: { clientId } }),
+      prisma.style.count(),
+    ]);
 
     return NextResponse.json({
       ...status,

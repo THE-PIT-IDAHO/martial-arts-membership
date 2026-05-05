@@ -14,6 +14,13 @@ model Client {
   slug            String           @unique
   maxMembers      Int              @default(10)
   maxStyles       Int              @default(3)
+  maxRanksPerStyle Int             @default(10)
+  maxMembershipPlans Int           @default(3)
+  maxClasses      Int              @default(5)
+  maxUsers        Int              @default(2)
+  maxLocations    Int              @default(1)
+  maxReports      Int              @default(3)
+  maxPOSItems     Int              @default(10)
   trialExpiresAt  DateTime?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
@@ -31,6 +38,13 @@ model SignupLink {
   token          String    @unique @default(cuid())
   maxMembers     Int       @default(10)
   maxStyles      Int       @default(3)
+  maxRanksPerStyle Int    @default(10)
+  maxMembershipPlans Int  @default(3)
+  maxClasses     Int       @default(5)
+  maxUsers       Int       @default(2)
+  maxLocations   Int       @default(1)
+  maxReports     Int       @default(3)
+  maxPOSItems    Int       @default(10)
   trialMonths    Int       @default(3)
   expiresAt      DateTime?
   active         Boolean   @default(true)

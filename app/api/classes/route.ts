@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { canAddClass } from "@/lib/trial";
 
 // GET /api/classes
 export async function GET(req: Request) {
@@ -69,6 +70,11 @@ export async function POST(req: Request) {
 
     if (!startsAt || !endsAt) {
       return new NextResponse("Start and end times are required", { status: 400 });
+    }
+
+    const classCheck = await canAddClass(clientId);
+    if (!classCheck.allowed) {
+      return NextResponse.json({ error: classCheck.reason }, { status: 403 });
     }
 
     const classSession = await prisma.classSession.create({

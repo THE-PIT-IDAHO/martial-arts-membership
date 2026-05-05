@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
+import { canAddLocation } from "@/lib/trial";
 
 export async function GET(req: Request) {
   try {
@@ -20,6 +21,12 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const clientId = await getClientId(req);
+
+    const locCheck = await canAddLocation(clientId);
+    if (!locCheck.allowed) {
+      return NextResponse.json({ error: locCheck.reason }, { status: 403 });
+    }
+
     const body = await req.json();
     const { name, address, city, state, zipCode, phone } = body;
 

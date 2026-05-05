@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { canAddPOSItem } from "@/lib/trial";
 
 // GET /api/pos/items
 export async function GET(req: Request) {
@@ -23,6 +24,12 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const clientId = await getClientId(req);
+
+    const itemCheck = await canAddPOSItem(clientId);
+    if (!itemCheck.allowed) {
+      return NextResponse.json({ error: itemCheck.reason }, { status: 403 });
+    }
+
     const body = await req.json();
     const { name, description, sku, priceCents, quantity, category, sizes, colors, variantLabel1, variantLabel2, itemType, isActive, availableOnline, variants, reorderThreshold } = body;
 

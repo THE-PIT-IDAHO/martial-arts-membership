@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { canAddMembershipPlan } from "@/lib/trial";
 
 const MIN_MEMBERSHIP_NUMBER = 20000000;
 
@@ -64,6 +65,12 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const clientId = await getClientId(req);
+
+    const planCheck = await canAddMembershipPlan(clientId);
+    if (!planCheck.allowed) {
+      return NextResponse.json({ error: planCheck.reason }, { status: 403 });
+    }
+
     const body = await req.json();
     const {
       membershipId,

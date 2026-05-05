@@ -17,19 +17,27 @@ export async function GET() {
 // POST /api/admin/signup-links — create a new signup link
 export async function POST(req: Request) {
   try {
-    const { maxMembers, maxStyles, trialMonths, expiresInDays, note } = await req.json();
+    const body = await req.json();
+    const parse = (v: unknown, def: number) => v !== undefined && v !== "" ? parseInt(String(v)) || def : def;
 
-    const expiresAt = expiresInDays
-      ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
+    const expiresAt = body.expiresInDays
+      ? new Date(Date.now() + parseInt(body.expiresInDays) * 24 * 60 * 60 * 1000)
       : null;
 
     const link = await prisma.signupLink.create({
       data: {
-        maxMembers: parseInt(maxMembers) || 10,
-        maxStyles: parseInt(maxStyles) || 3,
-        trialMonths: parseInt(trialMonths) || 3,
+        maxMembers: parse(body.maxMembers, 10),
+        maxStyles: parse(body.maxStyles, 3),
+        maxRanksPerStyle: parse(body.maxRanksPerStyle, 10),
+        maxMembershipPlans: parse(body.maxMembershipPlans, 3),
+        maxClasses: parse(body.maxClasses, 5),
+        maxUsers: parse(body.maxUsers, 2),
+        maxLocations: parse(body.maxLocations, 1),
+        maxReports: parse(body.maxReports, 3),
+        maxPOSItems: parse(body.maxPOSItems, 10),
+        trialMonths: body.trialMonths !== undefined && body.trialMonths !== "" ? parseInt(body.trialMonths) || 0 : 3,
         expiresAt,
-        note: note?.trim() || null,
+        note: body.note?.trim() || null,
       },
     });
 
