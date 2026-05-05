@@ -116,6 +116,37 @@ export async function POST(req: Request) {
         data: { useCount: { increment: 1 } },
       });
 
+      // Create 2 default styles with standard belt ranks
+      const defaultStyles = [
+        {
+          name: "Karate",
+          belts: ["White Belt", "Yellow Belt", "Orange Belt", "Green Belt", "Blue Belt", "Purple Belt", "Brown Belt", "Black Belt"],
+        },
+        {
+          name: "Brazilian Jiu-Jitsu",
+          belts: ["White Belt", "Blue Belt", "Purple Belt", "Brown Belt", "Black Belt"],
+        },
+      ];
+
+      for (const s of defaultStyles) {
+        const style = await tx.style.create({
+          data: {
+            name: s.name,
+            beltSystemEnabled: true,
+            clientId: client.id,
+          },
+        });
+        for (let i = 0; i < s.belts.length; i++) {
+          await tx.rank.create({
+            data: {
+              name: s.belts[i],
+              order: i,
+              styleId: style.id,
+            },
+          });
+        }
+      }
+
       return { client, user };
     });
 

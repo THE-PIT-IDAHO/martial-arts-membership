@@ -319,6 +319,7 @@ model Style {
   beltConfig           String?
   gradingDates         String?
   testNamingConvention String   @default("INTO_RANK") // "INTO_RANK" = test named for target rank, "FROM_RANK" = test named for current rank
+  clientId             String   @default("default-client")
   ranks                Rank[]
 }
 

@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
     const [currentMembers, currentStyles] = await Promise.all([
       prisma.member.count({ where: { clientId } }),
-      prisma.style.count(),
+      prisma.style.count({ where: { clientId } }),
     ]);
 
     return NextResponse.json({

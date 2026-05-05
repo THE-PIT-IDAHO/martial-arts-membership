@@ -144,7 +144,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
   const { id } = await params;
 
   try {
-    await getClientId(_req); // validate tenant
+    const clientId = await getClientId(_req);
     const style = await prisma.style.findUnique({
       where: { id },
       include: {
@@ -154,7 +154,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
       },
     });
 
-    if (!style) {
+    if (!style || style.clientId !== clientId) {
       return new NextResponse("Style not found", { status: 404 });
     }
 

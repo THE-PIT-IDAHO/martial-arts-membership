@@ -6,8 +6,9 @@ import { canAddStyle } from "@/lib/trial";
 // GET /api/styles
 export async function GET(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const styles = await prisma.style.findMany({
+      where: { clientId },
       include: {
         ranks: {
           orderBy: { order: "asc" },
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
         description: description?.trim() || null,
         beltSystemEnabled: beltSystemEnabled ?? false,
         testNamingConvention: testNamingConvention || "INTO_RANK",
+        clientId,
       },
     });
 

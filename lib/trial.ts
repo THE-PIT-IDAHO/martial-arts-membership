@@ -107,7 +107,7 @@ export async function canAddMember(clientId: string): Promise<{ allowed: boolean
 }
 
 export async function canAddStyle(clientId: string): Promise<{ allowed: boolean; reason?: string }> {
-  const count = await prisma.style.count();
+  const count = await prisma.style.count({ where: { clientId } });
   return checkLimit(clientId, "maxStyles", count, "Style");
 }
 
