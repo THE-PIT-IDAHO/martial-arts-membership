@@ -110,7 +110,7 @@ export default function SignupPage() {
           </p>
           <a
             href={success.loginUrl}
-            className="inline-block rounded-md bg-red-600 px-6 py-3 text-sm font-semibold text-white hover:bg-red-700"
+            className="inline-block rounded-md bg-primary px-6 py-3 text-sm font-semibold text-white hover:bg-primaryDark"
           >
             Log In to Your Dashboard
           </a>
@@ -227,7 +227,7 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-md bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            className="w-full rounded-md bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
           >
             {submitting ? "Creating Account..." : "Create My Gym Account"}
           </button>
