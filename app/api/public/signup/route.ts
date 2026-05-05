@@ -140,6 +140,73 @@ export async function POST(req: Request) {
         }
       }
 
+      // Create sample classes linked to the default styles
+      const createdStyles = await tx.style.findMany({ where: { clientId: client.id }, select: { id: true, name: true } });
+      const kempoStyle = createdStyles.find(s => s.name === "Kempo");
+      const bjjStyle = createdStyles.find(s => s.name === "Brazilian Jiu-Jitsu");
+
+      const sampleClasses = [
+        {
+          name: "Kempo",
+          classType: "Kempo",
+          styleId: kempoStyle?.id || null,
+          styleName: kempoStyle ? "Kempo" : null,
+          styleIds: kempoStyle ? JSON.stringify([kempoStyle.id]) : null,
+          styleNames: kempoStyle ? JSON.stringify(["Kempo"]) : null,
+          color: "#cc0000",
+        },
+        {
+          name: "BJJ",
+          classType: "BJJ",
+          styleId: bjjStyle?.id || null,
+          styleName: bjjStyle ? "Brazilian Jiu-Jitsu" : null,
+          styleIds: bjjStyle ? JSON.stringify([bjjStyle.id]) : null,
+          styleNames: bjjStyle ? JSON.stringify(["Brazilian Jiu-Jitsu"]) : null,
+          color: "#03c200",
+        },
+        {
+          name: "Sparring",
+          classType: "Sparring",
+          styleId: kempoStyle?.id || null,
+          styleName: kempoStyle ? "Kempo" : null,
+          styleIds: JSON.stringify([kempoStyle?.id, bjjStyle?.id].filter(Boolean)),
+          styleNames: JSON.stringify(["Kempo", "Brazilian Jiu-Jitsu"].filter((_, i) => [kempoStyle, bjjStyle][i])),
+          color: "#8b0000",
+        },
+        {
+          name: "No-Gi",
+          classType: "No-Gi",
+          styleId: bjjStyle?.id || null,
+          styleName: bjjStyle ? "Brazilian Jiu-Jitsu" : null,
+          styleIds: JSON.stringify([bjjStyle?.id, kempoStyle?.id].filter(Boolean)),
+          styleNames: JSON.stringify(["Brazilian Jiu-Jitsu", "Kempo"].filter((_, i) => [bjjStyle, kempoStyle][i])),
+          color: "#7d7d7d",
+        },
+      ];
+
+      const now = new Date();
+      const today9am = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0);
+      const today10am = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0);
+
+      for (const cls of sampleClasses) {
+        await tx.classSession.create({
+          data: {
+            name: cls.name,
+            classType: cls.classType,
+            styleId: cls.styleId,
+            styleName: cls.styleName,
+            styleIds: cls.styleIds,
+            styleNames: cls.styleNames,
+            color: cls.color,
+            startsAt: today9am,
+            endsAt: today10am,
+            isRecurring: false,
+            kioskEnabled: true,
+            clientId: client.id,
+          },
+        });
+      }
+
       return { client, user };
     });
 
