@@ -48,6 +48,37 @@ export async function POST(req: Request) {
   }
 }
 
+// PATCH /api/admin/signup-links — update a signup link
+export async function PATCH(req: Request) {
+  try {
+    const body = await req.json();
+    const { id, ...fields } = body;
+    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+    const parse = (v: unknown, def: number) => v !== undefined && v !== "" ? parseInt(String(v)) || def : undefined;
+    const data: Record<string, unknown> = {};
+
+    if (fields.maxMembers !== undefined) data.maxMembers = parse(fields.maxMembers, 10);
+    if (fields.maxStyles !== undefined) data.maxStyles = parse(fields.maxStyles, 3);
+    if (fields.maxRanksPerStyle !== undefined) data.maxRanksPerStyle = parse(fields.maxRanksPerStyle, 10);
+    if (fields.maxMembershipPlans !== undefined) data.maxMembershipPlans = parse(fields.maxMembershipPlans, 3);
+    if (fields.maxClasses !== undefined) data.maxClasses = parse(fields.maxClasses, 5);
+    if (fields.maxUsers !== undefined) data.maxUsers = parse(fields.maxUsers, 2);
+    if (fields.maxLocations !== undefined) data.maxLocations = parse(fields.maxLocations, 1);
+    if (fields.maxReports !== undefined) data.maxReports = parse(fields.maxReports, 3);
+    if (fields.maxPOSItems !== undefined) data.maxPOSItems = parse(fields.maxPOSItems, 10);
+    if (fields.trialMonths !== undefined) data.trialMonths = fields.trialMonths !== "" ? parseInt(fields.trialMonths) || 0 : 0;
+    if (fields.note !== undefined) data.note = fields.note?.trim() || null;
+    if (fields.active !== undefined) data.active = fields.active;
+
+    const link = await prisma.signupLink.update({ where: { id }, data });
+    return NextResponse.json({ link });
+  } catch (error) {
+    console.error("Error updating signup link:", error);
+    return NextResponse.json({ error: "Failed to update" }, { status: 500 });
+  }
+}
+
 // DELETE /api/admin/signup-links — delete a signup link
 export async function DELETE(req: Request) {
   try {

@@ -129,7 +129,7 @@ export default function ManageGymsPage() {
   }
 
   function copyLink(token: string, id: string) {
-    const url = `${window.location.origin}/signup?token=${token}`;
+    const url = `https://app.dojostormsoftware.com/signup?token=${token}`;
     navigator.clipboard.writeText(url);
     setCopiedLinkId(id);
     setTimeout(() => setCopiedLinkId(null), 2000);
