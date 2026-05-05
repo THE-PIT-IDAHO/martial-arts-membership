@@ -26,6 +26,10 @@ type SignupLink = {
   maxLocations: number;
   maxReports: number;
   maxPOSItems: number;
+  allowStripe: boolean;
+  allowPaypal: boolean;
+  allowSquare: boolean;
+  priceCents: number;
   trialMonths: number;
   expiresAt: string | null;
   active: boolean;
@@ -50,6 +54,10 @@ export default function ManageGymsPage() {
   const [linkMaxLocations, setLinkMaxLocations] = useState("1");
   const [linkMaxReports, setLinkMaxReports] = useState("3");
   const [linkMaxPOSItems, setLinkMaxPOSItems] = useState("10");
+  const [linkAllowStripe, setLinkAllowStripe] = useState(false);
+  const [linkAllowPaypal, setLinkAllowPaypal] = useState(false);
+  const [linkAllowSquare, setLinkAllowSquare] = useState(false);
+  const [linkPriceCents, setLinkPriceCents] = useState("");
   const [linkTrialMonths, setLinkTrialMonths] = useState("");
   const [linkExpiresInDays, setLinkExpiresInDays] = useState("");
   const [linkNote, setLinkNote] = useState("");
@@ -102,6 +110,10 @@ export default function ManageGymsPage() {
           maxLocations: linkMaxLocations,
           maxReports: linkMaxReports,
           maxPOSItems: linkMaxPOSItems,
+          allowStripe: linkAllowStripe,
+          allowPaypal: linkAllowPaypal,
+          allowSquare: linkAllowSquare,
+          priceCents: linkPriceCents,
           trialMonths: linkTrialMonths,
           expiresInDays: linkExpiresInDays ? parseInt(linkExpiresInDays) : null,
           note: linkNote,
@@ -112,7 +124,8 @@ export default function ManageGymsPage() {
         setLinkMaxMembers("10"); setLinkMaxStyles("3"); setLinkMaxRanksPerStyle("10");
         setLinkMaxMembershipPlans("3"); setLinkMaxClasses("5"); setLinkMaxUsers("2");
         setLinkMaxLocations("1"); setLinkMaxReports("3"); setLinkMaxPOSItems("10");
-        setLinkTrialMonths(""); setLinkExpiresInDays(""); setLinkNote("");
+        setLinkAllowStripe(false); setLinkAllowPaypal(false); setLinkAllowSquare(false);
+        setLinkPriceCents(""); setLinkTrialMonths(""); setLinkExpiresInDays(""); setLinkNote("");
         loadData();
       }
     } catch {
@@ -239,8 +252,31 @@ export default function ManageGymsPage() {
                   </div>
                 ))}
               </div>
-              <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Duration</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Payment Processors</h3>
+              <div className="flex flex-wrap gap-4">
+                {[
+                  { label: "Stripe", value: linkAllowStripe, set: setLinkAllowStripe },
+                  { label: "PayPal", value: linkAllowPaypal, set: setLinkAllowPaypal },
+                  { label: "Square", value: linkAllowSquare, set: setLinkAllowSquare },
+                ].map(p => (
+                  <label key={p.label} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={p.value}
+                      onChange={e => p.set(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600"
+                    />
+                    {p.label}
+                  </label>
+                ))}
+              </div>
+
+              <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Pricing & Duration</h3>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Price ($/month, blank = free)</label>
+                  <input type="number" value={linkPriceCents} onChange={e => setLinkPriceCents(e.target.value)} placeholder="Free" min="0" step="1" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
                 <div>
                   <label className="block text-[11px] font-medium text-gray-600 mb-1">Trial (weeks, blank = no expiration)</label>
                   <input type="number" value={linkTrialMonths} onChange={e => setLinkTrialMonths(e.target.value)} placeholder="No expiration" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
@@ -275,7 +311,7 @@ export default function ManageGymsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-gray-900">
-                            {link.maxMembers} members, {link.maxStyles} styles{link.trialMonths > 0 ? `, ${link.trialMonths}wk trial` : ""}
+                            {link.maxMembers} members, {link.maxStyles} styles{link.trialMonths > 0 ? `, ${link.trialMonths}wk trial` : ""}{link.priceCents > 0 ? `, $${(link.priceCents / 100).toFixed(2)}/mo` : ", Free"}
                           </span>
                           {!link.active && <span className="text-xs text-red-500 font-semibold">Disabled</span>}
                           {expired && <span className="text-xs text-red-500 font-semibold">Link Expired</span>}

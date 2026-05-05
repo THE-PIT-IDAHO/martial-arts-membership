@@ -92,6 +92,10 @@ export async function POST(req: Request) {
           maxLocations: link.maxLocations,
           maxReports: link.maxReports,
           maxPOSItems: link.maxPOSItems,
+          allowStripe: link.allowStripe,
+          allowPaypal: link.allowPaypal,
+          allowSquare: link.allowSquare,
+          priceCents: link.priceCents,
           trialExpiresAt,
         },
       });
