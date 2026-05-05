@@ -5,11 +5,12 @@ import { getClientId } from "@/lib/tenant";
 // GET /api/testing - List all testing events
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
     const styleId = searchParams.get("styleId");
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { clientId };
     if (status) where.status = status.toUpperCase();
     if (styleId) where.styleId = styleId;
 
