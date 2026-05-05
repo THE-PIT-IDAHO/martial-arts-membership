@@ -8,7 +8,11 @@ const SESSION_DURATION_DAYS = 30;
 const TOKEN_EXPIRY_MINUTES = 15;
 
 function getSecret(): string {
-  return process.env.JWT_SECRET || "fallback-dev-secret";
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET environment variable is required");
+  }
+  return secret;
 }
 
 function signToken(token: string): string {
