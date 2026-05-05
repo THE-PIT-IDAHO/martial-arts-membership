@@ -2113,10 +2113,7 @@ export default function CurriculumPage() {
       return tests && tests.length > 0 && tests.some(t => t.categories.length > 0);
     });
 
-    if (ranksWithCurriculum.length === 0) {
-      alert("No curriculum content to publish. Add categories and items to at least one rank.");
-      return;
-    }
+    const ranksWithoutCurriculum = sortedRanks.filter(rank => !ranksWithCurriculum.some(r => r.id === rank.id));
 
     setPublishing(true);
     try {
@@ -2171,10 +2168,24 @@ export default function CurriculumPage() {
         }
       }
 
-      if (errors.length > 0) {
+      // Clear PDFs from ranks that no longer have curriculum
+      let clearedCount = 0;
+      for (const rank of ranksWithoutCurriculum) {
+        await fetch(`/api/ranks/${rank.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pdfDocument: null }),
+        });
+        clearedCount++;
+      }
+
+      if (ranksWithCurriculum.length === 0) {
+        alert(`Curriculum cleared. Removed PDFs from ${clearedCount} rank${clearedCount !== 1 ? "s" : ""}.`);
+      } else if (errors.length > 0) {
         alert(`Published ${successCount}/${ranksWithCurriculum.length} PDFs. Failed: ${errors.join(", ")}`);
       } else {
-        alert(`Curriculum published! ${successCount} rank PDF${successCount !== 1 ? "s" : ""} generated.`);
+        const clearMsg = clearedCount > 0 ? ` Cleared ${clearedCount} old PDF${clearedCount !== 1 ? "s" : ""}.` : "";
+        alert(`Curriculum published! ${successCount} rank PDF${successCount !== 1 ? "s" : ""} generated.${clearMsg}`);
       }
     } catch (err: unknown) {
       console.error("Error publishing curriculum:", err);

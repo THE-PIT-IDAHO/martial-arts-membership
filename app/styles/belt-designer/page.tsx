@@ -2142,7 +2142,7 @@ export default function BeltDesignerPage() {
                             type="button"
                             onClick={() => handleDuplicateRank(rank)}
                             tabIndex={-1}
-                            className="text-xs font-medium text-gray-600 hover:text-gray-800"
+                            className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                           >
                             Duplicate
                           </button>
@@ -2150,7 +2150,7 @@ export default function BeltDesignerPage() {
                             type="button"
                             onClick={() => handleDeleteRank(rank.id)}
                             tabIndex={-1}
-                            className="text-xs font-medium text-primary hover:text-primaryDark"
+                            className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
                           >
                             Delete
                           </button>
