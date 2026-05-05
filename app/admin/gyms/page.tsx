@@ -539,10 +539,10 @@ export default function ManageGymsPage() {
                         </div>
                       </div>
                       <div className="mt-3 flex justify-end gap-2">
-                        <button onClick={() => setEditingId(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
                         <button onClick={handleSave} disabled={saving} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
                           {saving ? "Saving..." : "Save"}
                         </button>
+                        <button onClick={() => setEditingId(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
                       </div>
                     </div>
                   ) : (
