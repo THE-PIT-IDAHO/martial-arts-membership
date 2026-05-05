@@ -129,11 +129,19 @@ export async function POST(req: Request) {
       ];
 
       for (const s of defaultStyles) {
+        // Build beltConfig ranks array
+        const beltConfigRanks = s.belts.map((belt, i) => ({
+          id: `default-${i}`,
+          name: belt,
+          order: i,
+        }));
+
         const style = await tx.style.create({
           data: {
             name: s.name,
             beltSystemEnabled: true,
             clientId: client.id,
+            beltConfig: JSON.stringify({ ranks: beltConfigRanks }),
           },
         });
         for (let i = 0; i < s.belts.length; i++) {
