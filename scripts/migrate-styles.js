@@ -11,10 +11,11 @@ async function main() {
     : new PrismaClient();
 
   try {
-    // Find the "app" client (The Pit)
-    const appClient = await p.client.findUnique({ where: { slug: "app" } });
+    // Find The Pit's client (try both slugs)
+    let appClient = await p.client.findUnique({ where: { slug: "app" } });
+    if (!appClient) appClient = await p.client.findUnique({ where: { slug: "thepitidaho" } });
     if (!appClient) {
-      console.log("No 'app' client found. Skipping migration.");
+      console.log("No client found. Skipping migration.");
       return;
     }
 

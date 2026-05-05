@@ -10,9 +10,10 @@ const TENANT_SLUG_HEADER = "x-tenant-slug";
 // The Client record in DB was created with slug "app" by migrate-tenant.ts
 const DEFAULT_SLUG = "app";
 
-// Map gym-specific subdomains to their DB slug if different
+// Map subdomains to their DB slug if different
+// Production client slug is "thepitidaho"; "app" subdomain aliases to it
 const SLUG_ALIASES: Record<string, string> = {
-  thepitidaho: "app",
+  app: "thepitidaho",
 };
 
 // Portal public routes (no auth required)
