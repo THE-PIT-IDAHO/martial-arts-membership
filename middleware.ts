@@ -79,6 +79,17 @@ export async function middleware(request: NextRequest) {
   // --- Resolve tenant slug from subdomain ---
   const host = request.headers.get("host") || "localhost:3000";
   const subdomain = extractSubdomain(host);
+
+  // --- Admin subdomain: admin.dojostormsoftware.com ---
+  if (subdomain === "admin") {
+    // Only allow /admin/* paths and /login on the admin subdomain
+    if (!pathname.startsWith("/admin") && pathname !== "/login" && !pathname.startsWith("/api/auth") && !pathname.startsWith("/api/admin")) {
+      return NextResponse.redirect(new URL("/admin/gyms", request.url));
+    }
+    // Route to platform owner's client
+    return nextWithTenant(request, "thepitidaho");
+  }
+
   // Treat "app" subdomain as default, and resolve aliases for branded subdomains
   const rawSlug = (!subdomain || subdomain === "app") ? DEFAULT_SLUG : subdomain;
   const tenantSlug = SLUG_ALIASES[rawSlug] || rawSlug;
