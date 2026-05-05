@@ -25,6 +25,7 @@ model Client {
   allowPaypal     Boolean          @default(false)
   allowSquare     Boolean          @default(false)
   priceCents      Int              @default(0)
+  isPlatformAdmin Boolean          @default(false)
   trialExpiresAt  DateTime?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt

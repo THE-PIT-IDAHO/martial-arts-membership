@@ -27,7 +27,6 @@ const navItems: NavItem[] = [
   { label: "Communication", href: "/communication", permissionKey: "communication" },
   { label: "Kiosk Mode", href: "/kiosk/settings", permissionKey: "kiosk" },
   { label: "Audit Log", href: "/audit-log", permissionKey: "audit-log" },
-  { label: "Manage Gyms", href: "/admin/gyms", permissionKey: "manage-gyms" },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {

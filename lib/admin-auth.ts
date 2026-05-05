@@ -83,13 +83,24 @@ export async function getAdminSessionFromRequest(
   return validateAdminSessionToken(cookie.value);
 }
 
-/** Verify the caller is an OWNER. Returns session or null. Works with plain Request. */
+/** Verify the caller is a platform admin (OWNER role + isPlatformAdmin on client). Works with plain Request. */
 export async function requireOwner(req: Request): Promise<{ userId: string; role: string; clientId?: string } | null> {
   const cookieHeader = req.headers.get("cookie") || "";
   const match = cookieHeader.match(new RegExp(`${ADMIN_COOKIE}=([^;]+)`));
   if (!match) return null;
   const session = await validateAdminSessionToken(match[1]);
   if (!session || session.role !== "OWNER") return null;
+
+  // Verify this client is the platform admin, not just any gym OWNER
+  if (session.clientId) {
+    const { prisma } = await import("@/lib/prisma");
+    const client = await prisma.client.findUnique({
+      where: { id: session.clientId },
+      select: { isPlatformAdmin: true },
+    });
+    if (!client?.isPlatformAdmin) return null;
+  }
+
   return session;
 }
 
