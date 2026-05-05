@@ -307,7 +307,7 @@ export default function ManageGymsPage() {
                   { label: "Class Types", value: linkMaxClasses, set: setLinkMaxClasses },
                   { label: "Staff Accounts", value: linkMaxUsers, set: setLinkMaxUsers },
                   { label: "Locations", value: linkMaxLocations, set: setLinkMaxLocations },
-                  { label: "Reports", value: linkMaxReports, set: setLinkMaxReports },
+                  { label: "Custom Reports", value: linkMaxReports, set: setLinkMaxReports },
                   { label: "POS Items", value: linkMaxPOSItems, set: setLinkMaxPOSItems },
                 ].map(f => (
                   <div key={f.label}>
@@ -385,7 +385,7 @@ export default function ManageGymsPage() {
                           { label: "Class Types", key: "maxClasses" },
                           { label: "Staff Accounts", key: "maxUsers" },
                           { label: "Locations", key: "maxLocations" },
-                          { label: "Reports", key: "maxReports" },
+                          { label: "Custom Reports", key: "maxReports" },
                           { label: "POS Items", key: "maxPOSItems" },
                         ].map(f => (
                           <div key={f.key}>
@@ -505,7 +505,7 @@ export default function ManageGymsPage() {
                           { label: "Class Types", key: "maxClasses" },
                           { label: "Staff Accounts", key: "maxUsers" },
                           { label: "Locations", key: "maxLocations" },
-                          { label: "Reports", key: "maxReports" },
+                          { label: "Custom Reports", key: "maxReports" },
                           { label: "POS Items", key: "maxPOSItems" },
                         ].map(f => (
                           <div key={f.key}>

@@ -1434,7 +1434,22 @@ export default function ReportsPage() {
     setEditingReport(null);
   }
 
-  function addReport() {
+  async function addReport() {
+    // Check trial limit (count only custom reports, not defaults)
+    try {
+      const res = await fetch("/api/trial");
+      if (res.ok) {
+        const trial = await res.json();
+        if (trial.isTrial) {
+          const customCount = reportConfigs.filter(r => r.id.startsWith("custom-")).length;
+          if (customCount >= (trial.limits?.maxReports ?? Infinity)) {
+            alert(`Report limit reached (${trial.limits.maxReports}). Upgrade your plan to add more reports.`);
+            return;
+          }
+        }
+      }
+    } catch {}
+
     const newId = `custom-${Date.now()}`;
     // These fields should default to TRUE for new reports
     const defaultTrueFields = [

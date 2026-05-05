@@ -135,7 +135,7 @@ export default function PricingTiersPage() {
                 { label: "Members", key: "maxMembers" }, { label: "Styles", key: "maxStyles" },
                 { label: "Ranks/Style", key: "maxRanksPerStyle" }, { label: "Membership Plans", key: "maxMembershipPlans" },
                 { label: "Class Types", key: "maxClasses" }, { label: "Staff", key: "maxUsers" },
-                { label: "Locations", key: "maxLocations" }, { label: "Reports", key: "maxReports" },
+                { label: "Locations", key: "maxLocations" }, { label: "Custom Reports", key: "maxReports" },
                 { label: "POS Items", key: "maxPOSItems" },
               ].map(f => (
                 <div key={f.key}>
@@ -186,7 +186,7 @@ export default function PricingTiersPage() {
                     const u = (v: number) => v >= 999999 ? "Unlimited" : String(v);
                     return (<>
                       <p>{u(tier.maxMembers)} members &middot; {u(tier.maxStyles)} styles &middot; {u(tier.maxClasses)} class types</p>
-                      <p>{u(tier.maxUsers)} staff &middot; {u(tier.maxLocations)} locations &middot; {u(tier.maxReports)} reports</p>
+                      <p>{u(tier.maxUsers)} staff &middot; {u(tier.maxLocations)} locations &middot; {u(tier.maxReports)} custom reports</p>
                       <p>{u(tier.maxRanksPerStyle)} ranks/style &middot; {u(tier.maxPOSItems)} POS items</p>
                     </>);
                   })()}
