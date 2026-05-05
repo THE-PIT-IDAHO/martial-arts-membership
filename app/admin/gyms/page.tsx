@@ -54,21 +54,12 @@ export default function ManageGymsPage() {
   const [links, setLinks] = useState<SignupLink[]>([]);
   const [loading, setLoading] = useState(true);
 
+  type PricingTier = { id: string; name: string; priceCents: number; maxMembers: number; maxStyles: number; maxRanksPerStyle: number; maxMembershipPlans: number; maxClasses: number; maxUsers: number; maxLocations: number; maxReports: number; maxPOSItems: number; allowStripe: boolean; allowPaypal: boolean; allowSquare: boolean };
+  const [tiers, setTiers] = useState<PricingTier[]>([]);
+
   // Create link form
   const [showCreateLink, setShowCreateLink] = useState(false);
-  const [linkMaxMembers, setLinkMaxMembers] = useState("10");
-  const [linkMaxStyles, setLinkMaxStyles] = useState("3");
-  const [linkMaxRanksPerStyle, setLinkMaxRanksPerStyle] = useState("10");
-  const [linkMaxMembershipPlans, setLinkMaxMembershipPlans] = useState("3");
-  const [linkMaxClasses, setLinkMaxClasses] = useState("5");
-  const [linkMaxUsers, setLinkMaxUsers] = useState("2");
-  const [linkMaxLocations, setLinkMaxLocations] = useState("1");
-  const [linkMaxReports, setLinkMaxReports] = useState("3");
-  const [linkMaxPOSItems, setLinkMaxPOSItems] = useState("10");
-  const [linkAllowStripe, setLinkAllowStripe] = useState(false);
-  const [linkAllowPaypal, setLinkAllowPaypal] = useState(false);
-  const [linkAllowSquare, setLinkAllowSquare] = useState(false);
-  const [linkPriceCents, setLinkPriceCents] = useState("");
+  const [selectedTierId, setSelectedTierId] = useState("");
   const [linkTrialMonths, setLinkTrialMonths] = useState("");
   const [linkExpiresInDays, setLinkExpiresInDays] = useState("");
   const [linkNote, setLinkNote] = useState("");
@@ -85,9 +76,10 @@ export default function ManageGymsPage() {
 
   async function loadData() {
     try {
-      const [clientsRes, linksRes] = await Promise.all([
+      const [clientsRes, linksRes, tiersRes] = await Promise.all([
         fetch("/api/admin/clients"),
         fetch("/api/admin/signup-links"),
+        fetch("/api/admin/pricing"),
       ]);
       if (clientsRes.ok) {
         const data = await clientsRes.json();
@@ -96,6 +88,10 @@ export default function ManageGymsPage() {
       if (linksRes.ok) {
         const data = await linksRes.json();
         setLinks(data.links || []);
+      }
+      if (tiersRes.ok) {
+        const data = await tiersRes.json();
+        setTiers(data.tiers || []);
       }
     } catch {
       // ignore
@@ -107,37 +103,37 @@ export default function ManageGymsPage() {
   useEffect(() => { loadData(); }, []);
 
   async function handleCreateLink() {
+    if (!selectedTierId) { alert("Please select a pricing tier"); return; }
+    const tier = tiers.find(t => t.id === selectedTierId);
+    if (!tier) return;
+
     setCreatingLink(true);
     try {
       const res = await fetch("/api/admin/signup-links", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          maxMembers: linkMaxMembers,
-          maxStyles: linkMaxStyles,
-          maxRanksPerStyle: linkMaxRanksPerStyle,
-          maxMembershipPlans: linkMaxMembershipPlans,
-          maxClasses: linkMaxClasses,
-          maxUsers: linkMaxUsers,
-          maxLocations: linkMaxLocations,
-          maxReports: linkMaxReports,
-          maxPOSItems: linkMaxPOSItems,
-          allowStripe: linkAllowStripe,
-          allowPaypal: linkAllowPaypal,
-          allowSquare: linkAllowSquare,
-          priceCents: linkPriceCents,
+          maxMembers: tier.maxMembers,
+          maxStyles: tier.maxStyles,
+          maxRanksPerStyle: tier.maxRanksPerStyle,
+          maxMembershipPlans: tier.maxMembershipPlans,
+          maxClasses: tier.maxClasses,
+          maxUsers: tier.maxUsers,
+          maxLocations: tier.maxLocations,
+          maxReports: tier.maxReports,
+          maxPOSItems: tier.maxPOSItems,
+          allowStripe: tier.allowStripe,
+          allowPaypal: tier.allowPaypal,
+          allowSquare: tier.allowSquare,
+          priceCents: tier.priceCents,
           trialMonths: linkTrialMonths,
           expiresInDays: linkExpiresInDays ? parseInt(linkExpiresInDays) : null,
-          note: linkNote,
+          note: linkNote || tier.name,
         }),
       });
       if (res.ok) {
         setShowCreateLink(false);
-        setLinkMaxMembers("10"); setLinkMaxStyles("3"); setLinkMaxRanksPerStyle("10");
-        setLinkMaxMembershipPlans("3"); setLinkMaxClasses("5"); setLinkMaxUsers("2");
-        setLinkMaxLocations("1"); setLinkMaxReports("3"); setLinkMaxPOSItems("10");
-        setLinkAllowStripe(false); setLinkAllowPaypal(false); setLinkAllowSquare(false);
-        setLinkPriceCents(""); setLinkTrialMonths(""); setLinkExpiresInDays(""); setLinkNote("");
+        setSelectedTierId(""); setLinkTrialMonths(""); setLinkExpiresInDays(""); setLinkNote("");
         loadData();
       }
     } catch {
@@ -297,65 +293,35 @@ export default function ManageGymsPage() {
           {/* Create Link Form */}
           {showCreateLink && (
             <div className="rounded-lg border border-gray-200 bg-white p-5 mb-4">
-              <h3 className="text-sm font-bold text-gray-800 mb-3">Limits</h3>
-              <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
-                {[
-                  { label: "Members", value: linkMaxMembers, set: setLinkMaxMembers },
-                  { label: "Styles", value: linkMaxStyles, set: setLinkMaxStyles },
-                  { label: "Ranks/Style", value: linkMaxRanksPerStyle, set: setLinkMaxRanksPerStyle },
-                  { label: "Membership Plans", value: linkMaxMembershipPlans, set: setLinkMaxMembershipPlans },
-                  { label: "Class Types", value: linkMaxClasses, set: setLinkMaxClasses },
-                  { label: "Staff Accounts", value: linkMaxUsers, set: setLinkMaxUsers },
-                  { label: "Locations", value: linkMaxLocations, set: setLinkMaxLocations },
-                  { label: "Custom Reports", value: linkMaxReports, set: setLinkMaxReports },
-                  { label: "POS Items", value: linkMaxPOSItems, set: setLinkMaxPOSItems },
-                ].map(f => (
-                  <div key={f.label}>
-                    <label className="block text-[11px] font-medium text-gray-600 mb-1">{f.label}</label>
-                    <input type="number" value={f.value} onChange={e => f.set(e.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                  </div>
-                ))}
-              </div>
-              <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Payment Processors</h3>
-              <div className="flex flex-wrap gap-4">
-                {[
-                  { label: "Stripe", value: linkAllowStripe, set: setLinkAllowStripe },
-                  { label: "PayPal", value: linkAllowPaypal, set: setLinkAllowPaypal },
-                  { label: "Square", value: linkAllowSquare, set: setLinkAllowSquare },
-                ].map(p => (
-                  <label key={p.label} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={p.value}
-                      onChange={e => p.set(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600"
-                    />
-                    {p.label}
-                  </label>
-                ))}
-              </div>
-
-              <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Pricing & Duration</h3>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Price ($/month, blank = free)</label>
-                  <input type="number" value={linkPriceCents} onChange={e => setLinkPriceCents(e.target.value)} placeholder="Free" min="0" step="1" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Pricing Tier</label>
+                  <select value={selectedTierId} onChange={e => setSelectedTierId(e.target.value)} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <option value="">Select a tier...</option>
+                    {tiers.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} — {t.priceCents > 0 ? `$${(t.priceCents / 100).toFixed(2)}/mo` : "Free"} ({t.maxMembers >= 999999 ? "Unlimited" : t.maxMembers} members)
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-[11px] font-medium text-gray-600 mb-1">Trial (weeks, blank = no expiration)</label>
                   <input type="number" value={linkTrialMonths} onChange={e => setLinkTrialMonths(e.target.value)} placeholder="No expiration" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-medium text-gray-600 mb-1">Link Expires (days, blank = never)</label>
                   <input type="number" value={linkExpiresInDays} onChange={e => setLinkExpiresInDays(e.target.value)} placeholder="Never" min="1" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
-              </div>
-              <div className="mt-3">
-                <label className="block text-[11px] font-medium text-gray-600 mb-1">Note (for your reference)</label>
-                <input type="text" value={linkNote} onChange={e => setLinkNote(e.target.value)} placeholder="e.g., Basic Trial, Premium Demo, Facebook promo" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-600 mb-1">Note (for your reference)</label>
+                  <input type="text" value={linkNote} onChange={e => setLinkNote(e.target.value)} placeholder="e.g., Facebook promo, gym conference" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                </div>
               </div>
               <div className="mt-4 flex justify-end">
-                <button onClick={handleCreateLink} disabled={creatingLink} className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                <button onClick={handleCreateLink} disabled={creatingLink || !selectedTierId} className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
                   {creatingLink ? "Creating..." : "Create Signup Link"}
                 </button>
               </div>
