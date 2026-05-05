@@ -62,16 +62,78 @@ export function AppLayout({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, []);
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const visibleNav = permissions
     ? navItems.filter(
         (item) => !item.permissionKey || permissions.includes(item.permissionKey)
       )
     : navItems; // Show all while loading to avoid flash
 
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
   return (
-    <div className="flex flex-col md:flex-row gap-4 w-full h-full">
-      {/* SIDEBAR - fixed, scrollable if content overflows */}
-      <aside className="w-full md:w-56 shrink-0 rounded-lg bg-gray-100 border border-gray-200 p-3 md:overflow-y-auto">
+    <div className="flex flex-col md:flex-row gap-0 md:gap-4 w-full h-full">
+      {/* MOBILE HEADER */}
+      <div className="md:hidden flex items-center justify-between bg-gray-100 border-b border-gray-200 px-4 py-2">
+        <div className="flex items-center gap-2">
+          {logo && <img src={logo} alt="Gym Logo" className="h-8 object-contain" />}
+          <span className="text-sm font-bold text-gray-800">Menu</span>
+        </div>
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="p-1.5 rounded-md hover:bg-gray-200"
+        >
+          {mobileMenuOpen ? (
+            <svg className="w-5 h-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          )}
+        </button>
+      </div>
+
+      {/* MOBILE MENU OVERLAY */}
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onClick={() => setMobileMenuOpen(false)}>
+          <aside className="w-64 h-full bg-white p-4 overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
+            {logo && (
+              <div className="mb-4 flex justify-center">
+                <img src={logo} alt="Gym Logo" className="h-10 object-contain" />
+              </div>
+            )}
+            <nav className="space-y-0.5">
+              {visibleNav.map((item) => {
+                const isActive =
+                  pathname === item.href ||
+                  (item.href !== "/dashboard" && pathname?.startsWith(item.href + "/"));
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                      isActive
+                        ? "bg-primary text-white"
+                        : "text-gray-800 hover:bg-gray-100"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </aside>
+        </div>
+      )}
+
+      {/* DESKTOP SIDEBAR */}
+      <aside className="hidden md:block w-56 shrink-0 rounded-lg bg-gray-100 border border-gray-200 p-3 overflow-y-auto">
         {logo && (
           <div className="mb-3 flex justify-center">
             <img src={logo} alt="Gym Logo" className="h-10 object-contain" />
