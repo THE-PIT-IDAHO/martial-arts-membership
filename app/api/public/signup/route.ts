@@ -185,10 +185,14 @@ export async function POST(req: Request) {
       ];
 
       const now = new Date();
-      const today9am = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0);
-      const today10am = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0);
+      const classTimes = [16, 17, 18, 19]; // 4pm, 5pm, 6pm, 7pm
 
-      for (const cls of sampleClasses) {
+      for (let i = 0; i < sampleClasses.length; i++) {
+        const cls = sampleClasses[i];
+        const hour = classTimes[i];
+        const startsAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0);
+        const endsAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour + 1, 0);
+
         await tx.classSession.create({
           data: {
             name: cls.name,
@@ -198,8 +202,8 @@ export async function POST(req: Request) {
             styleIds: cls.styleIds,
             styleNames: cls.styleNames,
             color: cls.color,
-            startsAt: today9am,
-            endsAt: today10am,
+            startsAt,
+            endsAt,
             isRecurring: false,
             kioskEnabled: true,
             clientId: client.id,
