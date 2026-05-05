@@ -63,6 +63,9 @@ export default function ManageGymsPage() {
   const [linkNote, setLinkNote] = useState("");
   const [creatingLink, setCreatingLink] = useState(false);
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+  const [editLink, setEditLink] = useState<Record<string, string | boolean>>({});
+  const [savingLink, setSavingLink] = useState(false);
 
   // Edit gym
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -132,6 +135,47 @@ export default function ManageGymsPage() {
       alert("Failed to create link");
     } finally {
       setCreatingLink(false);
+    }
+  }
+
+  function openEditLink(link: SignupLink) {
+    setEditingLinkId(link.id);
+    setEditLink({
+      maxMembers: String(link.maxMembers),
+      maxStyles: String(link.maxStyles),
+      maxRanksPerStyle: String(link.maxRanksPerStyle),
+      maxMembershipPlans: String(link.maxMembershipPlans),
+      maxClasses: String(link.maxClasses),
+      maxUsers: String(link.maxUsers),
+      maxLocations: String(link.maxLocations),
+      maxReports: String(link.maxReports),
+      maxPOSItems: String(link.maxPOSItems),
+      allowStripe: link.allowStripe,
+      allowPaypal: link.allowPaypal,
+      allowSquare: link.allowSquare,
+      priceCents: link.priceCents > 0 ? String(link.priceCents) : "",
+      trialMonths: link.trialMonths > 0 ? String(link.trialMonths) : "",
+      note: link.note || "",
+    });
+  }
+
+  async function handleSaveLink() {
+    if (!editingLinkId) return;
+    setSavingLink(true);
+    try {
+      const res = await fetch("/api/admin/signup-links", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingLinkId, ...editLink }),
+      });
+      if (res.ok) {
+        setEditingLinkId(null);
+        loadData();
+      }
+    } catch {
+      alert("Failed to update link");
+    } finally {
+      setSavingLink(false);
     }
   }
 
@@ -305,6 +349,72 @@ export default function ManageGymsPage() {
             <div className="space-y-2">
               {links.map(link => {
                 const expired = link.expiresAt && new Date() > new Date(link.expiresAt);
+
+                if (editingLinkId === link.id) {
+                  const e = editLink;
+                  const setE = (key: string, val: string | boolean) => setEditLink(prev => ({ ...prev, [key]: val }));
+                  return (
+                    <div key={link.id} className="rounded-lg border border-primary bg-white p-5">
+                      <h3 className="text-sm font-bold text-gray-800 mb-3">Limits</h3>
+                      <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+                        {[
+                          { label: "Members", key: "maxMembers" },
+                          { label: "Styles", key: "maxStyles" },
+                          { label: "Ranks/Style", key: "maxRanksPerStyle" },
+                          { label: "Membership Plans", key: "maxMembershipPlans" },
+                          { label: "Classes", key: "maxClasses" },
+                          { label: "Staff Accounts", key: "maxUsers" },
+                          { label: "Locations", key: "maxLocations" },
+                          { label: "Reports", key: "maxReports" },
+                          { label: "POS Items", key: "maxPOSItems" },
+                        ].map(f => (
+                          <div key={f.key}>
+                            <label className="block text-[11px] font-medium text-gray-600 mb-1">{f.label}</label>
+                            <input type="number" value={e[f.key] as string || ""} onChange={ev => setE(f.key, ev.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                          </div>
+                        ))}
+                      </div>
+                      <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Payment Processors</h3>
+                      <div className="flex flex-wrap gap-4">
+                        {[
+                          { label: "Stripe", key: "allowStripe" },
+                          { label: "PayPal", key: "allowPaypal" },
+                          { label: "Square", key: "allowSquare" },
+                        ].map(p => (
+                          <label key={p.key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input type="checkbox" checked={!!e[p.key]} onChange={ev => setE(p.key, ev.target.checked)} className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600" />
+                            {p.label}
+                          </label>
+                        ))}
+                      </div>
+                      <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Pricing & Duration</h3>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-medium text-gray-600 mb-1">Price ($/month)</label>
+                          <input type="number" value={e.priceCents as string || ""} onChange={ev => setE("priceCents", ev.target.value)} placeholder="Free" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-gray-600 mb-1">Trial (weeks)</label>
+                          <input type="number" value={e.trialMonths as string || ""} onChange={ev => setE("trialMonths", ev.target.value)} placeholder="No expiration" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-gray-600 mb-1">&nbsp;</label>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <label className="block text-[11px] font-medium text-gray-600 mb-1">Note</label>
+                        <input type="text" value={e.note as string || ""} onChange={ev => setE("note", ev.target.value)} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                      </div>
+                      <div className="mt-4 flex justify-end gap-2">
+                        <button onClick={() => setEditingLinkId(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+                        <button onClick={handleSaveLink} disabled={savingLink} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                          {savingLink ? "Saving..." : "Save"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={link.id} className={`rounded-lg border bg-white p-4 ${!link.active || expired ? "border-gray-100 opacity-60" : "border-gray-200"}`}>
                     <div className="flex items-center justify-between">
@@ -329,6 +439,12 @@ export default function ManageGymsPage() {
                           className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                         >
                           {copiedLinkId === link.id ? "Copied!" : "Copy Link"}
+                        </button>
+                        <button
+                          onClick={() => openEditLink(link)}
+                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                        >
+                          Edit
                         </button>
                         <button
                           onClick={() => deleteLink(link.id)}
