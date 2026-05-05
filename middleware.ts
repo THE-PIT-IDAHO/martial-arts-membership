@@ -101,10 +101,12 @@ export async function middleware(request: NextRequest) {
     return nextWithTenant(request, tenantSlug);
   }
 
-  // --- Admin routes (everything else matched by config) ---
+  // --- Public admin routes (no auth required) ---
   if (isPublicAdminPath(pathname)) {
     return nextWithTenant(request, tenantSlug);
   }
+
+  // --- Admin routes ---
 
   // Check admin session cookie
   const adminCookie = request.cookies.get(ADMIN_COOKIE);
@@ -144,7 +146,7 @@ export const config = {
     // Portal routes
     "/portal/:path*",
     "/api/portal/:path*",
-    // Admin routes — everything except static assets and uploads
-    "/((?!_next|favicon|icons|belts|manifest|uploads|sw\\.js|.*\\.png|.*\\.svg|.*\\.ico|.*\\.pdf).*)",
+    // Admin routes — everything except static assets, uploads, and public pages
+    "/((?!_next|favicon|icons|belts|manifest|uploads|sw\\.js|signup|forgot-password|reset-password|.*\\.png|.*\\.svg|.*\\.ico|.*\\.pdf).*)",
   ],
 };
