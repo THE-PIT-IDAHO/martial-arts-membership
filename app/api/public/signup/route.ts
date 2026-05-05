@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateSlug } from "@/lib/tenant";
 import { hashPassword } from "@/lib/admin-auth";
+import defaultStyles from "@/lib/default-styles.json";
 
 // GET /api/public/signup?token=xxx — validate a signup token
 export async function GET(req: Request) {
@@ -116,39 +117,23 @@ export async function POST(req: Request) {
         data: { useCount: { increment: 1 } },
       });
 
-      // Create 2 default styles with standard belt ranks
-      const defaultStyles = [
-        {
-          name: "Karate",
-          belts: ["White Belt", "Yellow Belt", "Orange Belt", "Green Belt", "Blue Belt", "Purple Belt", "Brown Belt", "Black Belt"],
-        },
-        {
-          name: "Brazilian Jiu-Jitsu",
-          belts: ["White Belt", "Blue Belt", "Purple Belt", "Brown Belt", "Black Belt"],
-        },
-      ];
-
+      // Create default styles with full rank data (colors, layers, requirements)
       for (const s of defaultStyles) {
-        // Build beltConfig ranks array
-        const beltConfigRanks = s.belts.map((belt, i) => ({
-          id: `default-${i}`,
-          name: belt,
-          order: i,
-        }));
-
         const style = await tx.style.create({
           data: {
             name: s.name,
-            beltSystemEnabled: true,
+            beltSystemEnabled: s.beltSystemEnabled,
+            testNamingConvention: s.testNamingConvention,
             clientId: client.id,
-            beltConfig: JSON.stringify({ ranks: beltConfigRanks }),
+            beltConfig: JSON.stringify(s.beltConfig),
           },
         });
-        for (let i = 0; i < s.belts.length; i++) {
+        for (const r of s.dbRanks) {
           await tx.rank.create({
             data: {
-              name: s.belts[i],
-              order: i,
+              name: r.name,
+              order: r.order,
+              classRequirement: r.classRequirement,
               styleId: style.id,
             },
           });

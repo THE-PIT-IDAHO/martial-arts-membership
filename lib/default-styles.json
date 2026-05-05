@@ -1,0 +1,1791 @@
+[
+  {
+    "name": "Brazilian Jiu-Jitsu",
+    "beltSystemEnabled": true,
+    "testNamingConvention": "FROM_RANK",
+    "beltConfig": {
+      "ranks": [
+        {
+          "id": "default-0",
+          "name": "White Belt",
+          "order": 1,
+          "classRequirements": [
+            {
+              "id": "req-0-0",
+              "label": "BJJ",
+              "minCount": 30
+            },
+            {
+              "id": "req-0-1",
+              "label": "No-Gi",
+              "minCount": 15
+            }
+          ],
+          "minDuration": {
+            "value": 2,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ffffff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-1",
+          "name": "White Belt - 1 stripe",
+          "order": 2,
+          "classRequirements": [
+            {
+              "id": "req-1-0",
+              "label": "BJJ",
+              "minCount": 30
+            },
+            {
+              "id": "req-1-1",
+              "label": "No-Gi",
+              "minCount": 15
+            }
+          ],
+          "minDuration": {
+            "value": 2,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ffffff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-2",
+          "name": "White Belt - 2 stripes",
+          "order": 3,
+          "classRequirements": [
+            {
+              "id": "req-2-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 2,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ffffff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-3",
+          "name": "White Belt - 3 stripes",
+          "order": 4,
+          "classRequirements": [
+            {
+              "id": "req-3-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 3,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": true,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ffffff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-4",
+          "name": "White Belt - 4 stripes",
+          "order": 5,
+          "classRequirements": [
+            {
+              "id": "req-4-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": true,
+            "stripe4": true,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ffffff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-5",
+          "name": "Blue Belt",
+          "order": 6,
+          "classRequirements": [
+            {
+              "id": "req-5-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#0400ff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-6",
+          "name": "Blue Belt - 1 stripe",
+          "order": 7,
+          "classRequirements": [
+            {
+              "id": "req-6-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#0400ff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-7",
+          "name": "Blue Belt - 2 stripes",
+          "order": 8,
+          "classRequirements": [
+            {
+              "id": "req-7-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#0400ff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-8",
+          "name": "Blue Belt - 3 stripes",
+          "order": 9,
+          "classRequirements": [
+            {
+              "id": "req-8-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": true,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#0400ff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-9",
+          "name": "Blue Belt - 4 stripes",
+          "order": 10,
+          "classRequirements": [
+            {
+              "id": "req-9-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": true,
+            "stripe4": true,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#0400ff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-10",
+          "name": "Purple Belt",
+          "order": 11,
+          "classRequirements": [
+            {
+              "id": "req-10-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ae00d1",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-11",
+          "name": "Purple Belt - 1 stripe",
+          "order": 12,
+          "classRequirements": [
+            {
+              "id": "req-11-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ae00d1",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-12",
+          "name": "Purple Belt - 2 stripes",
+          "order": 13,
+          "classRequirements": [
+            {
+              "id": "req-12-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ae00d1",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-13",
+          "name": "Purple Belt - 3 stripes",
+          "order": 14,
+          "classRequirements": [
+            {
+              "id": "req-13-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": true,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ae00d1",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-14",
+          "name": "Purple Belt - 4 stripes",
+          "order": 15,
+          "classRequirements": [
+            {
+              "id": "req-14-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": true,
+            "stripe4": true,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ae00d1",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-15",
+          "name": "Brown Belt",
+          "order": 16,
+          "classRequirements": [
+            {
+              "id": "req-15-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#853500",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-16",
+          "name": "Brown Belt - 1 stripe",
+          "order": 17,
+          "classRequirements": [
+            {
+              "id": "req-16-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#853500",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-17",
+          "name": "Brown Belt - 2 stripes",
+          "order": 18,
+          "classRequirements": [
+            {
+              "id": "req-17-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#853500",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-18",
+          "name": "Brown Belt - 3 stripes",
+          "order": 19,
+          "classRequirements": [
+            {
+              "id": "req-18-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": true,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#853500",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-19",
+          "name": "Brown Belt - 4 stripes",
+          "order": 20,
+          "classRequirements": [
+            {
+              "id": "req-19-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": true,
+            "stripe2": true,
+            "stripe3": true,
+            "stripe4": true,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#853500",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-20",
+          "name": "Black Belt",
+          "order": 21,
+          "classRequirements": [
+            {
+              "id": "req-20-0",
+              "label": "BJJ",
+              "minCount": 30
+            }
+          ],
+          "minDuration": {
+            "value": 5,
+            "unit": "years"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": true,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#000000",
+            "linearColor": "#ffffff",
+            "patchColor": "#ff0000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": null,
+            "unit": "months"
+          }
+        }
+      ]
+    },
+    "dbRanks": [
+      {
+        "name": "White Belt",
+        "order": 1,
+        "classRequirement": 45
+      },
+      {
+        "name": "White Belt - 1 stripe",
+        "order": 2,
+        "classRequirement": 45
+      },
+      {
+        "name": "White Belt - 2 stripes",
+        "order": 3,
+        "classRequirement": 30
+      },
+      {
+        "name": "White Belt - 3 stripes",
+        "order": 4,
+        "classRequirement": 30
+      },
+      {
+        "name": "White Belt - 4 stripes",
+        "order": 5,
+        "classRequirement": 30
+      },
+      {
+        "name": "Blue Belt",
+        "order": 6,
+        "classRequirement": 30
+      },
+      {
+        "name": "Blue Belt - 1 stripe",
+        "order": 7,
+        "classRequirement": 30
+      },
+      {
+        "name": "Blue Belt - 2 stripes",
+        "order": 8,
+        "classRequirement": 30
+      },
+      {
+        "name": "Blue Belt - 3 stripes",
+        "order": 9,
+        "classRequirement": 30
+      },
+      {
+        "name": "Blue Belt - 4 stripes",
+        "order": 10,
+        "classRequirement": 30
+      },
+      {
+        "name": "Purple Belt",
+        "order": 11,
+        "classRequirement": 30
+      },
+      {
+        "name": "Purple Belt - 1 stripe",
+        "order": 12,
+        "classRequirement": 30
+      },
+      {
+        "name": "Purple Belt - 2 stripes",
+        "order": 13,
+        "classRequirement": 30
+      },
+      {
+        "name": "Purple Belt - 3 stripes",
+        "order": 14,
+        "classRequirement": 30
+      },
+      {
+        "name": "Purple Belt - 4 stripes",
+        "order": 15,
+        "classRequirement": 30
+      },
+      {
+        "name": "Brown Belt",
+        "order": 16,
+        "classRequirement": 30
+      },
+      {
+        "name": "Brown Belt - 1 stripe",
+        "order": 17,
+        "classRequirement": 30
+      },
+      {
+        "name": "Brown Belt - 2 stripes",
+        "order": 18,
+        "classRequirement": 30
+      },
+      {
+        "name": "Brown Belt - 3 stripes",
+        "order": 19,
+        "classRequirement": 30
+      },
+      {
+        "name": "Brown Belt - 4 stripes",
+        "order": 20,
+        "classRequirement": 30
+      },
+      {
+        "name": "Black Belt",
+        "order": 21,
+        "classRequirement": 30
+      }
+    ]
+  },
+  {
+    "name": "Kempo",
+    "beltSystemEnabled": true,
+    "testNamingConvention": "FROM_RANK",
+    "beltConfig": {
+      "ranks": [
+        {
+          "id": "default-0",
+          "name": "White Belt",
+          "order": 1,
+          "classRequirements": [
+            {
+              "id": "req-0-0",
+              "label": "Kempo",
+              "minCount": 14
+            },
+            {
+              "id": "req-0-1",
+              "label": "Sparring",
+              "minCount": 6
+            }
+          ],
+          "minDuration": {
+            "value": 3,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "twotone": false,
+            "linear": false,
+            "camo": false,
+            "patch": false,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ffffff",
+            "twotoneColor": "#000000",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": 6,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-1",
+          "name": "Yellow Belt",
+          "order": 2,
+          "classRequirements": [
+            {
+              "id": "req-1-0",
+              "label": "Kempo",
+              "minCount": 18
+            },
+            {
+              "id": "req-1-1",
+              "label": "Sparring",
+              "minCount": 9
+            }
+          ],
+          "minDuration": {
+            "value": 3,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": false,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ffea00",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": 6,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-2",
+          "name": "Orange Belt",
+          "order": 3,
+          "classRequirements": [
+            {
+              "id": "req-2-0",
+              "label": "Kempo",
+              "minCount": 18
+            },
+            {
+              "id": "req-2-1",
+              "label": "Sparring",
+              "minCount": 9
+            }
+          ],
+          "minDuration": {
+            "value": 3,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": false,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#ff7b00",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": 6,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-3",
+          "name": "Purple Belt",
+          "order": 4,
+          "classRequirements": [
+            {
+              "id": "req-3-0",
+              "label": "Kempo",
+              "minCount": 18
+            },
+            {
+              "id": "req-3-1",
+              "label": "Sparring",
+              "minCount": 9
+            }
+          ],
+          "minDuration": {
+            "value": 3,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": false,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#bb00ff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": 6,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-4",
+          "name": "Blue Belt",
+          "order": 5,
+          "classRequirements": [
+            {
+              "id": "req-4-0",
+              "label": "Kempo",
+              "minCount": 18
+            },
+            {
+              "id": "req-4-1",
+              "label": "Sparring",
+              "minCount": 9
+            }
+          ],
+          "minDuration": {
+            "value": 3,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": false,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#0400ff",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": 6,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-5",
+          "name": "Green Belt",
+          "order": 6,
+          "classRequirements": [
+            {
+              "id": "req-5-0",
+              "label": "Kempo",
+              "minCount": 40
+            },
+            {
+              "id": "req-5-1",
+              "label": "Sparring",
+              "minCount": 20
+            }
+          ],
+          "minDuration": {
+            "value": 6,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": false,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#21c700",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": 9,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-6",
+          "name": "Red Belt",
+          "order": 7,
+          "classRequirements": [
+            {
+              "id": "req-6-0",
+              "label": "Kempo",
+              "minCount": 40
+            },
+            {
+              "id": "req-6-1",
+              "label": "Sparring",
+              "minCount": 20
+            }
+          ],
+          "minDuration": {
+            "value": 6,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": false,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#f00000",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": 9,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-7",
+          "name": "Brown Belt",
+          "order": 8,
+          "classRequirements": [
+            {
+              "id": "req-7-0",
+              "label": "Kempo",
+              "minCount": 40
+            },
+            {
+              "id": "req-7-1",
+              "label": "Sparring",
+              "minCount": 20
+            }
+          ],
+          "minDuration": {
+            "value": 6,
+            "unit": "months"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": false,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#a34900",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": 9,
+            "unit": "months"
+          }
+        },
+        {
+          "id": "default-8",
+          "name": "Black Belt",
+          "order": 9,
+          "classRequirements": [
+            {
+              "id": "req-8-0",
+              "label": "Kempo",
+              "minCount": 20
+            },
+            {
+              "id": "req-8-1",
+              "label": "Sparring",
+              "minCount": 10
+            }
+          ],
+          "minDuration": {
+            "value": 1,
+            "unit": "years"
+          },
+          "notes": null,
+          "layers": {
+            "fabric": true,
+            "linear": false,
+            "camo": false,
+            "patch": false,
+            "patch2": false,
+            "stripe1": false,
+            "stripe2": false,
+            "stripe3": false,
+            "stripe4": false,
+            "stripe5": false,
+            "stripe6": false,
+            "stripe7": false,
+            "stripe8": false,
+            "stripe9": false,
+            "stripe10": false,
+            "fabricColor": "#000000",
+            "linearColor": "#ffffff",
+            "patchColor": "#000000",
+            "patch2Color": "#000000",
+            "stripe1Color": "#ffffff",
+            "stripe2Color": "#ffffff",
+            "stripe3Color": "#ffffff",
+            "stripe4Color": "#ffffff",
+            "stripe5Color": "#ffffff",
+            "stripe6Color": "#ffffff",
+            "stripe7Color": "#ffffff",
+            "stripe8Color": "#ffffff",
+            "stripe9Color": "#ffffff",
+            "stripe10Color": "#ffffff"
+          },
+          "attendanceWindow": {
+            "value": 1,
+            "unit": "years"
+          }
+        }
+      ]
+    },
+    "dbRanks": [
+      {
+        "name": "White Belt",
+        "order": 1,
+        "classRequirement": 20
+      },
+      {
+        "name": "Yellow Belt",
+        "order": 2,
+        "classRequirement": 27
+      },
+      {
+        "name": "Orange Belt",
+        "order": 3,
+        "classRequirement": 27
+      },
+      {
+        "name": "Purple Belt",
+        "order": 4,
+        "classRequirement": 27
+      },
+      {
+        "name": "Blue Belt",
+        "order": 5,
+        "classRequirement": 27
+      },
+      {
+        "name": "Green Belt",
+        "order": 6,
+        "classRequirement": 60
+      },
+      {
+        "name": "Red Belt",
+        "order": 7,
+        "classRequirement": 60
+      },
+      {
+        "name": "Brown Belt",
+        "order": 8,
+        "classRequirement": 60
+      },
+      {
+        "name": "Black Belt",
+        "order": 9,
+        "classRequirement": 30
+      }
+    ]
+  }
+]
