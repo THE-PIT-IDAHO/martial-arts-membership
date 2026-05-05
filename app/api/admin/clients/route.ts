@@ -123,3 +123,34 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Failed to update client" }, { status: 500 });
   }
 }
+
+// DELETE /api/admin/clients — delete a gym client and all its data
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const clientId = searchParams.get("id");
+    if (!clientId) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    // Delete all related data in order (respecting foreign keys)
+    await prisma.$transaction(async (tx) => {
+      await tx.attendance.deleteMany({ where: { classSession: { clientId } } });
+      await tx.classBooking.deleteMany({ where: { classSession: { clientId } } });
+      await tx.classSession.deleteMany({ where: { clientId } });
+      await tx.invoice.deleteMany({ where: { member: { clientId } } });
+      await tx.signedWaiver.deleteMany({ where: { clientId } });
+      await tx.member.deleteMany({ where: { clientId } });
+      await tx.membershipPlan.deleteMany({ where: { clientId } });
+      await tx.settings.deleteMany({ where: { clientId } });
+      await tx.auditLog.deleteMany({ where: { clientId } });
+      await tx.user.deleteMany({ where: { clientId } });
+      await tx.client.delete({ where: { id: clientId } });
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting client:", error);
+    return NextResponse.json({ error: "Failed to delete client" }, { status: 500 });
+  }
+}

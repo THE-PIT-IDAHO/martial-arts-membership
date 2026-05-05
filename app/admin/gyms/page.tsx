@@ -168,6 +168,21 @@ export default function ManageGymsPage() {
     }
   }
 
+  async function deleteGym(clientId: string, name: string) {
+    if (!confirm(`Are you sure you want to delete "${name}"? This will permanently delete all their data including members, classes, and settings.`)) return;
+    try {
+      const res = await fetch(`/api/admin/clients?id=${clientId}`, { method: "DELETE" });
+      if (res.ok) {
+        loadData();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to delete");
+      }
+    } catch {
+      alert("Failed to delete");
+    }
+  }
+
   function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   }
@@ -342,9 +357,14 @@ export default function ManageGymsPage() {
                         </p>
                         <p className="text-xs text-gray-400">Created {formatDate(client.createdAt)}</p>
                       </div>
-                      <button onClick={() => openEdit(client)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                        Edit
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => openEdit(client)} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">
+                          Edit
+                        </button>
+                        <button onClick={() => deleteGym(client.id, client.name)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
