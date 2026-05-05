@@ -35,7 +35,7 @@ export async function POST(req: Request) {
         maxLocations: parse(body.maxLocations, 1),
         maxReports: parse(body.maxReports, 3),
         maxPOSItems: parse(body.maxPOSItems, 10),
-        trialMonths: body.trialMonths !== undefined && body.trialMonths !== "" ? parseInt(body.trialMonths) || 0 : 3,
+        trialMonths: body.trialMonths !== undefined && body.trialMonths !== "" ? parseInt(body.trialMonths) || 0 : 0,
         expiresAt,
         note: body.note?.trim() || null,
       },
