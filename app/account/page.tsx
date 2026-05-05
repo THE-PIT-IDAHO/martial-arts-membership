@@ -2468,14 +2468,14 @@ export default function AccountPage() {
                   const isCurrent = tier.id === currentTierId;
                   const u = (v: number) => v >= 999999 ? "Unlimited" : String(v);
                   return (
-                    <div key={tier.id} className={`rounded-lg border p-5 ${isCurrent ? "border-primary bg-primary/5" : "border-gray-200 bg-white"}`}>
+                    <div key={tier.id} className={`rounded-lg border p-5 flex flex-col ${isCurrent ? "border-primary bg-primary/5" : "border-gray-200 bg-white"}`}>
                       <h4 className="text-lg font-bold text-gray-900">{tier.name}</h4>
                       <p className="text-2xl font-bold text-primary mt-1">
                         {tier.priceCents > 0 ? `$${(tier.priceCents / 100).toFixed(2)}` : "Free"}
                         {tier.priceCents > 0 && <span className="text-sm font-normal text-gray-500">/mo</span>}
                       </p>
                       {tier.description && <p className="text-xs text-gray-500 mt-2">{tier.description}</p>}
-                      <div className="space-y-1 text-xs text-gray-600 mt-3 mb-4">
+                      <div className="space-y-1 text-xs text-gray-600 mt-3 mb-4 flex-1">
                         <p>{u(tier.maxMembers)} members</p>
                         <p>{u(tier.maxStyles)} styles</p>
                         <p>{u(tier.maxClasses)} class types</p>
