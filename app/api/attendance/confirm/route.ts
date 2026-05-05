@@ -6,7 +6,7 @@ import { getClientId } from "@/lib/tenant";
 // Body: { memberIds: string[], classSessionId: string, date: string }
 export async function POST(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { memberIds, classSessionId, date } = body;
 
@@ -18,12 +18,18 @@ export async function POST(req: Request) {
       return new NextResponse("classSessionId and date are required", { status: 400 });
     }
 
+    // Verify class belongs to this gym
+    const cls = await prisma.classSession.findUnique({ where: { id: classSessionId }, select: { clientId: true } });
+    if (!cls || cls.clientId !== clientId) {
+      return NextResponse.json({ error: "Class not found" }, { status: 404 });
+    }
+
     // Parse date components to avoid timezone shifting
     const [year, month, day] = date.split("-").map(Number);
     const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
     const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
-    // Update all matching attendance records to confirmed
+    // Update all matching attendance records to confirmed (only for members in this gym)
     const result = await prisma.attendance.updateMany({
       where: {
         memberId: { in: memberIds },
@@ -32,6 +38,7 @@ export async function POST(req: Request) {
           gte: startOfDay,
           lte: endOfDay,
         },
+        member: { clientId },
       },
       data: {
         confirmed: true,
@@ -52,7 +59,7 @@ export async function POST(req: Request) {
 // Body: { memberIds: string[], classSessionId: string, date: string }
 export async function DELETE(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { memberIds, classSessionId, date } = body;
 
@@ -64,12 +71,18 @@ export async function DELETE(req: Request) {
       return new NextResponse("classSessionId and date are required", { status: 400 });
     }
 
+    // Verify class belongs to this gym
+    const cls = await prisma.classSession.findUnique({ where: { id: classSessionId }, select: { clientId: true } });
+    if (!cls || cls.clientId !== clientId) {
+      return NextResponse.json({ error: "Class not found" }, { status: 404 });
+    }
+
     // Parse date components to avoid timezone shifting
     const [year, month, day] = date.split("-").map(Number);
     const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
     const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
-    // Update all matching attendance records to unconfirmed (absent)
+    // Update all matching attendance records to unconfirmed (only for members in this gym)
     const result = await prisma.attendance.updateMany({
       where: {
         memberId: { in: memberIds },
@@ -78,6 +91,7 @@ export async function DELETE(req: Request) {
           gte: startOfDay,
           lte: endOfDay,
         },
+        member: { clientId },
       },
       data: {
         confirmed: false,
