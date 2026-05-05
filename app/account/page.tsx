@@ -73,7 +73,11 @@ const ROLES = [
 
 export default function AccountPage() {
   const { theme, toggleTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<"business" | "users" | "settings" | "payments">("business");
+  const [activeTab, setActiveTab] = useState<"business" | "users" | "settings" | "payments" | "plan">("business");
+  const [planTiers, setPlanTiers] = useState<Array<{ id: string; name: string; description: string | null; priceCents: number; maxMembers: number; maxStyles: number; maxRanksPerStyle: number; maxMembershipPlans: number; maxClasses: number; maxUsers: number; maxLocations: number; maxReports: number; maxPOSItems: number; allowStripe: boolean; allowPaypal: boolean; allowSquare: boolean }>>([]);
+  const [currentTierId, setCurrentTierId] = useState<string | null>(null);
+  const [currentTierName, setCurrentTierName] = useState("Custom");
+  const [changingPlan, setChangingPlan] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
@@ -244,6 +248,17 @@ export default function AccountPage() {
       .then((data) => {
         if (data?.user) {
           setCredForm((f) => ({ ...f, name: data.user.name || "", email: data.user.email || "" }));
+        }
+      })
+      .catch(() => {});
+    // Load plan info
+    fetch("/api/plan")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          setPlanTiers(data.tiers || []);
+          setCurrentTierId(data.currentTierId);
+          setCurrentTierName(data.currentTierName || "Custom");
         }
       })
       .catch(() => {});
@@ -789,6 +804,16 @@ export default function AccountPage() {
               }`}
             >
               Payments
+            </button>
+            <button
+              onClick={() => setActiveTab("plan")}
+              className={`pb-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "plan"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Your Plan
             </button>
           </nav>
         </div>
@@ -2426,6 +2451,80 @@ export default function AccountPage() {
           </div>
         </div>
       )}
+
+        {/* Plan Tab */}
+        {activeTab === "plan" && (
+          <div className="space-y-6">
+            <div className="rounded-lg border border-gray-200 bg-white p-6">
+              <h3 className="text-lg font-semibold mb-1">Current Plan</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                You are on the <strong className="text-primary">{currentTierName}</strong> plan.
+              </p>
+            </div>
+
+            {planTiers.length > 0 && (
+              <div className="grid gap-4 grid-cols-1 md:grid-cols-3 lg:grid-cols-5">
+                {planTiers.map(tier => {
+                  const isCurrent = tier.id === currentTierId;
+                  const u = (v: number) => v >= 999999 ? "Unlimited" : String(v);
+                  return (
+                    <div key={tier.id} className={`rounded-lg border p-5 ${isCurrent ? "border-primary bg-primary/5" : "border-gray-200 bg-white"}`}>
+                      <h4 className="text-lg font-bold text-gray-900">{tier.name}</h4>
+                      <p className="text-2xl font-bold text-primary mt-1">
+                        {tier.priceCents > 0 ? `$${(tier.priceCents / 100).toFixed(2)}` : "Free"}
+                        {tier.priceCents > 0 && <span className="text-sm font-normal text-gray-500">/mo</span>}
+                      </p>
+                      {tier.description && <p className="text-xs text-gray-500 mt-2">{tier.description}</p>}
+                      <div className="space-y-1 text-xs text-gray-600 mt-3 mb-4">
+                        <p>{u(tier.maxMembers)} members</p>
+                        <p>{u(tier.maxStyles)} styles</p>
+                        <p>{u(tier.maxClasses)} class types</p>
+                        <p>{u(tier.maxUsers)} staff</p>
+                        <p>{u(tier.maxLocations)} locations</p>
+                        <p>{u(tier.maxReports)} custom reports</p>
+                        <p>{u(tier.maxPOSItems)} POS items</p>
+                        {(tier.allowStripe || tier.allowPaypal || tier.allowSquare) && (
+                          <p className="text-primary font-semibold mt-1">
+                            {[tier.allowStripe && "Stripe", tier.allowPaypal && "PayPal", tier.allowSquare && "Square"].filter(Boolean).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                      {isCurrent ? (
+                        <div className="rounded-md bg-primary/10 px-3 py-2 text-center text-xs font-semibold text-primary">
+                          Current Plan
+                        </div>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            const action = tier.priceCents > (planTiers.find(t => t.id === currentTierId)?.priceCents || 0) ? "upgrade" : "switch";
+                            if (!confirm(`${action === "upgrade" ? "Upgrade" : "Switch"} to ${tier.name}?`)) return;
+                            setChangingPlan(true);
+                            try {
+                              const res = await fetch("/api/plan", {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ tierId: tier.id }),
+                              });
+                              if (res.ok) {
+                                setCurrentTierId(tier.id);
+                                setCurrentTierName(tier.name);
+                                alert(`Switched to ${tier.name} plan!`);
+                              }
+                            } catch {} finally { setChangingPlan(false); }
+                          }}
+                          disabled={changingPlan}
+                          className="w-full rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                        >
+                          {changingPlan ? "Switching..." : tier.priceCents > (planTiers.find(t => t.id === currentTierId)?.priceCents || 0) ? "Upgrade" : "Select"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
     </AppLayout>
   );
 }
