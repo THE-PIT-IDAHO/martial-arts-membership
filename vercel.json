@@ -3,6 +3,10 @@
     {
       "path": "/api/billing/auto-run",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/admin/cleanup",
+      "schedule": "0 7 * * *"
     }
   ]
 }
