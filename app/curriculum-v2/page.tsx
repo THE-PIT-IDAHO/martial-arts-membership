@@ -70,17 +70,53 @@ export default function CurriculumV2Page() {
     else setSelectedRankId("");
   }, [selectedStyleId, styles]);
 
-  // Load rank tests when rank changes
+  // Load rank tests when rank changes — auto-create if none exist
   useEffect(() => {
     if (!selectedRankId || !selectedStyleId) { setRows([]); return; }
-    fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`)
-      .then(r => r.json())
-      .then(d => {
-        setRankTests(d.tests || []);
-        buildRows(d.tests || []);
-      })
-      .catch(() => {});
-  }, [selectedRankId, selectedStyleId]);
+
+    async function loadOrCreate() {
+      const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+      if (!res.ok) return;
+      const d = await res.json();
+      let tests: RankTest[] = d.tests || [];
+
+      // Auto-create test + default category if none exist
+      if (tests.length === 0) {
+        const rank = ranks.find(r => r.id === selectedRankId);
+        const style = styles.find(s => s.id === selectedStyleId);
+        const testName = `${rank?.name || "Rank"} Test`;
+
+        const testRes = await fetch("/api/rank-tests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: testName, rankId: selectedRankId, styleId: selectedStyleId }),
+        });
+        if (testRes.ok) {
+          const testData = await testRes.json();
+          const testId = testData.test?.id;
+          if (testId) {
+            // Create a default category
+            await fetch(`/api/rank-tests/${testId}/categories`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: "General" }),
+            });
+            // Reload
+            const res2 = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+            if (res2.ok) {
+              const d2 = await res2.json();
+              tests = d2.tests || [];
+            }
+          }
+        }
+      }
+
+      setRankTests(tests);
+      buildRows(tests);
+    }
+
+    loadOrCreate().catch(() => {});
+  }, [selectedRankId, selectedStyleId, ranks, styles]);
 
   function buildRows(tests: RankTest[]) {
     const newRows: Row[] = [];
@@ -295,8 +331,7 @@ export default function CurriculumV2Page() {
           <p className="text-sm text-gray-500">Select a style and rank to edit curriculum.</p>
         ) : rows.length === 0 ? (
           <div className="rounded-lg border border-gray-200 bg-white p-8 text-center">
-            <p className="text-sm text-gray-500 mb-3">No curriculum for {selectedRank?.name} yet.</p>
-            <p className="text-xs text-gray-400">This rank needs a test created first. Use the <a href="/curriculum" className="text-primary hover:underline">Classic view</a> to create the initial test and categories.</p>
+            <p className="text-sm text-gray-500">Setting up {selectedRank?.name}...</p>
           </div>
         ) : (
           <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
