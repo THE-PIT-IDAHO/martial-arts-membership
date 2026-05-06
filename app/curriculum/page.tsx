@@ -1079,17 +1079,15 @@ export default function CurriculumV2Page() {
             }
             return false;
           }).sort((a, b) => {
-            // Sort by earliest item createdAt (first saved category shows first)
-            const getEarliestTime = (catId: string) => {
+            // Sort by category sortOrder (matches dropdown order)
+            const getSortOrder = (catId: string) => {
               for (const test of rankTests) {
                 const c = test.categories.find(tc => tc.id === catId);
-                if (c && c.items.length > 0) {
-                  return Math.min(...c.items.map(item => item.createdAt ? new Date(item.createdAt).getTime() : Infinity));
-                }
+                if (c) return c.sortOrder;
               }
               return Infinity;
             };
-            return getEarliestTime(a.id) - getEarliestTime(b.id);
+            return getSortOrder(a.id) - getSortOrder(b.id);
           });
           if (catsWithItems.length === 0) return null;
 
