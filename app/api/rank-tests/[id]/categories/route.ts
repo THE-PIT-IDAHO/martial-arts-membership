@@ -34,21 +34,21 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await req.json();
-    const { name, description } = body;
+    const { name, description, sortOrder } = body;
 
     if (!name) {
       return new NextResponse("Name is required", { status: 400 });
     }
 
-    // Get count for sort order
-    const count = await prisma.rankTestCategory.count({ where: { rankTestId: id } });
+    // Use provided sortOrder or default to count
+    const order = sortOrder !== undefined ? sortOrder : await prisma.rankTestCategory.count({ where: { rankTestId: id } });
 
     const category = await prisma.rankTestCategory.create({
       data: {
         name: name.trim(),
         description: description?.trim() || null,
         rankTestId: id,
-        sortOrder: count,
+        sortOrder: order,
       },
       include: {
         items: {

@@ -19,8 +19,8 @@ export async function POST(
 
     const item = await prisma.rankTestItem.create({
       data: {
-        name: name?.trim() || "",
-        description: description?.trim() || null,
+        name: name || "",
+        description: description?.trimEnd() || null,
         type: type || "skill",
         required: required ?? true,
         reps: reps || null,
@@ -60,8 +60,8 @@ export async function PATCH(
     }
 
     const updateData: Record<string, unknown> = {};
-    if (name !== undefined) updateData.name = name.trim();
-    if (description !== undefined) updateData.description = description?.trim() || null;
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description?.trimEnd() || null;
     if (type !== undefined) updateData.type = type;
     if (required !== undefined) updateData.required = required;
     if (reps !== undefined) updateData.reps = reps || null;

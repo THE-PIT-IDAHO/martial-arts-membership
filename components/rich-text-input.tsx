@@ -157,5 +157,19 @@ export function parseHtmlForPdf(html: string): Array<{ text: string; bold: boole
     }
   }
 
+  // Strip trailing newlines
+  while (merged.length > 0 && merged[merged.length - 1].text.replace(/\n/g, "").trim() === "") {
+    merged.pop();
+  }
+  if (merged.length > 0) {
+    merged[merged.length - 1].text = merged[merged.length - 1].text.replace(/\n+$/, "");
+  }
+
+  // Preserve leading spaces by replacing with non-breaking spaces
+  for (const seg of merged) {
+    seg.text = seg.text.replace(/^( +)/gm, (match) => "\u00A0".repeat(match.length));
+    seg.text = seg.text.replace(/\n( +)/g, (_, spaces) => "\n" + "\u00A0".repeat(spaces.length));
+  }
+
   return merged;
 }

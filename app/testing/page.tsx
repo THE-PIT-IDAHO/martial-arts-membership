@@ -62,10 +62,14 @@ type RankTestItem = {
   sortOrder: number;
   reps?: number | null;
   sets?: number | null;
+  rounds?: number | null;
+  roundDuration?: string | null;
   duration?: string | null;
   distance?: string | null;
   timeLimit?: string | null;
   timeLimitOperator?: string | null;
+  videoUrl?: string | null;
+  showTitleInPdf?: boolean;
 };
 
 type RankTestCategory = {
@@ -198,6 +202,30 @@ export default function TestingPage() {
   // PDF Viewer modal
   const [viewingPdfUrl, setViewingPdfUrl] = useState<string | null>(null);
   const [viewingPdfTitle, setViewingPdfTitle] = useState<string>("");
+
+  // Get display text for an item: use description (stripped of HTML) if available, fall back to name
+  function getItemDisplay(item: RankTestItem): string {
+    if (item.description) {
+      return item.description.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]*>/g, "").split("\n")[0];
+    }
+    return item.name || "";
+  }
+
+  // Build specs string for an item (in column order: reps, sets, min/rd, rnds, duration, distance, time limit)
+  function getItemSpecs(item: RankTestItem): string {
+    const parts: string[] = [];
+    if (item.reps) parts.push(`${item.reps} reps`);
+    if (item.sets) parts.push(`${item.sets} sets`);
+    if (item.roundDuration) parts.push(`${item.roundDuration}/rd`);
+    if (item.rounds) parts.push(`${item.rounds} rnds`);
+    if (item.duration) parts.push(item.duration);
+    if (item.distance) parts.push(item.distance);
+    if (item.timeLimit) {
+      const op = item.timeLimitOperator === "lte" ? "\u2264" : item.timeLimitOperator === "gte" ? "\u2265" : item.timeLimitOperator === "lt" ? "<" : item.timeLimitOperator === "gt" ? ">" : "\u2264";
+      parts.push(`${op} ${item.timeLimit}`);
+    }
+    return parts.join(" / ");
+  }
 
   const loadEvents = useCallback(async () => {
     try {
@@ -882,7 +910,7 @@ export default function TestingPage() {
     yPos += 8;
 
     // Curriculum breakdown
-    for (const category of curriculum.categories) {
+    for (const category of curriculum.categories.filter(c => c.items.length > 0)) {
       // Check for page break
       if (yPos > 260) {
         pdf.addPage();
@@ -934,7 +962,7 @@ export default function TestingPage() {
         // Item name
         pdf.setTextColor(0, 0, 0);
         pdf.setFont("helvetica", "normal");
-        const itemText = item.name;
+        const itemText = getItemDisplay(item);
         pdf.text(itemText, margin + 12, yPos);
 
         // Time/notes if present
@@ -1221,26 +1249,16 @@ export default function TestingPage() {
       let newFailed = false;
 
       if (!isPassed && !isFailed) {
-        // incomplete → pass
         newPassed = true;
-        newFailed = false;
-      } else if (isPassed && !isFailed) {
-        // pass → fail
-        newPassed = false;
+      } else if (isPassed) {
         newFailed = true;
       } else {
         // fail → incomplete
-        newPassed = false;
-        newFailed = false;
       }
 
       return {
         ...prev,
-        [itemId]: {
-          ...current,
-          passed: newPassed,
-          failed: newFailed,
-        },
+        [itemId]: { ...current, passed: newPassed, failed: newFailed },
       };
     });
   };
@@ -1457,7 +1475,6 @@ export default function TestingPage() {
     setBulkAdminNotes({});
   };
 
-  // Cycle through: incomplete → pass → fail → incomplete
   const toggleBulkItemPassed = (participantId: string, itemId: string) => {
     setBulkItemScores(prev => {
       const current = prev[participantId]?.[itemId];
@@ -1468,28 +1485,18 @@ export default function TestingPage() {
       let newFailed = false;
 
       if (!isPassed && !isFailed) {
-        // incomplete → pass
         newPassed = true;
-        newFailed = false;
-      } else if (isPassed && !isFailed) {
-        // pass → fail
-        newPassed = false;
+      } else if (isPassed) {
         newFailed = true;
       } else {
         // fail → incomplete
-        newPassed = false;
-        newFailed = false;
       }
 
       return {
         ...prev,
         [participantId]: {
           ...prev[participantId],
-          [itemId]: {
-            ...current,
-            passed: newPassed,
-            failed: newFailed,
-          },
+          [itemId]: { ...current, passed: newPassed, failed: newFailed },
         },
       };
     });
@@ -2014,11 +2021,11 @@ export default function TestingPage() {
                                               {curriculum.name} - Test Requirements
                                             </h4>
                                             <span className="text-xs text-gray-500">
-                                              {curriculum.categories.reduce((sum, c) => sum + c.items.length, 0)} items total
+                                              {curriculum.categories.filter(c => c.items.length > 0).reduce((sum, c) => sum + c.items.length, 0)} items total
                                             </span>
                                           </div>
                                           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                                            {curriculum.categories.map((category) => (
+                                            {curriculum.categories.filter(c => c.items.length > 0).map((category) => (
                                               <div key={category.id} className="bg-white border rounded-lg p-3">
                                                 <h5 className="font-medium text-sm mb-2">{category.name}</h5>
                                                 <ul className="space-y-1">
@@ -2037,14 +2044,11 @@ export default function TestingPage() {
                                                         </span>
                                                         <div className="flex-1 min-w-0">
                                                           <span className={isPassed ? "line-through" : ""}>
-                                                            {item.name}
+                                                            {getItemDisplay(item)}
                                                           </span>
-                                                          {(item.reps || item.sets || item.duration || item.distance || item.timeLimit) && (
+                                                          {getItemSpecs(item) && (
                                                             <span className="ml-1 text-gray-400 text-[10px]">
-                                                              ({item.sets && `${item.sets}×`}{item.reps && `${item.reps}`}
-                                                              {item.duration && ` ${item.duration}`}
-                                                              {item.distance && ` ${item.distance}`}
-                                                              {item.timeLimit && ` ${item.timeLimitOperator === "lte" ? "≤" : item.timeLimitOperator === "lt" ? "<" : item.timeLimitOperator === "gte" ? "≥" : item.timeLimitOperator === "gt" ? ">" : "="} ${item.timeLimit}`})
+                                                              ({getItemSpecs(item)})
                                                             </span>
                                                           )}
                                                         </div>
@@ -2476,11 +2480,11 @@ export default function TestingPage() {
                                                         {curriculum.name} - Test Results
                                                       </h4>
                                                       <span className="text-xs text-gray-500">
-                                                        {Object.values(parsedItemScores).filter(s => s.passed).length} / {curriculum.categories.reduce((sum, c) => sum + c.items.length, 0)} passed
+                                                        {Object.values(parsedItemScores).filter(s => s.passed).length} / {curriculum.categories.filter(c => c.items.length > 0).reduce((sum, c) => sum + c.items.length, 0)} passed
                                                       </span>
                                                     </div>
                                                     <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                                                      {curriculum.categories.map((category) => (
+                                                      {curriculum.categories.filter(c => c.items.length > 0).map((category) => (
                                                         <div key={category.id} className="bg-white border rounded-lg p-3">
                                                           <h5 className="font-medium text-sm mb-2">{category.name}</h5>
                                                           <ul className="space-y-1">
@@ -2498,8 +2502,8 @@ export default function TestingPage() {
                                                                     {isPassed ? "✓" : "○"}
                                                                   </span>
                                                                   <div className="flex-1 min-w-0">
-                                                                    <span className={isPassed ? "" : ""}>
-                                                                      {item.name}
+                                                                    <span>
+                                                                      {getItemDisplay(item)}
                                                                     </span>
                                                                     {itemScore?.notes && (
                                                                       <span className="ml-1 text-gray-400 text-[10px]">
@@ -3157,7 +3161,7 @@ export default function TestingPage() {
                   </div>
                 ) : (
                   <div className="space-y-3 sm:space-y-4">
-                    {rankTestCurriculum.categories.map((category) => (
+                    {rankTestCurriculum.categories.filter(c => c.items.length > 0).map((category) => (
                       <div key={category.id} className="border rounded-lg overflow-hidden">
                         <div className="bg-gray-100 px-3 py-2 sm:px-4 sm:py-3">
                           <h3 className="font-semibold text-sm sm:text-base">{category.name}</h3>
@@ -3173,24 +3177,14 @@ export default function TestingPage() {
                             const hasTimeLimit = item.timeLimit || item.duration;
                             return (
                               <div key={item.id}>
-                                {/* Info row - only show if item has description */}
-                                {item.description && (
-                                  <div className="px-3 py-2 sm:px-4 bg-gray-50 border-b text-xs text-gray-600 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: item.description }} />
-                                )}
-                                {/* Curriculum item name row */}
+                                {/* Curriculum item row */}
                                 <div className="px-3 py-1 sm:px-4 bg-gray-100 border-b flex items-center gap-2 flex-wrap">
-                                  <span className="text-sm sm:text-base font-medium">{item.name}</span>
+                                  <span className="text-sm sm:text-base font-medium">{getItemDisplay(item)}</span>
                                   <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] sm:text-xs font-medium ${getTypeColor(item.type)}`}>
                                     {getTypeLabel(item.type)}
                                   </span>
-                                  {(item.reps || item.sets || item.duration || item.distance || item.timeLimit) && (
-                                    <span className="text-xs text-gray-500">
-                                      {item.sets && `${item.sets}×`}
-                                      {item.reps && `${item.reps}`}
-                                      {item.duration && ` ${item.duration}`}
-                                      {item.distance && ` ${item.distance}`}
-                                      {item.timeLimit && ` ${item.timeLimitOperator === "lte" ? "≤" : item.timeLimitOperator === "gte" ? "≥" : "="} ${item.timeLimit}`}
-                                    </span>
+                                  {getItemSpecs(item) && (
+                                    <span className="text-xs text-gray-500">{getItemSpecs(item)}</span>
                                   )}
                                 </div>
                                 {/* Checkbox row */}
@@ -3300,7 +3294,7 @@ export default function TestingPage() {
                         <span className="text-xs text-gray-500 mr-2">Final Result:</span>
                         <div className="inline-flex gap-2 mt-1">
                           <button
-                            onClick={() => setManualStatus("PASSED")}
+                            onClick={() => setManualStatus(manualStatus === "PASSED" ? null : "PASSED")}
                             className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
                               manualStatus === "PASSED"
                                 ? "bg-green-600 text-white"
@@ -3310,7 +3304,7 @@ export default function TestingPage() {
                             PASS
                           </button>
                           <button
-                            onClick={() => setManualStatus("FAILED")}
+                            onClick={() => setManualStatus(manualStatus === "FAILED" ? null : "FAILED")}
                             className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
                               manualStatus === "FAILED"
                                 ? "bg-red-600 text-white"
@@ -3319,14 +3313,6 @@ export default function TestingPage() {
                           >
                             FAIL
                           </button>
-                          {manualStatus && (
-                            <button
-                              onClick={() => setManualStatus(null)}
-                              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
-                            >
-                              (Auto)
-                            </button>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -3516,7 +3502,7 @@ export default function TestingPage() {
 
                       {/* Curriculum Items List */}
                       <div className="space-y-3">
-                        {bulkGradingCurriculum.categories.map((category) => (
+                        {bulkGradingCurriculum.categories.filter(c => c.items.length > 0).map((category) => (
                           <div key={category.id} className="border rounded-lg overflow-hidden">
                             <div className="bg-gray-100 px-3 py-2">
                               <h4 className="font-semibold text-sm">{category.name}</h4>
@@ -3531,24 +3517,14 @@ export default function TestingPage() {
                                 const isFailed = score?.failed ?? false;
                                 return (
                                   <React.Fragment key={item.id}>
-                                    {/* Info row - show if item has description */}
-                                    {item.description && (
-                                      <div className="px-3 py-2 bg-gray-50 border-b text-xs text-gray-600 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: item.description }} />
-                                    )}
-                                    {/* Curriculum item name row */}
+                                    {/* Curriculum item row */}
                                     <div className="px-3 py-1 bg-gray-100 border-b flex items-center gap-2">
-                                      <span className="text-sm font-medium">{item.name}</span>
+                                      <span className="text-sm font-medium">{getItemDisplay(item)}</span>
                                       <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${getTypeColor(item.type)}`}>
                                         {getTypeLabel(item.type)}
                                       </span>
-                                      {(item.reps || item.sets || item.duration || item.distance || item.timeLimit) && (
-                                        <span className="text-xs text-gray-500">
-                                          {item.sets && `${item.sets}×`}
-                                          {item.reps && `${item.reps}`}
-                                          {item.duration && ` ${item.duration}`}
-                                          {item.distance && ` ${item.distance}`}
-                                          {item.timeLimit && ` ${item.timeLimitOperator === "lte" ? "≤" : item.timeLimitOperator === "gte" ? "≥" : "="} ${item.timeLimit}`}
-                                        </span>
+                                      {getItemSpecs(item) && (
+                                        <span className="text-xs text-gray-500">{getItemSpecs(item)}</span>
                                       )}
                                     </div>
                                     {/* Checkbox row */}
@@ -3646,14 +3622,14 @@ export default function TestingPage() {
                     {/* Desktop View - Spreadsheet */}
                     <div className="hidden md:block overflow-x-auto">
                       {/* Information Box - Shows item descriptions above the grading table */}
-                      {bulkGradingCurriculum.categories.some(cat => cat.items.some(item => item.description)) && (
+                      {bulkGradingCurriculum.categories.some(cat => cat.items.some(item => item.description && (item.description.includes("<br") || item.description.includes("<div") || item.description.includes("\n")))) && (
                         <div className="mb-4 border border-gray-300 rounded-lg overflow-hidden">
                           <div className="bg-gray-100 px-4 py-2 border-b border-gray-300">
                             <h4 className="font-semibold text-sm">Information</h4>
                           </div>
                           <div className="p-4 bg-white">
                             {bulkGradingCurriculum.categories.flatMap((category) =>
-                              category.items.filter(item => item.description).map((item) => (
+                              category.items.filter(item => item.description && (item.description.includes("<br") || item.description.includes("<div") || item.description.includes("\n"))).map((item) => (
                                 <div
                                   key={item.id}
                                   className="text-xs text-gray-600 whitespace-pre-wrap"
@@ -3708,7 +3684,7 @@ export default function TestingPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {bulkGradingCurriculum.categories.map((category) => (
+                          {bulkGradingCurriculum.categories.filter(c => c.items.length > 0).map((category) => (
                             <React.Fragment key={category.id}>
                               <tr className="bg-gray-50">
                                 <td
@@ -3731,18 +3707,12 @@ export default function TestingPage() {
                                         className="border border-gray-300 px-3 py-1"
                                       >
                                         <div className="flex items-center gap-2">
-                                          <span className="text-xs font-medium">{item.name}</span>
+                                          <span className="text-xs font-medium">{getItemDisplay(item)}</span>
                                           <span className={`shrink-0 inline-block rounded px-1 py-0.5 text-[9px] font-medium ${getTypeColor(item.type)}`}>
                                             {getTypeLabel(item.type)}
                                           </span>
-                                          {(item.reps || item.sets || item.duration || item.distance || item.timeLimit) && (
-                                            <span className="text-[10px] text-gray-500">
-                                              {item.sets && `${item.sets}×`}
-                                              {item.reps && `${item.reps}`}
-                                              {item.duration && ` ${item.duration}`}
-                                              {item.distance && ` ${item.distance}`}
-                                              {item.timeLimit && ` ${item.timeLimitOperator === "lte" ? "≤" : item.timeLimitOperator === "gte" ? "≥" : "="} ${item.timeLimit}`}
-                                            </span>
+                                          {getItemSpecs(item) && (
+                                            <span className="text-[10px] text-gray-500">{getItemSpecs(item)}</span>
                                           )}
                                         </div>
                                       </td>
@@ -3909,8 +3879,9 @@ export default function TestingPage() {
                             if (bulkSelectedForStatus.size === 0) return;
                             setBulkManualStatus(prev => {
                               const updated = { ...prev };
+                              const allPassed = [...bulkSelectedForStatus].every(id => updated[id] === "PASSED");
                               bulkSelectedForStatus.forEach(id => {
-                                updated[id] = "PASSED";
+                                updated[id] = allPassed ? null : "PASSED";
                               });
                               return updated;
                             });
@@ -3925,8 +3896,9 @@ export default function TestingPage() {
                             if (bulkSelectedForStatus.size === 0) return;
                             setBulkManualStatus(prev => {
                               const updated = { ...prev };
+                              const allFailed = [...bulkSelectedForStatus].every(id => updated[id] === "FAILED");
                               bulkSelectedForStatus.forEach(id => {
-                                updated[id] = "FAILED";
+                                updated[id] = allFailed ? null : "FAILED";
                               });
                               return updated;
                             });
