@@ -558,13 +558,14 @@ export function generateCurriculumPdf(
     }
   }
 
-  // === TABLE SECTIONS (masonry/waterfall layout) ===
+  // === TABLE SECTIONS (masonry layout with aligned rows) ===
   const sectionHeaderH = rowH;
   const tableCats = tableCategories.slice(0, 9);
   const numCols = Math.min(3, tableCats.length);
 
   if (tableCats.length > 0 && numCols > 0) {
     const colWidth = cw / numCols;
+    const tableStartY = y; // baseline for row color alignment
 
     // Calculate height needed for each section
     type SectionInfo = { cat: typeof tableCats[0]; height: number; itemRows: number };
@@ -573,12 +574,68 @@ export function generateCurriculumPdf(
       return { cat, height: sectionHeaderH + Math.max(itemRows, 1) * rowH, itemRows };
     });
 
+    // Determine tint color based on absolute Y position (aligned across columns)
+    function getTintAtY(cellY: number): [number, number, number] {
+      const rowFromTop = Math.floor((cellY - tableStartY) / rowH);
+      return rowFromTop % 2 === 0 ? veryLightTint : [255, 255, 255];
+    }
+
     // Place sections into columns using shortest-column-first (masonry)
     const colYs: number[] = Array(numCols).fill(y);
 
-    // Helper: render a section at a given position
-    function renderSection(sec: SectionInfo, colIdx: number, startY: number) {
+    // Track planned placements for header alignment
+    type Placement = { sec: SectionInfo; colIdx: number; startY: number };
+    const placements: Placement[] = [];
+
+    for (const sec of sections) {
+      // Find shortest column
+      let shortestCol = 0;
+      for (let c = 1; c < numCols; c++) {
+        if (colYs[c] < colYs[shortestCol]) shortestCol = c;
+      }
+
+      // Check if section fits on current page
+      if (colYs[shortestCol] + sec.height > disclaimerY && colYs[shortestCol] > y) {
+        y = newPage();
+        for (let c = 0; c < numCols; c++) colYs[c] = y;
+        shortestCol = 0;
+      }
+
+      // Try to align header with neighboring columns
+      // Check if any other column has a section starting within 2 rows
+      let alignedY = colYs[shortestCol];
+      for (let c = 0; c < numCols; c++) {
+        if (c === shortestCol) continue;
+        // Check recent placements in this column
+        const otherPlacement = placements.filter(p => p.colIdx === c).pop();
+        if (otherPlacement) {
+          const otherSectionEnd = otherPlacement.startY + otherPlacement.sec.height;
+          // If the other column's last section just ended nearby, align our header with it
+          const diff = otherSectionEnd - alignedY;
+          if (diff > 0 && diff <= rowH * 2) {
+            alignedY = otherSectionEnd;
+          }
+        }
+      }
+
+      placements.push({ sec, colIdx: shortestCol, startY: alignedY });
+      colYs[shortestCol] = alignedY + sec.height;
+    }
+
+    // Render all placed sections
+    for (const { sec, colIdx, startY } of placements) {
       const colX = margin + colIdx * colWidth;
+
+      // Fill gap before section header with empty tinted rows (for alignment padding)
+      const prevPlacement = placements.filter(p => p.colIdx === colIdx && p.startY + p.sec.height <= startY).pop();
+      const gapStart = prevPlacement ? prevPlacement.startY + prevPlacement.sec.height : y;
+      if (startY > gapStart) {
+        let gapY = gapStart;
+        while (gapY + rowH <= startY) {
+          drawCell(colX, gapY, colWidth, rowH, getTintAtY(gapY));
+          gapY += rowH;
+        }
+      }
 
       // Header
       drawCell(colX, startY, colWidth, sectionHeaderH, rgb);
@@ -589,20 +646,18 @@ export function generateCurriculumPdf(
       pdf.setTextColor(0, 0, 0);
 
       let cellY = startY + sectionHeaderH;
-      let rowIndex = 0;
 
       for (const item of sec.cat.items) {
         const itemLines = getItemRowCount(item, colWidth);
         const itemH = itemLines * rowH;
 
-        // Alternating tint per row
+        // Alternating tint based on absolute Y position
         for (let li = 0; li < itemLines; li++) {
-          const tint: [number, number, number] = (rowIndex + li) % 2 === 0 ? veryLightTint : [255, 255, 255];
+          const tint = getTintAtY(cellY + li * rowH);
           pdf.setFillColor(tint[0], tint[1], tint[2]);
           pdf.rect(colX, cellY + li * rowH, colWidth, rowH, "F");
         }
 
-        // Border around item
         pdf.setDrawColor(0, 0, 0);
         pdf.setLineWidth(0.2);
         pdf.rect(colX, cellY, colWidth, itemH, "S");
@@ -610,7 +665,6 @@ export function generateCurriculumPdf(
         if (itemLines === 1) {
           renderItemCell(item, colX, colWidth, cellY);
         } else {
-          // Multi-line rendering
           const hasLink = !!item.videoUrl;
           const baseText = hasLink ? buildItemText({ ...item, videoUrl: null } as PdfRankTestItem) : buildItemText(item);
           const indent = 8;
@@ -659,31 +713,25 @@ export function generateCurriculumPdf(
         }
 
         cellY += itemH;
-        rowIndex += itemLines;
       }
     }
 
-    // Place each section in the shortest column
-    for (const sec of sections) {
-      // Find shortest column
-      let shortestCol = 0;
-      for (let c = 1; c < numCols; c++) {
-        if (colYs[c] < colYs[shortestCol]) shortestCol = c;
+    // Square up: pad all columns to the tallest with empty tinted rows
+    const maxColY = Math.max(...colYs);
+    for (let c = 0; c < numCols; c++) {
+      const colX = margin + c * colWidth;
+      let padY = colYs[c];
+      while (padY + rowH <= maxColY) {
+        drawCell(colX, padY, colWidth, rowH, getTintAtY(padY));
+        padY += rowH;
       }
-
-      // Check if section fits on current page
-      if (colYs[shortestCol] + sec.height > disclaimerY && colYs[shortestCol] > y) {
-        // Start new page — reset all columns
-        y = newPage();
-        for (let c = 0; c < numCols; c++) colYs[c] = y;
-        shortestCol = 0;
+      // Fill any remaining partial gap
+      if (padY < maxColY) {
+        drawCell(colX, padY, colWidth, maxColY - padY, getTintAtY(padY));
       }
-
-      renderSection(sec, shortestCol, colYs[shortestCol]);
-      colYs[shortestCol] += sec.height;
     }
 
-    y = Math.max(...colYs);
+    y = maxColY;
   }
 
   // Disclaimer (above footer, centered)
