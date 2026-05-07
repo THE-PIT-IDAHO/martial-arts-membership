@@ -558,205 +558,132 @@ export function generateCurriculumPdf(
     }
   }
 
-  // === TABLE + NOTES SECTION ===
+  // === TABLE SECTIONS (masonry/waterfall layout) ===
   const sectionHeaderH = rowH;
   const tableCats = tableCategories.slice(0, 9);
-  const N = tableCats.length;
+  const numCols = Math.min(3, tableCats.length);
 
-  if (N > 0) {
-    const numSectionRows = Math.ceil(N / 3);
-    const layout: number[] = [];
-    let rem = N;
-    for (let r = 0; r < numSectionRows; r++) {
-      const cols = Math.ceil(rem / (numSectionRows - r));
-      layout.push(cols);
-      rem -= cols;
-    }
+  if (tableCats.length > 0 && numCols > 0) {
+    const colWidth = cw / numCols;
 
-    type SectionRowInfo = {
-      cats: typeof tableCats;
-      numCols: number;
-      maxItems: number;
-      rowCount: number;
-    };
-    let catOffset = 0;
-    const sectionRows: SectionRowInfo[] = [];
-    for (let r = 0; r < layout.length; r++) {
-      const numCols = layout[r];
-      const cats = tableCats.slice(catOffset, catOffset + numCols);
-      catOffset += numCols;
-      const colW = cw / numCols;
-      const maxItems = cats.length > 0 ? Math.max(...cats.map(c =>
-        c.items.reduce((sum, item) => sum + getItemRowCount(item, colW), 0)
-      )) : 0;
-      sectionRows.push({ cats, numCols, maxItems, rowCount: maxItems });
-    }
+    // Calculate height needed for each section
+    type SectionInfo = { cat: typeof tableCats[0]; height: number; itemRows: number };
+    const sections: SectionInfo[] = tableCats.map(cat => {
+      const itemRows = cat.items.reduce((sum, item) => sum + getItemRowCount(item, colWidth), 0);
+      return { cat, height: sectionHeaderH + Math.max(itemRows, 1) * rowH, itemRows };
+    });
 
-    const totalMinTableRows = sectionRows.reduce((sum, sr) => sum + sr.maxItems, 0);
-    const minTableH = totalMinTableRows * rowH + sectionRows.length * sectionHeaderH;
-    const totalAvail = disclaimerY - y - 1;
-    const extraSpace = Math.max(0, totalAvail - minTableH);
-    const extraForTable = Math.floor(extraSpace / rowH);
-    const extraPerRow = Math.floor(extraForTable / sectionRows.length);
-    const extraRemainder = extraForTable % sectionRows.length;
+    // Place sections into columns using shortest-column-first (masonry)
+    const colYs: number[] = Array(numCols).fill(y);
 
-    for (let r = 0; r < sectionRows.length; r++) {
-      sectionRows[r].rowCount = Math.max(
-        sectionRows[r].maxItems,
-        sectionRows[r].maxItems + extraPerRow + (r < extraRemainder ? 1 : 0)
-      );
-      sectionRows[r].rowCount = Math.max(sectionRows[r].rowCount, 1);
-    }
+    // Helper: render a section at a given position
+    function renderSection(sec: SectionInfo, colIdx: number, startY: number) {
+      const colX = margin + colIdx * colWidth;
 
-    // Verify total height won't overlap disclaimer — trim last section if needed
-    let totalH = 0;
-    for (const sr of sectionRows) totalH += sectionHeaderH + sr.rowCount * rowH;
-    while (y + totalH > disclaimerY) {
-      // Find the last section with extra rows (more than maxItems) and trim one
-      let trimmed = false;
-      for (let r = sectionRows.length - 1; r >= 0; r--) {
-        if (sectionRows[r].rowCount > sectionRows[r].maxItems) {
-          sectionRows[r].rowCount--;
-          totalH -= rowH;
-          trimmed = true;
-          break;
+      // Header
+      drawCell(colX, startY, colWidth, sectionHeaderH, rgb);
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      setBeltTextColor();
+      pdf.text(sec.cat.name, colX + colWidth / 2, startY + 4.2, { align: "center" });
+      pdf.setTextColor(0, 0, 0);
+
+      let cellY = startY + sectionHeaderH;
+      let rowIndex = 0;
+
+      for (const item of sec.cat.items) {
+        const itemLines = getItemRowCount(item, colWidth);
+        const itemH = itemLines * rowH;
+
+        // Alternating tint per row
+        for (let li = 0; li < itemLines; li++) {
+          const tint: [number, number, number] = (rowIndex + li) % 2 === 0 ? veryLightTint : [255, 255, 255];
+          pdf.setFillColor(tint[0], tint[1], tint[2]);
+          pdf.rect(colX, cellY + li * rowH, colWidth, rowH, "F");
         }
-      }
-      if (!trimmed) break; // all sections at minimum, can't trim more
-    }
 
-    for (let r = 0; r < sectionRows.length; r++) {
-      const sr = sectionRows[r];
-      const colWidth = cw / sr.numCols;
-      const neededH = sectionHeaderH + sr.rowCount * rowH;
+        // Border around item
+        pdf.setDrawColor(0, 0, 0);
+        pdf.setLineWidth(0.2);
+        pdf.rect(colX, cellY, colWidth, itemH, "S");
 
-      if (y + neededH > disclaimerY && y > margin + 5) {
-        y = newPage();
-        const newAvail = disclaimerY - y - sectionHeaderH - 1;
-        const remainingSections = sectionRows.length - r - 1;
-        const remainingHeadersH = remainingSections * sectionHeaderH;
-        const remainingMinRows = sectionRows.slice(r + 1).reduce((sum, s) => sum + s.maxItems, 0);
-        const availForThisRow = newAvail - remainingHeadersH - remainingMinRows * rowH;
-        const fillRowsOnPage = Math.max(sr.maxItems, Math.floor(availForThisRow / rowH));
-        sr.rowCount = Math.max(sr.maxItems, fillRowsOnPage);
-      }
-
-      // Column headers
-      for (let ci = 0; ci < sr.numCols; ci++) {
-        const colX = margin + ci * colWidth;
-        drawCell(colX, y, colWidth, sectionHeaderH, rgb);
-        pdf.setFontSize(10);
-        pdf.setFont("helvetica", "bold");
-        setBeltTextColor();
-        const label = sr.cats[ci]?.name || "";
-        pdf.text(label, colX + colWidth / 2, y + 4.2, { align: "center" });
-        pdf.setTextColor(0, 0, 0);
-      }
-      y += sectionHeaderH;
-
-      // Data rows
-      const sectionStartY = y;
-      const totalSectionH = sr.rowCount * rowH;
-
-      for (let ci = 0; ci < sr.numCols; ci++) {
-        const colX = margin + ci * colWidth;
-        let colY = sectionStartY;
-        let rowIndex = 0;
-
-        {
-          const items = sr.cats[ci]?.items || [];
-          for (let ii = 0; ii < items.length; ii++) {
-            const item = items[ii];
-            const itemLines = getItemRowCount(item, colWidth);
-            const itemH = itemLines * rowH;
-
-            for (let li = 0; li < itemLines; li++) {
-              const tint: [number, number, number] = (rowIndex + li) % 2 === 0 ? veryLightTint : [255, 255, 255];
-              pdf.setFillColor(tint[0], tint[1], tint[2]);
-              pdf.rect(colX, colY + li * rowH, colWidth, rowH, "F");
-            }
-
-            pdf.setDrawColor(0, 0, 0);
-            pdf.setLineWidth(0.2);
-            pdf.rect(colX, colY, colWidth, itemH, "S");
-
-            if (itemLines === 1) {
-              renderItemCell(item, colX, colWidth, colY);
-            } else {
-              const hasLink = !!item.videoUrl;
-              const baseText = hasLink ? buildItemText({ ...item, videoUrl: null } as PdfRankTestItem) : buildItemText(item);
-              const indent = 8;
-              pdf.setFontSize(10);
-              pdf.setFont("helvetica", "normal");
+        if (itemLines === 1) {
+          renderItemCell(item, colX, colWidth, cellY);
+        } else {
+          // Multi-line rendering
+          const hasLink = !!item.videoUrl;
+          const baseText = hasLink ? buildItemText({ ...item, videoUrl: null } as PdfRankTestItem) : buildItemText(item);
+          const indent = 8;
+          pdf.setFontSize(10);
+          pdf.setFont("helvetica", "normal");
+          pdf.setTextColor(0, 0, 0);
+          const cellMaxW = colWidth - 4;
+          const firstLines = pdf.splitTextToSize(baseText, cellMaxW);
+          const renderLines: string[] = [firstLines[0]];
+          if (firstLines.length > 1) {
+            const remaining = firstLines.slice(1).join(" ");
+            const contLines = pdf.splitTextToSize(remaining, cellMaxW - indent);
+            renderLines.push(...contLines);
+          }
+          if (hasLink) {
+            const lastIdx = renderLines.length - 1;
+            const maxW = lastIdx === 0 ? cellMaxW : cellMaxW - indent;
+            const withLink = renderLines[lastIdx] + " - Link";
+            if (pdf.getTextWidth(withLink) <= maxW) renderLines[lastIdx] = withLink;
+            else renderLines.push("- Link");
+          }
+          for (let li = 0; li < renderLines.length; li++) {
+            const xOff = li === 0 ? 2 : 2 + indent;
+            const lineText = renderLines[li];
+            const linkIdx = hasLink ? lineText.lastIndexOf("- Link") : -1;
+            if (linkIdx >= 0 && item.videoUrl) {
+              const before = lineText.substring(0, linkIdx);
+              if (before) { pdf.setTextColor(0, 0, 0); pdf.text(before, colX + xOff, cellY + li * rowH + 3.8); }
+              const beforeW = before ? pdf.getTextWidth(before) : 0;
               pdf.setTextColor(0, 0, 0);
-              const cellMaxW = colWidth - 4;
-              const firstLineW = cellMaxW;
-              const contLineW = cellMaxW - indent;
-              const firstLines = pdf.splitTextToSize(baseText, firstLineW);
-              const renderLines: string[] = [firstLines[0]];
-              if (firstLines.length > 1) {
-                const remaining = firstLines.slice(1).join(" ");
-                const contLines = pdf.splitTextToSize(remaining, contLineW);
-                renderLines.push(...contLines);
-              }
-              if (hasLink) {
-                const lastIdx = renderLines.length - 1;
-                const maxW = lastIdx === 0 ? firstLineW : contLineW;
-                const withLink = renderLines[lastIdx] + " - Link";
-                if (pdf.getTextWidth(withLink) <= maxW) {
-                  renderLines[lastIdx] = withLink;
-                } else {
-                  renderLines.push("- Link");
-                }
-              }
-              for (let li = 0; li < renderLines.length; li++) {
-                const xOff = li === 0 ? 2 : 2 + indent;
-                const lineText = renderLines[li];
-                const linkIdx = hasLink ? lineText.lastIndexOf("- Link") : -1;
-                if (linkIdx >= 0 && item.videoUrl) {
-                  const before = lineText.substring(0, linkIdx);
-                  if (before) {
-                    pdf.setTextColor(0, 0, 0);
-                    pdf.text(before, colX + xOff, colY + li * rowH + 3.8);
-                  }
-                  const beforeW = before ? pdf.getTextWidth(before) : 0;
-                  pdf.setTextColor(0, 0, 0);
-                  pdf.text("- ", colX + xOff + beforeW, colY + li * rowH + 3.8);
-                  const dashW = pdf.getTextWidth("- ");
-                  const linkX = colX + xOff + beforeW + dashW;
-                  const linkY2 = colY + li * rowH + 3.8;
-                  pdf.setTextColor(0, 0, 200);
-                  pdf.text("Link", linkX, linkY2);
-                  const linkW = pdf.getTextWidth("Link");
-                  pdf.setDrawColor(0, 0, 200);
-                  pdf.setLineWidth(0.1);
-                  pdf.line(linkX, linkY2 + 0.4, linkX + linkW, linkY2 + 0.4);
-                  pdf.link(linkX, linkY2 - 3, linkW + 1, 4, { url: item.videoUrl });
-                  pdf.setTextColor(0, 0, 0);
-                  pdf.setDrawColor(0, 0, 0);
-                } else {
-                  pdf.text(lineText, colX + xOff, colY + li * rowH + 3.8);
-                }
-              }
+              pdf.text("- ", colX + xOff + beforeW, cellY + li * rowH + 3.8);
+              const dashW = pdf.getTextWidth("- ");
+              const linkX = colX + xOff + beforeW + dashW;
+              const linkY2 = cellY + li * rowH + 3.8;
+              pdf.setTextColor(0, 0, 200);
+              pdf.text("Link", linkX, linkY2);
+              const linkW = pdf.getTextWidth("Link");
+              pdf.setDrawColor(0, 0, 200); pdf.setLineWidth(0.1);
+              pdf.line(linkX, linkY2 + 0.4, linkX + linkW, linkY2 + 0.4);
+              pdf.link(linkX, linkY2 - 3, linkW + 1, 4, { url: item.videoUrl });
+              pdf.setTextColor(0, 0, 0); pdf.setDrawColor(0, 0, 0);
+            } else {
+              pdf.text(lineText, colX + xOff, cellY + li * rowH + 3.8);
             }
-
-            colY += itemH;
-            rowIndex += itemLines;
           }
         }
 
-        // Fill remaining empty space
-        while (colY < sectionStartY + totalSectionH) {
-          const tint: [number, number, number] = rowIndex % 2 === 0 ? veryLightTint : [255, 255, 255];
-          drawCell(colX, colY, colWidth, rowH, tint);
-          colY += rowH;
-          rowIndex++;
-        }
+        cellY += itemH;
+        rowIndex += itemLines;
       }
-
-      y = sectionStartY + totalSectionH;
     }
 
+    // Place each section in the shortest column
+    for (const sec of sections) {
+      // Find shortest column
+      let shortestCol = 0;
+      for (let c = 1; c < numCols; c++) {
+        if (colYs[c] < colYs[shortestCol]) shortestCol = c;
+      }
+
+      // Check if section fits on current page
+      if (colYs[shortestCol] + sec.height > disclaimerY && colYs[shortestCol] > y) {
+        // Start new page — reset all columns
+        y = newPage();
+        for (let c = 0; c < numCols; c++) colYs[c] = y;
+        shortestCol = 0;
+      }
+
+      renderSection(sec, shortestCol, colYs[shortestCol]);
+      colYs[shortestCol] += sec.height;
+    }
+
+    y = Math.max(...colYs);
   }
 
   // Disclaimer (above footer, centered)
