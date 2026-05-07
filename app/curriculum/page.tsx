@@ -63,7 +63,15 @@ function RichInput({ defaultValue, onSave, className, onEditClick }: { defaultVa
         dangerouslySetInnerHTML={{ __html: defaultValue.replace(/<br\s*\/?>/gi, " ").replace(/<\/?div[^>]*>/gi, " ").replace(/\n/g, " ") }}
         onBlur={() => {
           const el = divRef.current;
-          if (el) onSave(el.innerHTML.replace(/&nbsp;/g, " "));
+          if (el) {
+            // Preserve leading &nbsp; (they represent intentional indentation), convert others to spaces
+            let html = el.innerHTML;
+            // Replace &nbsp; that aren't at the start of text content with regular spaces
+            html = html.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;([^\s<])/g, "\u00A0$1");
+            // Keep remaining &nbsp; as non-breaking spaces for leading indentation
+            html = html.replace(/&nbsp;/g, "\u00A0");
+            onSave(html);
+          }
         }}
         onKeyDown={e => {
           if (e.key === "b" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.execCommand("bold"); }
@@ -107,7 +115,7 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
   async function addItem() {
     if (!newItemDesc.trim() || !testId) return;
     setAddingItem(true);
-    const descText = newItemDesc.trim();
+    const descText = newItemDesc.trimEnd();
     const autoName = descText.replace(/<[^>]*>/g, "").split("\n")[0].substring(0, 100).trim();
     await fetch(`/api/rank-tests/${testId}/items`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -149,8 +157,8 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     for (const line of lines) {
       const cells = line.split("\t");
-      const desc = cells[0]?.trim();
-      if (!desc) continue;
+      const desc = cells[0]?.trimEnd();
+      if (!desc?.trim()) continue;
       const autoName = desc.replace(/<[^>]*>/g, "").split("\n")[0].substring(0, 100).trim();
       await fetch(`/api/rank-tests/${testId}/items`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -289,7 +297,7 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
             <div id="cat-popup-editor" contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{ __html: editPopup.value.replace(/\n/g, "<br>") }} className="w-full min-h-[256px] rounded-md border border-gray-300 px-3 py-2 text-sm whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
           <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
-            <button onClick={async () => { const el = document.getElementById("cat-popup-editor"); if (el) await updateField(editPopup.itemId, "description", el.innerHTML.replace(/&nbsp;/g, " ")); setEditPopup(null); await onReload(); }} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Save</button>
+            <button onClick={async () => { const el = document.getElementById("cat-popup-editor"); if (el) await updateField(editPopup.itemId, "description", el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0")); setEditPopup(null); await onReload(); }} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Save</button>
             <button onClick={() => setEditPopup(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
           </div>
         </div>
@@ -1136,7 +1144,7 @@ export default function CurriculumV2Page() {
                           dangerouslySetInnerHTML={{ __html: (row.description || "").replace(/<br\s*\/?>/gi, " ").replace(/<\/?div[^>]*>/gi, " ").replace(/\n/g, " ") }}
                           onBlur={e => {
                             const html = (e.target as HTMLDivElement).innerHTML;
-                            const clean = html === "<br>" ? "" : html.replace(/&nbsp;/g, " ");
+                            const clean = html === "<br>" ? "" : html.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0");
                             if (clean !== row.description) {
                               updateRow(idx, "description", clean);
                             }
@@ -1354,7 +1362,7 @@ export default function CurriculumV2Page() {
               <button
                 onClick={() => {
                   const el = document.getElementById("popup-editor");
-                  if (el) updateRow(popupCell.rowIdx, popupCell.field, el.innerHTML.replace(/&nbsp;/g, " "));
+                  if (el) updateRow(popupCell.rowIdx, popupCell.field, el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0"));
                   setPopupCell(null);
                 }}
                 className="text-gray-400 hover:text-gray-600"
@@ -1383,7 +1391,7 @@ export default function CurriculumV2Page() {
               <button
                 onClick={() => {
                   const el = document.getElementById("popup-editor");
-                  if (el) updateRow(popupCell.rowIdx, popupCell.field, el.innerHTML.replace(/&nbsp;/g, " "));
+                  if (el) updateRow(popupCell.rowIdx, popupCell.field, el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0"));
                   setPopupCell(null);
                 }}
                 className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
