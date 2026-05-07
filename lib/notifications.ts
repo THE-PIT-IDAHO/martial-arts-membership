@@ -656,3 +656,37 @@ export async function sendTrialExpiringEmail(params: {
     await sendEmail({ to, subject, html });
   }
 }
+
+// ─── Receipt Email ─────────────────────────────────────────────
+export async function sendReceiptEmail(params: {
+  memberId: string;
+  memberName: string;
+  transactionNumber: string;
+  totalCents: number;
+  pdfBase64: string;
+  fileName: string;
+}): Promise<void> {
+  const emails = await resolveRecipientEmails(params.memberId);
+  if (emails.length === 0) return;
+  const brand = await getGymBranding();
+
+  const html = wrapInTemplate(brand, `
+    <h2 style="color: #333; margin-bottom: 16px;">Your Receipt</h2>
+    <p>Thank you for your purchase, ${params.memberName}!</p>
+    <p>Transaction #: <strong>${params.transactionNumber}</strong></p>
+    <p>Total: <strong>$${(params.totalCents / 100).toFixed(2)}</strong></p>
+    <p>Your receipt is attached as a PDF.</p>
+    <p style="color: #666; font-size: 12px; margin-top: 24px;">
+      This is an automated message. If you have questions, please contact us directly.
+    </p>
+  `);
+
+  for (const to of emails) {
+    await sendEmail({
+      to,
+      subject: `Your Receipt from ${brand.gymName}`,
+      html,
+      attachments: [{ filename: params.fileName, content: params.pdfBase64 }],
+    });
+  }
+}

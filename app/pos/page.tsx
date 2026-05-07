@@ -195,6 +195,17 @@ export default function POSPage() {
   const [processing, setProcessing] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<{ id: string; transactionNumber: string } | null>(null);
 
+  // Helper: set last transaction and auto-email receipt
+  function completeTransaction(txn: { id: string; transactionNumber: string }) {
+    setLastTransaction(txn);
+    // Fire and forget receipt email
+    fetch("/api/pos/send-receipt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transactionId: txn.id }),
+    }).catch(() => {}); // silent fail — receipt is optional
+  }
+
   // Payment processor integration
   const [activeProcessor, setActiveProcessor] = useState<string | null>(null);
   const [stripePolling, setStripePolling] = useState(false);
@@ -929,58 +940,26 @@ export default function POSPage() {
 
       const pdfBase64 = pdf.output("datauristring");
 
-      // 2. Save PDF to member documents
-      try {
-        const memberRes = await fetch(`/api/members/${selectedMember.id}`);
-        if (memberRes.ok) {
-          const memberData = await memberRes.json();
-          const existing = memberData.member?.styleDocuments ? JSON.parse(memberData.member.styleDocuments) : [];
-          const contractName = cart.find(c => c.type === "membership")?.itemName || cart.find(c => c.type === "service")?.itemName || "Contract";
-          const newDoc = {
-            id: `contract-${Date.now()}`,
-            name: `${contractName} Contract - ${new Date().toLocaleDateString()}`,
-            url: pdfBase64,
-            uploadedAt: new Date().toISOString(),
-          };
-          await fetch(`/api/members/${selectedMember.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ styleDocuments: JSON.stringify([...existing, newDoc]) }),
-          });
-        }
-      } catch (err) { console.error("Failed to save contract to documents:", err); }
-
-      // 3. Create SignedContract record
+      // 2. Save SignedContract record (includes PDF, auto-emails to member)
       const itemsSummary = cart
         .filter(c => c.type === "membership" || c.type === "service")
         .map(c => ({ name: c.itemName, type: c.type, priceCents: c.unitPriceCents }));
+      const memberName = `${selectedMember.firstName} ${selectedMember.lastName}`;
       try {
         await fetch("/api/contracts/sign", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             memberId: selectedMember.id,
+            memberName,
             planName: itemsSummary.map(i => i.name).join(", "),
             itemsSummary: JSON.stringify(itemsSummary),
             contractContent: contractText,
             signatureData: signatureDataUrl,
+            pdfBase64,
           }),
         });
       } catch (err) { console.error("Failed to save signed contract:", err); }
-
-      // 4. Email contract PDF
-      try {
-        const raw64 = pdfBase64.includes(",") ? pdfBase64.split(",")[1] : pdfBase64;
-        await fetch("/api/contracts/email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            memberId: selectedMember.id,
-            pdfBase64: raw64,
-            contractTitle: `${gymName || "Gym"} - Membership Agreement`,
-          }),
-        });
-      } catch (err) { console.error("Failed to email contract:", err); }
 
       // 5. Close contract signing and continue checkout
       setShowContractSigning(false);
@@ -1060,7 +1039,7 @@ export default function POSPage() {
         });
         if (txnRes.ok) {
           const txnData = await txnRes.json();
-          setLastTransaction({ id: txnData.transaction.id, transactionNumber: txnData.transaction.transactionNumber });
+          completeTransaction({ id: txnData.transaction.id, transactionNumber: txnData.transaction.transactionNumber });
         }
         resetAfterCheckout();
         return;
@@ -1161,7 +1140,7 @@ export default function POSPage() {
 
       if (!res.ok) throw new Error(await res.text() || "Failed to process transaction");
       const data = await res.json();
-      setLastTransaction({ id: data.transaction.id, transactionNumber: data.transaction.transactionNumber });
+      completeTransaction({ id: data.transaction.id, transactionNumber: data.transaction.transactionNumber });
       resetAfterCheckout();
       fetchData();
     } catch (error) {
@@ -2543,10 +2522,10 @@ export default function POSPage() {
               });
               if (txnRes.ok) {
                 const txnData = await txnRes.json();
-                setLastTransaction({ id: txnData.transaction.id, transactionNumber: txnData.transaction.transactionNumber });
+                completeTransaction({ id: txnData.transaction.id, transactionNumber: txnData.transaction.transactionNumber });
               }
             } else {
-              setLastTransaction({ id: d.existingTransactionId!, transactionNumber: d.existingTransactionNumber! });
+              completeTransaction({ id: d.existingTransactionId!, transactionNumber: d.existingTransactionNumber! });
             }
             setCardPaymentData(null);
             resetAfterCheckout();

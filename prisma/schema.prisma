@@ -1007,6 +1007,8 @@ model SignedContract {
   itemsSummary    String
   contractContent String
   signatureData   String
+  pdfData         String?
+  fileName        String?
   signedAt        DateTime @default(now())
   clientId        String   @default("default-client")
   createdAt       DateTime @default(now())
