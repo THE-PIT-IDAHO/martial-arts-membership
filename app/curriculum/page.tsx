@@ -191,7 +191,7 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
       <table className="w-full text-sm" style={{ tableLayout: "fixed" }}>
         <thead className="bg-gray-100 border-b border-gray-300">
           <tr>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Item Information</th>
+            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500" style={{ minWidth: "192px" }}>Item Information</th>
             <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
             <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
             <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
@@ -1056,7 +1056,7 @@ export default function CurriculumV2Page() {
             <table ref={tableRef} className="w-full text-sm" style={{ tableLayout: "fixed" }}>
               <thead className="bg-gray-100 border-b border-gray-300">
                 <tr>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Item Information</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500" style={{ minWidth: "192px" }}>Item Information</th>
                   <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
                   <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
                   <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
