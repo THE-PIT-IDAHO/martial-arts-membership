@@ -1887,8 +1887,8 @@ export default function POSPage() {
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     {(savedCard
-                      ? ["SAVED_CARD", "CASH", "CARD", "CHECK", "ACCOUNT"] as const
-                      : ["CASH", "CARD", "CHECK", "ACCOUNT"] as const
+                      ? ["SAVED_CARD", "CASH", "CARD", "CHECK", "ACCOUNT", "GIFT"] as const
+                      : ["CASH", "CARD", "CHECK", "ACCOUNT", "GIFT"] as const
                     ).map(method => (
                       <button
                         key={method}
@@ -1897,11 +1897,17 @@ export default function POSPage() {
                             alert("Please select a member first to use Account payment.");
                             return;
                           }
+                          if (method === "GIFT") {
+                            setShowRedeemGift(true);
+                            return;
+                          }
                           setPaymentSplits([{ id: paymentSplits[0]?.id || crypto.randomUUID(), method, amountCents: 0, label: "" }]);
                         }}
                         disabled={method === "ACCOUNT" && !selectedMember}
                         className={`px-3 py-2 text-sm font-semibold rounded-lg transition-colors ${
-                          paymentSplits[0]?.method === method
+                          method === "GIFT" && redeemedGift
+                            ? "border border-green-500 bg-green-50 text-green-700"
+                            : paymentSplits[0]?.method === method
                             ? "border border-primary bg-primary/10 text-primary"
                             : method === "ACCOUNT" && !selectedMember
                               ? "bg-gray-300 text-gray-500 cursor-not-allowed"
@@ -1912,6 +1918,8 @@ export default function POSPage() {
                           ? `${savedCard.brand.toUpperCase()} ····${savedCard.last4}`
                           : method === "CARD" && activeProcessor
                           ? `NEW CARD`
+                          : method === "GIFT"
+                          ? redeemedGift ? `GIFT (-${formatCents(redeemedGift.appliedCents)})` : "GIFT CERT"
                           : method === "ACCOUNT" && selectedMember
                             ? `ACCOUNT (${selectedMember.accountCreditCents >= 0 ? "$" : "-$"}${(Math.abs(selectedMember.accountCreditCents) / 100).toFixed(2)})`
                             : method}
@@ -1944,9 +1952,9 @@ export default function POSPage() {
                         Remove
                       </button>
                     </div>
-                    <div className="bg-primary/5 rounded-lg p-3">
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                       <p className="text-sm font-medium">Code: {redeemedGift.code}</p>
-                      <p className="text-sm text-primary font-semibold">-{formatCents(redeemedGift.appliedCents)}</p>
+                      <p className="text-sm text-green-700 font-semibold">-{formatCents(redeemedGift.appliedCents)}</p>
                     </div>
                   </div>
                 ) : showRedeemGift ? (
@@ -1999,16 +2007,7 @@ export default function POSPage() {
                       </button>
                     </div>
                   </div>
-                ) : (
-                  <div className="flex justify-center">
-                    <button
-                      onClick={() => setShowRedeemGift(true)}
-                      className="px-3 py-2 text-sm font-semibold rounded-lg bg-primary text-white hover:bg-primaryDark transition-colors"
-                    >
-                      Redeem Gift Certificate
-                    </button>
-                  </div>
-                )}
+                ) : null}
               </div>
 
               <textarea
