@@ -300,6 +300,8 @@ export default function CurriculumV2Page() {
   const [popupCell, setPopupCell] = useState<{ rowIdx: number; field: keyof Row; value: string } | null>(null);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const tableRef = useRef<HTMLTableElement>(null);
+  const [disclaimer, setDisclaimer] = useState("Coach has final say for promotion and not everyone will promote every ceremony. Promotion depends on the following:\nattendance, skill recollection, good behavior, effort and fitness");
+  const [disclaimerSaving, setDisclaimerSaving] = useState(false);
   const [gymSettings, setGymSettings] = useState<GymSettings>({
     name: "Martial Arts School", address: "", city: "", state: "", zipCode: "", phone: "", email: "", website: "", logo: "",
   });
@@ -329,12 +331,23 @@ export default function CurriculumV2Page() {
     }).catch(() => {});
   }, []);
 
-  // Update ranks when style changes
+  // Update ranks and load disclaimer when style changes
   useEffect(() => {
     const style = styles.find(s => s.id === selectedStyleId);
     setRanks(style?.ranks || []);
     if (style?.ranks?.length) setSelectedRankId(style.ranks[0].id);
     else setSelectedRankId("");
+
+    // Load disclaimer from style detail
+    if (selectedStyleId) {
+      fetch(`/api/styles/${selectedStyleId}`).then(r => r.ok ? r.json() : null).then(d => {
+        if (d?.style?.curriculumDisclaimer !== undefined) {
+          setDisclaimer(d.style.curriculumDisclaimer || "");
+        } else {
+          setDisclaimer("Coach has final say for promotion and not everyone will promote every ceremony. Promotion depends on the following:\nattendance, skill recollection, good behavior, effort and fitness");
+        }
+      }).catch(() => {});
+    }
   }, [selectedStyleId, styles]);
 
   // Load rank tests when rank changes
@@ -903,7 +916,7 @@ export default function CurriculumV2Page() {
             || beltConfig.ranks?.find(r => r.name.toLowerCase() === rank.name.toLowerCase());
           const beltColor = (configRank?.layers as Record<string, unknown>)?.fabricColor as string || "#ffffff";
 
-          const pdfDataUrl = generateCurriculumPdf(style.name, rank.name, tests, beltColor, gymSettings, logoImg);
+          const pdfDataUrl = generateCurriculumPdf(style.name, rank.name, tests, beltColor, gymSettings, logoImg, disclaimer);
 
           const patchRes = await fetch(`/api/ranks/${rank.id}`, {
             method: "PATCH",
@@ -1211,6 +1224,40 @@ export default function CurriculumV2Page() {
           );
         })()}
       </div>
+
+      {/* PDF Disclaimer (per style) */}
+      {selectedStyleId && (
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-semibold text-gray-700">PDF Disclaimer</label>
+            <button
+              onClick={async () => {
+                setDisclaimerSaving(true);
+                try {
+                  await fetch(`/api/styles/${selectedStyleId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ curriculumDisclaimer: disclaimer }),
+                  });
+                } catch { alert("Failed to save disclaimer"); }
+                finally { setDisclaimerSaving(false); }
+              }}
+              disabled={disclaimerSaving}
+              className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+            >
+              {disclaimerSaving ? "Saving..." : "Save"}
+            </button>
+          </div>
+          <textarea
+            value={disclaimer}
+            onChange={e => setDisclaimer(e.target.value)}
+            rows={2}
+            placeholder="Text shown at the bottom of every curriculum PDF for this style..."
+            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+          />
+          <p className="text-[10px] text-gray-400 mt-1">This text appears centered above the footer on every published PDF for this style.</p>
+        </div>
+      )}
 
       {/* Full content popup editor */}
       {popupCell && (

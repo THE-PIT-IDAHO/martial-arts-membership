@@ -71,7 +71,8 @@ export function generateCurriculumPdf(
   tests: PdfRankTest[],
   beltColor: string,
   gymSettings: GymSettings,
-  logoImg?: HTMLImageElement
+  logoImg?: HTMLImageElement,
+  disclaimer?: string | null
 ): string {
   const rawRgb = hexToRgb(beltColor);
 
@@ -738,6 +739,19 @@ export function generateCurriculumPdf(
       y = sectionStartY + totalSectionH;
     }
 
+  }
+
+  // Disclaimer (above footer, centered)
+  if (disclaimer) {
+    const lines = disclaimer.split("\n").filter(l => l.trim());
+    pdf.setFontSize(8);
+    pdf.setFont("helvetica", "italic");
+    pdf.setTextColor(80, 80, 80);
+    const disclaimerStartY = footerY - (lines.length * 3.5) - 2;
+    for (let i = 0; i < lines.length; i++) {
+      pdf.text(lines[i].trim(), pw / 2, disclaimerStartY + i * 3.5, { align: "center" });
+    }
+    pdf.setTextColor(0, 0, 0);
   }
 
   // Footer on last page
