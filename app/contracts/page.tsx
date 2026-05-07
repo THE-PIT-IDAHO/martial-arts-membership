@@ -178,21 +178,21 @@ export default function ContractsPage() {
                         </button>
                         <button
                           onClick={() => downloadPdf(c)}
-                          className="rounded-md border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-100"
+                          className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark"
                         >
                           Download
                         </button>
                         <button
                           onClick={() => resendEmail(c)}
                           disabled={resending === c.id}
-                          className="rounded-md border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                          className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                         >
                           {resending === c.id ? "Sending..." : "Email"}
                         </button>
                         <button
                           onClick={() => deleteContract(c)}
                           disabled={deleting === c.id}
-                          className="rounded-md bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 hover:bg-red-200 disabled:opacity-50"
+                          className="rounded-md border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
                         >
                           {deleting === c.id ? "..." : "Delete"}
                         </button>
