@@ -109,7 +109,7 @@ export default function KioskPage() {
   const [recentCheckIns, setRecentCheckIns] = useState<{ member: Member; time: Date }[]>([]);
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState("");
-  const [scanMode, setScanMode] = useState(true);
+  const [scanMode, setScanMode] = useState(false);
 
   // Update clock every second
   useEffect(() => {
@@ -767,10 +767,9 @@ export default function KioskPage() {
                 <p className="text-gray-500">Type your name, member number, or scan QR</p>
               </div>
 
-              {/* Search + QR Scanner side by side */}
+              {/* Search + QR Scanner */}
               <div className="flex gap-3 mb-4 items-start">
                 <div className="flex-1">
-                  <p className="text-sm text-gray-500 mb-2">Find your name or scan QR code</p>
                   <div className="relative mb-6">
                     <input
                       type="text"
@@ -844,9 +843,26 @@ export default function KioskPage() {
                     </div>
                   )}
                 </div>
-                {/* QR Scanner - small window */}
+                {/* QR Scanner toggle + small window */}
                 <div className="w-48 shrink-0">
-                  <QrScanner onScan={handleQrScan} />
+                  {scanMode ? (
+                    <>
+                      <QrScanner onScan={handleQrScan} />
+                      <button onClick={() => setScanMode(false)} className="w-full mt-1 py-1 text-[10px] text-gray-400 hover:text-gray-600">
+                        Hide Camera
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setScanMode(true)}
+                      className="w-full h-32 rounded-2xl border-2 border-dashed border-gray-300 hover:border-primary flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-primary transition-colors"
+                    >
+                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" />
+                      </svg>
+                      <span className="text-xs font-medium">Scan QR</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
