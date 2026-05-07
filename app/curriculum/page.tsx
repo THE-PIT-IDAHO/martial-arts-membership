@@ -189,18 +189,30 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
         </div>
       </div>
       <table className="w-full text-sm" style={{ tableLayout: "fixed" }}>
+        <colgroup>
+          <col />
+          <col style={{ width: "96px" }} />
+          <col style={{ width: "56px" }} />
+          <col style={{ width: "56px" }} />
+          <col style={{ width: "64px" }} />
+          <col style={{ width: "56px" }} />
+          <col style={{ width: "80px" }} />
+          <col style={{ width: "80px" }} />
+          <col style={{ width: "112px" }} />
+          <col style={{ width: "64px" }} />
+        </colgroup>
         <thead className="bg-gray-100 border-b border-gray-300">
           <tr>
             <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Item Information</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Min/Rd</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Rnds</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Duration</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Distance</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-28">Time Limit</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16"></th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Video</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Reps</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Sets</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Min/Rd</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Rnds</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Duration</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Distance</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Time Limit</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500"></th>
           </tr>
         </thead>
         <tbody>
@@ -1054,18 +1066,30 @@ export default function CurriculumV2Page() {
               </div>
             </div>
             <table ref={tableRef} className="w-full text-sm" style={{ tableLayout: "fixed" }}>
+              <colgroup>
+                <col />
+                <col style={{ width: "96px" }} />
+                <col style={{ width: "56px" }} />
+                <col style={{ width: "56px" }} />
+                <col style={{ width: "64px" }} />
+                <col style={{ width: "56px" }} />
+                <col style={{ width: "80px" }} />
+                <col style={{ width: "80px" }} />
+                <col style={{ width: "112px" }} />
+                <col style={{ width: "64px" }} />
+              </colgroup>
               <thead className="bg-gray-100 border-b border-gray-300">
                 <tr>
                   <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Item Information</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Min/Rd</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Rnds</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Duration</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Distance</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-28">Time Limit</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16"></th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Video</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Reps</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Sets</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Min/Rd</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Rnds</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Duration</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Distance</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Time Limit</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500"></th>
                 </tr>
               </thead>
               <tbody>
