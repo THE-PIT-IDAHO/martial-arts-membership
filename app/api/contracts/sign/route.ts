@@ -25,20 +25,38 @@ export async function POST(req: Request) {
       pdfData = pdfData.split(",")[1];
     }
 
-    const contract = await prisma.signedContract.create({
-      data: {
-        memberId,
-        membershipId: membershipId || null,
-        transactionId: transactionId || null,
-        planName: planName || "Sale Contract",
-        itemsSummary: itemsSummary || "[]",
-        contractContent,
-        signatureData,
-        pdfData,
-        fileName,
-        clientId,
-      },
-    });
+    let contract;
+    try {
+      contract = await prisma.signedContract.create({
+        data: {
+          memberId,
+          membershipId: membershipId || null,
+          transactionId: transactionId || null,
+          planName: planName || "Sale Contract",
+          itemsSummary: itemsSummary || "[]",
+          contractContent,
+          signatureData,
+          pdfData,
+          fileName,
+          clientId,
+        },
+      });
+    } catch (dbErr) {
+      // Fallback if pdfData/fileName columns don't exist yet
+      console.warn("Contract create with PDF failed, trying without:", dbErr);
+      contract = await prisma.signedContract.create({
+        data: {
+          memberId,
+          membershipId: membershipId || null,
+          transactionId: transactionId || null,
+          planName: planName || "Sale Contract",
+          itemsSummary: itemsSummary || "[]",
+          contractContent,
+          signatureData,
+          clientId,
+        },
+      });
+    }
 
     // Auto-email contract to member (fire and forget)
     if (pdfData) {

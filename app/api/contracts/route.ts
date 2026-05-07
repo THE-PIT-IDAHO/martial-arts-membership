@@ -26,7 +26,6 @@ export async function GET(req: Request) {
         planName: true,
         fileName: true,
         signedAt: true,
-        pdfData: false, // Don't send PDF data in list — fetch per contract
         member: {
           select: { id: true, firstName: true, lastName: true },
         },
