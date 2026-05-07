@@ -176,7 +176,7 @@ type AvailableStyle = {
   id: string;
   name: string;
   beltConfig?: string | null;
-  ranks: { id: string; name: string; order: number; classRequirement?: number | null; thumbnail?: string | null }[];
+  ranks: { id: string; name: string; order: number; classRequirement?: number | null; thumbnail?: string | null; pdfDocument?: string | null }[];
 };
 
 type CurriculumItem = {
@@ -549,6 +549,7 @@ export default function MemberProfilePage() {
 
   // style documents
   const [styleDocuments, setStyleDocuments] = useState<StyleDocument[]>([]);
+  const [rankPdfs, setRankPdfs] = useState<Array<{ rankName: string; styleName: string; url: string }>>([]);
   const [uploadingDocument, setUploadingDocument] = useState(false);
 
   // curriculum
@@ -801,27 +802,12 @@ export default function MemberProfilePage() {
         const res = await fetch("/api/styles");
         if (!res.ok) return;
         const data = await res.json();
-        // Fetch each style's detail to get merged curriculum PDFs in beltConfig
-        const stylesList: AvailableStyle[] = [];
-        for (const s of (data.styles || [])) {
-          try {
-            const detailRes = await fetch(`/api/styles/${s.id}`);
-            if (detailRes.ok) {
-              const detailData = await detailRes.json();
-              const style = detailData.style;
-              stylesList.push({
-                id: style.id,
-                name: style.name,
-                beltConfig: typeof style.beltConfig === "string" ? style.beltConfig : JSON.stringify(style.beltConfig),
-                ranks: style.ranks || []
-              });
-            } else {
-              stylesList.push({ id: s.id, name: s.name, beltConfig: s.beltConfig, ranks: s.ranks || [] });
-            }
-          } catch {
-            stylesList.push({ id: s.id, name: s.name, beltConfig: s.beltConfig, ranks: s.ranks || [] });
-          }
-        }
+        const stylesList: AvailableStyle[] = (data.styles || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          beltConfig: s.beltConfig,
+          ranks: s.ranks || []
+        }));
         setAvailableStyles(stylesList);
       } catch (e) {
         console.error("Failed to load styles:", e);
@@ -1381,6 +1367,31 @@ export default function MemberProfilePage() {
       loadMemberCurriculum(styles, availableStyles);
     }
   }, [styles, availableStyles, loadMemberCurriculum]);
+
+  // Load rank curriculum PDFs for member's active styles
+  useEffect(() => {
+    if (styles.length === 0 || availableStyles.length === 0) return;
+    async function loadRankPdfs() {
+      const pdfs: Array<{ rankName: string; styleName: string; url: string }> = [];
+      for (const style of styles) {
+        if (style.active === false || !style.rank || !style.name) continue;
+        const styleData = availableStyles.find(s => s.name.toLowerCase() === style.name.toLowerCase());
+        if (!styleData) continue;
+        // Find current rank order
+        const currentRank = styleData.ranks?.find((r: { name: string }) => r.name === style.rank);
+        if (!currentRank) continue;
+        // Fetch all ranks with PDFs for this style
+        for (const rank of styleData.ranks || []) {
+          if (rank.order > currentRank.order) continue; // only up to current rank
+          if (rank.pdfDocument) {
+            pdfs.push({ rankName: rank.name, styleName: style.name, url: rank.pdfDocument });
+          }
+        }
+      }
+      setRankPdfs(pdfs);
+    }
+    loadRankPdfs();
+  }, [styles, availableStyles]);
 
   async function copyRankPDFsToStyleDocuments(styles: StyleEntry[], memberData: Member) {
     if (!memberId) return;
@@ -4554,14 +4565,52 @@ export default function MemberProfilePage() {
                   </label>
                 </div>
 
+                {/* Curriculum PDFs from ranks */}
+                {rankPdfs.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-[11px] font-semibold uppercase text-gray-500 mb-2">Curriculum</p>
+                    <div className="flex flex-wrap gap-2">
+                      {rankPdfs.map((pdf, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            try {
+                              if (pdf.url.startsWith("data:")) {
+                                const byteString = atob(pdf.url.split(",")[1]);
+                                const ab = new ArrayBuffer(byteString.length);
+                                const ia = new Uint8Array(ab);
+                                for (let j = 0; j < byteString.length; j++) ia[j] = byteString.charCodeAt(j);
+                                const blob = new Blob([ab], { type: "application/pdf" });
+                                window.open(URL.createObjectURL(blob), "_blank");
+                              } else {
+                                window.open(pdf.url, "_blank");
+                              }
+                            } catch { /* ignore */ }
+                          }}
+                          className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
+                          title={`${pdf.rankName} Curriculum`}
+                        >
+                          <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
+                            <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
+                            <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
+                            <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
+                          </svg>
+                          <span className="text-[10px] text-gray-600 text-center max-w-[80px] truncate">{pdf.rankName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-2 text-sm">
-                  {styleDocuments.length === 0 ? (
+                  {styleDocuments.length === 0 && rankPdfs.length === 0 ? (
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                       <p className="text-xs text-gray-400">
                         No documents uploaded yet. Click "Upload PDF" to add documents.
                       </p>
                     </div>
-                  ) : (
+                  ) : styleDocuments.length === 0 ? null : (
                     <div className="flex flex-wrap gap-2">
                       {styleDocuments.map((doc) => (
                         <div key={doc.id} className="relative group">

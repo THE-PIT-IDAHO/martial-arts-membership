@@ -17,6 +17,7 @@ export async function GET(req: Request) {
             name: true,
             order: true,
             styleId: true,
+            pdfDocument: true,
           },
         },
       },
