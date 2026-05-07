@@ -847,6 +847,46 @@ export default function CurriculumV2Page() {
     } catch { alert("Failed to create category"); }
   }
 
+  async function deleteCustomCategory(categoryId: string, categoryName: string) {
+    if (!confirm(`Delete "${categoryName}" from all ranks in this style?`)) return;
+    try {
+      // Delete from current rank
+      const testId = getTestId();
+      if (testId) {
+        await fetch(`/api/rank-tests/${testId}/categories?categoryId=${categoryId}`, { method: "DELETE" });
+      }
+
+      // Delete from all other ranks in the style (parallel)
+      const otherRanks = ranks.filter(r => r.id !== selectedRankId);
+      await Promise.all(otherRanks.map(async (rank) => {
+        const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
+        if (!res.ok) return;
+        const d = await res.json();
+        const tests: RankTest[] = d.rankTests || d.tests || [];
+        for (const t of tests) {
+          const cat = t.categories.find(c => c.name === categoryName);
+          if (cat) {
+            await fetch(`/api/rank-tests/${t.id}/categories?categoryId=${cat.id}`, { method: "DELETE" });
+          }
+        }
+      }));
+
+      // Reload current rank
+      const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+      if (res.ok) {
+        const d = await res.json();
+        const tests = d.rankTests || d.tests || [];
+        setRankTests(tests);
+        const cats: { id: string; name: string; testId: string }[] = [];
+        for (const test of tests) for (const cat of test.categories) cats.push({ id: cat.id, name: cat.name, testId: test.id });
+        setAllCategories(cats);
+        const target = cats[0];
+        if (target) { setSelectedCategoryId(target.id); buildRowsForCategory(tests, target.id); }
+        else { setSelectedCategoryId(""); setRows([]); }
+      }
+    } catch { alert("Failed to delete category"); }
+  }
+
   async function deleteCategory(categoryId: string, categoryName: string) {
     if (!confirm(`Delete "${categoryName}" and all its items?`)) return;
     const testId = getTestId();
@@ -1019,6 +1059,17 @@ export default function CurriculumV2Page() {
               <button onClick={() => setShowAddCategory(!showAddCategory)} className="rounded-md bg-primary px-2 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark">
                 {showAddCategory ? "Cancel" : "Add Category"}
               </button>
+              {selectedCategoryId && !["Knowledge", "Techniques", "Combos", "Fitness", "Sparring", "Forms/Katas", "Board Breaking"].includes(allCategories.find(c => c.id === selectedCategoryId)?.name || "") && (
+                <button
+                  onClick={() => {
+                    const cat = allCategories.find(c => c.id === selectedCategoryId);
+                    if (cat) deleteCustomCategory(cat.id, cat.name);
+                  }}
+                  className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100"
+                >
+                  Delete Category
+                </button>
+              )}
             </div>
           </div>
 
