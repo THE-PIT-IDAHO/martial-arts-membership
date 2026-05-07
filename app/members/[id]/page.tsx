@@ -4381,8 +4381,8 @@ export default function MemberProfilePage() {
                 </div>
               </section>
 
-              {/* CURRICULUM */}
-              <section className="rounded-lg border border-gray-200 bg-white p-4">
+              {/* CURRICULUM - removed, PDFs shown in Member Documents via rank */}
+              {false && <section className="rounded-lg border border-gray-200 bg-white p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-sm font-semibold">Curriculum</h2>
                   {loadingCurriculum && (
@@ -4521,7 +4521,7 @@ export default function MemberProfilePage() {
                     })}
                   </div>
                 )}
-              </section>
+              </section>}
 
               {/* MEMBER DOCUMENTS */}
               <section className="rounded-lg border border-gray-200 bg-white p-4">
