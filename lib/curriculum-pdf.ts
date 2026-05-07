@@ -590,15 +590,11 @@ export function generateCurriculumPdf(
       sectionRows.push({ cats, numCols, maxItems, rowCount: maxItems });
     }
 
-    const notesRowsBase = 4;
-    const notesHeaderH = rowH;
     const totalMinTableRows = sectionRows.reduce((sum, sr) => sum + sr.maxItems, 0);
     const minTableH = totalMinTableRows * rowH + sectionRows.length * sectionHeaderH;
-    const minNotesH = notesHeaderH + notesRowsBase * rowH;
     const totalAvail = disclaimerY - y - 1;
-    const extraSpace = Math.max(0, totalAvail - minTableH - minNotesH);
-    const extraForTable = Math.floor(extraSpace / 2 / rowH);
-    const extraForNotes = Math.floor(extraSpace / 2 / rowH);
+    const extraSpace = Math.max(0, totalAvail - minTableH);
+    const extraForTable = Math.floor(extraSpace / rowH);
     const extraPerRow = Math.floor(extraForTable / sectionRows.length);
     const extraRemainder = extraForTable % sectionRows.length;
 
@@ -609,7 +605,6 @@ export function generateCurriculumPdf(
       );
       sectionRows[r].rowCount = Math.max(sectionRows[r].rowCount, 1);
     }
-    const notesRows = notesRowsBase + extraForNotes;
 
     for (let r = 0; r < sectionRows.length; r++) {
       const sr = sectionRows[r];
@@ -622,8 +617,7 @@ export function generateCurriculumPdf(
         const remainingSections = sectionRows.length - r - 1;
         const remainingHeadersH = remainingSections * sectionHeaderH;
         const remainingMinRows = sectionRows.slice(r + 1).reduce((sum, s) => sum + s.maxItems, 0);
-        const notesOnThisPage = notesHeaderH + notesRows * rowH;
-        const availForThisRow = newAvail - remainingHeadersH - remainingMinRows * rowH - notesOnThisPage;
+        const availForThisRow = newAvail - remainingHeadersH - remainingMinRows * rowH;
         const fillRowsOnPage = Math.max(sr.maxItems, Math.floor(availForThisRow / rowH));
         sr.rowCount = Math.max(sr.maxItems, fillRowsOnPage);
       }
@@ -744,48 +738,6 @@ export function generateCurriculumPdf(
       y = sectionStartY + totalSectionH;
     }
 
-    // Notes section
-    {
-      const notesNeeded = notesHeaderH + notesRows * rowH;
-      if (y + notesNeeded > disclaimerY && y > margin + 5) {
-        y = newPage();
-      }
-
-      drawCell(margin, y, cw, rowH, rgb);
-      pdf.setFontSize(10);
-      pdf.setFont("helvetica", "bold");
-      setBeltTextColor();
-      pdf.text("Notes", pw / 2, y + 3.8, { align: "center" });
-      pdf.setTextColor(0, 0, 0);
-      y += rowH;
-
-      const remainingForNotes = disclaimerY - y - 1;
-      const actualNoteRows = Math.max(notesRows, Math.floor(remainingForNotes / rowH));
-      for (let i = 0; i < actualNoteRows; i++) {
-        if (y + rowH > disclaimerY) break;
-        const noteTint: [number, number, number] = i % 2 === 0 ? veryLightTint : [255, 255, 255];
-        drawCell(margin, y, cw, rowH, noteTint);
-        y += rowH;
-      }
-    }
-  } else {
-    // No table categories - just notes
-    drawCell(margin, y, cw, rowH, rgb);
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "bold");
-    setBeltTextColor();
-    pdf.text("Notes", pw / 2, y + 3.8, { align: "center" });
-    pdf.setTextColor(0, 0, 0);
-    y += rowH;
-
-    const remainingForNotes = disclaimerY - y - 1;
-    const noteRows = Math.max(4, Math.floor(remainingForNotes / rowH));
-    for (let i = 0; i < noteRows; i++) {
-      if (y + rowH > disclaimerY) break;
-      const noteTint: [number, number, number] = i % 2 === 0 ? veryLightTint : [255, 255, 255];
-      drawCell(margin, y, cw, rowH, noteTint);
-      y += rowH;
-    }
   }
 
   // Footer on last page
