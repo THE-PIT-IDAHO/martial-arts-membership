@@ -421,28 +421,35 @@ export default function CurriculumV2Page() {
           }
         }
 
-        // Pull custom categories from other ranks in the same style
-        for (const rank of ranks) {
-          if (rank.id === selectedRankId) continue;
-          try {
-            const otherRes = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
-            if (!otherRes.ok) continue;
-            const otherData = await otherRes.json();
+        // Pull custom categories from other ranks in the same style (parallel fetch)
+        const otherRanks = ranks.filter(r => r.id !== selectedRankId);
+        if (otherRanks.length > 0) {
+          const otherResults = await Promise.all(
+            otherRanks.map(r => fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${r.id}`).then(res => res.ok ? res.json() : null).catch(() => null))
+          );
+          const missingCats: { name: string; sortOrder: number }[] = [];
+          for (const otherData of otherResults) {
+            if (!otherData) continue;
             const otherTests: RankTest[] = otherData.rankTests || otherData.tests || [];
             for (const ot of otherTests) {
               for (const oc of ot.categories) {
                 if (!existingCatNames.has(oc.name)) {
-                  await fetch(`/api/rank-tests/${testId}/categories`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: oc.name, sortOrder: oc.sortOrder }),
-                  });
+                  missingCats.push({ name: oc.name, sortOrder: oc.sortOrder });
                   existingCatNames.add(oc.name);
-                  added = true;
                 }
               }
             }
-          } catch { /* skip */ }
+          }
+          if (missingCats.length > 0) {
+            await Promise.all(missingCats.map(cat =>
+              fetch(`/api/rank-tests/${testId}/categories`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: cat.name, sortOrder: cat.sortOrder }),
+              })
+            ));
+            added = true;
+          }
         }
 
         if (added) {
@@ -912,36 +919,44 @@ export default function CurriculumV2Page() {
         }).catch(() => undefined);
       }
 
-      // Load rank tests for ALL ranks in this style
+      // Load rank tests for ALL ranks in this style (parallel fetch)
+      const rankTestResults = await Promise.all(
+        allRanks.map(rank =>
+          fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`)
+            .then(r => r.ok ? r.json() : null)
+            .catch(() => null)
+            .then(data => ({ rank, tests: (data?.rankTests || data?.tests || []) as PdfRankTest[] }))
+        )
+      );
+
+      // Generate PDFs and save (parallel saves)
       let successCount = 0;
       const errors: string[] = [];
+      const savePromises: Promise<void>[] = [];
 
-      for (const rank of allRanks) {
-        const testRes = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
-        if (!testRes.ok) continue;
-        const testData = await testRes.json();
-        const tests: PdfRankTest[] = testData.rankTests || testData.tests || [];
-
+      for (const { rank, tests } of rankTestResults) {
         const hasCurriculum = tests.length > 0 && tests.some(t => t.categories.some(c => c.items.length > 0));
+        if (!hasCurriculum) continue;
 
-        if (hasCurriculum) {
-          // Find belt color
-          const configRank = beltConfig.ranks?.find(r => r.id === rank.id)
-            || beltConfig.ranks?.find(r => r.name.toLowerCase() === rank.name.toLowerCase());
-          const beltColor = (configRank?.layers as Record<string, unknown>)?.fabricColor as string || "#ffffff";
+        const configRank = beltConfig.ranks?.find(r => r.id === rank.id)
+          || beltConfig.ranks?.find(r => r.name.toLowerCase() === rank.name.toLowerCase());
+        const beltColor = (configRank?.layers as Record<string, unknown>)?.fabricColor as string || "#ffffff";
 
-          const pdfDataUrl = generateCurriculumPdf(style.name, rank.name, tests, beltColor, gymSettings, logoImg, disclaimer);
+        const pdfDataUrl = generateCurriculumPdf(style.name, rank.name, tests, beltColor, gymSettings, logoImg, disclaimer);
 
-          const patchRes = await fetch(`/api/ranks/${rank.id}`, {
+        savePromises.push(
+          fetch(`/api/ranks/${rank.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ pdfDocument: pdfDataUrl }),
-          });
-
-          if (patchRes.ok) successCount++;
-          else errors.push(`${rank.name}: ${patchRes.status}`);
-        }
+          }).then(res => {
+            if (res.ok) successCount++;
+            else errors.push(`${rank.name}: ${res.status}`);
+          })
+        );
       }
+
+      await Promise.all(savePromises);
 
       if (errors.length > 0) {
         alert(`Published ${successCount}/${successCount + errors.length} PDFs. Failed: ${errors.join(", ")}`);
