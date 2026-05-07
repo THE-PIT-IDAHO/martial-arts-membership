@@ -604,70 +604,40 @@ export function generateCurriculumPdf(
     // Place sections into columns using shortest-column-first (masonry)
     const colYs: number[] = Array(numCols).fill(y);
 
-    // Track planned placements for header alignment
+    // Track planned placements
     type Placement = { sec: SectionInfo; colIdx: number; startY: number };
     const placements: Placement[] = [];
 
-    // Layout: first row forced into columns 0,1,2. Subsequent rows align headers
-    // and place sections into shortest column first.
-    let rowStartIdx = 0;
-
+    // Layout: first numCols sections forced left-to-right, then shortest column first
     for (let si = 0; si < sections.length; si++) {
       const sec = sections[si];
+      let colIdx: number;
 
       if (si < numCols) {
-        // First row: force into columns 0, 1, 2
-        const colIdx = si;
-
-        if (colYs[colIdx] + sec.height > disclaimerY && colYs[colIdx] > y) {
-          y = newPage();
-          for (let c = 0; c < numCols; c++) colYs[c] = y;
-        }
-
-        placements.push({ sec, colIdx, startY: colYs[colIdx] });
-        colYs[colIdx] += sec.height;
+        // First row: force into columns 0, 1, 2 at same Y
+        colIdx = si;
       } else {
-        // Subsequent sections: at the start of each new row of numCols, align headers
-        const posInRow = (si - rowStartIdx) % numCols;
-        if (si === numCols || posInRow === 0) {
-          // Align all columns to the tallest before starting this row
-          const maxY = Math.max(...colYs);
-          for (let c = 0; c < numCols; c++) colYs[c] = maxY;
-          rowStartIdx = si;
-        }
-
-        // Place in shortest column
-        let shortestCol = 0;
+        // Find shortest column
+        colIdx = 0;
         for (let c = 1; c < numCols; c++) {
-          if (colYs[c] < colYs[shortestCol]) shortestCol = c;
+          if (colYs[c] < colYs[colIdx]) colIdx = c;
         }
-
-        // Check if section fits on current page
-        if (colYs[shortestCol] + sec.height > disclaimerY && colYs[shortestCol] > y) {
-          y = newPage();
-          for (let c = 0; c < numCols; c++) colYs[c] = y;
-          shortestCol = 0;
-        }
-
-        placements.push({ sec, colIdx: shortestCol, startY: colYs[shortestCol] });
-        colYs[shortestCol] += sec.height;
       }
+
+      // Check if section fits on current page
+      if (colYs[colIdx] + sec.height > disclaimerY && colYs[colIdx] > y) {
+        y = newPage();
+        for (let c = 0; c < numCols; c++) colYs[c] = y;
+        colIdx = 0; // restart from left on new page
+      }
+
+      placements.push({ sec, colIdx, startY: colYs[colIdx] });
+      colYs[colIdx] += sec.height;
     }
 
     // Render all placed sections
     for (const { sec, colIdx, startY } of placements) {
       const colX = margin + colIdx * colWidth;
-
-      // Fill gap before section header with empty tinted rows (for alignment padding)
-      const prevPlacement = placements.filter(p => p.colIdx === colIdx && p.startY + p.sec.height <= startY).pop();
-      const gapStart = prevPlacement ? prevPlacement.startY + prevPlacement.sec.height : y;
-      if (startY > gapStart) {
-        let gapY = gapStart;
-        while (gapY + rowH <= startY) {
-          drawCell(colX, gapY, colWidth, rowH, getTintAtY(gapY));
-          gapY += rowH;
-        }
-      }
 
       // Header
       drawCell(colX, startY, colWidth, sectionHeaderH, rgb);
