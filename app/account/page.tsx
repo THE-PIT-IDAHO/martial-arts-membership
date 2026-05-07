@@ -48,6 +48,7 @@ const ALL_PERMISSIONS = [
   { key: "curriculum", label: "Curriculum" },
   { key: "promotions", label: "Promotions" },
   { key: "pos", label: "POS (Point of Sale)" },
+  { key: "billing", label: "Billing & Invoices" },
   { key: "waivers", label: "Waivers" },
   { key: "reports", label: "Reports" },
   { key: "tasks", label: "Tasks" },

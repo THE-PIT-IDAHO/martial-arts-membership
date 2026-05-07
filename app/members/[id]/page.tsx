@@ -597,6 +597,10 @@ export default function MemberProfilePage() {
   const [paymentMethods, setPaymentMethods] = useState<{ id: string; brand: string; last4: string; expMonth?: number; expYear?: number }[]>([]);
   const [defaultPaymentId, setDefaultPaymentId] = useState<string | null>(null);
   const [addingCard, setAddingCard] = useState(false);
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [cardModalData, setCardModalData] = useState<{ clientSecret: string; publishableKey: string; memberName: string; memberEmail: string } | null>(null);
+  const [cardSaving, setCardSaving] = useState(false);
+  const [cardError, setCardError] = useState("");
   const [removingCardId, setRemovingCardId] = useState<string | null>(null);
   const [settingDefaultCardId, setSettingDefaultCardId] = useState<string | null>(null);
   const [cardSetupSuccess, setCardSetupSuccess] = useState(false);
@@ -727,15 +731,19 @@ export default function MemberProfilePage() {
   const handleAddCard = async () => {
     if (!memberId) return;
     setAddingCard(true);
+    setCardError("");
     try {
       const res = await fetch(`/api/members/${memberId}/payment-methods`, { method: "POST" });
       const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
+      if (data.clientSecret && data.publishableKey) {
+        setCardModalData(data);
+        setShowCardModal(true);
       } else {
-        setAddingCard(false);
+        setCardError(data.error || "Failed to initialize card setup");
       }
     } catch {
+      setCardError("Failed to initialize card setup");
+    } finally {
       setAddingCard(false);
     }
   };
@@ -4710,7 +4718,7 @@ export default function MemberProfilePage() {
                     {addingCard ? (
                       <>
                         <span className="w-3 h-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                        Redirecting...
+                        Loading...
                       </>
                     ) : (
                       <>Add Card</>
@@ -5864,6 +5872,128 @@ export default function MemberProfilePage() {
       )}
 
       </div>
+
+      {/* Stripe Add Card Modal */}
+      {showCardModal && cardModalData && (
+        <StripeCardModal
+          clientSecret={cardModalData.clientSecret}
+          publishableKey={cardModalData.publishableKey}
+          memberName={cardModalData.memberName}
+          memberEmail={cardModalData.memberEmail}
+          memberId={memberId}
+          onClose={() => { setShowCardModal(false); setCardModalData(null); }}
+          onSuccess={() => {
+            setShowCardModal(false);
+            setCardModalData(null);
+            setCardSetupSuccess(true);
+            loadPaymentMethods();
+            setTimeout(() => setCardSetupSuccess(false), 4000);
+          }}
+        />
+      )}
     </AppLayout>
+  );
+}
+
+// Stripe Card Modal component — loads Stripe Elements inline
+function StripeCardModal({ clientSecret, publishableKey, memberName, memberEmail, memberId, onClose, onSuccess }: {
+  clientSecret: string; publishableKey: string; memberName: string; memberEmail: string; memberId: string;
+  onClose: () => void; onSuccess: () => void;
+}) {
+  const [stripe, setStripe] = useState<import("@stripe/stripe-js").Stripe | null>(null);
+  const [elements, setElements] = useState<import("@stripe/stripe-js").StripeElements | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    import("@stripe/stripe-js").then(({ loadStripe }) => {
+      loadStripe(publishableKey).then(s => {
+        if (!mounted || !s) return;
+        setStripe(s);
+        const el = s.elements({ clientSecret });
+        setElements(el);
+        const card = el.create("card", {
+          style: {
+            base: { fontSize: "14px", color: "#1f2937", "::placeholder": { color: "#9ca3af" } },
+            invalid: { color: "#ef4444" },
+          },
+          hidePostalCode: false,
+        });
+        if (cardRef.current) card.mount(cardRef.current);
+      });
+    });
+    return () => { mounted = false; };
+  }, [publishableKey, clientSecret]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setSaving(true);
+    setError("");
+
+    const { error: confirmError, setupIntent } = await stripe.confirmCardSetup(clientSecret, {
+      payment_method: {
+        card: elements.getElement("card")!,
+        billing_details: {
+          name: memberName,
+          email: memberEmail,
+        },
+      },
+    });
+
+    if (confirmError) {
+      setError(confirmError.message || "Card setup failed");
+      setSaving(false);
+      return;
+    }
+
+    if (setupIntent?.payment_method) {
+      // Save as default payment method
+      const pmId = typeof setupIntent.payment_method === "string" ? setupIntent.payment_method : setupIntent.payment_method.id;
+      await fetch(`/api/members/${memberId}/payment-methods/${pmId}/default`, { method: "PUT" });
+    }
+
+    setSaving(false);
+    onSuccess();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-lg bg-white shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+          <h2 className="text-sm font-bold text-gray-900">Add Card</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Name on Card</label>
+            <input type="text" defaultValue={memberName} readOnly className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-gray-50 text-gray-600" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+            <input type="text" defaultValue={memberEmail} readOnly className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-gray-50 text-gray-600" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Card Details</label>
+            <div ref={cardRef} className="rounded-md border border-gray-300 px-3 py-2.5" />
+          </div>
+          {error && (
+            <p className="text-xs text-red-600">{error}</p>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving || !stripe} className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+              {saving ? "Saving..." : "Save Card"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }

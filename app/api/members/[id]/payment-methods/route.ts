@@ -52,7 +52,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   }
 }
 
-// POST /api/members/[id]/payment-methods — create Stripe Setup session to add a card
+// POST /api/members/[id]/payment-methods — create Stripe SetupIntent for embedded card form
 export async function POST(_req: NextRequest, { params }: Params) {
   const { id: memberId } = await params;
   const clientId = await getClientId(_req);
@@ -78,6 +78,15 @@ export async function POST(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
   }
 
+  // Get publishable key from settings
+  const pkSetting = await prisma.settings.findUnique({
+    where: { key_clientId: { key: "payment_stripe_publishable_key", clientId } },
+  });
+  const publishableKey = pkSetting?.value;
+  if (!publishableKey) {
+    return NextResponse.json({ error: "Stripe publishable key not configured" }, { status: 400 });
+  }
+
   try {
     // Get or create Stripe customer
     let stripeCustomerId = member.stripeCustomerId;
@@ -94,20 +103,21 @@ export async function POST(_req: NextRequest, { params }: Params) {
       });
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-
-    const session = await stripeClient.checkout.sessions.create({
+    // Create SetupIntent for embedded card form
+    const setupIntent = await stripeClient.setupIntents.create({
       customer: stripeCustomerId,
-      mode: "setup",
       payment_method_types: ["card"],
-      success_url: `${baseUrl}/members/${memberId}?setup=success`,
-      cancel_url: `${baseUrl}/members/${memberId}`,
       metadata: { memberId: member.id },
     });
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({
+      clientSecret: setupIntent.client_secret,
+      publishableKey,
+      memberName: `${member.firstName} ${member.lastName}`,
+      memberEmail: member.email || "",
+    });
   } catch (error) {
-    console.error("Error creating setup session:", error);
-    return NextResponse.json({ error: "Failed to create setup session" }, { status: 500 });
+    console.error("Error creating setup intent:", error);
+    return NextResponse.json({ error: "Failed to create setup intent" }, { status: 500 });
   }
 }
