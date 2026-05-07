@@ -1071,25 +1071,28 @@ export default function KioskPage() {
 
 // QR Scanner component using html5-qrcode
 function QrScanner({ onScan }: { onScan: (text: string) => void }) {
-  const scannerRef = useRef<HTMLDivElement>(null);
+  const [qrId] = useState(() => `qr-reader-${Date.now()}`);
   const scannerInstanceRef = useRef<unknown>(null);
   const lastScanRef = useRef("");
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
-
-    async function startScanner() {
+    // Small delay to ensure DOM element is rendered
+    const timer = setTimeout(async () => {
       try {
         const { Html5Qrcode } = await import("html5-qrcode");
-        if (!mounted || !scannerRef.current) return;
+        if (!mounted) return;
+        const el = document.getElementById(qrId);
+        if (!el) return;
 
-        const scanner = new Html5Qrcode("qr-reader");
+        const scanner = new Html5Qrcode(qrId);
         scannerInstanceRef.current = scanner;
 
         await scanner.start(
           { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
+          { fps: 10, qrbox: { width: 150, height: 150 } },
           (decodedText) => {
             if (decodedText === lastScanRef.current) return;
             lastScanRef.current = decodedText;
@@ -1098,39 +1101,42 @@ function QrScanner({ onScan }: { onScan: (text: string) => void }) {
           },
           () => {}
         );
+        if (mounted) setReady(true);
       } catch (err) {
         console.error("QR scanner error:", err);
-        if (mounted) setError("Camera not available. Please allow camera access or use the Search option.");
+        if (mounted) setError("Camera not available. Allow camera access and try again.");
       }
-    }
-
-    startScanner();
+    }, 100);
 
     return () => {
       mounted = false;
-      const inst = scannerInstanceRef.current as { stop?: () => Promise<void>; clear?: () => void } | null;
-      if (inst) {
-        inst.stop?.().then(() => inst.clear?.()).catch(() => {});
-      }
+      clearTimeout(timer);
+      try {
+        const inst = scannerInstanceRef.current as { stop?: () => Promise<void>; clear?: () => void } | null;
+        if (inst?.stop) {
+          inst.stop().then(() => { try { inst.clear?.(); } catch {} }).catch(() => {});
+        }
+      } catch {}
+      scannerInstanceRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [qrId]);
 
   if (error) {
     return (
-      <div className="rounded-2xl border-2 border-gray-200 p-6 text-center">
-        <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="rounded-2xl border-2 border-gray-200 p-4 text-center">
+        <svg className="w-8 h-8 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
         </svg>
-        <p className="text-sm text-gray-500">{error}</p>
+        <p className="text-xs text-gray-500">{error}</p>
       </div>
     );
   }
 
   return (
     <div className="rounded-2xl overflow-hidden border-2 border-gray-200">
-      <div id="qr-reader" ref={scannerRef} className="w-full" />
-      <p className="text-center text-sm text-gray-500 py-2">Point camera at QR code</p>
+      <div id={qrId} className="w-full" />
+      {!ready && <p className="text-center text-xs text-gray-400 py-4">Starting camera...</p>}
     </div>
   );
 }
