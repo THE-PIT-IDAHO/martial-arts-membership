@@ -3,6 +3,23 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { AppLayout } from "@/components/app-layout";
 import { generateCurriculumPdf, type GymSettings, type PdfRankTest } from "@/lib/curriculum-pdf";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 type Style = { id: string; name: string; ranks: { id: string; name: string; order: number }[] };
 type RankTest = { id: string; name: string; rankId: string; categories: Category[] };
@@ -43,6 +60,27 @@ const ITEM_TYPES = [
   { value: "breaking", label: "Board Breaking" },
   { value: "other", label: "Other" },
 ];
+
+function SortableCategoryItem({ id, name, isActive }: { id: string; name: string; isActive: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm cursor-grab active:cursor-grabbing ${
+        isActive ? "border-primary bg-primary/10 text-primary font-semibold" : "border-gray-200 bg-white text-gray-700"
+      }`}
+      {...attributes}
+      {...listeners}
+    >
+      <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+      </svg>
+      <span>{name}</span>
+    </div>
+  );
+}
 
 function RichInput({ defaultValue, onSave, className, onEditClick }: { defaultValue: string; onSave: (html: string) => void; className: string; onEditClick: () => void }) {
   const divRef = useRef<HTMLDivElement>(null);
@@ -322,6 +360,9 @@ export default function CurriculumV2Page() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [popupCell, setPopupCell] = useState<{ rowIdx: number; field: keyof Row; value: string } | null>(null);
   const [showAddCategory, setShowAddCategory] = useState(false);
+  const [showReorderModal, setShowReorderModal] = useState(false);
+  const [reorderList, setReorderList] = useState<{ id: string; name: string }[]>([]);
+  const [savingReorder, setSavingReorder] = useState(false);
   const tableRef = useRef<HTMLTableElement>(null);
   const [disclaimer, setDisclaimer] = useState("Coach has final say for promotion and not everyone will promote every ceremony. Promotion depends on the following:\nattendance, skill recollection, good behavior, effort and fitness");
   const [disclaimerSaving, setDisclaimerSaving] = useState(false);
@@ -855,6 +896,69 @@ export default function CurriculumV2Page() {
     } catch { alert("Failed to create category"); }
   }
 
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  function openReorderModal() {
+    // Build ordered list from allCategories sorted by their current sortOrder
+    const sorted = [...allCategories].sort((a, b) => {
+      const getOrder = (catId: string) => {
+        for (const test of rankTests) {
+          const c = test.categories.find(tc => tc.id === catId);
+          if (c) return c.sortOrder;
+        }
+        return Infinity;
+      };
+      return getOrder(a.id) - getOrder(b.id);
+    });
+    setReorderList(sorted.map(c => ({ id: c.id, name: c.name })));
+    setShowReorderModal(true);
+  }
+
+  function handleReorderDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setReorderList(prev => {
+      const oldIndex = prev.findIndex(c => c.id === active.id);
+      const newIndex = prev.findIndex(c => c.id === over.id);
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }
+
+  async function saveReorder() {
+    setSavingReorder(true);
+    const testId = getTestId();
+    if (!testId) { setSavingReorder(false); return; }
+    try {
+      await Promise.all(reorderList.map((cat, i) =>
+        fetch(`/api/rank-tests/${testId}/categories`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ categoryId: cat.id, sortOrder: i }),
+        })
+      ));
+      // Reload
+      const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+      if (res.ok) {
+        const d = await res.json();
+        const tests = d.rankTests || d.tests || [];
+        setRankTests(tests);
+        const cats: { id: string; name: string; testId: string }[] = [];
+        for (const test of tests) {
+          for (const cat of test.categories.sort((a: Category, b: Category) => a.sortOrder - b.sortOrder)) {
+            cats.push({ id: cat.id, name: cat.name, testId: test.id });
+          }
+        }
+        setAllCategories(cats);
+        buildRowsForCategory(tests, selectedCategoryId);
+      }
+      setShowReorderModal(false);
+    } catch { alert("Failed to save order"); }
+    finally { setSavingReorder(false); }
+  }
+
   async function deleteCustomCategory(categoryId: string, categoryName: string) {
     if (!confirm(`Delete "${categoryName}" from all ranks in this style?`)) return;
     try {
@@ -1078,6 +1182,12 @@ export default function CurriculumV2Page() {
                   Delete Category
                 </button>
               )}
+              <button
+                onClick={openReorderModal}
+                className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100"
+              >
+                Reorder
+              </button>
             </div>
           </div>
 
@@ -1314,6 +1424,38 @@ export default function CurriculumV2Page() {
           );
         })()}
       </div>
+
+      {/* Reorder Sections Modal */}
+      {showReorderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowReorderModal(false)}>
+          <div className="w-full max-w-sm rounded-lg bg-white shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+              <h2 className="text-sm font-bold text-gray-900">Reorder Sections</h2>
+              <button onClick={() => setShowReorderModal(false)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="text-xs text-gray-500 mb-3">Drag to reorder. This only affects the current rank.</p>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleReorderDragEnd}>
+                <SortableContext items={reorderList.map(c => c.id)} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-1">
+                    {reorderList.map(cat => (
+                      <SortableCategoryItem key={cat.id} id={cat.id} name={cat.name} isActive={cat.id === selectedCategoryId} />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
+            <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
+              <button onClick={() => setShowReorderModal(false)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button onClick={saveReorder} disabled={savingReorder} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                {savingReorder ? "Saving..." : "Save Order"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PDF Disclaimer (per style) */}
       {selectedStyleId && (
