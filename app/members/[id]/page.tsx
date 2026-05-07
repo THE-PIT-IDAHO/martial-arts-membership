@@ -1369,29 +1369,26 @@ export default function MemberProfilePage() {
   }, [styles, availableStyles, loadMemberCurriculum]);
 
   // Load rank curriculum PDFs for member's active styles
+  // Recompute whenever styles change (rank promotion, edit, etc.)
+  const stylesKey = styles.map(s => `${s.name}:${s.rank}:${s.active}`).join("|");
   useEffect(() => {
-    if (styles.length === 0 || availableStyles.length === 0) return;
-    async function loadRankPdfs() {
-      const pdfs: Array<{ rankName: string; styleName: string; url: string }> = [];
-      for (const style of styles) {
-        if (style.active === false || !style.rank || !style.name) continue;
-        const styleData = availableStyles.find(s => s.name.toLowerCase() === style.name.toLowerCase());
-        if (!styleData) continue;
-        // Find current rank order
-        const currentRank = styleData.ranks?.find((r: { name: string }) => r.name === style.rank);
-        if (!currentRank) continue;
-        // Fetch all ranks with PDFs for this style
-        for (const rank of styleData.ranks || []) {
-          if (rank.order > currentRank.order) continue; // only up to current rank
-          if (rank.pdfDocument) {
-            pdfs.push({ rankName: rank.name, styleName: style.name, url: rank.pdfDocument });
-          }
+    if (styles.length === 0 || availableStyles.length === 0) { setRankPdfs([]); return; }
+    const pdfs: Array<{ rankName: string; styleName: string; url: string }> = [];
+    for (const style of styles) {
+      if (style.active === false || !style.rank || !style.name) continue;
+      const styleData = availableStyles.find(s => s.name.toLowerCase() === style.name.toLowerCase());
+      if (!styleData) continue;
+      const currentRank = styleData.ranks?.find((r: { name: string }) => r.name === style.rank);
+      if (!currentRank) continue;
+      for (const rank of styleData.ranks || []) {
+        if (rank.order > currentRank.order) continue;
+        if (rank.pdfDocument) {
+          pdfs.push({ rankName: rank.name, styleName: style.name, url: rank.pdfDocument });
         }
       }
-      setRankPdfs(pdfs);
     }
-    loadRankPdfs();
-  }, [styles, availableStyles]);
+    setRankPdfs(pdfs);
+  }, [stylesKey, availableStyles]);
 
   async function copyRankPDFsToStyleDocuments(styles: StyleEntry[], memberData: Member) {
     if (!memberId) return;
