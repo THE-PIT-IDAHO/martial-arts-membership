@@ -793,8 +793,8 @@ export default function KioskPage() {
                 </div>
               )}
 
-              {/* Search Input + Results — always visible */}
-              {(
+              {/* Search Input + Results */}
+              {!scanMode && (
                 <>
                   <div className="relative mb-6">
                     <input
@@ -1079,6 +1079,7 @@ function QrScanner({ onScan }: { onScan: (text: string) => void }) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const scannerInstanceRef = useRef<unknown>(null);
   const lastScanRef = useRef("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -1095,17 +1096,16 @@ function QrScanner({ onScan }: { onScan: (text: string) => void }) {
           { facingMode: "environment" },
           { fps: 10, qrbox: { width: 250, height: 250 } },
           (decodedText) => {
-            // Debounce: don't fire the same code repeatedly
             if (decodedText === lastScanRef.current) return;
             lastScanRef.current = decodedText;
             onScan(decodedText);
-            // Reset after 3 seconds so the same code can be scanned again
             setTimeout(() => { lastScanRef.current = ""; }, 3000);
           },
-          () => {} // ignore errors (no QR found in frame)
+          () => {}
         );
       } catch (err) {
         console.error("QR scanner error:", err);
+        if (mounted) setError("Camera not available. Please allow camera access or use the Search option.");
       }
     }
 
@@ -1120,6 +1120,17 @@ function QrScanner({ onScan }: { onScan: (text: string) => void }) {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border-2 border-gray-200 p-6 text-center">
+        <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+        <p className="text-sm text-gray-500">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl overflow-hidden border-2 border-gray-200">
