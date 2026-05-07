@@ -105,7 +105,8 @@ export function generateCurriculumPdf(
   const margin = 8;
   const cw = pw - margin * 2;
   const footerY = ph - 12;
-  const disclaimerY = footerY - 6;
+  const disclaimerH = disclaimer ? 12 : 0; // reserve space for 2-line disclaimer
+  const disclaimerY = footerY - disclaimerH;
   const rowH = 5.5;
 
   // Gather all categories sorted
@@ -747,9 +748,9 @@ export function generateCurriculumPdf(
     pdf.setFontSize(8);
     pdf.setFont("helvetica", "italic");
     pdf.setTextColor(80, 80, 80);
-    const disclaimerStartY = footerY - (lines.length * 3.5) - 2;
+    const startY = disclaimerY + 4;
     for (let i = 0; i < lines.length; i++) {
-      pdf.text(lines[i].trim(), pw / 2, disclaimerStartY + i * 3.5, { align: "center" });
+      pdf.text(lines[i].trim(), pw / 2, startY + i * 3.5, { align: "center" });
     }
     pdf.setTextColor(0, 0, 0);
   }
