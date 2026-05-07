@@ -767,35 +767,10 @@ export default function KioskPage() {
                 <p className="text-gray-500">Type your name, member number, or scan QR</p>
               </div>
 
-              {/* Mode Toggle */}
-              <div className="flex gap-2 mb-4">
-                <button
-                  onClick={() => setScanMode(false)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${!scanMode ? "bg-primary text-white" : "bg-gray-100 text-gray-600"}`}
-                >
-                  Search
-                </button>
-                <button
-                  onClick={() => setScanMode(true)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2 ${scanMode ? "bg-primary text-white" : "bg-gray-100 text-gray-600"}`}
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" />
-                  </svg>
-                  Scan QR
-                </button>
-              </div>
-
-              {/* QR Scanner */}
-              {scanMode && (
-                <div className="mb-4">
-                  <QrScanner onScan={handleQrScan} />
-                </div>
-              )}
-
-              {/* Search Input + Results */}
-              {!scanMode && (
-                <>
+              {/* Search + QR Scanner side by side */}
+              <div className="flex gap-3 mb-4 items-start">
+                <div className="flex-1">
+                  <p className="text-sm text-gray-500 mb-2">Find your name or scan QR code</p>
                   <div className="relative mb-6">
                     <input
                       type="text"
@@ -868,8 +843,12 @@ export default function KioskPage() {
                       <p className="text-sm">Try a different search</p>
                     </div>
                   )}
-                </>
-              )}
+                </div>
+                {/* QR Scanner - small window */}
+                <div className="w-48 shrink-0">
+                  <QrScanner onScan={handleQrScan} />
+                </div>
+              </div>
 
               {/* Cancel Button */}
               <button
