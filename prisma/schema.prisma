@@ -379,7 +379,7 @@ model Style {
   beltConfig           String?
   gradingDates         String?
   testNamingConvention String   @default("INTO_RANK") // "INTO_RANK" = test named for target rank, "FROM_RANK" = test named for current rank
-  curriculumDisclaimer String?
+  curriculumDisclaimer String?  @default("Coach has final say for promotion and not everyone will promote every ceremony. Promotion depends on the following:\nattendance, skill recollection, good behavior, effort and fitness")
   clientId             String   @default("default-client")
   ranks                Rank[]
 }
