@@ -188,37 +188,25 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
           <button onClick={onDeleteCategory} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Delete Section</button>
         </div>
       </div>
-      <table className="w-full text-sm" style={{ tableLayout: "fixed" }}>
-        <colgroup>
-          <col />
-          <col style={{ width: "96px" }} />
-          <col style={{ width: "56px" }} />
-          <col style={{ width: "56px" }} />
-          <col style={{ width: "64px" }} />
-          <col style={{ width: "56px" }} />
-          <col style={{ width: "80px" }} />
-          <col style={{ width: "80px" }} />
-          <col style={{ width: "112px" }} />
-          <col style={{ width: "64px" }} />
-        </colgroup>
+      <table className="w-full text-sm">
         <thead className="bg-gray-100 border-b border-gray-300">
           <tr>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Item Information</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Video</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Reps</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Sets</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Min/Rd</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Rnds</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Duration</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Distance</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Time Limit</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500"></th>
+            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500" style={{ width: "100%" }}>Item Information</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Min/Rd</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Rnds</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Duration</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Distance</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-28">Time Limit</th>
+            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16"></th>
           </tr>
         </thead>
         <tbody>
           {items.map(item => (
             <tr key={item.id} className="border-t border-gray-200 hover:bg-gray-200">
-              <td className="px-2 py-1">
+              <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}>
                 <RichInput
                   defaultValue={item.description || item.name}
                   onSave={html => { updateField(item.id, "description", html || null); updateField(item.id, "name", html?.replace(/<[^>]*>/g, "").split("\n")[0].substring(0, 100).trim() || ""); }}
@@ -250,7 +238,7 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
           ))}
           {/* Add new row */}
           <tr className="border-t border-gray-200 bg-gray-100">
-            <td className="px-2 py-1"><input type="text" value={newItemDesc} onChange={e => setNewItemDesc(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addItem(); }} onPaste={handleAddRowPaste} placeholder="Type to add..." className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+            <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}><input type="text" value={newItemDesc} onChange={e => setNewItemDesc(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addItem(); }} onPaste={handleAddRowPaste} placeholder="Type to add..." className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
             <td className="px-2 py-1"><input type="text" value="" onChange={() => {}} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
             <td className="px-2 py-1"><input type="number" min={0} value={newItemReps} onChange={e => setNewItemReps(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
             <td className="px-2 py-1"><input type="number" min={0} value={newItemSets} onChange={e => setNewItemSets(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
@@ -1065,37 +1053,25 @@ export default function CurriculumV2Page() {
                 <button onClick={() => selectedCategory && deleteCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Delete Section</button>
               </div>
             </div>
-            <table ref={tableRef} className="w-full text-sm" style={{ tableLayout: "fixed" }}>
-              <colgroup>
-                <col />
-                <col style={{ width: "96px" }} />
-                <col style={{ width: "56px" }} />
-                <col style={{ width: "56px" }} />
-                <col style={{ width: "64px" }} />
-                <col style={{ width: "56px" }} />
-                <col style={{ width: "80px" }} />
-                <col style={{ width: "80px" }} />
-                <col style={{ width: "112px" }} />
-                <col style={{ width: "64px" }} />
-              </colgroup>
+            <table ref={tableRef} className="w-full text-sm">
               <thead className="bg-gray-100 border-b border-gray-300">
                 <tr>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Item Information</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Video</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Reps</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Sets</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Min/Rd</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Rnds</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Duration</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Distance</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500">Time Limit</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500"></th>
+                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500" style={{ width: "100%" }}>Item Information</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Min/Rd</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Rnds</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Duration</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Distance</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-28">Time Limit</th>
+                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16"></th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, idx) => (
                   <tr key={row.itemId} className={`border-t border-gray-200 hover:bg-gray-200 ${row.isNew && !row.description ? "bg-gray-100" : ""}`}>
-                    <td className="px-2 py-1">
+                    <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}>
                       <div className="flex items-center gap-1">
                         <div
                           contentEditable
