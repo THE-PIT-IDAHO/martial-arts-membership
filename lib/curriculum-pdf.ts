@@ -608,6 +608,23 @@ export function generateCurriculumPdf(
       sectionRows[r].rowCount = Math.max(sectionRows[r].rowCount, 1);
     }
 
+    // Verify total height won't overlap disclaimer — trim last section if needed
+    let totalH = 0;
+    for (const sr of sectionRows) totalH += sectionHeaderH + sr.rowCount * rowH;
+    while (y + totalH > disclaimerY) {
+      // Find the last section with extra rows (more than maxItems) and trim one
+      let trimmed = false;
+      for (let r = sectionRows.length - 1; r >= 0; r--) {
+        if (sectionRows[r].rowCount > sectionRows[r].maxItems) {
+          sectionRows[r].rowCount--;
+          totalH -= rowH;
+          trimmed = true;
+          break;
+        }
+      }
+      if (!trimmed) break; // all sections at minimum, can't trim more
+    }
+
     for (let r = 0; r < sectionRows.length; r++) {
       const sr = sectionRows[r];
       const colWidth = cw / sr.numCols;
