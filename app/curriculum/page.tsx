@@ -44,21 +44,36 @@ const ITEM_TYPES = [
   { value: "other", label: "Other" },
 ];
 
-function OverflowInput({ defaultValue, onBlur, className, onEditClick }: { defaultValue: string; onBlur: (e: React.FocusEvent<HTMLInputElement>) => void; className: string; onEditClick: () => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+function RichInput({ defaultValue, onSave, className, onEditClick }: { defaultValue: string; onSave: (html: string) => void; className: string; onEditClick: () => void }) {
+  const divRef = useRef<HTMLDivElement>(null);
   const [overflows, setOverflows] = useState(false);
 
   useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    // Check if text has HTML/newlines (always overflows single line) or if scrollWidth exceeds visible width
     const hasRichContent = /<br|<div|<b>|<i>|<u>|\n/.test(defaultValue);
-    setOverflows(hasRichContent || el.scrollWidth > el.clientWidth + 2);
+    const plainLen = defaultValue.replace(/<[^>]*>/g, "").length;
+    setOverflows(hasRichContent || plainLen > 40);
   }, [defaultValue]);
 
   return (
     <div className="flex items-center gap-1">
-      <input ref={inputRef} type="text" defaultValue={defaultValue.replace(/<[^>]*>/g, "").substring(0, 80)} onBlur={onBlur} className={className} />
+      <div
+        ref={divRef}
+        contentEditable
+        suppressContentEditableWarning
+        dangerouslySetInnerHTML={{ __html: defaultValue.replace(/\n/g, "<br>") }}
+        onBlur={() => {
+          const el = divRef.current;
+          if (el) onSave(el.innerHTML);
+        }}
+        onKeyDown={e => {
+          if (e.key === "b" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.execCommand("bold"); }
+          if (e.key === "i" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.execCommand("italic"); }
+          if (e.key === "u" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.execCommand("underline"); }
+          if (e.key === "Enter") { e.preventDefault(); /* single line */ }
+        }}
+        className={`${className} overflow-hidden whitespace-nowrap`}
+        style={{ minHeight: "1.5em", maxHeight: "1.5em" }}
+      />
       {overflows && (
         <button type="button" onClick={onEditClick} className="shrink-0 rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark">Edit</button>
       )}
@@ -192,9 +207,9 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
           {items.map(item => (
             <tr key={item.id} className="border-t border-gray-200 hover:bg-gray-200">
               <td className="px-2 py-1">
-                <OverflowInput
+                <RichInput
                   defaultValue={item.description || item.name}
-                  onBlur={e => { updateField(item.id, "description", e.target.value || null); updateField(item.id, "name", e.target.value?.replace(/<[^>]*>/g, "").split("\n")[0].substring(0, 100).trim() || ""); }}
+                  onSave={html => { updateField(item.id, "description", html || null); updateField(item.id, "name", html?.replace(/<[^>]*>/g, "").split("\n")[0].substring(0, 100).trim() || ""); }}
                   className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white"
                   onEditClick={() => setEditPopup({ itemId: item.id, value: item.description || "" })}
                 />
@@ -1058,22 +1073,27 @@ export default function CurriculumV2Page() {
                   <tr key={row.itemId} className={`border-t border-gray-200 hover:bg-gray-200 ${row.isNew && !row.description ? "bg-gray-100" : ""}`}>
                     <td className="px-2 py-1">
                       <div className="flex items-center gap-1">
-                        <input
-                          type="text"
+                        <div
+                          contentEditable
+                          suppressContentEditableWarning
                           data-row={idx} data-col={0}
-                          value={row.description ? row.description.replace(/<[^>]*>/g, "").substring(0, 80) : ""}
-                          onChange={e => updateRow(idx, "description", e.target.value)}
+                          dangerouslySetInnerHTML={{ __html: row.description || "" }}
+                          onBlur={e => {
+                            const html = (e.target as HTMLDivElement).innerHTML;
+                            const clean = html === "<br>" ? "" : html;
+                            if (clean !== row.description) {
+                              updateRow(idx, "description", clean);
+                            }
+                          }}
                           onPaste={e => {
                             const text = e.clipboardData.getData("text");
                             const html = e.clipboardData.getData("text/html");
                             if (!text) return;
 
-                            // Check if HTML has rich content from a single cell
                             const isSingleCell = html && (html.match(/<td/g) || []).length <= 1;
                             const isMultiRow = html && (html.match(/<tr/g) || []).length > 1;
 
                             if (isSingleCell || !isMultiRow) {
-                              // Single cell — put everything in this one description field
                               e.preventDefault();
                               if (html && html.includes("<td")) {
                                 const tdMatch = html.match(/<td[^>]*>([\s\S]*?)<\/td>/i);
@@ -1082,14 +1102,13 @@ export default function CurriculumV2Page() {
                                   .replace(/<span[^>]*font-style:\s*italic[^>]*>([\s\S]*?)<\/span>/gi, "<i>$1</i>")
                                   .replace(/<span[^>]*>([\s\S]*?)<\/span>/gi, "$1")
                                   .trim() : text.replace(/\t+$/, "").trim();
-                                updateRow(idx, "description", cellHtml);
+                                document.execCommand("insertHTML", false, cellHtml);
                               } else {
-                                updateRow(idx, "description", text.trim().replace(/\n/g, "<br>"));
+                                document.execCommand("insertText", false, text.trim());
                               }
                               return;
                             }
 
-                            // Multi-row paste (multiple cells from a column)
                             e.preventDefault();
                             const lines = text.split(/\r?\n/).filter(l => l.trim());
                             setRows(prev => {
@@ -1105,9 +1124,16 @@ export default function CurriculumV2Page() {
                             });
                             setHasChanges(true);
                           }}
+                          onKeyDown={e => {
+                            if (e.key === "b" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.execCommand("bold"); }
+                            if (e.key === "i" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.execCommand("italic"); }
+                            if (e.key === "u" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.execCommand("underline"); }
+                            if (e.key === "Enter" && !e.shiftKey) e.preventDefault();
+                          }}
                           onDoubleClick={() => { if (row.description) setPopupCell({ rowIdx: idx, field: "description", value: row.description }); }}
-                          placeholder={row.isNew ? "Type to add..." : ""}
-                          className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white"
+                          data-placeholder={row.isNew ? "Type to add..." : ""}
+                          className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white overflow-hidden whitespace-nowrap empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400"
+                          style={{ minHeight: "1.5em", maxHeight: "1.5em" }}
                         />
                         {row.description && (() => {
                           const hasRich = /<br|<div|<b>|<i>|<u>|\n/.test(row.description);
