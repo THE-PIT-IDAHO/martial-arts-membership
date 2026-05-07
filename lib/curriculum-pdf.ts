@@ -608,27 +608,21 @@ export function generateCurriculumPdf(
     type Placement = { sec: SectionInfo; colIdx: number; startY: number };
     const placements: Placement[] = [];
 
-    // Layout: first numCols sections forced left-to-right, then shortest column first
+    // Grid layout: rows of numCols, left-to-right, headers aligned per row
     for (let si = 0; si < sections.length; si++) {
       const sec = sections[si];
-      let colIdx: number;
+      const colIdx = si % numCols;
 
-      if (si < numCols) {
-        // First row: force into columns 0, 1, 2 at same Y
-        colIdx = si;
-      } else {
-        // Find shortest column
-        colIdx = 0;
-        for (let c = 1; c < numCols; c++) {
-          if (colYs[c] < colYs[colIdx]) colIdx = c;
-        }
+      // At the start of each new row, align all columns to the tallest
+      if (colIdx === 0 && si > 0) {
+        const maxY = Math.max(...colYs);
+        for (let c = 0; c < numCols; c++) colYs[c] = maxY;
       }
 
       // Check if section fits on current page
       if (colYs[colIdx] + sec.height > disclaimerY && colYs[colIdx] > y) {
         y = newPage();
         for (let c = 0; c < numCols; c++) colYs[c] = y;
-        colIdx = 0; // restart from left on new page
       }
 
       placements.push({ sec, colIdx, startY: colYs[colIdx] });
@@ -715,6 +709,17 @@ export function generateCurriculumPdf(
         }
 
         cellY += itemH;
+      }
+
+      // Find the next section in this column to know where to pad to
+      const nextInCol = placements.find(p => p.colIdx === colIdx && p.startY > startY);
+      const padTarget = nextInCol ? nextInCol.startY : null;
+      if (padTarget && cellY < padTarget) {
+        // Fill empty rows between this section's items and the next section's header
+        while (cellY + rowH <= padTarget) {
+          drawCell(colX, cellY, colWidth, rowH, getTintAtY(cellY));
+          cellY += rowH;
+        }
       }
     }
 
