@@ -2498,6 +2498,7 @@ export default function POSPage() {
       {cardPaymentData && (
         <PosCardPaymentModal
           data={cardPaymentData}
+          memberId={selectedMember?.id}
           onClose={() => setCardPaymentData(null)}
           onSuccess={async (paymentIntentId) => {
             // Create transaction record
@@ -2536,8 +2537,9 @@ export default function POSPage() {
   );
 }
 
-function PosCardPaymentModal({ data, onClose, onSuccess }: {
+function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
   data: { clientSecret: string; publishableKey: string; paymentIntentId: string; amountCents: number; memberName: string };
+  memberId?: string | null;
   onClose: () => void;
   onSuccess: (paymentIntentId: string) => void;
 }) {
@@ -2545,6 +2547,7 @@ function PosCardPaymentModal({ data, onClose, onSuccess }: {
   const [elements, setElements] = useState<import("@stripe/stripe-js").StripeElements | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [saveCard, setSaveCard] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -2587,6 +2590,11 @@ function PosCardPaymentModal({ data, onClose, onSuccess }: {
     }
 
     if (paymentIntent?.status === "succeeded") {
+      // Save card to member profile if checkbox is checked
+      if (saveCard && memberId && paymentIntent.payment_method) {
+        const pmId = typeof paymentIntent.payment_method === "string" ? paymentIntent.payment_method : paymentIntent.payment_method.id;
+        fetch(`/api/members/${memberId}/payment-methods/${pmId}/default`, { method: "PUT" }).catch(() => {});
+      }
       onSuccess(paymentIntent.id);
     } else {
       setError("Payment was not completed");
@@ -2614,6 +2622,17 @@ function PosCardPaymentModal({ data, onClose, onSuccess }: {
             <label className="block text-xs font-medium text-gray-700 mb-1">Card Details</label>
             <div ref={cardRef} className="rounded-md border border-gray-300 px-3 py-2.5" />
           </div>
+          {memberId && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={saveCard}
+                onChange={e => setSaveCard(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 accent-primary"
+              />
+              <span className="text-xs text-gray-700">Save card as default for future payments</span>
+            </label>
+          )}
           {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>

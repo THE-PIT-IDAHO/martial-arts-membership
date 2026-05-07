@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     const paymentIntent = await stripeClient.paymentIntents.create({
       amount: amountCents,
       currency: currency.toLowerCase(),
-      ...(stripeCustomerId ? { customer: stripeCustomerId } : {}),
+      ...(stripeCustomerId ? { customer: stripeCustomerId, setup_future_usage: "off_session" } : {}),
       metadata: {
         source: "admin_pos",
         ...(metadata || {}),
