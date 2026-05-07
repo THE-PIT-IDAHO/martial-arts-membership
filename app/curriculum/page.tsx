@@ -60,7 +60,7 @@ function RichInput({ defaultValue, onSave, className, onEditClick }: { defaultVa
         ref={divRef}
         contentEditable
         suppressContentEditableWarning
-        dangerouslySetInnerHTML={{ __html: defaultValue.replace(/\n/g, "<br>") }}
+        dangerouslySetInnerHTML={{ __html: defaultValue.replace(/<br\s*\/?>/gi, " ").replace(/<\/?div[^>]*>/gi, " ").replace(/\n/g, " ") }}
         onBlur={() => {
           const el = divRef.current;
           if (el) onSave(el.innerHTML);
@@ -71,8 +71,8 @@ function RichInput({ defaultValue, onSave, className, onEditClick }: { defaultVa
           if (e.key === "u" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.execCommand("underline"); }
           if (e.key === "Enter") { e.preventDefault(); /* single line */ }
         }}
-        className={`${className} overflow-hidden whitespace-nowrap flex items-center`}
-        style={{ height: "26px", lineHeight: "26px" }}
+        className={`${className} overflow-hidden whitespace-nowrap`}
+        style={{ height: "28px", lineHeight: "28px", display: "block" }}
       />
       {overflows && (
         <button type="button" onClick={onEditClick} className="shrink-0 rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark">Edit</button>
@@ -191,7 +191,7 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
       <table className="min-w-full text-sm">
         <thead className="bg-gray-100 border-b border-gray-300">
           <tr>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Item Information</th>
+            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500" style={{ minWidth: "200px", maxWidth: "400px" }}>Item Information</th>
             <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
             <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
             <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
@@ -1056,7 +1056,7 @@ export default function CurriculumV2Page() {
             <table ref={tableRef} className="min-w-full text-sm">
               <thead className="bg-gray-100 border-b border-gray-300">
                 <tr>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Item Information</th>
+                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500" style={{ minWidth: "200px", maxWidth: "400px" }}>Item Information</th>
                   <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
                   <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
                   <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
@@ -1077,7 +1077,7 @@ export default function CurriculumV2Page() {
                           contentEditable
                           suppressContentEditableWarning
                           data-row={idx} data-col={0}
-                          dangerouslySetInnerHTML={{ __html: row.description || "" }}
+                          dangerouslySetInnerHTML={{ __html: (row.description || "").replace(/<br\s*\/?>/gi, " ").replace(/<\/?div[^>]*>/gi, " ").replace(/\n/g, " ") }}
                           onBlur={e => {
                             const html = (e.target as HTMLDivElement).innerHTML;
                             const clean = html === "<br>" ? "" : html;
@@ -1132,8 +1132,8 @@ export default function CurriculumV2Page() {
                           }}
                           onDoubleClick={() => { if (row.description) setPopupCell({ rowIdx: idx, field: "description", value: row.description }); }}
                           data-placeholder={row.isNew ? "Type to add..." : ""}
-                          className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white overflow-hidden whitespace-nowrap empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 flex items-center"
-                          style={{ height: "26px", lineHeight: "26px" }}
+                          className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white overflow-hidden whitespace-nowrap empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400"
+                          style={{ height: "28px", lineHeight: "28px", display: "block" }}
                         />
                         {row.description && (() => {
                           const hasRich = /<br|<div|<b>|<i>|<u>|\n/.test(row.description);
