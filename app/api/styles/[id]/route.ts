@@ -158,6 +158,38 @@ export async function GET(_req: Request, { params }: RouteParams) {
       return new NextResponse("Style not found", { status: 404 });
     }
 
+    // Merge curriculum PDFs into beltConfig ranks for the response
+    if (style.beltConfig) {
+      try {
+        const config = typeof style.beltConfig === "string" ? JSON.parse(style.beltConfig) : style.beltConfig;
+        if (config.ranks && Array.isArray(config.ranks)) {
+          for (const rank of config.ranks) {
+            const dbRank = style.ranks.find(r => r.name === rank.name);
+            if (dbRank?.pdfDocument) {
+              if (!rank.pdfDocuments) rank.pdfDocuments = [];
+              const exists = rank.pdfDocuments.some((d: RankDocument) => d.name === `${rank.name} Curriculum`);
+              if (!exists) {
+                rank.pdfDocuments.push({
+                  id: `curriculum-${dbRank.id}`,
+                  name: `${rank.name} Curriculum`,
+                  url: dbRank.pdfDocument,
+                });
+              }
+            }
+          }
+          (style as any).beltConfig = JSON.stringify(config);
+        }
+      } catch { /* ignore parse errors */ }
+    }
+
+    // Sync rank documents to members (fire and forget)
+    if (style.beltConfig) {
+      try {
+        const config = typeof style.beltConfig === "string" ? JSON.parse(style.beltConfig) : style.beltConfig;
+        syncRankDocumentsToMembers(style.id, style.name, config.ranks || []).catch(() => {});
+      } catch { /* ignore */ }
+    }
+
     return NextResponse.json({ style });
   } catch (error) {
     console.error("Error fetching style:", error);

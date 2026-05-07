@@ -801,12 +801,27 @@ export default function MemberProfilePage() {
         const res = await fetch("/api/styles");
         if (!res.ok) return;
         const data = await res.json();
-        const stylesList: AvailableStyle[] = (data.styles || []).map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          beltConfig: s.beltConfig,
-          ranks: s.ranks || []
-        }));
+        // Fetch each style's detail to get merged curriculum PDFs in beltConfig
+        const stylesList: AvailableStyle[] = [];
+        for (const s of (data.styles || [])) {
+          try {
+            const detailRes = await fetch(`/api/styles/${s.id}`);
+            if (detailRes.ok) {
+              const detailData = await detailRes.json();
+              const style = detailData.style;
+              stylesList.push({
+                id: style.id,
+                name: style.name,
+                beltConfig: typeof style.beltConfig === "string" ? style.beltConfig : JSON.stringify(style.beltConfig),
+                ranks: style.ranks || []
+              });
+            } else {
+              stylesList.push({ id: s.id, name: s.name, beltConfig: s.beltConfig, ranks: s.ranks || [] });
+            }
+          } catch {
+            stylesList.push({ id: s.id, name: s.name, beltConfig: s.beltConfig, ranks: s.ranks || [] });
+          }
+        }
         setAvailableStyles(stylesList);
       } catch (e) {
         console.error("Failed to load styles:", e);
