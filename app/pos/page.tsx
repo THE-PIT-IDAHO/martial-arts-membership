@@ -198,6 +198,11 @@ export default function POSPage() {
   // Payment processor integration
   const [activeProcessor, setActiveProcessor] = useState<string | null>(null);
   const [stripePolling, setStripePolling] = useState(false);
+  const [cardPaymentData, setCardPaymentData] = useState<{
+    clientSecret: string; publishableKey: string; paymentIntentId: string;
+    amountCents: number; memberName: string; lineItems: unknown[];
+    existingTransactionId: string | null | undefined; existingTransactionNumber: string | null | undefined;
+  } | null>(null);
 
   // Track if we've applied URL params
   const [urlParamsApplied, setUrlParamsApplied] = useState(false);
@@ -1033,27 +1038,20 @@ export default function POSPage() {
           existingTransactionNumber = txnData.transaction.transactionNumber;
         }
 
-        const checkoutRes = await fetch("/api/pos/checkout", {
+        // Create PaymentIntent for embedded card form
+        const checkoutRes = await fetch("/api/pos/create-payment-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            amountCents: cardAmountCents || totalCents,
             memberId: selectedMember?.id || null,
             memberName: selectedMember ? `${selectedMember.firstName} ${selectedMember.lastName}` : null,
-            lineItems,
-            notes: notes || null,
-            discountCents: (redeemedGift?.appliedCents || 0) + discountCents,
-            taxCents,
-            serviceDiscountCents: serviceCalc.itemDisc + serviceCalc.sectionDisc,
-            productDiscountCents: productCalc.itemDisc + productCalc.sectionDisc,
-            cardAmountCents,
-            transactionId: existingTransactionId,
-            redeemedGiftCode: redeemedGift?.code || null,
-            redeemedGiftAmountCents: redeemedGift?.appliedCents || 0,
             metadata: {
-              source: "pos",
-              cartItems: JSON.stringify(cart),
-              discounts: JSON.stringify({ productDiscountType, productDiscountValue }),
-              giftRedemption: redeemedGift ? JSON.stringify(redeemedGift) : null,
+              source: "admin_pos",
+              cartItems: JSON.stringify(lineItems),
+              ...(selectedMember?.id ? { memberId: selectedMember.id } : {}),
+              ...(notes ? { notes } : {}),
+              ...(existingTransactionId ? { transactionId: existingTransactionId } : {}),
             },
           }),
         });
@@ -1061,64 +1059,19 @@ export default function POSPage() {
         if (!checkoutRes.ok) throw new Error(await checkoutRes.text() || "Card checkout failed");
         const checkoutData = await checkoutRes.json();
 
-        if (checkoutData.url) {
-          const popup = window.open(checkoutData.url, "_blank", "width=600,height=700,scrollbars=yes");
-          setStripePolling(true);
-          const pollInterval = setInterval(async () => {
-            try {
-              const statusRes = await fetch(`/api/pos/checkout/status?sessionId=${checkoutData.sessionId}&processor=${checkoutData.processor || activeProcessor}`);
-              if (statusRes.ok) {
-                const statusData = await statusRes.json();
-                if (statusData.status === "complete") {
-                  clearInterval(pollInterval);
-                  setStripePolling(false);
-                  if (popup && !popup.closed) popup.close();
-                  if (!existingTransactionId) {
-                    const txnRes2 = await fetch("/api/pos/transactions", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        memberId: selectedMember?.id || null,
-                        memberName: selectedMember ? `${selectedMember.firstName} ${selectedMember.lastName}` : null,
-                        lineItems,
-                        paymentMethod: isSplitMode
-                          ? serializePaymentMethod(paymentSplits.map(s => ({ method: s.method, amountCents: s.amountCents, ...(s.label ? { label: s.label } : {}) })))
-                          : "CARD",
-                        notes: notes || null,
-                        discountCents: (redeemedGift?.appliedCents || 0) + discountCents,
-                        taxCents,
-                        serviceDiscountCents: serviceCalc.itemDisc + serviceCalc.sectionDisc,
-                        productDiscountCents: productCalc.itemDisc + productCalc.sectionDisc,
-                        paymentIntentId: statusData.paymentIntentId,
-                        receiptUrl: statusData.receiptUrl,
-                        paymentProcessor: checkoutData.processor || activeProcessor,
-                        redeemedGiftCode: redeemedGift?.code || null,
-                        redeemedGiftAmountCents: redeemedGift?.appliedCents || 0,
-                      }),
-                    });
-                    if (txnRes2.ok) {
-                      const txnData2 = await txnRes2.json();
-                      setLastTransaction({ id: txnData2.transaction.id, transactionNumber: txnData2.transaction.transactionNumber });
-                    }
-                  } else {
-                    setLastTransaction({ id: existingTransactionId!, transactionNumber: existingTransactionNumber! });
-                  }
-                  resetAfterCheckout();
-                } else if (statusData.status === "expired" || statusData.status === "failed") {
-                  clearInterval(pollInterval);
-                  setStripePolling(false);
-                  setProcessing(false);
-                  if (popup && !popup.closed) popup.close();
-                  alert("Payment failed or expired. Please try again.");
-                }
-              }
-            } catch { /* polling error, continue */ }
-            if (popup && popup.closed) {
-              clearInterval(pollInterval);
-              setStripePolling(false);
-              setProcessing(false);
-            }
-          }, 2000);
+        if (checkoutData.clientSecret) {
+          // Show embedded card modal
+          setCardPaymentData({
+            clientSecret: checkoutData.clientSecret,
+            publishableKey: checkoutData.publishableKey,
+            paymentIntentId: checkoutData.paymentIntentId,
+            amountCents: cardAmountCents || totalCents,
+            memberName: checkoutData.memberName,
+            lineItems,
+            existingTransactionId,
+            existingTransactionNumber,
+          });
+          setProcessing(false);
           return;
         }
       }
@@ -2496,6 +2449,135 @@ export default function POSPage() {
           </div>
         </div>
       )}
+      {/* Embedded Card Payment Modal */}
+      {cardPaymentData && (
+        <PosCardPaymentModal
+          data={cardPaymentData}
+          onClose={() => setCardPaymentData(null)}
+          onSuccess={async (paymentIntentId) => {
+            // Create transaction record
+            const d = cardPaymentData;
+            if (!d.existingTransactionId) {
+              const txnRes = await fetch("/api/pos/transactions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  memberId: selectedMember?.id || null,
+                  memberName: selectedMember ? `${selectedMember.firstName} ${selectedMember.lastName}` : null,
+                  lineItems: d.lineItems,
+                  paymentMethod: isSplitMode
+                    ? serializePaymentMethod(paymentSplits.map(s => ({ method: s.method, amountCents: s.amountCents, ...(s.label ? { label: s.label } : {}) })))
+                    : "CARD",
+                  notes: notes || null,
+                  discountCents: (redeemedGift?.appliedCents || 0) + discountCents,
+                  taxCents,
+                  paymentIntentId,
+                  paymentProcessor: "stripe",
+                }),
+              });
+              if (txnRes.ok) {
+                const txnData = await txnRes.json();
+                setLastTransaction({ id: txnData.transaction.id, transactionNumber: txnData.transaction.transactionNumber });
+              }
+            } else {
+              setLastTransaction({ id: d.existingTransactionId!, transactionNumber: d.existingTransactionNumber! });
+            }
+            setCardPaymentData(null);
+            resetAfterCheckout();
+          }}
+        />
+      )}
     </AppLayout>
+  );
+}
+
+function PosCardPaymentModal({ data, onClose, onSuccess }: {
+  data: { clientSecret: string; publishableKey: string; paymentIntentId: string; amountCents: number; memberName: string };
+  onClose: () => void;
+  onSuccess: (paymentIntentId: string) => void;
+}) {
+  const [stripe, setStripe] = useState<import("@stripe/stripe-js").Stripe | null>(null);
+  const [elements, setElements] = useState<import("@stripe/stripe-js").StripeElements | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    import("@stripe/stripe-js").then(({ loadStripe }) => {
+      loadStripe(data.publishableKey).then(s => {
+        if (!mounted || !s) return;
+        setStripe(s);
+        const el = s.elements({ clientSecret: data.clientSecret });
+        setElements(el);
+        const card = el.create("card", {
+          style: {
+            base: { fontSize: "14px", color: "#1f2937", "::placeholder": { color: "#9ca3af" } },
+            invalid: { color: "#ef4444" },
+          },
+        });
+        if (cardRef.current) card.mount(cardRef.current);
+      });
+    });
+    return () => { mounted = false; };
+  }, [data.publishableKey, data.clientSecret]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setSaving(true);
+    setError("");
+
+    const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(data.clientSecret, {
+      payment_method: {
+        card: elements.getElement("card")!,
+        billing_details: { name: data.memberName || undefined },
+      },
+    });
+
+    if (confirmError) {
+      setError(confirmError.message || "Payment failed");
+      setSaving(false);
+      return;
+    }
+
+    if (paymentIntent?.status === "succeeded") {
+      onSuccess(paymentIntent.id);
+    } else {
+      setError("Payment was not completed");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-lg bg-white shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+          <h2 className="text-sm font-bold text-gray-900">Card Payment — ${(data.amountCents / 100).toFixed(2)}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {data.memberName && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Member</label>
+              <input type="text" defaultValue={data.memberName} readOnly className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-gray-50 text-gray-600" />
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Card Details</label>
+            <div ref={cardRef} className="rounded-md border border-gray-300 px-3 py-2.5" />
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={saving || !stripe} className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+              {saving ? "Processing..." : `Pay $${(data.amountCents / 100).toFixed(2)}`}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
