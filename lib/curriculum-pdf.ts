@@ -496,9 +496,30 @@ export function generateCurriculumPdf(
       if (item.videoUrl) reqsNeededW += pdf.getTextWidth(" - Link");
       pdf.setFontSize(10);
       const nameMaxW = Math.max(cellMaxW - reqsNeededW - 2, cellMaxW * 0.3);
-      const nameClipped = pdf.splitTextToSize(displayText, nameMaxW)[0] || displayText;
-      pdf.text(nameClipped, cursorX, cellY + 3.8);
-      cursorX += pdf.getTextWidth(nameClipped) + 1;
+
+      // Render with bold/italic from HTML if present
+      if (item.description && (item.description.includes("<b>") || item.description.includes("<i>") || item.description.includes("<u>"))) {
+        const segments = parseHtmlForPdf(item.description.replace(/<br\s*\/?>/gi, " ").replace(/<\/?div[^>]*>/gi, " "));
+        // Render segments inline, clipping to nameMaxW
+        let usedW = 0;
+        for (const seg of segments) {
+          if (usedW >= nameMaxW) break;
+          const text = seg.text.replace(/\n/g, " ");
+          if (!text) continue;
+          pdf.setFont("helvetica", seg.bold ? "bold" : "normal");
+          const availW = nameMaxW - usedW;
+          const clipped = pdf.splitTextToSize(text, availW)[0] || "";
+          if (!clipped) continue;
+          pdf.text(clipped, cursorX + usedW, cellY + 3.8);
+          usedW += pdf.getTextWidth(clipped);
+        }
+        pdf.setFont("helvetica", "normal");
+        cursorX += usedW + 1;
+      } else {
+        const nameClipped = pdf.splitTextToSize(displayText, nameMaxW)[0] || displayText;
+        pdf.text(nameClipped, cursorX, cellY + 3.8);
+        cursorX += pdf.getTextWidth(nameClipped) + 1;
+      }
     }
 
     const hasReqs = reqText || timeLimitVal;
@@ -587,46 +608,50 @@ export function generateCurriculumPdf(
     type Placement = { sec: SectionInfo; colIdx: number; startY: number };
     const placements: Placement[] = [];
 
+    // Layout: first row forced into columns 0,1,2. Subsequent rows align headers
+    // and place sections into shortest column first.
+    let rowStartIdx = 0;
+
     for (let si = 0; si < sections.length; si++) {
       const sec = sections[si];
 
-      // Find shortest column
-      let shortestCol = 0;
-      for (let c = 1; c < numCols; c++) {
-        if (colYs[c] < colYs[shortestCol]) shortestCol = c;
-      }
+      if (si < numCols) {
+        // First row: force into columns 0, 1, 2
+        const colIdx = si;
 
-      // Check if section fits on current page
-      if (colYs[shortestCol] + sec.height > disclaimerY && colYs[shortestCol] > y) {
-        y = newPage();
-        for (let c = 0; c < numCols; c++) colYs[c] = y;
-        shortestCol = 0;
-      }
-
-      // Align headers: find the max Y among columns that are close to each other
-      // "Close" means within 3 rows of the shortest column
-      const shortestY = colYs[shortestCol];
-      let alignTarget = shortestY;
-
-      // Check all columns — if they're within a few rows, align to the tallest
-      for (let c = 0; c < numCols; c++) {
-        if (colYs[c] - shortestY >= 0 && colYs[c] - shortestY <= rowH * 3) {
-          alignTarget = Math.max(alignTarget, colYs[c]);
+        if (colYs[colIdx] + sec.height > disclaimerY && colYs[colIdx] > y) {
+          y = newPage();
+          for (let c = 0; c < numCols; c++) colYs[c] = y;
         }
-      }
 
-      // Only align if it still fits on the page
-      if (alignTarget + sec.height <= disclaimerY) {
-        // Align all close columns to the same Y so their next headers line up
-        for (let c = 0; c < numCols; c++) {
-          if (colYs[c] >= shortestY && colYs[c] - shortestY <= rowH * 3) {
-            colYs[c] = alignTarget;
-          }
+        placements.push({ sec, colIdx, startY: colYs[colIdx] });
+        colYs[colIdx] += sec.height;
+      } else {
+        // Subsequent sections: at the start of each new row of numCols, align headers
+        const posInRow = (si - rowStartIdx) % numCols;
+        if (si === numCols || posInRow === 0) {
+          // Align all columns to the tallest before starting this row
+          const maxY = Math.max(...colYs);
+          for (let c = 0; c < numCols; c++) colYs[c] = maxY;
+          rowStartIdx = si;
         }
-      }
 
-      placements.push({ sec, colIdx: shortestCol, startY: colYs[shortestCol] });
-      colYs[shortestCol] += sec.height;
+        // Place in shortest column
+        let shortestCol = 0;
+        for (let c = 1; c < numCols; c++) {
+          if (colYs[c] < colYs[shortestCol]) shortestCol = c;
+        }
+
+        // Check if section fits on current page
+        if (colYs[shortestCol] + sec.height > disclaimerY && colYs[shortestCol] > y) {
+          y = newPage();
+          for (let c = 0; c < numCols; c++) colYs[c] = y;
+          shortestCol = 0;
+        }
+
+        placements.push({ sec, colIdx: shortestCol, startY: colYs[shortestCol] });
+        colYs[shortestCol] += sec.height;
+      }
     }
 
     // Render all placed sections

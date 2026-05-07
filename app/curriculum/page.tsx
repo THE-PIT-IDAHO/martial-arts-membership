@@ -127,10 +127,11 @@ function RichInput({ defaultValue, onSave, className, onEditClick }: { defaultVa
   );
 }
 
-function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyleId, selectedRankId, selectedCategoryId, onReload, getCategoryType, onDeleteCategory }: {
+function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyleId, selectedRankId, selectedCategoryId, onReload, getCategoryType, onDeleteCategory, ranks }: {
   categoryId: string; categoryName: string; rankTests: RankTest[];
   selectedStyleId: string; selectedRankId: string; selectedCategoryId: string;
   onReload: () => Promise<void>; getCategoryType: () => string; onDeleteCategory: () => void;
+  ranks: { id: string; name: string; order: number }[];
 }) {
   const [newItemName, setNewItemName] = useState("");
   const [newItemDesc, setNewItemDesc] = useState("");
@@ -142,6 +143,55 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
   const [newItemDistance, setNewItemDistance] = useState("");
   const [addingItem, setAddingItem] = useState(false);
   const [editPopup, setEditPopup] = useState<{ itemId: string; value: string } | null>(null);
+  const [copying, setCopying] = useState(false);
+
+  async function copyToAllRanks() {
+    if (!confirm(`Copy "${categoryName}" items to all other ranks in this style?`)) return;
+    setCopying(true);
+    try {
+      const otherRanks = ranks.filter(r => r.id !== selectedRankId);
+      await Promise.all(otherRanks.map(async (rank) => {
+        const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
+        if (!res.ok) return;
+        const d = await res.json();
+        const tests: RankTest[] = d.rankTests || d.tests || [];
+        if (tests.length === 0) return;
+        const otherTestId = tests[0].id;
+        const otherCat = tests.flatMap(t => t.categories).find(c => c.name === categoryName);
+        if (!otherCat) return;
+        // Delete existing items in this category on the other rank
+        for (const item of otherCat.items) {
+          await fetch(`/api/rank-tests/${otherTestId}/items?itemId=${item.id}`, { method: "DELETE" });
+        }
+        // Copy current items
+        for (const item of items) {
+          await fetch(`/api/rank-tests/${otherTestId}/items`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              categoryId: otherCat.id,
+              name: item.name,
+              description: item.description || null,
+              type: (item as Record<string, unknown>).type as string || getCategoryType(),
+              showTitleInPdf: (item as Record<string, unknown>).showTitleInPdf !== false,
+              sets: item.sets || null,
+              rounds: item.rounds || null,
+              reps: item.reps || null,
+              roundDuration: item.roundDuration || null,
+              duration: item.duration || null,
+              distance: item.distance || null,
+              timeLimit: item.timeLimit || null,
+              timeLimitOperator: (item as Record<string, unknown>).timeLimitOperator || null,
+              videoUrl: (item as Record<string, unknown>).videoUrl || null,
+              sortOrder: item.sortOrder,
+            }),
+          });
+        }
+      }));
+      alert(`"${categoryName}" copied to ${otherRanks.length} rank${otherRanks.length !== 1 ? "s" : ""}.`);
+    } catch { alert("Failed to copy to all ranks"); }
+    finally { setCopying(false); }
+  }
 
   let items: Item[] = [];
   let testId = "";
@@ -231,6 +281,9 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
         <h3 className="text-sm font-semibold text-gray-700">{categoryName}</h3>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-400">{items.length} items</span>
+          <button onClick={copyToAllRanks} disabled={copying || items.length === 0} className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50">
+            {copying ? "Copying..." : "Copy to All Ranks"}
+          </button>
           <button onClick={onDeleteCategory} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Delete Section</button>
         </div>
       </div>
@@ -749,6 +802,66 @@ export default function CurriculumV2Page() {
     return "skill";
   }
 
+  const [copyingMain, setCopyingMain] = useState(false);
+
+  async function copyMainCategoryToAllRanks() {
+    if (!selectedCategoryId || !selectedCategory) return;
+    if (!confirm(`Copy "${selectedCategory.name}" items to all other ranks in this style?`)) return;
+    // Save first if there are changes
+    if (hasChanges) await handleSave();
+    setCopyingMain(true);
+    try {
+      // Get current items from rankTests
+      let currentItems: Item[] = [];
+      for (const test of rankTests) {
+        const cat = test.categories.find(c => c.id === selectedCategoryId);
+        if (cat) { currentItems = cat.items; break; }
+      }
+
+      const otherRanks = ranks.filter(r => r.id !== selectedRankId);
+      await Promise.all(otherRanks.map(async (rank) => {
+        const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
+        if (!res.ok) return;
+        const d = await res.json();
+        const tests: RankTest[] = d.rankTests || d.tests || [];
+        if (tests.length === 0) return;
+        const otherTestId = tests[0].id;
+        const otherCat = tests.flatMap(t => t.categories).find(c => c.name === selectedCategory.name);
+        if (!otherCat) return;
+        // Delete existing items
+        for (const item of otherCat.items) {
+          await fetch(`/api/rank-tests/${otherTestId}/items?itemId=${item.id}`, { method: "DELETE" });
+        }
+        // Copy items
+        for (const item of currentItems) {
+          await fetch(`/api/rank-tests/${otherTestId}/items`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              categoryId: otherCat.id,
+              name: item.name,
+              description: item.description || null,
+              type: item.type || getCategoryType(),
+              showTitleInPdf: (item as Record<string, unknown>).showTitleInPdf !== false,
+              sets: item.sets || null,
+              rounds: item.rounds || null,
+              reps: item.reps || null,
+              roundDuration: item.roundDuration || null,
+              duration: item.duration || null,
+              distance: item.distance || null,
+              timeLimit: item.timeLimit || null,
+              timeLimitOperator: (item as Record<string, unknown>).timeLimitOperator || null,
+              videoUrl: (item as Record<string, unknown>).videoUrl || null,
+              sortOrder: item.sortOrder,
+            }),
+          });
+        }
+      }));
+      alert(`"${selectedCategory.name}" copied to ${otherRanks.length} rank${otherRanks.length !== 1 ? "s" : ""}.`);
+    } catch { alert("Failed to copy to all ranks"); }
+    finally { setCopyingMain(false); }
+  }
+
   async function handleSave() {
     setSaving(true);
     const testId = getTestId();
@@ -820,7 +933,7 @@ export default function CurriculumV2Page() {
           const res2 = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
           if (res2.ok) { const d2 = await res2.json(); tests = d2.rankTests || d2.tests || []; }
           const cats: { id: string; name: string; testId: string }[] = [];
-          for (const test of tests) for (const cat of test.categories) cats.push({ id: cat.id, name: cat.name, testId: test.id });
+          for (const test of tests) for (const cat of test.categories.sort((a: Category, b: Category) => a.sortOrder - b.sortOrder)) cats.push({ id: cat.id, name: cat.name, testId: test.id });
           setAllCategories(cats);
           if (!cats.find(c => c.id === selectedCategoryId) && cats.length > 0) {
             setSelectedCategoryId(cats[0].id);
@@ -990,7 +1103,7 @@ export default function CurriculumV2Page() {
         const tests = d.rankTests || d.tests || [];
         setRankTests(tests);
         const cats: { id: string; name: string; testId: string }[] = [];
-        for (const test of tests) for (const cat of test.categories) cats.push({ id: cat.id, name: cat.name, testId: test.id });
+        for (const test of tests) for (const cat of test.categories.sort((a: Category, b: Category) => a.sortOrder - b.sortOrder)) cats.push({ id: cat.id, name: cat.name, testId: test.id });
         setAllCategories(cats);
         const target = cats[0];
         if (target) { setSelectedCategoryId(target.id); buildRowsForCategory(tests, target.id); }
@@ -1024,7 +1137,7 @@ export default function CurriculumV2Page() {
         const tests = d.rankTests || d.tests || [];
         setRankTests(tests);
         const cats: { id: string; name: string; testId: string }[] = [];
-        for (const test of tests) for (const cat of test.categories) cats.push({ id: cat.id, name: cat.name, testId: test.id });
+        for (const test of tests) for (const cat of test.categories.sort((a: Category, b: Category) => a.sortOrder - b.sortOrder)) cats.push({ id: cat.id, name: cat.name, testId: test.id });
         setAllCategories(cats);
         if (categoryId === selectedCategoryId) {
           // Find the re-created category or first available
@@ -1224,6 +1337,9 @@ export default function CurriculumV2Page() {
               <h3 className="text-sm font-semibold text-gray-700">{selectedCategory?.name}</h3>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-400">{rows.filter(r => r.description?.trim()).length} items</span>
+                <button onClick={copyMainCategoryToAllRanks} disabled={copyingMain || rows.filter(r => r.description?.trim()).length === 0} className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50">
+                  {copyingMain ? "Copying..." : "Copy to All Ranks"}
+                </button>
                 <button onClick={() => selectedCategory && deleteCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Delete Section</button>
               </div>
             </div>
@@ -1418,6 +1534,7 @@ export default function CurriculumV2Page() {
                     return "skill";
                   }}
                   onDeleteCategory={() => deleteCategory(cat.id, cat.name)}
+                  ranks={ranks}
                 />
               ))}
             </div>
