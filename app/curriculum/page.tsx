@@ -508,7 +508,7 @@ export default function CurriculumV2Page() {
         newRows.push({
           itemId: item.id,
           itemName: item.name,
-          description: item.description || "",
+          description: (item.description || "").replace(/^( +)/gm, (m) => "\u00A0".repeat(m.length)),
           showTitleInPdf: (item as Record<string, unknown>).showTitleInPdf !== false,
           type: item.type,
           sets: item.sets?.toString() || "",
