@@ -1,5 +1,5 @@
 export type PaymentSplit = {
-  method: "CASH" | "CARD" | "CHECK" | "ACCOUNT" | "OTHER";
+  method: "CASH" | "CARD" | "CHECK" | "ACCOUNT" | "OTHER" | "SAVED_CARD";
   amountCents: number;
   label?: string;
 };

@@ -151,7 +151,7 @@ export default function POSPage() {
   // Payment splits
   type PaymentSplitEntry = {
     id: string;
-    method: "CASH" | "CARD" | "CHECK" | "ACCOUNT";
+    method: "CASH" | "CARD" | "CHECK" | "ACCOUNT" | "SAVED_CARD";
     amountCents: number;
     label: string;
   };
@@ -198,6 +198,7 @@ export default function POSPage() {
   // Payment processor integration
   const [activeProcessor, setActiveProcessor] = useState<string | null>(null);
   const [stripePolling, setStripePolling] = useState(false);
+  const [savedCard, setSavedCard] = useState<{ brand: string; last4: string } | null>(null);
   const [cardPaymentData, setCardPaymentData] = useState<{
     clientSecret: string; publishableKey: string; paymentIntentId: string;
     amountCents: number; memberName: string; lineItems: unknown[];
@@ -244,6 +245,22 @@ export default function POSPage() {
       setUrlParamsApplied(true);
     }
   }, [loading, members, searchParams, urlParamsApplied]);
+
+  // Load saved card when member is selected
+  useEffect(() => {
+    setSavedCard(null);
+    if (!selectedMember) return;
+    fetch(`/api/members/${selectedMember.id}/payment-methods`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.paymentMethods?.length > 0 && data.defaultId) {
+          const def = data.paymentMethods.find((pm: { id: string; brand: string; last4: string }) => pm.id === data.defaultId);
+          if (def) setSavedCard({ brand: def.brand, last4: def.last4 });
+          else setSavedCard({ brand: data.paymentMethods[0].brand, last4: data.paymentMethods[0].last4 });
+        }
+      })
+      .catch(() => {});
+  }, [selectedMember]);
 
   async function fetchData() {
     setLoading(true);
@@ -1003,6 +1020,51 @@ export default function POSPage() {
         discountValue: item.discountValue || null,
         discountCents: getItemDiscountCents(item),
       }));
+
+      // Saved card — charge directly, no card entry needed
+      const isSavedCardPayment = !isSplitMode && paymentSplits[0]?.method === "SAVED_CARD";
+      if (isSavedCardPayment && selectedMember) {
+        const chargeAmount = Math.max(0, totalCents - (redeemedGift?.appliedCents || 0));
+        const chargeRes = await fetch("/api/pos/charge-saved-card", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            memberId: selectedMember.id,
+            amountCents: chargeAmount,
+            metadata: { cartItems: JSON.stringify(lineItems) },
+          }),
+        });
+        const chargeData = await chargeRes.json();
+        if (!chargeData.success) {
+          throw new Error(chargeData.error || "Saved card charge failed");
+        }
+        // Create transaction record
+        const txnRes = await fetch("/api/pos/transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            memberId: selectedMember.id,
+            memberName: `${selectedMember.firstName} ${selectedMember.lastName}`,
+            lineItems,
+            paymentMethod: "CARD",
+            notes: notes || null,
+            discountCents: (redeemedGift?.appliedCents || 0) + discountCents,
+            taxCents,
+            serviceDiscountCents: serviceCalc.itemDisc + serviceCalc.sectionDisc,
+            productDiscountCents: productCalc.itemDisc + productCalc.sectionDisc,
+            paymentIntentId: chargeData.paymentIntentId,
+            paymentProcessor: "stripe",
+            redeemedGiftCode: redeemedGift?.code || null,
+            redeemedGiftAmountCents: redeemedGift?.appliedCents || 0,
+          }),
+        });
+        if (txnRes.ok) {
+          const txnData = await txnRes.json();
+          setLastTransaction({ id: txnData.transaction.id, transactionNumber: txnData.transaction.transactionNumber });
+        }
+        resetAfterCheckout();
+        return;
+      }
 
       const isCardPayment = !isSplitMode && paymentSplits[0]?.method === "CARD";
       const hasCardInSplit = isSplitMode && paymentSplits.some(s => s.method === "CARD");
@@ -1824,7 +1886,10 @@ export default function POSPage() {
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-2">
-                    {(["CASH", "CARD", "CHECK", "ACCOUNT"] as const).map(method => (
+                    {(savedCard
+                      ? ["SAVED_CARD", "CASH", "CARD", "CHECK", "ACCOUNT"] as const
+                      : ["CASH", "CARD", "CHECK", "ACCOUNT"] as const
+                    ).map(method => (
                       <button
                         key={method}
                         onClick={() => {
@@ -1843,8 +1908,10 @@ export default function POSPage() {
                               : "bg-primary text-white hover:bg-primaryDark"
                         }`}
                       >
-                        {method === "CARD" && activeProcessor
-                          ? `CARD (${activeProcessor.charAt(0).toUpperCase() + activeProcessor.slice(1)})`
+                        {method === "SAVED_CARD" && savedCard
+                          ? `${savedCard.brand.toUpperCase()} ····${savedCard.last4}`
+                          : method === "CARD" && activeProcessor
+                          ? `NEW CARD`
                           : method === "ACCOUNT" && selectedMember
                             ? `ACCOUNT (${selectedMember.accountCreditCents >= 0 ? "$" : "-$"}${(Math.abs(selectedMember.accountCreditCents) / 100).toFixed(2)})`
                             : method}
