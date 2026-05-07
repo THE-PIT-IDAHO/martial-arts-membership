@@ -19,6 +19,7 @@ export default function ContractsPage() {
   const [viewingPdf, setViewingPdf] = useState<{ url: string; title: string } | null>(null);
   const [loadingPdf, setLoadingPdf] = useState<string | null>(null);
   const [resending, setResending] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     loadContracts();
@@ -60,6 +61,24 @@ export default function ContractsPage() {
       alert("Failed to load contract PDF");
     } finally {
       setLoadingPdf(null);
+    }
+  }
+
+  async function deleteContract(contract: Contract) {
+    const memberName = `${contract.member.firstName} ${contract.member.lastName}`;
+    if (!confirm(`Delete contract for ${memberName} — ${contract.planName}?`)) return;
+    setDeleting(contract.id);
+    try {
+      const res = await fetch(`/api/contracts/${contract.id}`, { method: "DELETE" });
+      if (res.ok) {
+        setContracts(prev => prev.filter(c => c.id !== contract.id));
+      } else {
+        alert("Failed to delete contract");
+      }
+    } catch {
+      alert("Failed to delete contract");
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -169,6 +188,13 @@ export default function ContractsPage() {
                           className="rounded-md border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
                         >
                           {resending === c.id ? "Sending..." : "Email"}
+                        </button>
+                        <button
+                          onClick={() => deleteContract(c)}
+                          disabled={deleting === c.id}
+                          className="rounded-md bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 hover:bg-red-200 disabled:opacity-50"
+                        >
+                          {deleting === c.id ? "..." : "Delete"}
                         </button>
                       </div>
                     </td>

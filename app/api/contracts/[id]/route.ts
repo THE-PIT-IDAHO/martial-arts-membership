@@ -90,3 +90,25 @@ export async function POST(
     return NextResponse.json({ error: "Failed to resend contract" }, { status: 500 });
   }
 }
+
+// DELETE /api/contracts/:id — delete a contract
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const clientId = await getClientId(req);
+    const { id } = await params;
+
+    const contract = await prisma.signedContract.findUnique({ where: { id } });
+    if (!contract || contract.clientId !== clientId) {
+      return new NextResponse("Contract not found", { status: 404 });
+    }
+
+    await prisma.signedContract.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting contract:", error);
+    return new NextResponse("Failed to delete contract", { status: 500 });
+  }
+}
