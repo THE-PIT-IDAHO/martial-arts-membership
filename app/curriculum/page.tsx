@@ -914,7 +914,6 @@ export default function CurriculumV2Page() {
 
       // Load rank tests for ALL ranks in this style
       let successCount = 0;
-      let clearedCount = 0;
       const errors: string[] = [];
 
       for (const rank of allRanks) {
@@ -941,24 +940,15 @@ export default function CurriculumV2Page() {
 
           if (patchRes.ok) successCount++;
           else errors.push(`${rank.name}: ${patchRes.status}`);
-        } else {
-          // Clear PDF for ranks with no curriculum
-          await fetch(`/api/ranks/${rank.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pdfDocument: null }),
-          });
-          clearedCount++;
         }
       }
 
-      if (successCount === 0 && clearedCount > 0) {
-        alert(`Curriculum cleared. Removed PDFs from ${clearedCount} rank${clearedCount !== 1 ? "s" : ""}.`);
-      } else if (errors.length > 0) {
+      if (errors.length > 0) {
         alert(`Published ${successCount}/${successCount + errors.length} PDFs. Failed: ${errors.join(", ")}`);
+      } else if (successCount > 0) {
+        alert(`Curriculum published! ${successCount} rank PDF${successCount !== 1 ? "s" : ""} generated.`);
       } else {
-        const clearMsg = clearedCount > 0 ? ` Cleared ${clearedCount} old PDF${clearedCount !== 1 ? "s" : ""}.` : "";
-        alert(`Curriculum published! ${successCount} rank PDF${successCount !== 1 ? "s" : ""} generated.${clearMsg}`);
+        alert("No curriculum to publish.");
       }
     } catch (err) {
       console.error("Publish error:", err);
