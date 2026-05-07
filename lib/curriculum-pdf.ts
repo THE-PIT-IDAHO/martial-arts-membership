@@ -587,7 +587,9 @@ export function generateCurriculumPdf(
     type Placement = { sec: SectionInfo; colIdx: number; startY: number };
     const placements: Placement[] = [];
 
-    for (const sec of sections) {
+    for (let si = 0; si < sections.length; si++) {
+      const sec = sections[si];
+
       // Find shortest column
       let shortestCol = 0;
       for (let c = 1; c < numCols; c++) {
@@ -601,25 +603,30 @@ export function generateCurriculumPdf(
         shortestCol = 0;
       }
 
-      // Try to align header with neighboring columns
-      // Check if any other column has a section starting within 2 rows
-      let alignedY = colYs[shortestCol];
+      // Align headers: find the max Y among columns that are close to each other
+      // "Close" means within 3 rows of the shortest column
+      const shortestY = colYs[shortestCol];
+      let alignTarget = shortestY;
+
+      // Check all columns — if they're within a few rows, align to the tallest
       for (let c = 0; c < numCols; c++) {
-        if (c === shortestCol) continue;
-        // Check recent placements in this column
-        const otherPlacement = placements.filter(p => p.colIdx === c).pop();
-        if (otherPlacement) {
-          const otherSectionEnd = otherPlacement.startY + otherPlacement.sec.height;
-          // If the other column's last section just ended nearby, align our header with it
-          const diff = otherSectionEnd - alignedY;
-          if (diff > 0 && diff <= rowH * 2) {
-            alignedY = otherSectionEnd;
+        if (colYs[c] - shortestY >= 0 && colYs[c] - shortestY <= rowH * 3) {
+          alignTarget = Math.max(alignTarget, colYs[c]);
+        }
+      }
+
+      // Only align if it still fits on the page
+      if (alignTarget + sec.height <= disclaimerY) {
+        // Align all close columns to the same Y so their next headers line up
+        for (let c = 0; c < numCols; c++) {
+          if (colYs[c] >= shortestY && colYs[c] - shortestY <= rowH * 3) {
+            colYs[c] = alignTarget;
           }
         }
       }
 
-      placements.push({ sec, colIdx: shortestCol, startY: alignedY });
-      colYs[shortestCol] = alignedY + sec.height;
+      placements.push({ sec, colIdx: shortestCol, startY: colYs[shortestCol] });
+      colYs[shortestCol] += sec.height;
     }
 
     // Render all placed sections
