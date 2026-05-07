@@ -284,8 +284,8 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
           <button onClick={copyToAllRanks} disabled={copying || items.length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
             {copying ? "Copying..." : "Copy to All Ranks"}
           </button>
-          <button onClick={onDeleteCategory} className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100">Delete Section</button>
-          <button onClick={onDeleteFromAllRanks} className="rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">Delete from All Ranks</button>
+          <button onClick={onDeleteCategory} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete Section</button>
+          <button onClick={onDeleteFromAllRanks} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete from All Ranks</button>
         </div>
       </div>
       <table className="w-full text-sm">
@@ -1074,15 +1074,22 @@ export default function CurriculumV2Page() {
   }
 
   async function deleteCustomCategory(categoryId: string, categoryName: string) {
-    if (!confirm(`Delete "${categoryName}" from all ranks in this style?`)) return;
+    if (!confirm(`Clear all items from "${categoryName}" on all ranks in this style?`)) return;
     try {
-      // Delete from current rank
+      // Clear items from current rank
       const testId = getTestId();
       if (testId) {
-        await fetch(`/api/rank-tests/${testId}/categories?categoryId=${categoryId}`, { method: "DELETE" });
+        let currentItems: Item[] = [];
+        for (const test of rankTests) {
+          const cat = test.categories.find(c => c.id === categoryId);
+          if (cat) { currentItems = cat.items; break; }
+        }
+        await Promise.all(currentItems.map(item =>
+          fetch(`/api/rank-tests/${testId}/items?itemId=${item.id}`, { method: "DELETE" })
+        ));
       }
 
-      // Delete from all other ranks in the style (parallel)
+      // Clear items from all other ranks in the style (parallel)
       const otherRanks = ranks.filter(r => r.id !== selectedRankId);
       await Promise.all(otherRanks.map(async (rank) => {
         const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
@@ -1092,7 +1099,9 @@ export default function CurriculumV2Page() {
         for (const t of tests) {
           const cat = t.categories.find(c => c.name === categoryName);
           if (cat) {
-            await fetch(`/api/rank-tests/${t.id}/categories?categoryId=${cat.id}`, { method: "DELETE" });
+            await Promise.all(cat.items.map(item =>
+              fetch(`/api/rank-tests/${t.id}/items?itemId=${item.id}`, { method: "DELETE" })
+            ));
           }
         }
       }));
@@ -1106,30 +1115,25 @@ export default function CurriculumV2Page() {
         const cats: { id: string; name: string; testId: string }[] = [];
         for (const test of tests) for (const cat of test.categories.sort((a: Category, b: Category) => a.sortOrder - b.sortOrder)) cats.push({ id: cat.id, name: cat.name, testId: test.id });
         setAllCategories(cats);
-        const target = cats[0];
-        if (target) { setSelectedCategoryId(target.id); buildRowsForCategory(tests, target.id); }
-        else { setSelectedCategoryId(""); setRows([]); }
+        buildRowsForCategory(tests, selectedCategoryId);
       }
-    } catch { alert("Failed to delete category"); }
+    } catch { alert("Failed to clear category items"); }
   }
 
   async function deleteCategory(categoryId: string, categoryName: string) {
-    if (!confirm(`Delete "${categoryName}" and all its items?`)) return;
+    if (!confirm(`Clear all items from "${categoryName}" on this rank?`)) return;
     const testId = getTestId();
     if (!testId) return;
-    const defaultCats = ["Knowledge", "Techniques", "Combos", "Fitness", "Sparring", "Forms/Katas", "Board Breaking"];
     try {
-      await fetch(`/api/rank-tests/${testId}/categories?categoryId=${categoryId}`, { method: "DELETE" });
-
-      // If it was a default category, re-create it empty with correct sort order
-      if (defaultCats.includes(categoryName)) {
-        const sortOrder = defaultCats.indexOf(categoryName);
-        await fetch(`/api/rank-tests/${testId}/categories`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: categoryName, sortOrder }),
-        });
+      // Delete all items in the category but keep the category itself
+      let categoryItems: Item[] = [];
+      for (const test of rankTests) {
+        const cat = test.categories.find(c => c.id === categoryId);
+        if (cat) { categoryItems = cat.items; break; }
       }
+      await Promise.all(categoryItems.map(item =>
+        fetch(`/api/rank-tests/${testId}/items?itemId=${item.id}`, { method: "DELETE" })
+      ));
 
       // Reload
       const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
@@ -1341,8 +1345,8 @@ export default function CurriculumV2Page() {
                 <button onClick={copyMainCategoryToAllRanks} disabled={copyingMain || rows.filter(r => r.description?.trim()).length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
                   {copyingMain ? "Copying..." : "Copy to All Ranks"}
                 </button>
-                <button onClick={() => selectedCategory && deleteCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100">Delete Section</button>
-                <button onClick={() => selectedCategory && deleteCustomCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">Delete from All Ranks</button>
+                <button onClick={() => selectedCategory && deleteCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete Section</button>
+                <button onClick={() => selectedCategory && deleteCustomCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete from All Ranks</button>
               </div>
             </div>
             <table ref={tableRef} className="w-full text-sm">
