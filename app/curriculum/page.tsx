@@ -113,6 +113,43 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
     await onReload();
   }
 
+  async function handleAddRowPaste(e: React.ClipboardEvent) {
+    const text = e.clipboardData.getData("text");
+    const html = e.clipboardData.getData("text/html");
+    if (!text || !testId) return;
+
+    // Check if this is multiple rows from a spreadsheet
+    const isMultiRow = html && (html.match(/<tr/g) || []).length > 1;
+    const hasNewlines = text.includes("\n");
+
+    if (!isMultiRow && !hasNewlines) return; // single value, let default handle
+
+    // Check if it's a single cell with newlines (not multiple rows)
+    const isSingleCell = html && (html.match(/<td/g) || []).length <= 1;
+    if (isSingleCell && !isMultiRow) return; // single cell with newlines, let default handle
+
+    e.preventDefault();
+    setAddingItem(true);
+
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    for (const line of lines) {
+      const cells = line.split("\t");
+      const desc = cells[0]?.trim();
+      if (!desc) continue;
+      const autoName = desc.replace(/<[^>]*>/g, "").split("\n")[0].substring(0, 100).trim();
+      await fetch(`/api/rank-tests/${testId}/items`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categoryId, name: autoName, description: desc, type: getCategoryType(),
+          showTitleInPdf: false,
+        }),
+      });
+    }
+
+    setAddingItem(false);
+    await onReload();
+  }
+
   async function updateField(itemId: string, field: string, value: unknown) {
     await fetch(`/api/rank-tests/${testId}/items`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -186,7 +223,7 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
           ))}
           {/* Add new row */}
           <tr className="border-t border-gray-200 bg-gray-100">
-            <td className="px-2 py-1"><input type="text" value={newItemDesc} onChange={e => setNewItemDesc(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addItem(); }} placeholder="Type to add..." className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+            <td className="px-2 py-1"><input type="text" value={newItemDesc} onChange={e => setNewItemDesc(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addItem(); }} onPaste={handleAddRowPaste} placeholder="Type to add..." className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
             <td className="px-2 py-1"><input type="text" value="" onChange={() => {}} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
             <td className="px-2 py-1"><input type="number" min={0} value={newItemReps} onChange={e => setNewItemReps(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
             <td className="px-2 py-1"><input type="number" min={0} value={newItemSets} onChange={e => setNewItemSets(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
