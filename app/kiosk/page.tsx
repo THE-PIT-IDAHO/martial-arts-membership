@@ -109,7 +109,7 @@ export default function KioskPage() {
   const [recentCheckIns, setRecentCheckIns] = useState<{ member: Member; time: Date }[]>([]);
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState("");
-  const [scanMode, setScanMode] = useState(false);
+  const [scanMode, setScanMode] = useState(true);
 
   // Update clock every second
   useEffect(() => {
@@ -788,13 +788,13 @@ export default function KioskPage() {
 
               {/* QR Scanner */}
               {scanMode && (
-                <div className="mb-6">
+                <div className="mb-4">
                   <QrScanner onScan={handleQrScan} />
                 </div>
               )}
 
-              {/* Search Input + Results */}
-              {!scanMode && (
+              {/* Search Input + Results — always visible */}
+              {(
                 <>
                   <div className="relative mb-6">
                     <input
