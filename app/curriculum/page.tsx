@@ -375,11 +375,13 @@ export default function CurriculumV2Page() {
         }
       }
 
-      // Ensure default categories exist on existing tests that are missing them
+      // Ensure default categories + custom categories from other ranks exist
       if (tests.length > 0) {
         const testId = tests[0].id;
         const existingCatNames = new Set(tests.flatMap(t => t.categories.map(c => c.name)));
         let added = false;
+
+        // Add missing default categories
         for (let i = 0; i < defaultCats.length; i++) {
           if (!existingCatNames.has(defaultCats[i])) {
             await fetch(`/api/rank-tests/${testId}/categories`, {
@@ -390,6 +392,31 @@ export default function CurriculumV2Page() {
             added = true;
           }
         }
+
+        // Pull custom categories from other ranks in the same style
+        for (const rank of ranks) {
+          if (rank.id === selectedRankId) continue;
+          try {
+            const otherRes = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
+            if (!otherRes.ok) continue;
+            const otherData = await otherRes.json();
+            const otherTests: RankTest[] = otherData.rankTests || otherData.tests || [];
+            for (const ot of otherTests) {
+              for (const oc of ot.categories) {
+                if (!existingCatNames.has(oc.name)) {
+                  await fetch(`/api/rank-tests/${testId}/categories`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: oc.name, sortOrder: oc.sortOrder }),
+                  });
+                  existingCatNames.add(oc.name);
+                  added = true;
+                }
+              }
+            }
+          } catch { /* skip */ }
+        }
+
         if (added) {
           const res2 = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
           if (res2.ok) { const d2 = await res2.json(); tests = d2.rankTests || d2.tests || []; }
@@ -740,14 +767,16 @@ export default function CurriculumV2Page() {
   }
 
   async function addCategory() {
-    if (!newCategoryName.trim()) return;
+    if (!newCategoryName.trim() || !selectedStyleId) return;
     const testId = getTestId();
     if (!testId) return;
+    const catName = newCategoryName.trim();
     try {
+      // Create on current rank
       const res = await fetch(`/api/rank-tests/${testId}/categories`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newCategoryName.trim() }),
+        body: JSON.stringify({ name: catName }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -758,6 +787,27 @@ export default function CurriculumV2Page() {
         setShowAddCategory(false);
         setRows([emptyRow(0)]);
         setHasChanges(false);
+
+        // Also create on all other ranks in the same style (fire and forget)
+        for (const rank of ranks) {
+          if (rank.id === selectedRankId) continue;
+          fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(async (d) => {
+              const tests = d?.rankTests || d?.tests || [];
+              if (tests.length === 0) return;
+              const otherTestId = tests[0].id;
+              const existingCats: string[] = tests.flatMap((t: RankTest) => t.categories.map((c: Category) => c.name));
+              if (!existingCats.includes(catName)) {
+                await fetch(`/api/rank-tests/${otherTestId}/categories`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: catName }),
+                });
+              }
+            })
+            .catch(() => {});
+        }
       }
     } catch { alert("Failed to create category"); }
   }
