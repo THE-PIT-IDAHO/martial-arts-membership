@@ -127,10 +127,10 @@ function RichInput({ defaultValue, onSave, className, onEditClick }: { defaultVa
   );
 }
 
-function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyleId, selectedRankId, selectedCategoryId, onReload, getCategoryType, onDeleteCategory, ranks }: {
+function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyleId, selectedRankId, selectedCategoryId, onReload, getCategoryType, onDeleteCategory, onDeleteFromAllRanks, ranks }: {
   categoryId: string; categoryName: string; rankTests: RankTest[];
   selectedStyleId: string; selectedRankId: string; selectedCategoryId: string;
-  onReload: () => Promise<void>; getCategoryType: () => string; onDeleteCategory: () => void;
+  onReload: () => Promise<void>; getCategoryType: () => string; onDeleteCategory: () => void; onDeleteFromAllRanks: () => void;
   ranks: { id: string; name: string; order: number }[];
 }) {
   const [newItemName, setNewItemName] = useState("");
@@ -281,10 +281,11 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
         <h3 className="text-sm font-semibold text-gray-700">{categoryName}</h3>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-400">{items.length} items</span>
-          <button onClick={copyToAllRanks} disabled={copying || items.length === 0} className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50">
+          <button onClick={copyToAllRanks} disabled={copying || items.length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
             {copying ? "Copying..." : "Copy to All Ranks"}
           </button>
-          <button onClick={onDeleteCategory} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Delete Section</button>
+          <button onClick={onDeleteCategory} className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100">Delete Section</button>
+          <button onClick={onDeleteFromAllRanks} className="rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">Delete from All Ranks</button>
         </div>
       </div>
       <table className="w-full text-sm">
@@ -1337,10 +1338,11 @@ export default function CurriculumV2Page() {
               <h3 className="text-sm font-semibold text-gray-700">{selectedCategory?.name}</h3>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-400">{rows.filter(r => r.description?.trim()).length} items</span>
-                <button onClick={copyMainCategoryToAllRanks} disabled={copyingMain || rows.filter(r => r.description?.trim()).length === 0} className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50">
+                <button onClick={copyMainCategoryToAllRanks} disabled={copyingMain || rows.filter(r => r.description?.trim()).length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
                   {copyingMain ? "Copying..." : "Copy to All Ranks"}
                 </button>
-                <button onClick={() => selectedCategory && deleteCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Delete Section</button>
+                <button onClick={() => selectedCategory && deleteCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100">Delete Section</button>
+                <button onClick={() => selectedCategory && deleteCustomCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">Delete from All Ranks</button>
               </div>
             </div>
             <table ref={tableRef} className="w-full text-sm">
@@ -1534,6 +1536,7 @@ export default function CurriculumV2Page() {
                     return "skill";
                   }}
                   onDeleteCategory={() => deleteCategory(cat.id, cat.name)}
+                  onDeleteFromAllRanks={() => deleteCustomCategory(cat.id, cat.name)}
                   ranks={ranks}
                 />
               ))}
