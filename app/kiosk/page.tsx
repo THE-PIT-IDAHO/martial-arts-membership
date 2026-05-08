@@ -693,7 +693,7 @@ export default function KioskPage() {
           <div className="text-3xl md:text-4xl font-bold text-white font-mono">
             {formatTime(currentTime)}
           </div>
-          <div className="text-gray-900 text-sm font-medium">
+          <div className="text-white text-sm font-medium">
             {currentTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
           </div>
         </div>
