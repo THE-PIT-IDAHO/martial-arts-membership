@@ -613,12 +613,18 @@ export function generateCurriculumPdf(
     let currentY = y;
     let pageNum = 0;
 
+    console.log(`Table layout start: y=${y.toFixed(1)}, disclaimerY=${disclaimerY.toFixed(1)}, numCols=${numCols}`);
+
     for (let rowStart = 0; rowStart < sections.length; rowStart += numCols) {
       const rowSections = sections.slice(rowStart, rowStart + numCols);
       const tallestInRow = Math.max(...rowSections.map(s => s.height));
+      const wouldOverflow = currentY + tallestInRow > disclaimerY - 1;
+      const notAtTop = currentY > margin + 10;
+
+      console.log(`Row ${rowStart / numCols}: [${rowSections.map(s => s.cat.name).join(", ")}] currentY=${currentY.toFixed(1)} tallest=${tallestInRow.toFixed(1)} overflow=${wouldOverflow} notAtTop=${notAtTop} → ${wouldOverflow && notAtTop ? "NEW PAGE" : "SAME PAGE"}`);
 
       // Page break if this row doesn't fit
-      if (currentY + tallestInRow > disclaimerY - 1 && currentY > margin + 10) {
+      if (wouldOverflow && notAtTop) {
         drawFooter();
         pdf.addPage();
         currentY = margin;
@@ -627,6 +633,7 @@ export function generateCurriculumPdf(
 
       // Place each section in this row at the same Y
       for (let i = 0; i < rowSections.length; i++) {
+        console.log(`  Placed "${rowSections[i].cat.name}" col=${i} Y=${currentY.toFixed(1)} page=${pageNum}`);
         placements.push({ sec: rowSections[i], colIdx: i, startY: currentY, pageNum });
       }
 
