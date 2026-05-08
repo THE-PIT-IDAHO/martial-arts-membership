@@ -174,17 +174,40 @@ export default function KioskSettingsPage() {
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Logo URL
+                  Logo
                 </label>
-                <input
-                  type="text"
-                  value={settings.logoUrl}
-                  onChange={(e) =>
-                    setSettings((prev) => ({ ...prev, logoUrl: e.target.value }))
-                  }
-                  placeholder="https://example.com/logo.png"
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
+                <div className="flex items-center gap-3">
+                  {settings.logoUrl && (
+                    <img src={settings.logoUrl} alt="Kiosk Logo" className="h-12 object-contain rounded border border-gray-200 p-1" />
+                  )}
+                  <label className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark cursor-pointer">
+                    {settings.logoUrl ? "Change" : "Upload Logo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          setSettings((prev) => ({ ...prev, logoUrl: reader.result as string }));
+                        };
+                        reader.readAsDataURL(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {settings.logoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setSettings((prev) => ({ ...prev, logoUrl: "" }))}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
