@@ -439,69 +439,20 @@ export async function PATCH(req: Request, { params }: Params) {
         }
       }
 
-      // If there are rank changes, update the PDFs appropriately
-      if (stylesWithUpgrades.length > 0 || stylesWithDowngrades.length > 0) {
-        // Parse current style documents (use provided styleDocuments or existing)
-        let currentDocs: StyleDocument[] = [];
-        const docsSource = styleDocuments !== undefined ? styleDocuments : currentMember?.styleDocuments;
-        if (docsSource) {
-          try {
-            currentDocs = JSON.parse(docsSource);
-          } catch {
-            currentDocs = [];
-          }
-        }
-
-        let updatedDocs = [...currentDocs];
-        let docsChanged = false;
-
-        // Handle upgrades - add PDFs for new ranks
-        for (const { styleName, newRank } of stylesWithUpgrades) {
-          const styleData = allStyles.find(s => s.name.toLowerCase() === styleName.toLowerCase());
-          if (styleData?.beltConfig) {
-            const result = addRankPdfsToDocuments(styleData.beltConfig, newRank, updatedDocs);
-            if (result.hasChanges) {
-              updatedDocs = result.docs;
-              docsChanged = true;
-            }
-          }
-        }
-
-        // Handle downgrades - remove PDFs for ranks above the new rank
-        for (const { styleName, newRank } of stylesWithDowngrades) {
-          const styleData = allStyles.find(s => s.name.toLowerCase() === styleName.toLowerCase());
-          if (styleData?.beltConfig) {
-            const pdfNamesToRemove = getPdfNamesAboveRank(styleData.beltConfig, newRank);
-            if (pdfNamesToRemove.length > 0) {
-              const beforeCount = updatedDocs.length;
-              updatedDocs = updatedDocs.filter(doc => !pdfNamesToRemove.includes(doc.name));
-              if (updatedDocs.length < beforeCount) {
-                docsChanged = true;
-              }
-            }
-          }
-        }
-
-        // Update styleDocuments if PDFs were changed
-        if (docsChanged) {
-          updateData.styleDocuments = JSON.stringify(updatedDocs);
-        } else if (styleDocuments !== undefined) {
-          // Use provided styleDocuments if no automatic changes
-          updateData.styleDocuments = styleDocuments;
-        }
-
-        // On rank upgrade (promotion), delete all imported/bulk attendance records for this member
-        if (stylesWithUpgrades.length > 0) {
-          await prisma.attendance.deleteMany({
-            where: {
-              memberId: id,
-              source: "IMPORTED",
-            },
-          });
-        }
-      } else if (styleDocuments !== undefined) {
-        // No rank changes, but styleDocuments was explicitly provided
+      // Rank PDFs are now displayed directly on member profiles from Rank.pdfDocument
+      // No need to sync PDFs into styleDocuments
+      if (styleDocuments !== undefined) {
         updateData.styleDocuments = styleDocuments;
+      }
+
+      // On rank upgrade (promotion), delete all imported/bulk attendance records for this member
+      if (stylesWithUpgrades.length > 0) {
+        await prisma.attendance.deleteMany({
+          where: {
+            memberId: id,
+            source: "IMPORTED",
+          },
+        });
       }
     } else if (styleDocuments !== undefined) {
       // stylesNotes not being updated, but styleDocuments is
