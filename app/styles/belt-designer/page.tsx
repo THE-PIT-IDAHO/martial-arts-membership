@@ -540,8 +540,8 @@ export default function BeltDesignerPage() {
       pdfDocuments: r.pdfDocuments?.map(d => ({
         id: d.id,
         name: d.name,
-        url: d.url.startsWith("data:") ? "" : d.url, // Strip base64 data URIs
-      })).filter(d => d.url || d.name),
+        url: "", // PDFs stored on Rank model, not in beltConfig
+      })).filter(d => d.name),
     }));
 
     const payload: BeltSetup = {
@@ -589,11 +589,8 @@ export default function BeltDesignerPage() {
       }
 
       try {
-        const data = await res.json();
-        if (data && data.style) {
-          setStyle(data.style);
-          console.log("✓ Saved to database successfully");
-        }
+        await res.json();
+        console.log("✓ Saved to database successfully");
       } catch (err) {
         console.warn("Save succeeded but response was not JSON:", err);
       }

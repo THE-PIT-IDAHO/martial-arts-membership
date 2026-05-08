@@ -1660,10 +1660,7 @@ export default function MemberProfilePage() {
       setMember(updated);
       hydrateFormFromMember(updated);
 
-      // If saving styles section and there are ranks, automatically add rank PDFs to style documents
-      if (section === "style" && normalizedStyles.length > 0) {
-        await copyRankPDFsToStyleDocuments(normalizedStyles, updated);
-      }
+      // Rank PDFs are now displayed directly from Rank.pdfDocument — no sync needed
 
       if (section === "personal") setEditingPersonal(false);
       if (section === "style") setEditingStyleIndex(null);
