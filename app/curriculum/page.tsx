@@ -520,51 +520,19 @@ export default function CurriculumV2Page() {
         }
       }
 
-      // Ensure default categories + custom categories from other ranks exist
+      // Ensure default categories exist on current rank
       if (tests.length > 0) {
         const testId = tests[0].id;
-        const existingCatNames = new Set(tests.flatMap(t => t.categories.map(c => c.name)));
+        const existingCatNames = new Set(tests.flatMap(t => t.categories.map(c => c.name.trim().toLowerCase())));
         let added = false;
 
-        // Add missing default categories
         for (let i = 0; i < defaultCats.length; i++) {
-          if (!existingCatNames.has(defaultCats[i])) {
+          if (!existingCatNames.has(defaultCats[i].toLowerCase())) {
             await fetch(`/api/rank-tests/${testId}/categories`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ name: defaultCats[i], sortOrder: i }),
             });
-            added = true;
-          }
-        }
-
-        // Pull custom categories from other ranks in the same style (parallel fetch)
-        const otherRanks = ranks.filter(r => r.id !== selectedRankId);
-        if (otherRanks.length > 0) {
-          const otherResults = await Promise.all(
-            otherRanks.map(r => fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${r.id}`).then(res => res.ok ? res.json() : null).catch(() => null))
-          );
-          const missingCats: { name: string; sortOrder: number }[] = [];
-          for (const otherData of otherResults) {
-            if (!otherData) continue;
-            const otherTests: RankTest[] = otherData.rankTests || otherData.tests || [];
-            for (const ot of otherTests) {
-              for (const oc of ot.categories) {
-                if (!existingCatNames.has(oc.name)) {
-                  missingCats.push({ name: oc.name, sortOrder: oc.sortOrder });
-                  existingCatNames.add(oc.name);
-                }
-              }
-            }
-          }
-          if (missingCats.length > 0) {
-            await Promise.all(missingCats.map(cat =>
-              fetch(`/api/rank-tests/${testId}/categories`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: cat.name, sortOrder: cat.sortOrder }),
-              })
-            ));
             added = true;
           }
         }
@@ -575,11 +543,37 @@ export default function CurriculumV2Page() {
         }
       }
 
+      // Gather ALL category names from ALL ranks in the style (parallel, for dropdown)
+      const otherRanks = ranks.filter(r => r.id !== selectedRankId);
+      let allStyleCatNames: string[] = [];
+      if (otherRanks.length > 0) {
+        const otherResults = await Promise.all(
+          otherRanks.map(r => fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${r.id}`).then(res => res.ok ? res.json() : null).catch(() => null))
+        );
+        const nameSet = new Set<string>();
+        for (const otherData of otherResults) {
+          if (!otherData) continue;
+          const otherTests: RankTest[] = otherData.rankTests || otherData.tests || [];
+          for (const ot of otherTests) {
+            for (const oc of ot.categories) nameSet.add(oc.name);
+          }
+        }
+        allStyleCatNames = [...nameSet];
+      }
+
       if (cancelled) return;
       setRankTests(tests);
 
-      // Build category list from all tests (deduplicated)
+      // Build category list: current rank's categories + any from other ranks not yet on this rank
       const cats = buildCategoryList(tests);
+      const currentNames = new Set(cats.map(c => c.name.trim().toLowerCase()));
+      for (const name of allStyleCatNames) {
+        if (!currentNames.has(name.trim().toLowerCase())) {
+          // Add as a virtual entry — it exists on other ranks but not this one yet
+          cats.push({ id: `virtual-${name}`, name, testId: tests[0]?.id || "" });
+          currentNames.add(name.trim().toLowerCase());
+        }
+      }
       setAllCategories(cats);
 
       // Auto-select first category
@@ -598,8 +592,47 @@ export default function CurriculumV2Page() {
     return () => { cancelled = true; };
   }, [selectedRankId, selectedStyleId, ranks]);
 
-  // Rebuild rows when category changes
+  // Rebuild rows when category changes — create category on-demand if virtual
   useEffect(() => {
+    if (selectedCategoryId?.startsWith("virtual-") && rankTests.length > 0) {
+      const catName = allCategories.find(c => c.id === selectedCategoryId)?.name;
+      if (catName) {
+        const testId = rankTests[0].id;
+        fetch(`/api/rank-tests/${testId}/categories`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: catName }),
+        }).then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            // Reload rank tests to get the real category ID
+            const r = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+            if (r.ok) {
+              const d = await r.json();
+              const tests = d.rankTests || d.tests || [];
+              setRankTests(tests);
+              const cats = buildCategoryList(tests);
+              // Re-add virtual cats from allCategories
+              const currentNames = new Set(cats.map(c => c.name.trim().toLowerCase()));
+              for (const c of allCategories) {
+                if (c.id.startsWith("virtual-") && !currentNames.has(c.name.trim().toLowerCase())) {
+                  cats.push(c);
+                  currentNames.add(c.name.trim().toLowerCase());
+                }
+              }
+              setAllCategories(cats);
+              // Select the newly created real category
+              const realCat = cats.find(c => !c.id.startsWith("virtual-") && c.name.trim().toLowerCase() === catName.trim().toLowerCase());
+              if (realCat) {
+                setSelectedCategoryId(realCat.id);
+                buildRowsForCategory(tests, realCat.id);
+              }
+            }
+          }
+        }).catch(() => {});
+        return;
+      }
+    }
     if (selectedCategoryId && rankTests.length > 0) {
       buildRowsForCategory(rankTests, selectedCategoryId);
     }
