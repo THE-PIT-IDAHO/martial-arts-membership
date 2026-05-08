@@ -417,6 +417,7 @@ export default function CurriculumV2Page() {
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [reorderList, setReorderList] = useState<{ id: string; name: string }[]>([]);
   const [savingReorder, setSavingReorder] = useState(false);
+  const [reorderThisRankOnly, setReorderThisRankOnly] = useState(false);
   const tableRef = useRef<HTMLTableElement>(null);
   const [disclaimer, setDisclaimer] = useState("Coach has final say for promotion and not everyone will promote every ceremony. Promotion depends on the following:\nattendance, skill recollection, good behavior, effort and fitness");
   const [disclaimerSaving, setDisclaimerSaving] = useState(false);
@@ -595,9 +596,10 @@ export default function CurriculumV2Page() {
     const seen = new Set<string>();
     for (const test of tests) {
       for (const cat of test.categories.sort((a, b) => a.sortOrder - b.sortOrder)) {
-        if (!seen.has(cat.name)) {
+        const key = cat.name.trim().toLowerCase();
+        if (!seen.has(key)) {
           cats.push({ id: cat.id, name: cat.name, testId: test.id });
-          seen.add(cat.name);
+          seen.add(key);
         }
       }
     }
@@ -1025,18 +1027,9 @@ export default function CurriculumV2Page() {
   );
 
   function openReorderModal() {
-    // Build ordered list from allCategories sorted by their current sortOrder
-    const sorted = [...allCategories].sort((a, b) => {
-      const getOrder = (catId: string) => {
-        for (const test of rankTests) {
-          const c = test.categories.find(tc => tc.id === catId);
-          if (c) return c.sortOrder;
-        }
-        return Infinity;
-      };
-      return getOrder(a.id) - getOrder(b.id);
-    });
-    setReorderList(sorted.map(c => ({ id: c.id, name: c.name })));
+    // Use the current saved order (allCategories is already sorted by sortOrder)
+    setReorderList(allCategories.map(c => ({ id: c.id, name: c.name })));
+    setReorderThisRankOnly(false);
     setShowReorderModal(true);
   }
 
@@ -1055,6 +1048,7 @@ export default function CurriculumV2Page() {
     const testId = getTestId();
     if (!testId) { setSavingReorder(false); return; }
     try {
+      // Save order on current rank
       await Promise.all(reorderList.map((cat, i) =>
         fetch(`/api/rank-tests/${testId}/categories`, {
           method: "PATCH",
@@ -1062,6 +1056,34 @@ export default function CurriculumV2Page() {
           body: JSON.stringify({ categoryId: cat.id, sortOrder: i }),
         })
       ));
+
+      // Apply to all other ranks unless "this rank only" is checked
+      if (!reorderThisRankOnly) {
+        const orderByName: Record<string, number> = {};
+        reorderList.forEach((cat, i) => { orderByName[cat.name.trim().toLowerCase()] = i; });
+
+        const otherRanks = ranks.filter(r => r.id !== selectedRankId);
+        await Promise.all(otherRanks.map(async (rank) => {
+          const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
+          if (!res.ok) return;
+          const d = await res.json();
+          const tests: RankTest[] = d.rankTests || d.tests || [];
+          for (const t of tests) {
+            await Promise.all(t.categories.map(cat => {
+              const newOrder = orderByName[cat.name.trim().toLowerCase()];
+              if (newOrder !== undefined && newOrder !== cat.sortOrder) {
+                return fetch(`/api/rank-tests/${t.id}/categories`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ categoryId: cat.id, sortOrder: newOrder }),
+                });
+              }
+              return Promise.resolve();
+            }));
+          }
+        }));
+      }
+
       // Reload
       const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
       if (res.ok) {
@@ -1570,11 +1592,22 @@ export default function CurriculumV2Page() {
                 </SortableContext>
               </DndContext>
             </div>
-            <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
-              <button onClick={() => setShowReorderModal(false)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-              <button onClick={saveReorder} disabled={savingReorder} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
-                {savingReorder ? "Saving..." : "Save Order"}
-              </button>
+            <div className="border-t border-gray-200 px-5 py-3 space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reorderThisRankOnly}
+                  onChange={e => setReorderThisRankOnly(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 accent-primary"
+                />
+                <span className="text-xs text-gray-600">Apply to this rank only</span>
+              </label>
+              <div className="flex justify-end gap-2">
+                <button onClick={saveReorder} disabled={savingReorder} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                  {savingReorder ? "Saving..." : "Save Order"}
+                </button>
+                <button onClick={() => setShowReorderModal(false)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+              </div>
             </div>
           </div>
         </div>

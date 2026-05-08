@@ -41,10 +41,11 @@ export async function POST(
     }
 
     // Check for duplicate — skip if category with same name already exists on this test
-    const existing = await prisma.rankTestCategory.findFirst({
-      where: { rankTestId: id, name: name.trim() },
+    const allCats = await prisma.rankTestCategory.findMany({
+      where: { rankTestId: id },
       include: { items: { orderBy: { sortOrder: "asc" } } },
     });
+    const existing = allCats.find(c => c.name.trim().toLowerCase() === name.trim().toLowerCase());
     if (existing) {
       return NextResponse.json({ category: existing }, { status: 200 });
     }
