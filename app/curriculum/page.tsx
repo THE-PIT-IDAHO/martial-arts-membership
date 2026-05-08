@@ -1204,6 +1204,7 @@ export default function CurriculumV2Page() {
 
     const categoryOrderMap: Record<string, number> = {};
     allCategories.forEach((cat, i) => { categoryOrderMap[cat.name.trim().toLowerCase()] = i; });
+    console.log("Category order for publish:", allCategories.map((c, i) => `${i}: ${c.name}`));
 
     const rankTestResults = await Promise.all(
       ranksToPublish.map(rank =>
