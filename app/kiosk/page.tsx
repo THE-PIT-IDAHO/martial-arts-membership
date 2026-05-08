@@ -746,33 +746,16 @@ export default function KioskPage() {
 
         {/* Center Panel - Check-in Interface */}
         <div className="flex-1 flex items-center justify-center">
-          {/* Idle State - Tap to Start */}
-          {checkInState === "idle" && (
-            <button
-              onClick={() => setCheckInState("search")}
-              className="w-full max-w-lg aspect-square bg-primary rounded-3xl shadow-xl flex flex-col items-center justify-center gap-6 hover:bg-primaryDark active:scale-[0.98] transition-all"
-            >
-              <div className="w-32 h-32 md:w-40 md:h-40 rounded-full bg-white/20 flex items-center justify-center">
-                <svg className="w-16 h-16 md:w-20 md:h-20 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                </svg>
-              </div>
-              <div className="text-center">
-                {kioskSettings.welcomeMessage && (
-                  <p className="text-white/90 text-xl md:text-2xl mb-3">{kioskSettings.welcomeMessage}</p>
-                )}
-                <h2 className="text-3xl md:text-4xl font-bold text-white mb-2">TAP TO CHECK IN</h2>
-                <p className="text-white/80 text-lg">
-                  {selectedClass ? selectedClass.name : "Select a class"}
-                </p>
-              </div>
-            </button>
-          )}
-
-          {/* Search State */}
-          {checkInState === "search" && (
+          {/* Search State (always visible when idle or searching) */}
+          {(checkInState === "idle" || checkInState === "search") && (
             <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl border border-gray-200 p-6 md:p-8">
               <div className="text-center mb-6">
+                {kioskSettings.welcomeMessage && (
+                  <p className="text-gray-500 text-lg mb-2">{kioskSettings.welcomeMessage}</p>
+                )}
+                {selectedClass && (
+                  <p className="text-primary text-sm font-semibold mb-3">{selectedClass.name}</p>
+                )}
                 <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Find Your Name</h2>
                 <p className="text-gray-500">Type your name, member number, or scan QR</p>
               </div>
