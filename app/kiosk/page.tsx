@@ -844,19 +844,13 @@ export default function KioskPage() {
                     </div>
                   )}
                 </div>
-                {/* QR Scanner — mount once on first click, then hide/show with CSS */}
+                {/* QR Scanner */}
                 <div className="w-48 shrink-0">
-                  {scannerMounted && (
-                    <div className={scanMode ? "" : "hidden"}>
-                      <QrScanner onScan={handleQrScan} />
-                      <button onClick={() => setScanMode(false)} className="w-full mt-1 py-1 text-[10px] text-gray-400 hover:text-gray-600">
-                        Hide Camera
-                      </button>
-                    </div>
-                  )}
-                  {!scanMode && (
+                  {scannerMounted ? (
+                    <QrScanner onScan={handleQrScan} />
+                  ) : (
                     <button
-                      onClick={() => { setScannerMounted(true); setScanMode(true); }}
+                      onClick={() => setScannerMounted(true)}
                       className="w-full h-32 rounded-2xl border-2 border-dashed border-gray-300 hover:border-primary flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-primary transition-colors"
                     >
                       <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
