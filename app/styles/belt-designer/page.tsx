@@ -534,9 +534,19 @@ export default function BeltDesignerPage() {
     setSavingAll(true);
     setSuccess(null);
 
+    // Strip large data (pdfDocument URLs) from ranks before saving to keep payload small
+    const cleanedRanks = nextRanks.map(r => ({
+      ...r,
+      pdfDocuments: r.pdfDocuments?.map(d => ({
+        id: d.id,
+        name: d.name,
+        url: d.url.startsWith("data:") ? "" : d.url, // Strip base64 data URIs
+      })).filter(d => d.url || d.name),
+    }));
+
     const payload: BeltSetup = {
       layers: { ...nextLayers, fabric: true },
-      ranks: nextRanks,
+      ranks: cleanedRanks,
     };
 
     // Save to localStorage as backup
