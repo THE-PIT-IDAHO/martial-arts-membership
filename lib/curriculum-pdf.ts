@@ -104,7 +104,7 @@ export function generateCurriculumPdf(
   const ph = pdf.internal.pageSize.getHeight();
   const margin = 8;
   const cw = pw - margin * 2;
-  const footerY = ph - 8;
+  const footerY = ph - 5;
   const disclaimerH = disclaimer ? 8 : 0;
   const disclaimerY = footerY - disclaimerH;
   const rowH = 5.5;
