@@ -472,8 +472,10 @@ export default function CurriculumV2Page() {
   // Load rank tests when rank changes
   useEffect(() => {
     if (!selectedRankId || !selectedStyleId) { setAllCategories([]); setRows([]); return; }
+    let cancelled = false;
 
     async function loadOrCreate() {
+      if (cancelled) return;
       const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
       if (!res.ok) return;
       const d = await res.json();
@@ -562,6 +564,7 @@ export default function CurriculumV2Page() {
         }
       }
 
+      if (cancelled) return;
       setRankTests(tests);
 
       // Build category list from all tests (deduplicated)
@@ -581,6 +584,7 @@ export default function CurriculumV2Page() {
     }
 
     loadOrCreate().catch(() => {});
+    return () => { cancelled = true; };
   }, [selectedRankId, selectedStyleId, ranks]);
 
   // Rebuild rows when category changes

@@ -109,8 +109,15 @@ export function generateCurriculumPdf(
   const disclaimerY = footerY - disclaimerH;
   const rowH = 5.5;
 
-  // Gather all categories sorted
-  const allCategories = tests.flatMap(t => t.categories).sort((a, b) => a.sortOrder - b.sortOrder);
+  // Gather all categories sorted, deduplicated by name
+  const allCatsRaw = tests.flatMap(t => t.categories).sort((a, b) => a.sortOrder - b.sortOrder);
+  const seenCatNames = new Set<string>();
+  const allCategories = allCatsRaw.filter(c => {
+    const key = c.name.trim().toLowerCase();
+    if (seenCatNames.has(key)) return false;
+    seenCatNames.add(key);
+    return true;
+  });
 
   console.log("PDF categories:", allCategories.map(c => `${c.sortOrder}: ${c.name} (${c.items.length} items, types: ${[...new Set(c.items.map(i => i.type))].join(",")})`));
 
