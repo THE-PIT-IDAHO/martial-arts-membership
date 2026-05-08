@@ -722,6 +722,17 @@ export function generateCurriculumPdf(
         }
       }
 
+      // Fill empty columns in incomplete rows (e.g., 2 sections in a 3-column row)
+      for (let i = rowSections.length; i < numCols; i++) {
+        const colX = margin + i * colWidth;
+        let padY = currentY;
+        const padTo = currentY + tallestInRow;
+        while (padY + rowH <= padTo) {
+          drawCell(colX, padY, colWidth, rowH, getTintAtY(padY));
+          padY += rowH;
+        }
+      }
+
       currentY += tallestInRow;
     }
 
@@ -731,12 +742,13 @@ export function generateCurriculumPdf(
   // Disclaimer (above footer, centered)
   if (disclaimer) {
     const lines = disclaimer.split("\n").filter(l => l.trim());
+    const disclaimerTotalH = lines.length * 3.5;
+    const disclaimerStartY = footerY - disclaimerTotalH - 2;
     pdf.setFontSize(8);
     pdf.setFont("helvetica", "italic");
     pdf.setTextColor(80, 80, 80);
-    const startY = disclaimerY + 4;
     for (let i = 0; i < lines.length; i++) {
-      pdf.text(lines[i].trim(), pw / 2, startY + i * 3.5, { align: "center" });
+      pdf.text(lines[i].trim(), pw / 2, disclaimerStartY + i * 3.5, { align: "center" });
     }
     pdf.setTextColor(0, 0, 0);
   }
