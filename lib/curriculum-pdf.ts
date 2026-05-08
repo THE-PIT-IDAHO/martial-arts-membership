@@ -606,41 +606,36 @@ export function generateCurriculumPdf(
       return rowFromTop % 2 === 0 ? veryLightTint : [255, 255, 255];
     }
 
-    // Place sections into columns using shortest-column-first (masonry)
-    const colYs: number[] = Array(numCols).fill(y);
-
-    // Track planned placements
-    type Placement = { sec: SectionInfo; colIdx: number; startY: number };
+    // Simple grid: rows of numCols, left to right, in order
+    // Each row starts after the tallest section in the previous row
+    type Placement = { sec: SectionInfo; colIdx: number; startY: number; pageNum: number };
     const placements: Placement[] = [];
+    let currentY = y;
+    let pageNum = 0;
 
-    // Grid layout: rows of numCols, left-to-right
-    // Process in complete rows — if any section in a row doesn't fit, move the whole row
     for (let rowStart = 0; rowStart < sections.length; rowStart += numCols) {
       const rowSections = sections.slice(rowStart, rowStart + numCols);
-
-      // At the start of each new row (except first), align all columns to the tallest
-      if (rowStart > 0) {
-        const maxY = Math.max(...colYs);
-        for (let c = 0; c < numCols; c++) colYs[c] = maxY;
-      }
-
-      // Check if the tallest section in this row fits on the current page
       const tallestInRow = Math.max(...rowSections.map(s => s.height));
-      const currentRowY = Math.max(...colYs);
-      if (currentRowY + tallestInRow >= disclaimerY && currentRowY > margin + 5) {
-        y = newPage();
-        for (let c = 0; c < numCols; c++) colYs[c] = y;
+
+      // Page break if this row doesn't fit
+      if (currentY + tallestInRow > disclaimerY - 1 && currentY > margin + 10) {
+        drawFooter();
+        pdf.addPage();
+        currentY = margin;
+        pageNum++;
       }
 
-      // Place all sections in this row
+      // Place each section in this row at the same Y
       for (let i = 0; i < rowSections.length; i++) {
-        const sec = rowSections[i];
-        const colIdx = i;
-        placements.push({ sec, colIdx, startY: colYs[colIdx] });
-        console.log(`Placed "${sec.cat.name}" in col ${colIdx} at Y=${colYs[colIdx].toFixed(1)}, height=${sec.height.toFixed(1)}`);
-        colYs[colIdx] += sec.height;
+        placements.push({ sec: rowSections[i], colIdx: i, startY: currentY, pageNum });
       }
+
+      // Move Y down by the tallest section in this row
+      currentY += tallestInRow;
     }
+
+    // For tinting
+    const colYs: number[] = Array(numCols).fill(0);
 
     // Render all placed sections
     for (const { sec, colIdx, startY } of placements) {
@@ -724,34 +719,17 @@ export function generateCurriculumPdf(
         cellY += itemH;
       }
 
-      // Find the next section in this column to know where to pad to
-      const nextInCol = placements.find(p => p.colIdx === colIdx && p.startY > startY);
-      const padTarget = nextInCol ? nextInCol.startY : null;
-      if (padTarget && cellY < padTarget) {
-        // Fill empty rows between this section's items and the next section's header
-        while (cellY + rowH <= padTarget) {
-          drawCell(colX, cellY, colWidth, rowH, getTintAtY(cellY));
-          cellY += rowH;
-        }
+      // Pad remaining space to match row height (fill empty rows below short sections)
+      const rowPlacements = placements.filter(p => p.startY === startY);
+      const rowTallest = Math.max(...rowPlacements.map(p => p.sec.height));
+      const padTo = startY + rowTallest;
+      while (cellY + rowH <= padTo) {
+        drawCell(colX, cellY, colWidth, rowH, getTintAtY(cellY));
+        cellY += rowH;
       }
     }
 
-    // Square up: pad all columns to the tallest with empty tinted rows
-    const maxColY = Math.max(...colYs);
-    for (let c = 0; c < numCols; c++) {
-      const colX = margin + c * colWidth;
-      let padY = colYs[c];
-      while (padY + rowH <= maxColY) {
-        drawCell(colX, padY, colWidth, rowH, getTintAtY(padY));
-        padY += rowH;
-      }
-      // Fill any remaining partial gap
-      if (padY < maxColY) {
-        drawCell(colX, padY, colWidth, maxColY - padY, getTintAtY(padY));
-      }
-    }
-
-    y = maxColY;
+    y = currentY;
   }
 
   // Disclaimer (above footer, centered)
