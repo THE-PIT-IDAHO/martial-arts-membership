@@ -676,21 +676,21 @@ export default function KioskPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col select-none overflow-hidden">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm">
+      <header className="bg-primary px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
           {(gymLogo || kioskSettings.logoUrl) && (
             <img src={gymLogo || kioskSettings.logoUrl} alt="Logo" className="h-10 md:h-12 object-contain" />
           )}
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{gymSettings.name}</h1>
-            <p className="text-gray-500 text-sm">Member Check-In</p>
+            <h1 className="text-2xl md:text-3xl font-bold text-white">{gymSettings.name}</h1>
+            <p className="text-white/70 text-sm">Member Check-In</p>
           </div>
         </div>
         <div className="text-right">
-          <div className="text-3xl md:text-4xl font-bold text-primary font-mono">
+          <div className="text-3xl md:text-4xl font-bold text-white font-mono">
             {formatTime(currentTime)}
           </div>
-          <div className="text-gray-500 text-sm">
+          <div className="text-gray-900 text-sm font-medium">
             {currentTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
           </div>
         </div>
