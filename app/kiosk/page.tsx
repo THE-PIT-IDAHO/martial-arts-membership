@@ -1086,11 +1086,11 @@ function QrScanner({ onScan }: { onScan: (text: string) => void }) {
         const scanner = new Html5Qrcode(qrId);
         scannerInstanceRef.current = scanner;
 
-        // Try rear camera first, fall back to any camera
-        let cameraConfig: { facingMode: string } | string = { facingMode: "environment" };
+        // Try front camera first, fall back to any camera
+        let cameraConfig: { facingMode: string } | string = { facingMode: "user" };
         try {
           const devices = await Html5Qrcode.getCameras();
-          if (devices.length > 0) cameraConfig = devices[devices.length - 1].id;
+          if (devices.length > 0) cameraConfig = devices[0].id;
         } catch { /* use facingMode fallback */ }
 
         await scanner.start(
