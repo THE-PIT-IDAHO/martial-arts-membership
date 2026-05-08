@@ -1065,65 +1065,71 @@ export default function KioskPage() {
   );
 }
 
-// QR Scanner component using html5-qrcode
+// QR Scanner using native getUserMedia + jsQR
 function QrScanner({ onScan }: { onScan: (text: string) => void }) {
-  const [qrId] = useState(() => `qr-reader-${Date.now()}`);
-  const scannerInstanceRef = useRef<unknown>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastScanRef = useRef("");
   const [error, setError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
+  const [starting, setStarting] = useState(true);
 
   useEffect(() => {
     let mounted = true;
-    // Small delay to ensure DOM element is rendered
-    const timer = setTimeout(async () => {
+    let stream: MediaStream | null = null;
+    let animFrame: number;
+
+    async function start() {
       try {
-        const { Html5Qrcode } = await import("html5-qrcode");
-        if (!mounted) return;
-        const el = document.getElementById(qrId);
-        if (!el) return;
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 320 }, height: { ideal: 240 } }
+        });
+        if (!mounted || !videoRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        if (mounted) setStarting(false);
 
-        const scanner = new Html5Qrcode(qrId);
-        scannerInstanceRef.current = scanner;
+        // Dynamically import jsQR
+        const jsQR = (await import("jsqr")).default;
 
-        // Try front camera first, fall back to any camera
-        let cameraConfig: { facingMode: string } | string = { facingMode: "user" };
-        try {
-          const devices = await Html5Qrcode.getCameras();
-          if (devices.length > 0) cameraConfig = devices[0].id;
-        } catch { /* use facingMode fallback */ }
+        function scan() {
+          if (!mounted || !videoRef.current || !canvasRef.current) return;
+          const video = videoRef.current;
+          const canvas = canvasRef.current;
+          if (video.readyState !== video.HAVE_ENOUGH_DATA) { animFrame = requestAnimationFrame(scan); return; }
 
-        await scanner.start(
-          cameraConfig,
-          { fps: 10, qrbox: { width: 150, height: 150 } },
-          (decodedText) => {
-            if (decodedText === lastScanRef.current) return;
-            lastScanRef.current = decodedText;
-            onScan(decodedText);
-            setTimeout(() => { lastScanRef.current = ""; }, 3000);
-          },
-          () => {}
-        );
-        if (mounted) setReady(true);
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          ctx.drawImage(video, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+
+          if (code?.data) {
+            if (code.data !== lastScanRef.current) {
+              lastScanRef.current = code.data;
+              onScan(code.data);
+              setTimeout(() => { lastScanRef.current = ""; }, 3000);
+            }
+          }
+          animFrame = requestAnimationFrame(scan);
+        }
+        animFrame = requestAnimationFrame(scan);
       } catch (err) {
-        console.error("QR scanner error:", err);
-        if (mounted) setError("Camera not available. Allow camera access and try again.");
+        console.error("Camera error:", err);
+        if (mounted) setError("Camera not available. Check browser permissions and try again.");
       }
-    }, 100);
+    }
+
+    start();
 
     return () => {
       mounted = false;
-      clearTimeout(timer);
-      try {
-        const inst = scannerInstanceRef.current as { stop?: () => Promise<void>; clear?: () => void } | null;
-        if (inst?.stop) {
-          inst.stop().then(() => { try { inst.clear?.(); } catch {} }).catch(() => {});
-        }
-      } catch {}
-      scannerInstanceRef.current = null;
+      if (animFrame) cancelAnimationFrame(animFrame);
+      if (stream) stream.getTracks().forEach(t => t.stop());
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qrId]);
+  }, []);
 
   if (error) {
     return (
@@ -1137,9 +1143,10 @@ function QrScanner({ onScan }: { onScan: (text: string) => void }) {
   }
 
   return (
-    <div className="rounded-2xl overflow-hidden border-2 border-gray-200">
-      <div id={qrId} className="w-full" />
-      {!ready && <p className="text-center text-xs text-gray-400 py-4">Starting camera...</p>}
+    <div className="rounded-2xl overflow-hidden border-2 border-gray-200 relative">
+      <video ref={videoRef} playsInline muted className="w-full rounded-2xl" style={{ transform: "scaleX(-1)" }} />
+      <canvas ref={canvasRef} className="hidden" />
+      {starting && <p className="text-center text-xs text-gray-400 py-4 absolute inset-0 flex items-center justify-center">Starting camera...</p>}
     </div>
   );
 }
