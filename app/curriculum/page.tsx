@@ -1180,96 +1180,120 @@ export default function CurriculumV2Page() {
 
   const [publishing, setPublishing] = useState(false);
 
+  // Shared publish helper
+  async function publishRanks(ranksToPublish: { id: string; name: string; order: number }[]) {
+    const styleRes = await fetch(`/api/styles/${selectedStyleId}`);
+    if (!styleRes.ok) throw new Error("Failed to fetch style");
+    const styleData = await styleRes.json();
+    const style = styleData.style;
+
+    let beltConfig: { ranks: Array<{ id: string; name: string; layers?: { fabricColor?: string } }> } = { ranks: [] };
+    if (style.beltConfig) {
+      try { beltConfig = typeof style.beltConfig === "string" ? JSON.parse(style.beltConfig) : style.beltConfig; } catch { /* use default */ }
+    }
+
+    let logoImg: HTMLImageElement | undefined;
+    if (gymSettings.logo) {
+      logoImg = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Logo failed"));
+        img.src = gymSettings.logo;
+      }).catch(() => undefined);
+    }
+
+    const categoryOrderMap: Record<string, number> = {};
+    allCategories.forEach((cat, i) => { categoryOrderMap[cat.name.trim().toLowerCase()] = i; });
+
+    const rankTestResults = await Promise.all(
+      ranksToPublish.map(rank =>
+        fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`)
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+          .then(data => {
+            const tests = (data?.rankTests || data?.tests || []) as PdfRankTest[];
+            for (const test of tests) {
+              test.categories.sort((a, b) => {
+                const aOrder = categoryOrderMap[a.name.trim().toLowerCase()] ?? 999;
+                const bOrder = categoryOrderMap[b.name.trim().toLowerCase()] ?? 999;
+                return aOrder - bOrder;
+              });
+              test.categories.forEach((cat, i) => { cat.sortOrder = i; });
+            }
+            return { rank, tests };
+          })
+      )
+    );
+
+    let successCount = 0;
+    const errors: string[] = [];
+    const savePromises: Promise<void>[] = [];
+
+    for (const { rank, tests } of rankTestResults) {
+      const hasCurriculum = tests.length > 0 && tests.some(t => t.categories.some(c => c.items.length > 0));
+      if (!hasCurriculum) continue;
+
+      const configRank = beltConfig.ranks?.find(r => r.id === rank.id)
+        || beltConfig.ranks?.find(r => r.name.toLowerCase() === rank.name.toLowerCase());
+      const beltColor = (configRank?.layers as Record<string, unknown>)?.fabricColor as string || "#ffffff";
+
+      const pdfDataUrl = generateCurriculumPdf(style.name, rank.name, tests, beltColor, gymSettings, logoImg, disclaimer);
+
+      savePromises.push(
+        fetch(`/api/ranks/${rank.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pdfDocument: pdfDataUrl }),
+        }).then(res => {
+          if (res.ok) successCount++;
+          else errors.push(`${rank.name}: ${res.status}`);
+        })
+      );
+    }
+
+    await Promise.all(savePromises);
+    return { successCount, errors };
+  }
+
+  // Save & Publish — current rank only
   async function handleSaveAndPublish() {
+    if (!selectedStyleId || !selectedRankId) return;
+    setPublishing(true);
+    try {
+      if (hasChanges) await handleSave();
+      const rank = ranks.find(r => r.id === selectedRankId);
+      if (!rank) throw new Error("Rank not found");
+      const { successCount, errors } = await publishRanks([rank]);
+      if (errors.length > 0) {
+        alert(`Failed to publish ${rank.name}: ${errors.join(", ")}`);
+      } else if (successCount > 0) {
+        alert(`${rank.name} PDF published.`);
+      } else {
+        alert("No curriculum to publish for this rank.");
+      }
+    } catch (err) {
+      console.error("Publish error:", err);
+      alert("Failed to publish: " + (err instanceof Error ? err.message : "Unknown error"));
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  // Publish All — all ranks in the style
+  async function handlePublishAll() {
     if (!selectedStyleId) return;
     setPublishing(true);
     try {
-      // Save first if there are changes
       if (hasChanges) await handleSave();
-
-      // Fetch full style data for belt colors
       const styleRes = await fetch(`/api/styles/${selectedStyleId}`);
       if (!styleRes.ok) throw new Error("Failed to fetch style");
       const styleData = await styleRes.json();
-      const style = styleData.style;
-      const allRanks: { id: string; name: string; order: number }[] = style?.ranks || [];
-
-      let beltConfig: { ranks: Array<{ id: string; name: string; layers?: { fabricColor?: string } }> } = { ranks: [] };
-      if (style.beltConfig) {
-        try { beltConfig = typeof style.beltConfig === "string" ? JSON.parse(style.beltConfig) : style.beltConfig; } catch { /* use default */ }
-      }
-
-      // Pre-load logo
-      let logoImg: HTMLImageElement | undefined;
-      if (gymSettings.logo) {
-        logoImg = await new Promise<HTMLImageElement>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(img);
-          img.onerror = () => reject(new Error("Logo failed"));
-          img.src = gymSettings.logo;
-        }).catch(() => undefined);
-      }
-
-      // Build category order map from current dropdown order
-      const categoryOrderMap: Record<string, number> = {};
-      allCategories.forEach((cat, i) => { categoryOrderMap[cat.name.trim().toLowerCase()] = i; });
-
-      // Load rank tests for ALL ranks in this style (parallel fetch)
-      const rankTestResults = await Promise.all(
-        allRanks.map(rank =>
-          fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`)
-            .then(r => r.ok ? r.json() : null)
-            .catch(() => null)
-            .then(data => {
-              const tests = (data?.rankTests || data?.tests || []) as PdfRankTest[];
-              // Apply the current dropdown order to each rank's categories
-              for (const test of tests) {
-                test.categories.sort((a, b) => {
-                  const aOrder = categoryOrderMap[a.name.trim().toLowerCase()] ?? 999;
-                  const bOrder = categoryOrderMap[b.name.trim().toLowerCase()] ?? 999;
-                  return aOrder - bOrder;
-                });
-                // Update sortOrder to match
-                test.categories.forEach((cat, i) => { cat.sortOrder = i; });
-              }
-              return { rank, tests };
-            })
-        )
-      );
-
-      // Generate PDFs and save (parallel saves)
-      let successCount = 0;
-      const errors: string[] = [];
-      const savePromises: Promise<void>[] = [];
-
-      for (const { rank, tests } of rankTestResults) {
-        const hasCurriculum = tests.length > 0 && tests.some(t => t.categories.some(c => c.items.length > 0));
-        if (!hasCurriculum) continue;
-
-        const configRank = beltConfig.ranks?.find(r => r.id === rank.id)
-          || beltConfig.ranks?.find(r => r.name.toLowerCase() === rank.name.toLowerCase());
-        const beltColor = (configRank?.layers as Record<string, unknown>)?.fabricColor as string || "#ffffff";
-
-        const pdfDataUrl = generateCurriculumPdf(style.name, rank.name, tests, beltColor, gymSettings, logoImg, disclaimer);
-
-        savePromises.push(
-          fetch(`/api/ranks/${rank.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pdfDocument: pdfDataUrl }),
-          }).then(res => {
-            if (res.ok) successCount++;
-            else errors.push(`${rank.name}: ${res.status}`);
-          })
-        );
-      }
-
-      await Promise.all(savePromises);
-
+      const allRanks: { id: string; name: string; order: number }[] = styleData.style?.ranks || [];
+      const { successCount, errors } = await publishRanks(allRanks);
       if (errors.length > 0) {
         alert(`Published ${successCount}/${successCount + errors.length} PDFs. Failed: ${errors.join(", ")}`);
       } else if (successCount > 0) {
-        alert(`Curriculum published! ${successCount} rank PDF${successCount !== 1 ? "s" : ""} generated.`);
+        alert(`All published! ${successCount} rank PDF${successCount !== 1 ? "s" : ""} generated.`);
       } else {
         alert("No curriculum to publish.");
       }
@@ -1299,6 +1323,9 @@ export default function CurriculumV2Page() {
             </button>
             <button onClick={handleSaveAndPublish} disabled={publishing} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
               {publishing ? "Publishing..." : "Save & Publish"}
+            </button>
+            <button onClick={handlePublishAll} disabled={publishing} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50">
+              {publishing ? "Publishing..." : "Publish All Ranks"}
             </button>
           </div>
         </div>
