@@ -607,45 +607,11 @@ export function generateCurriculumPdf(
     }
 
     // Simple grid: rows of numCols, left to right, in order
-    // Each row starts after the tallest section in the previous row
-    type Placement = { sec: SectionInfo; colIdx: number; startY: number; pageNum: number };
-    const placements: Placement[] = [];
+    // Render sections row by row, immediately (no separate placement phase)
     let currentY = y;
-    let pageNum = 0;
 
-    console.log(`Table layout start: y=${y.toFixed(1)}, disclaimerY=${disclaimerY.toFixed(1)}, numCols=${numCols}`);
-
-    for (let rowStart = 0; rowStart < sections.length; rowStart += numCols) {
-      const rowSections = sections.slice(rowStart, rowStart + numCols);
-      const tallestInRow = Math.max(...rowSections.map(s => s.height));
-      const wouldOverflow = currentY + tallestInRow > disclaimerY - 1;
-      const notAtTop = currentY > margin + 10;
-
-      console.log(`Row ${rowStart / numCols}: [${rowSections.map(s => s.cat.name).join(", ")}] currentY=${currentY.toFixed(1)} tallest=${tallestInRow.toFixed(1)} overflow=${wouldOverflow} notAtTop=${notAtTop} → ${wouldOverflow && notAtTop ? "NEW PAGE" : "SAME PAGE"}`);
-
-      // Page break if this row doesn't fit
-      if (wouldOverflow && notAtTop) {
-        drawFooter();
-        pdf.addPage();
-        currentY = margin;
-        pageNum++;
-      }
-
-      // Place each section in this row at the same Y
-      for (let i = 0; i < rowSections.length; i++) {
-        console.log(`  Placed "${rowSections[i].cat.name}" col=${i} Y=${currentY.toFixed(1)} page=${pageNum}`);
-        placements.push({ sec: rowSections[i], colIdx: i, startY: currentY, pageNum });
-      }
-
-      // Move Y down by the tallest section in this row
-      currentY += tallestInRow;
-    }
-
-    // For tinting
-    const colYs: number[] = Array(numCols).fill(0);
-
-    // Render all placed sections
-    for (const { sec, colIdx, startY } of placements) {
+    // Helper: render one section at a position
+    function renderSection(sec: SectionInfo, colIdx: number, startY: number) {
       const colX = margin + colIdx * colWidth;
 
       // Header
@@ -662,7 +628,6 @@ export function generateCurriculumPdf(
         const itemLines = getItemRowCount(item, colWidth);
         const itemH = itemLines * rowH;
 
-        // Alternating tint based on absolute Y position
         for (let li = 0; li < itemLines; li++) {
           const tint = getTintAtY(cellY + li * rowH);
           pdf.setFillColor(tint[0], tint[1], tint[2]);
@@ -726,14 +691,35 @@ export function generateCurriculumPdf(
         cellY += itemH;
       }
 
-      // Pad remaining space to match row height (fill empty rows below short sections)
-      const rowPlacements = placements.filter(p => p.startY === startY);
-      const rowTallest = Math.max(...rowPlacements.map(p => p.sec.height));
-      const padTo = startY + rowTallest;
-      while (cellY + rowH <= padTo) {
-        drawCell(colX, cellY, colWidth, rowH, getTintAtY(cellY));
-        cellY += rowH;
+      return cellY;
+    }
+
+    // Process rows of sections
+    for (let rowStart = 0; rowStart < sections.length; rowStart += numCols) {
+      const rowSections = sections.slice(rowStart, rowStart + numCols);
+      const tallestInRow = Math.max(...rowSections.map(s => s.height));
+
+      // Page break if this row doesn't fit
+      if (currentY + tallestInRow > disclaimerY - 1 && currentY > margin + 10) {
+        drawFooter();
+        pdf.addPage();
+        currentY = margin;
       }
+
+      // Render each section in this row and pad short ones
+      for (let i = 0; i < rowSections.length; i++) {
+        const endY = renderSection(rowSections[i], i, currentY);
+        // Pad to match tallest
+        const padTo = currentY + tallestInRow;
+        const colX = margin + i * colWidth;
+        let padY = endY;
+        while (padY + rowH <= padTo) {
+          drawCell(colX, padY, colWidth, rowH, getTintAtY(padY));
+          padY += rowH;
+        }
+      }
+
+      currentY += tallestInRow;
     }
 
     y = currentY;
