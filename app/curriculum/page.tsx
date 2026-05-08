@@ -425,6 +425,7 @@ export default function CurriculumV2Page() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [popupCell, setPopupCell] = useState<{ rowIdx: number; field: keyof Row; value: string } | null>(null);
   const [showAddCategory, setShowAddCategory] = useState(false);
+  const [styleCatNames, setStyleCatNames] = useState<string[]>([]);
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [reorderList, setReorderList] = useState<{ id: string; name: string }[]>([]);
   const [savingReorder, setSavingReorder] = useState(false);
@@ -468,7 +469,7 @@ export default function CurriculumV2Page() {
     if (style?.ranks?.length) setSelectedRankId(style.ranks[0].id);
     else setSelectedRankId("");
 
-    // Load disclaimer from style detail
+    // Load disclaimer and all category names for this style
     if (selectedStyleId) {
       fetch(`/api/styles/${selectedStyleId}`).then(r => r.ok ? r.json() : null).then(d => {
         if (d?.style?.curriculumDisclaimer !== undefined) {
@@ -477,6 +478,22 @@ export default function CurriculumV2Page() {
           setDisclaimer("Coach has final say for promotion and not everyone will promote every ceremony. Promotion depends on the following:\nattendance, skill recollection, good behavior, effort and fitness");
         }
       }).catch(() => {});
+
+      // Fetch ALL category names across ALL ranks in this style (once per style change)
+      const style = styles.find(s => s.id === selectedStyleId);
+      if (style?.ranks?.length) {
+        Promise.all(
+          style.ranks.map(r => fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${r.id}`).then(res => res.ok ? res.json() : null).catch(() => null))
+        ).then(results => {
+          const names = new Set<string>();
+          for (const d of results) {
+            if (!d) continue;
+            const tests: RankTest[] = d.rankTests || d.tests || [];
+            for (const t of tests) for (const c of t.categories) names.add(c.name);
+          }
+          setStyleCatNames([...names]);
+        }).catch(() => {});
+      }
     }
   }, [selectedStyleId, styles]);
 
@@ -543,23 +560,7 @@ export default function CurriculumV2Page() {
         }
       }
 
-      // Gather ALL category names from ALL ranks in the style (parallel, for dropdown)
-      const otherRanks = ranks.filter(r => r.id !== selectedRankId);
-      let allStyleCatNames: string[] = [];
-      if (otherRanks.length > 0) {
-        const otherResults = await Promise.all(
-          otherRanks.map(r => fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${r.id}`).then(res => res.ok ? res.json() : null).catch(() => null))
-        );
-        const nameSet = new Set<string>();
-        for (const otherData of otherResults) {
-          if (!otherData) continue;
-          const otherTests: RankTest[] = otherData.rankTests || otherData.tests || [];
-          for (const ot of otherTests) {
-            for (const oc of ot.categories) nameSet.add(oc.name);
-          }
-        }
-        allStyleCatNames = [...nameSet];
-      }
+      // Use cached style-wide category names (loaded when style changes)
 
       if (cancelled) return;
       setRankTests(tests);
@@ -567,9 +568,8 @@ export default function CurriculumV2Page() {
       // Build category list: current rank's categories + any from other ranks not yet on this rank
       const cats = buildCategoryList(tests);
       const currentNames = new Set(cats.map(c => c.name.trim().toLowerCase()));
-      for (const name of allStyleCatNames) {
+      for (const name of styleCatNames) {
         if (!currentNames.has(name.trim().toLowerCase())) {
-          // Add as a virtual entry — it exists on other ranks but not this one yet
           cats.push({ id: `virtual-${name}`, name, testId: tests[0]?.id || "" });
           currentNames.add(name.trim().toLowerCase());
         }
