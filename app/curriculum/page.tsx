@@ -1210,13 +1210,30 @@ export default function CurriculumV2Page() {
         }).catch(() => undefined);
       }
 
+      // Build category order map from current dropdown order
+      const categoryOrderMap: Record<string, number> = {};
+      allCategories.forEach((cat, i) => { categoryOrderMap[cat.name.trim().toLowerCase()] = i; });
+
       // Load rank tests for ALL ranks in this style (parallel fetch)
       const rankTestResults = await Promise.all(
         allRanks.map(rank =>
           fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`)
             .then(r => r.ok ? r.json() : null)
             .catch(() => null)
-            .then(data => ({ rank, tests: (data?.rankTests || data?.tests || []) as PdfRankTest[] }))
+            .then(data => {
+              const tests = (data?.rankTests || data?.tests || []) as PdfRankTest[];
+              // Apply the current dropdown order to each rank's categories
+              for (const test of tests) {
+                test.categories.sort((a, b) => {
+                  const aOrder = categoryOrderMap[a.name.trim().toLowerCase()] ?? 999;
+                  const bOrder = categoryOrderMap[b.name.trim().toLowerCase()] ?? 999;
+                  return aOrder - bOrder;
+                });
+                // Update sortOrder to match
+                test.categories.forEach((cat, i) => { cat.sortOrder = i; });
+              }
+              return { rank, tests };
+            })
         )
       );
 
