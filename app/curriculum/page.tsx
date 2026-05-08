@@ -563,13 +563,8 @@ export default function CurriculumV2Page() {
 
       setRankTests(tests);
 
-      // Build category list from all tests
-      const cats: { id: string; name: string; testId: string }[] = [];
-      for (const test of tests) {
-        for (const cat of test.categories.sort((a, b) => a.sortOrder - b.sortOrder)) {
-          cats.push({ id: cat.id, name: cat.name, testId: test.id });
-        }
-      }
+      // Build category list from all tests (deduplicated)
+      const cats = buildCategoryList(tests);
       setAllCategories(cats);
 
       // Auto-select first category
@@ -593,6 +588,21 @@ export default function CurriculumV2Page() {
       buildRowsForCategory(rankTests, selectedCategoryId);
     }
   }, [selectedCategoryId]);
+
+  // Build deduplicated category list sorted by sortOrder
+  function buildCategoryList(tests: RankTest[]): { id: string; name: string; testId: string }[] {
+    const cats: { id: string; name: string; testId: string }[] = [];
+    const seen = new Set<string>();
+    for (const test of tests) {
+      for (const cat of test.categories.sort((a, b) => a.sortOrder - b.sortOrder)) {
+        if (!seen.has(cat.name)) {
+          cats.push({ id: cat.id, name: cat.name, testId: test.id });
+          seen.add(cat.name);
+        }
+      }
+    }
+    return cats;
+  }
 
   function buildRowsForCategory(tests: RankTest[], categoryId: string) {
     const newRows: Row[] = [];
@@ -933,11 +943,10 @@ export default function CurriculumV2Page() {
         if (needsReload) {
           const res2 = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
           if (res2.ok) { const d2 = await res2.json(); tests = d2.rankTests || d2.tests || []; }
-          const cats: { id: string; name: string; testId: string }[] = [];
-          for (const test of tests) for (const cat of test.categories.sort((a: Category, b: Category) => a.sortOrder - b.sortOrder)) cats.push({ id: cat.id, name: cat.name, testId: test.id });
-          setAllCategories(cats);
-          if (!cats.find(c => c.id === selectedCategoryId) && cats.length > 0) {
-            setSelectedCategoryId(cats[0].id);
+          const updatedCats = buildCategoryList(tests);
+          setAllCategories(updatedCats);
+          if (!updatedCats.find(c => c.id === selectedCategoryId) && updatedCats.length > 0) {
+            setSelectedCategoryId(updatedCats[0].id);
           }
         }
 
@@ -1059,13 +1068,7 @@ export default function CurriculumV2Page() {
         const d = await res.json();
         const tests = d.rankTests || d.tests || [];
         setRankTests(tests);
-        const cats: { id: string; name: string; testId: string }[] = [];
-        for (const test of tests) {
-          for (const cat of test.categories.sort((a: Category, b: Category) => a.sortOrder - b.sortOrder)) {
-            cats.push({ id: cat.id, name: cat.name, testId: test.id });
-          }
-        }
-        setAllCategories(cats);
+        setAllCategories(buildCategoryList(tests));
         buildRowsForCategory(tests, selectedCategoryId);
       }
       setShowReorderModal(false);
@@ -1112,9 +1115,7 @@ export default function CurriculumV2Page() {
         const d = await res.json();
         const tests = d.rankTests || d.tests || [];
         setRankTests(tests);
-        const cats: { id: string; name: string; testId: string }[] = [];
-        for (const test of tests) for (const cat of test.categories.sort((a: Category, b: Category) => a.sortOrder - b.sortOrder)) cats.push({ id: cat.id, name: cat.name, testId: test.id });
-        setAllCategories(cats);
+        setAllCategories(buildCategoryList(tests));
         buildRowsForCategory(tests, selectedCategoryId);
       }
     } catch { alert("Failed to clear category items"); }
@@ -1141,11 +1142,9 @@ export default function CurriculumV2Page() {
         const d = await res.json();
         const tests = d.rankTests || d.tests || [];
         setRankTests(tests);
-        const cats: { id: string; name: string; testId: string }[] = [];
-        for (const test of tests) for (const cat of test.categories.sort((a: Category, b: Category) => a.sortOrder - b.sortOrder)) cats.push({ id: cat.id, name: cat.name, testId: test.id });
+        const cats = buildCategoryList(tests);
         setAllCategories(cats);
         if (categoryId === selectedCategoryId) {
-          // Find the re-created category or first available
           const recreated = cats.find(c => c.name === categoryName);
           const target = recreated || cats[0];
           if (target) { setSelectedCategoryId(target.id); buildRowsForCategory(tests, target.id); }

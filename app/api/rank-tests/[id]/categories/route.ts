@@ -40,6 +40,15 @@ export async function POST(
       return new NextResponse("Name is required", { status: 400 });
     }
 
+    // Check for duplicate — skip if category with same name already exists on this test
+    const existing = await prisma.rankTestCategory.findFirst({
+      where: { rankTestId: id, name: name.trim() },
+      include: { items: { orderBy: { sortOrder: "asc" } } },
+    });
+    if (existing) {
+      return NextResponse.json({ category: existing }, { status: 200 });
+    }
+
     // Use provided sortOrder or default to count
     const order = sortOrder !== undefined ? sortOrder : await prisma.rankTestCategory.count({ where: { rankTestId: id } });
 

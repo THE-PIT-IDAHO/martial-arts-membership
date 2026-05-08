@@ -142,7 +142,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         )}
         <div className="mb-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 px-3">
             Navigation
           </p>
         </div>

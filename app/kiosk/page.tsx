@@ -681,8 +681,8 @@ export default function KioskPage() {
       {/* Header */}
       <header className="bg-primary px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
-          {(gymLogo || kioskSettings.logoUrl) && (
-            <img src={gymLogo || kioskSettings.logoUrl} alt="Logo" className="h-10 md:h-12 object-contain" />
+          {(kioskSettings.logoUrl || gymLogo) && (
+            <img src={kioskSettings.logoUrl || gymLogo} alt="Logo" className="h-10 md:h-12 object-contain" />
           )}
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-white">{gymSettings.name}</h1>
@@ -751,10 +751,10 @@ export default function KioskPage() {
             <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl border border-gray-200 p-6 md:p-8">
               <div className="text-center mb-6">
                 {kioskSettings.welcomeMessage && (
-                  <p className="text-gray-500 text-lg mb-2">{kioskSettings.welcomeMessage}</p>
+                  <p className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{kioskSettings.welcomeMessage}</p>
                 )}
                 {selectedClass && (
-                  <p className="text-primary text-sm font-semibold mb-3">{selectedClass.name}</p>
+                  <p className="text-xl md:text-2xl font-semibold text-primary mb-3">{selectedClass.name}</p>
                 )}
                 <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Find Your Name</h2>
                 <p className="text-gray-500">Type your name, member number, or scan QR</p>
