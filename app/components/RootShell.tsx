@@ -5,10 +5,14 @@ import Header from "./Header";
 import { ThemeProvider } from "@/components/theme-provider";
 
 const PASSTHROUGH_PREFIXES = ["/portal", "/kiosk", "/waivers/new"];
+const PASSTHROUGH_EXCEPTIONS = ["/kiosk/settings"];
 
 export default function RootShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isPassthrough = PASSTHROUGH_PREFIXES.some(
+  const isException = PASSTHROUGH_EXCEPTIONS.some(
+    (p) => pathname === p || pathname?.startsWith(p + "/")
+  );
+  const isPassthrough = !isException && PASSTHROUGH_PREFIXES.some(
     (p) => pathname === p || pathname?.startsWith(p + "/")
   );
 
