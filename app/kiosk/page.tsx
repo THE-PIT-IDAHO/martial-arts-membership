@@ -165,6 +165,9 @@ export default function KioskPage() {
         if (allSettingsRes.ok) {
           const allData = await allSettingsRes.json();
           if (allData.settings && Array.isArray(allData.settings)) {
+            const get = (key: string) => allData.settings.find((s: { key: string; value: string }) => s.key === key)?.value || "";
+            const gymName = get("gymName");
+            if (gymName) setGymSettings(prev => ({ ...prev, name: gymName }));
             const logoSetting = allData.settings.find((s: { key: string; value: string }) => s.key === "gymLogo");
             if (logoSetting?.value) setGymLogo(logoSetting.value);
           }
