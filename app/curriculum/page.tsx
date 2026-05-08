@@ -590,7 +590,7 @@ export default function CurriculumV2Page() {
 
     loadOrCreate().catch(() => {});
     return () => { cancelled = true; };
-  }, [selectedRankId, selectedStyleId, ranks]);
+  }, [selectedRankId, selectedStyleId, ranks, styleCatNames]);
 
   // Rebuild rows when category changes — create category on-demand if virtual
   useEffect(() => {
