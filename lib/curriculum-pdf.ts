@@ -112,6 +112,8 @@ export function generateCurriculumPdf(
   // Gather all categories sorted
   const allCategories = tests.flatMap(t => t.categories).sort((a, b) => a.sortOrder - b.sortOrder);
 
+  console.log("PDF categories:", allCategories.map(c => `${c.sortOrder}: ${c.name} (${c.items.length} items, types: ${[...new Set(c.items.map(i => i.type))].join(",")})`));
+
   // Separate: knowledge categories (Q&A text) vs table categories
   const knowledgeCategories = allCategories.filter(c =>
     c.items.length > 0 && c.items.every(i => i.type === "knowledge")
@@ -119,6 +121,9 @@ export function generateCurriculumPdf(
   const tableCategories = allCategories.filter(c =>
     c.items.length > 0 && !c.items.every(i => i.type === "knowledge")
   );
+
+  console.log("Knowledge cats:", knowledgeCategories.map(c => c.name));
+  console.log("Table cats:", tableCategories.map(c => c.name));
 
   // Helper: draw a filled+bordered cell
   function drawCell(x: number, cy: number, w: number, h: number, fillRgb: [number, number, number]) {
