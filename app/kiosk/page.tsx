@@ -110,6 +110,7 @@ export default function KioskPage() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [scanMode, setScanMode] = useState(false);
+  const [scannerMounted, setScannerMounted] = useState(false);
 
   // Update clock every second
   useEffect(() => {
@@ -843,18 +844,19 @@ export default function KioskPage() {
                     </div>
                   )}
                 </div>
-                {/* QR Scanner toggle + small window */}
+                {/* QR Scanner — mount once on first click, then hide/show with CSS */}
                 <div className="w-48 shrink-0">
-                  {scanMode ? (
-                    <>
+                  {scannerMounted && (
+                    <div className={scanMode ? "" : "hidden"}>
                       <QrScanner onScan={handleQrScan} />
                       <button onClick={() => setScanMode(false)} className="w-full mt-1 py-1 text-[10px] text-gray-400 hover:text-gray-600">
                         Hide Camera
                       </button>
-                    </>
-                  ) : (
+                    </div>
+                  )}
+                  {!scanMode && (
                     <button
-                      onClick={() => setScanMode(true)}
+                      onClick={() => { setScannerMounted(true); setScanMode(true); }}
                       className="w-full h-32 rounded-2xl border-2 border-dashed border-gray-300 hover:border-primary flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-primary transition-colors"
                     >
                       <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
