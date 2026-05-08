@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 type GymSettings = {
   name: string;
@@ -110,7 +110,6 @@ export default function KioskPage() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [scanMode, setScanMode] = useState(false);
-  const [scannerMounted, setScannerMounted] = useState(false);
 
   // Update clock every second
   useEffect(() => {
@@ -483,40 +482,6 @@ export default function KioskPage() {
   };
 
   // Search members - only show those eligible for the selected class
-  const handleSearch = useCallback((query: string) => {
-    setSearchQuery(query);
-    if (query.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    const q = query.toLowerCase();
-    const results = members
-      .filter((m) => {
-        // Check if member can check in to the selected class
-        if (!canMemberCheckInToClass(m, selectedClass)) return false;
-
-        const fullName = `${m.firstName} ${m.lastName}`.toLowerCase();
-        const memberNum = m.memberNumber?.toString() || "";
-        return fullName.includes(q) || memberNum.includes(q);
-      })
-      .slice(0, 8); // Limit to 8 results
-
-    setSearchResults(results);
-  }, [members, selectedClass, canMemberCheckInToClass]);
-
-  // Handle class selection - clear any pending search/selection state
-  const handleClassChange = (cls: ClassSession) => {
-    if (cls.id !== selectedClass?.id) {
-      // Reset search and selection when class changes
-      setSearchQuery("");
-      setSearchResults([]);
-      setSelectedMember(null);
-      setCheckInState("idle");
-    }
-    setSelectedClass(cls);
-  };
-
   // Select member to check in
   const handleSelectMember = (member: Member) => {
     setSelectedMember(member);
@@ -526,7 +491,7 @@ export default function KioskPage() {
     setScanMode(false);
   };
 
-  // Handle QR code scan result
+  // Handle QR code scan result (from camera or Bluetooth scanner)
   const handleQrScan = useCallback((decodedText: string) => {
     let memberId: string | null = null;
 
@@ -566,6 +531,47 @@ export default function KioskPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members]);
+
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+
+    // Detect QR code data from Bluetooth scanner (URL or JSON)
+    if (query.includes("member=") || query.startsWith("{") || query.startsWith("http")) {
+      handleQrScan(query.trim());
+      setSearchQuery("");
+      return;
+    }
+
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const q = query.toLowerCase();
+    const results = members
+      .filter((m) => {
+        // Check if member can check in to the selected class
+        if (!canMemberCheckInToClass(m, selectedClass)) return false;
+
+        const fullName = `${m.firstName} ${m.lastName}`.toLowerCase();
+        const memberNum = m.memberNumber?.toString() || "";
+        return fullName.includes(q) || memberNum.includes(q);
+      })
+      .slice(0, 8);
+
+    setSearchResults(results);
+  }, [members, selectedClass, canMemberCheckInToClass, handleQrScan]);
+
+  // Handle class selection - clear any pending search/selection state
+  const handleClassChange = (cls: ClassSession) => {
+    if (cls.id !== selectedClass?.id) {
+      setSearchQuery("");
+      setSearchResults([]);
+      setSelectedMember(null);
+      setCheckInState("idle");
+    }
+    setSelectedClass(cls);
+  };
 
   // Confirm check-in
   const handleCheckIn = async () => {
@@ -768,9 +774,9 @@ export default function KioskPage() {
                 <p className="text-gray-500">Type your name, member number, or scan QR</p>
               </div>
 
-              {/* Search + QR Scanner */}
-              <div className="flex gap-3 mb-4 items-start">
-                <div className="flex-1">
+              {/* Search (also accepts QR data from Bluetooth scanner) */}
+              <div className="mb-4">
+                <div>
                   <div className="relative mb-6">
                     <input
                       type="text"
@@ -842,22 +848,6 @@ export default function KioskPage() {
                       <p className="text-lg">No members found</p>
                       <p className="text-sm">Try a different search</p>
                     </div>
-                  )}
-                </div>
-                {/* QR Scanner */}
-                <div className="w-48 shrink-0">
-                  {scannerMounted ? (
-                    <QrScanner onScan={handleQrScan} />
-                  ) : (
-                    <button
-                      onClick={() => setScannerMounted(true)}
-                      className="w-full h-32 rounded-2xl border-2 border-dashed border-gray-300 hover:border-primary flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-primary transition-colors"
-                    >
-                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" />
-                      </svg>
-                      <span className="text-xs font-medium">Scan QR</span>
-                    </button>
                   )}
                 </div>
               </div>
@@ -1061,92 +1051,6 @@ export default function KioskPage() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// QR Scanner using native getUserMedia + jsQR
-function QrScanner({ onScan }: { onScan: (text: string) => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const lastScanRef = useRef("");
-  const [error, setError] = useState<string | null>(null);
-  const [starting, setStarting] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    let stream: MediaStream | null = null;
-    let animFrame: number;
-
-    async function start() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 320 }, height: { ideal: 240 } }
-        });
-        if (!mounted || !videoRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        if (mounted) setStarting(false);
-
-        // Dynamically import jsQR
-        const jsQR = (await import("jsqr")).default;
-
-        function scan() {
-          if (!mounted || !videoRef.current || !canvasRef.current) return;
-          const video = videoRef.current;
-          const canvas = canvasRef.current;
-          if (video.readyState !== video.HAVE_ENOUGH_DATA) { animFrame = requestAnimationFrame(scan); return; }
-
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return;
-          ctx.drawImage(video, 0, 0);
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
-
-          if (code?.data) {
-            if (code.data !== lastScanRef.current) {
-              lastScanRef.current = code.data;
-              onScan(code.data);
-              setTimeout(() => { lastScanRef.current = ""; }, 3000);
-            }
-          }
-          animFrame = requestAnimationFrame(scan);
-        }
-        animFrame = requestAnimationFrame(scan);
-      } catch (err) {
-        console.error("Camera error:", err);
-        if (mounted) setError("Camera not available. Check browser permissions and try again.");
-      }
-    }
-
-    start();
-
-    return () => {
-      mounted = false;
-      if (animFrame) cancelAnimationFrame(animFrame);
-      if (stream) stream.getTracks().forEach(t => t.stop());
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (error) {
-    return (
-      <div className="rounded-2xl border-2 border-gray-200 p-4 text-center">
-        <svg className="w-8 h-8 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
-        <p className="text-xs text-gray-500">{error}</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl overflow-hidden border-2 border-gray-200 relative">
-      <video ref={videoRef} playsInline muted className="w-full rounded-2xl" style={{ transform: "scaleX(-1)" }} />
-      <canvas ref={canvasRef} className="hidden" />
-      {starting && <p className="text-center text-xs text-gray-400 py-4 absolute inset-0 flex items-center justify-center">Starting camera...</p>}
     </div>
   );
 }
