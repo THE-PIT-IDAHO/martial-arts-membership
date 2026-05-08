@@ -157,8 +157,19 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
         const tests: RankTest[] = d.rankTests || d.tests || [];
         if (tests.length === 0) return;
         const otherTestId = tests[0].id;
-        const otherCat = tests.flatMap(t => t.categories).find(c => c.name === categoryName);
-        if (!otherCat) return;
+        let otherCat = tests.flatMap(t => t.categories).find(c => c.name.trim().toLowerCase() === categoryName.trim().toLowerCase());
+        // Create category on this rank if it doesn't exist
+        if (!otherCat) {
+          const createRes = await fetch(`/api/rank-tests/${otherTestId}/categories`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: categoryName }),
+          });
+          if (!createRes.ok) return;
+          const createData = await createRes.json();
+          otherCat = createData.category;
+          if (!otherCat) return;
+        }
         // Delete existing items in this category on the other rank
         for (const item of otherCat.items) {
           await fetch(`/api/rank-tests/${otherTestId}/items?itemId=${item.id}`, { method: "DELETE" });
@@ -843,8 +854,18 @@ export default function CurriculumV2Page() {
         const tests: RankTest[] = d.rankTests || d.tests || [];
         if (tests.length === 0) return;
         const otherTestId = tests[0].id;
-        const otherCat = tests.flatMap(t => t.categories).find(c => c.name === selectedCategory.name);
-        if (!otherCat) return;
+        let otherCat = tests.flatMap(t => t.categories).find(c => c.name.trim().toLowerCase() === selectedCategory.name.trim().toLowerCase());
+        if (!otherCat) {
+          const createRes = await fetch(`/api/rank-tests/${otherTestId}/categories`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: selectedCategory.name }),
+          });
+          if (!createRes.ok) return;
+          const createData = await createRes.json();
+          otherCat = createData.category;
+          if (!otherCat) return;
+        }
         // Delete existing items
         for (const item of otherCat.items) {
           await fetch(`/api/rank-tests/${otherTestId}/items?itemId=${item.id}`, { method: "DELETE" });
