@@ -698,9 +698,12 @@ export function generateCurriculumPdf(
     for (let rowStart = 0; rowStart < sections.length; rowStart += numCols) {
       const rowSections = sections.slice(rowStart, rowStart + numCols);
       const tallestInRow = Math.max(...rowSections.map(s => s.height));
+      const isLastRow = rowStart + numCols >= sections.length;
+      // Last row needs disclaimer space, other rows can use space up to footer
+      const pageLimit = isLastRow ? disclaimerY - 1 : footerY - 2;
 
       // Page break if this row doesn't fit
-      if (currentY + tallestInRow > disclaimerY - 1 && currentY > margin + 10) {
+      if (currentY + tallestInRow > pageLimit && currentY > margin + 10) {
         drawFooter();
         pdf.addPage();
         currentY = margin;
