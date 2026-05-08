@@ -284,9 +284,10 @@ export default function BeltDesignerPage() {
                   .map((r) => {
                     const dbRank = dbRanks.find(dr => dr.id === r.id)
                       || dbRanks.find(dr => dr.name.toLowerCase() === (r.name || "").toLowerCase());
-                    const pdfDocs = r.pdfDocuments ? [...r.pdfDocuments] : [];
-                    // Add curriculum PDF from DB if present and not already in the list
-                    if (dbRank?.pdfDocument && !pdfDocs.some(d => d.id === "curriculum-db")) {
+                    let pdfDocs = r.pdfDocuments ? [...r.pdfDocuments] : [];
+                    // Add or replace curriculum PDF from DB Rank.pdfDocument
+                    if (dbRank?.pdfDocument) {
+                      pdfDocs = pdfDocs.filter(d => d.id !== "curriculum-db");
                       pdfDocs.push({ id: "curriculum-db", name: `${r.name} Curriculum`, url: dbRank.pdfDocument });
                     }
                     return {
