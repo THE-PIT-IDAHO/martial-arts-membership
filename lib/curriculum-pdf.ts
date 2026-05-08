@@ -105,7 +105,7 @@ export function generateCurriculumPdf(
   const margin = 8;
   const cw = pw - margin * 2;
   const footerY = ph - 12;
-  const disclaimerH = disclaimer ? 12 : 0; // reserve space for 2-line disclaimer
+  const disclaimerH = disclaimer ? 8 : 0; // reserve space for 2-line disclaimer
   const disclaimerY = footerY - disclaimerH;
   const rowH = 5.5;
 
