@@ -268,8 +268,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
           }
         }
 
-        // Sync rank documents to members who have this style
-        await syncRankDocumentsToMembers(id, style.name, config.ranks);
+        // Rank PDFs are now displayed directly on member profiles — no sync needed
       }
     }
 
