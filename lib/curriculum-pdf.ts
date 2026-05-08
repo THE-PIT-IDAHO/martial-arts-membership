@@ -626,7 +626,8 @@ export function generateCurriculumPdf(
 
       // Check if the tallest section in this row fits on the current page
       const tallestInRow = Math.max(...rowSections.map(s => s.height));
-      if (colYs[0] + tallestInRow > disclaimerY && colYs[0] > y) {
+      const currentRowY = Math.max(...colYs);
+      if (currentRowY + tallestInRow >= disclaimerY && currentRowY > margin + 5) {
         y = newPage();
         for (let c = 0; c < numCols; c++) colYs[c] = y;
       }
