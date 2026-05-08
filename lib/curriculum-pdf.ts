@@ -613,26 +613,32 @@ export function generateCurriculumPdf(
     type Placement = { sec: SectionInfo; colIdx: number; startY: number };
     const placements: Placement[] = [];
 
-    // Grid layout: rows of numCols, left-to-right, headers aligned per row
-    for (let si = 0; si < sections.length; si++) {
-      const sec = sections[si];
-      const colIdx = si % numCols;
+    // Grid layout: rows of numCols, left-to-right
+    // Process in complete rows — if any section in a row doesn't fit, move the whole row
+    for (let rowStart = 0; rowStart < sections.length; rowStart += numCols) {
+      const rowSections = sections.slice(rowStart, rowStart + numCols);
 
-      // At the start of each new row, align all columns to the tallest
-      if (colIdx === 0 && si > 0) {
+      // At the start of each new row (except first), align all columns to the tallest
+      if (rowStart > 0) {
         const maxY = Math.max(...colYs);
         for (let c = 0; c < numCols; c++) colYs[c] = maxY;
       }
 
-      // Check if section fits on current page
-      if (colYs[colIdx] + sec.height > disclaimerY && colYs[colIdx] > y) {
+      // Check if the tallest section in this row fits on the current page
+      const tallestInRow = Math.max(...rowSections.map(s => s.height));
+      if (colYs[0] + tallestInRow > disclaimerY && colYs[0] > y) {
         y = newPage();
         for (let c = 0; c < numCols; c++) colYs[c] = y;
       }
 
-      placements.push({ sec, colIdx, startY: colYs[colIdx] });
-      console.log(`Placed "${sec.cat.name}" in col ${colIdx} at Y=${colYs[colIdx].toFixed(1)}, height=${sec.height.toFixed(1)}`);
-      colYs[colIdx] += sec.height;
+      // Place all sections in this row
+      for (let i = 0; i < rowSections.length; i++) {
+        const sec = rowSections[i];
+        const colIdx = i;
+        placements.push({ sec, colIdx, startY: colYs[colIdx] });
+        console.log(`Placed "${sec.cat.name}" in col ${colIdx} at Y=${colYs[colIdx].toFixed(1)}, height=${sec.height.toFixed(1)}`);
+        colYs[colIdx] += sec.height;
+      }
     }
 
     // Render all placed sections
