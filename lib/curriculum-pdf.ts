@@ -102,9 +102,9 @@ export function generateCurriculumPdf(
   const pdf = new jsPDF({ orientation: "landscape", format: "letter" });
   const pw = pdf.internal.pageSize.getWidth();
   const ph = pdf.internal.pageSize.getHeight();
-  const margin = 5;
+  const margin = 8;
   const cw = pw - margin * 2;
-  const footerY = ph - 7;
+  const footerY = ph - 8;
   const disclaimerH = disclaimer ? 8 : 0;
   const disclaimerY = footerY - disclaimerH;
   const rowH = 5.5;
