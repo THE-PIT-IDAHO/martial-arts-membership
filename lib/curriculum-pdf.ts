@@ -631,6 +631,7 @@ export function generateCurriculumPdf(
       }
 
       placements.push({ sec, colIdx, startY: colYs[colIdx] });
+      console.log(`Placed "${sec.cat.name}" in col ${colIdx} at Y=${colYs[colIdx].toFixed(1)}, height=${sec.height.toFixed(1)}`);
       colYs[colIdx] += sec.height;
     }
 
