@@ -1312,13 +1312,43 @@ export default function CurriculumV2Page() {
               </button>
               {selectedCategoryId && !["Knowledge", "Techniques", "Combos", "Fitness", "Sparring", "Forms/Katas", "Board Breaking"].includes(allCategories.find(c => c.id === selectedCategoryId)?.name || "") && (
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     const cat = allCategories.find(c => c.id === selectedCategoryId);
-                    if (cat) deleteCustomCategory(cat.id, cat.name);
+                    if (!cat) return;
+                    if (!confirm(`Remove "${cat.name}" from all ranks? This deletes the category and all its items permanently.`)) return;
+                    try {
+                      // Delete from current rank
+                      const testId = getTestId();
+                      if (testId) await fetch(`/api/rank-tests/${testId}/categories?categoryId=${cat.id}`, { method: "DELETE" });
+                      // Delete from all other ranks
+                      const otherRanks = ranks.filter(r => r.id !== selectedRankId);
+                      await Promise.all(otherRanks.map(async (rank) => {
+                        const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
+                        if (!res.ok) return;
+                        const d = await res.json();
+                        const tests: RankTest[] = d.rankTests || d.tests || [];
+                        for (const t of tests) {
+                          const c = t.categories.find(tc => tc.name.trim().toLowerCase() === cat.name.trim().toLowerCase());
+                          if (c) await fetch(`/api/rank-tests/${t.id}/categories?categoryId=${c.id}`, { method: "DELETE" });
+                        }
+                      }));
+                      // Reload
+                      const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+                      if (res.ok) {
+                        const d = await res.json();
+                        const tests = d.rankTests || d.tests || [];
+                        setRankTests(tests);
+                        const cats = buildCategoryList(tests);
+                        setAllCategories(cats);
+                        const target = cats[0];
+                        if (target) { setSelectedCategoryId(target.id); buildRowsForCategory(tests, target.id); }
+                        else { setSelectedCategoryId(""); setRows([]); }
+                      }
+                    } catch { alert("Failed to remove category"); }
                   }}
                   className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100"
                 >
-                  Delete Category
+                  Remove Category
                 </button>
               )}
               <button
