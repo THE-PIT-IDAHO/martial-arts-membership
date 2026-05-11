@@ -1065,8 +1065,23 @@ export default function CurriculumV2Page() {
       });
       if (res.ok) {
         const data = await res.json();
-        const newCat = { id: data.category.id, name: data.category.name, testId };
-        setAllCategories(prev => [...prev, newCat]);
+        // Reload categories to get correct sort order
+        const reloadRes = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+        if (reloadRes.ok) {
+          const d = await reloadRes.json();
+          const tests = d.rankTests || d.tests || [];
+          setRankTests(tests);
+          const cats = buildCategoryList(tests);
+          // Re-add virtual categories from styleCatNames
+          const currentNames = new Set(cats.map(c => c.name.trim().toLowerCase()));
+          for (const name of styleCatNames) {
+            if (!currentNames.has(name.trim().toLowerCase())) {
+              cats.push({ id: `virtual-${name}`, name, testId: tests[0]?.id || "" });
+              currentNames.add(name.trim().toLowerCase());
+            }
+          }
+          setAllCategories(cats);
+        }
         setSelectedCategoryId(data.category.id);
         setNewCategoryName("");
         setShowAddCategory(false);
