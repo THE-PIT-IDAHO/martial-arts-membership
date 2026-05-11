@@ -593,9 +593,11 @@ export default function KioskPage() {
       return;
     }
 
-    // Try matching by member number
-    const found = members.find((m) => m.memberNumber?.toString() === decodedText);
+    // Try matching by member number (from barcode scanner)
+    const trimmed = decodedText.trim();
+    const found = members.find((m) => m.memberNumber?.toString() === trimmed);
     if (found) {
+      setSearchQuery(`${found.firstName} ${found.lastName}`);
       autoCheckIn(found);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -608,13 +610,19 @@ export default function KioskPage() {
 
     // Debounced scan detection — if input stops for 500ms and looks like scan data, process it
     if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
-    if (query.length > 10) {
+    const mayBeScan = query.length > 2 && (
+      query.startsWith("MBR:") || query.includes("member=") || query.startsWith("http") || query.startsWith("{") ||
+      /^\d+$/.test(query.trim()) // Pure numeric = barcode member number
+    );
+    if (mayBeScan) {
       scanTimerRef.current = setTimeout(() => {
-        // Check if final value looks like scan data
         const val = query.trim();
         if (val.startsWith("MBR:") || val.includes("member=") || val.startsWith("http") || val.startsWith("{")) {
           handleQrScan(val);
           setSearchQuery("");
+        } else if (/^\d+$/.test(val)) {
+          // Pure number — try member number lookup
+          handleQrScan(val);
         }
       }, 500);
     }

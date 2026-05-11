@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 type MemberInfo = {
   id: string;
   firstName: string;
   lastName: string;
   photoUrl?: string | null;
+  memberNumber?: number | null;
 };
 
 export default function PortalCheckinPage() {
   const [member, setMember] = useState<MemberInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const barcodeRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     fetch("/api/portal/auth/me")
@@ -23,12 +25,30 @@ export default function PortalCheckinPage() {
             firstName: data.firstName,
             lastName: data.lastName,
             photoUrl: data.photoUrl,
+            memberNumber: data.memberNumber,
           });
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  // Generate barcode when member loads
+  useEffect(() => {
+    if (!member || !barcodeRef.current) return;
+    const barcodeValue = member.memberNumber?.toString() || member.id.slice(0, 10);
+    import("jsbarcode").then(({ default: JsBarcode }) => {
+      JsBarcode(barcodeRef.current, barcodeValue, {
+        format: "CODE128",
+        width: 2,
+        height: 60,
+        displayValue: true,
+        fontSize: 16,
+        margin: 10,
+        background: "#ffffff",
+      });
+    }).catch(() => {});
+  }, [member]);
 
   if (loading) {
     return (
@@ -52,19 +72,17 @@ export default function PortalCheckinPage() {
         {/* Header */}
         <div className="bg-primary px-6 py-5 text-center">
           <h1 className="text-xl font-bold text-white">Check In</h1>
-          <p className="text-sm text-white/80 mt-1">Scan this QR code at the gym location</p>
+          <p className="text-sm text-white/80 mt-1">Scan your barcode at the gym</p>
         </div>
 
-        {/* QR Code */}
+        {/* Barcode */}
         <div className="px-6 py-8 flex flex-col items-center">
           <div className="bg-white p-3 rounded-xl border-2 border-gray-100 shadow-sm">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/api/portal/qrcode"
-              alt="Your Check-In QR Code"
-              className="w-40 h-40"
-            />
+            <svg ref={barcodeRef} />
           </div>
+          {member.memberNumber && (
+            <p className="text-xs text-gray-400 mt-2">Member #{member.memberNumber}</p>
+          )}
 
           {/* Member Info */}
           <div className="mt-6 flex flex-col items-center">
