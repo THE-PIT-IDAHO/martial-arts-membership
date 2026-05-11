@@ -144,18 +144,18 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
   const [addingItem, setAddingItem] = useState(false);
   const [editPopup, setEditPopup] = useState<{ itemId: string; value: string } | null>(null);
   const [copying, setCopying] = useState(false);
+  const [showCopyMenu, setShowCopyMenu] = useState(false);
+  const [copySelectedRanks, setCopySelectedRanks] = useState<Set<string>>(new Set());
+  const [copyReplace, setCopyReplace] = useState(false);
 
-  async function copyToAllRanks() {
-    const choice = window.prompt(
-      `Copy "${categoryName}" to all other ranks?\n\nType "skip" to only copy to ranks that have no items in this category.\nType "replace" to overwrite all ranks.\n\nCancel to abort.`
-    );
-    if (!choice) return;
-    const mode = choice.trim().toLowerCase();
-    if (mode !== "skip" && mode !== "replace") { alert('Please type "skip" or "replace"'); return; }
+  async function copyToRanks() {
+    if (copySelectedRanks.size === 0) { alert("Select at least one rank"); return; }
+    setShowCopyMenu(false);
     setCopying(true);
+    const mode = copyReplace ? "replace" : "skip";
     try {
-      const otherRanks = ranks.filter(r => r.id !== selectedRankId);
-      await Promise.all(otherRanks.map(async (rank) => {
+      const targetRanks = ranks.filter(r => copySelectedRanks.has(r.id));
+      await Promise.all(targetRanks.map(async (rank) => {
         const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
         if (!res.ok) return;
         const d = await res.json();
@@ -208,7 +208,7 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
           });
         }
       }));
-      alert(`"${categoryName}" copied to ${otherRanks.length} rank${otherRanks.length !== 1 ? "s" : ""}.`);
+      alert(`"${categoryName}" copied to ${targetRanks.length} rank${targetRanks.length !== 1 ? "s" : ""}.`);
     } catch { alert("Failed to copy to all ranks"); }
     finally { setCopying(false); }
   }
@@ -301,9 +301,35 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
         <h3 className="text-sm font-semibold text-gray-700">{categoryName}</h3>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-400">{items.length} items</span>
-          <button onClick={copyToAllRanks} disabled={copying || items.length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
-            {copying ? "Copying..." : "Copy to All Ranks"}
-          </button>
+          <div className="relative">
+            <button onClick={() => setShowCopyMenu(!showCopyMenu)} disabled={copying || items.length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+              {copying ? "Copying..." : "Copy to Ranks"}
+            </button>
+            {showCopyMenu && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-gray-200 bg-white shadow-xl p-3 space-y-2">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase">Select ranks</p>
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {ranks.filter(r => r.id !== selectedRankId).map(r => (
+                    <label key={r.id} className={`flex items-center gap-2 text-xs cursor-pointer p-1 rounded ${copySelectedRanks.has(r.id) ? "bg-primary/10" : "hover:bg-gray-50"}`}>
+                      <input type="checkbox" checked={copySelectedRanks.has(r.id)} onChange={() => setCopySelectedRanks(prev => { const n = new Set(prev); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} className="accent-primary" />
+                      {r.name}
+                    </label>
+                  ))}
+                </div>
+                <label className="flex items-center gap-2 text-[10px] text-gray-500 cursor-pointer">
+                  <input type="checkbox" checked={copyReplace} onChange={e => setCopyReplace(e.target.checked)} className="accent-primary" />
+                  Replace existing items
+                </label>
+                <div className="flex gap-1 pt-1 border-t border-gray-100">
+                  <button onClick={() => setCopySelectedRanks(new Set(ranks.filter(r => r.id !== selectedRankId).map(r => r.id)))} className="text-[10px] text-primary hover:underline">All</button>
+                  <button onClick={() => setCopySelectedRanks(new Set())} className="text-[10px] text-gray-400 hover:underline">None</button>
+                  <div className="flex-1" />
+                  <button onClick={copyToRanks} disabled={copySelectedRanks.size === 0} className="rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50">Copy</button>
+                  <button onClick={() => setShowCopyMenu(false)} className="rounded border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
           <button onClick={onDeleteCategory} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete Section</button>
           <button onClick={onDeleteFromAllRanks} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete from All Ranks</button>
         </div>
@@ -891,15 +917,15 @@ export default function CurriculumV2Page() {
   }
 
   const [copyingMain, setCopyingMain] = useState(false);
+  const [showMainCopyMenu, setShowMainCopyMenu] = useState(false);
+  const [mainCopySelectedRanks, setMainCopySelectedRanks] = useState<Set<string>>(new Set());
+  const [mainCopyReplace, setMainCopyReplace] = useState(false);
 
-  async function copyMainCategoryToAllRanks() {
+  async function copyMainCategoryToRanks() {
     if (!selectedCategoryId || !selectedCategory) return;
-    const mainChoice = window.prompt(
-      `Copy "${selectedCategory.name}" to all other ranks?\n\nType "skip" to only copy to ranks that have no items in this category.\nType "replace" to overwrite all ranks.\n\nCancel to abort.`
-    );
-    if (!mainChoice) return;
-    const mainMode = mainChoice.trim().toLowerCase();
-    if (mainMode !== "skip" && mainMode !== "replace") { alert('Please type "skip" or "replace"'); return; }
+    if (mainCopySelectedRanks.size === 0) { alert("Select at least one rank"); return; }
+    setShowMainCopyMenu(false);
+    const mainMode = mainCopyReplace ? "replace" : "skip";
     // Save first if there are changes
     if (hasChanges) await handleSave();
     setCopyingMain(true);
@@ -911,8 +937,8 @@ export default function CurriculumV2Page() {
         if (cat) { currentItems = cat.items; break; }
       }
 
-      const otherRanks = ranks.filter(r => r.id !== selectedRankId);
-      await Promise.all(otherRanks.map(async (rank) => {
+      const targetRanks = ranks.filter(r => mainCopySelectedRanks.has(r.id));
+      await Promise.all(targetRanks.map(async (rank) => {
         const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
         if (!res.ok) return;
         const d = await res.json();
@@ -962,7 +988,7 @@ export default function CurriculumV2Page() {
           });
         }
       }));
-      alert(`"${selectedCategory.name}" copied to ${otherRanks.length} rank${otherRanks.length !== 1 ? "s" : ""}.`);
+      alert(`"${selectedCategory.name}" copied to ${targetRanks.length} rank${targetRanks.length !== 1 ? "s" : ""}.`);
     } catch { alert("Failed to copy to all ranks"); }
     finally { setCopyingMain(false); }
   }
@@ -1545,9 +1571,35 @@ export default function CurriculumV2Page() {
               <h3 className="text-sm font-semibold text-gray-700">{selectedCategory?.name}</h3>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-400">{rows.filter(r => r.description?.trim()).length} items</span>
-                <button onClick={copyMainCategoryToAllRanks} disabled={copyingMain || rows.filter(r => r.description?.trim()).length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
-                  {copyingMain ? "Copying..." : "Copy to All Ranks"}
+                <div className="relative inline-block">
+                <button onClick={() => setShowMainCopyMenu(!showMainCopyMenu)} disabled={copyingMain || rows.filter(r => r.description?.trim()).length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                  {copyingMain ? "Copying..." : "Copy to Ranks"}
                 </button>
+                {showMainCopyMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-gray-200 bg-white shadow-xl p-3 space-y-2">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase">Select ranks</p>
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {ranks.filter(r => r.id !== selectedRankId).map(r => (
+                        <label key={r.id} className={`flex items-center gap-2 text-xs cursor-pointer p-1 rounded ${mainCopySelectedRanks.has(r.id) ? "bg-primary/10" : "hover:bg-gray-50"}`}>
+                          <input type="checkbox" checked={mainCopySelectedRanks.has(r.id)} onChange={() => setMainCopySelectedRanks(prev => { const n = new Set(prev); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} className="accent-primary" />
+                          {r.name}
+                        </label>
+                      ))}
+                    </div>
+                    <label className="flex items-center gap-2 text-[10px] text-gray-500 cursor-pointer">
+                      <input type="checkbox" checked={mainCopyReplace} onChange={e => setMainCopyReplace(e.target.checked)} className="accent-primary" />
+                      Replace existing items
+                    </label>
+                    <div className="flex gap-1 pt-1 border-t border-gray-100">
+                      <button onClick={() => setMainCopySelectedRanks(new Set(ranks.filter(r => r.id !== selectedRankId).map(r => r.id)))} className="text-[10px] text-primary hover:underline">All</button>
+                      <button onClick={() => setMainCopySelectedRanks(new Set())} className="text-[10px] text-gray-400 hover:underline">None</button>
+                      <div className="flex-1" />
+                      <button onClick={copyMainCategoryToRanks} disabled={mainCopySelectedRanks.size === 0} className="rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50">Copy</button>
+                      <button onClick={() => setShowMainCopyMenu(false)} className="rounded border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                    </div>
+                  </div>
+                )}
+                </div>
                 <button onClick={() => selectedCategory && deleteCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete Section</button>
                 <button onClick={() => selectedCategory && deleteCustomCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete from All Ranks</button>
               </div>
