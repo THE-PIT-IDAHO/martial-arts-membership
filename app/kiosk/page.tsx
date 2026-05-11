@@ -507,10 +507,12 @@ export default function KioskPage() {
       const res = await fetch(`/api/attendance?classSessionId=${classId}&date=${today}`);
       if (res.ok) {
         const data = await res.json();
-        setClassAttendees((data.attendances || []).map((a: { memberId: string; member?: { firstName: string; lastName: string } }) => ({
-          memberId: a.memberId,
-          memberName: a.member ? `${a.member.firstName} ${a.member.lastName}` : "Unknown",
-        })));
+        setClassAttendees((data.attendances || [])
+          .filter((a: { confirmed?: boolean }) => a.confirmed === true)
+          .map((a: { memberId: string; member?: { firstName: string; lastName: string } }) => ({
+            memberId: a.memberId,
+            memberName: a.member ? `${a.member.firstName} ${a.member.lastName}` : "Unknown",
+          })));
       }
     } catch { /* ignore */ }
   }, []);
