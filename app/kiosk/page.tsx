@@ -537,6 +537,10 @@ export default function KioskPage() {
       if (res.status === 409) {
         setCheckInState("success");
         setErrorMessage("Already checked in!");
+        setRecentCheckIns((prev) => {
+          if (prev.some(c => c.member.id === member.id)) return prev; // Don't duplicate
+          return [{ member, time: new Date() }, ...prev.slice(0, 4)];
+        });
         setTimeout(() => { setCheckInState("idle"); setSelectedMember(null); setErrorMessage(""); refocusInput(); }, 3000);
       } else if (res.ok) {
         setCheckInState("success");
