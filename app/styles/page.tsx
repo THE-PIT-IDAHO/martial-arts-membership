@@ -172,7 +172,7 @@ export default function StylesPage() {
                         </Link>
                         <button
                           onClick={() => { setDuplicateStyle(style); setDuplicateName(""); }}
-                          className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                         >
                           Duplicate
                         </button>
