@@ -1201,6 +1201,9 @@ export default function BeltDesignerPage() {
                   <span className="whitespace-nowrap text-xs font-medium">
                     Rank Color
                   </span>
+                  <span className="text-[10px] text-gray-400" title="This color is used for section headers on the curriculum PDF">
+                    (PDF color)
+                  </span>
                   <input
                     type="color"
                     value={layers.fabricColor}
