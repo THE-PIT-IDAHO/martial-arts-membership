@@ -17,31 +17,49 @@ export default function StylesPage() {
   const [styles, setStyles] = useState<Style[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [duplicateStyle, setDuplicateStyle] = useState<Style | null>(null);
+  const [duplicateName, setDuplicateName] = useState("");
+  const [duplicating, setDuplicating] = useState(false);
 
-  useEffect(() => {
-    async function loadStyles() {
-      try {
-        setLoading(true);
-        const res = await fetch("/api/styles");
-
-        if (!res.ok) {
-          throw new Error("Failed to load styles");
-        }
-
-        const data = await res.json();
-        console.log("Fetched styles data:", data);
-        console.log("Styles array:", data.styles);
-        setStyles(data.styles || []);
-      } catch (err: any) {
-        console.error("Error loading styles:", err);
-        setError(err.message || "Failed to load styles");
-      } finally {
-        setLoading(false);
-      }
+  async function loadStyles() {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/styles");
+      if (!res.ok) throw new Error("Failed to load styles");
+      const data = await res.json();
+      setStyles(data.styles || []);
+    } catch (err: any) {
+      setError(err.message || "Failed to load styles");
+    } finally {
+      setLoading(false);
     }
+  }
 
-    loadStyles();
-  }, []);
+  useEffect(() => { loadStyles(); }, []);
+
+  async function handleDuplicate() {
+    if (!duplicateStyle || !duplicateName.trim()) return;
+    setDuplicating(true);
+    try {
+      const res = await fetch(`/api/styles/${duplicateStyle.id}/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: duplicateName.trim() }),
+      });
+      if (res.ok) {
+        setDuplicateStyle(null);
+        setDuplicateName("");
+        await loadStyles();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to duplicate style");
+      }
+    } catch {
+      alert("Failed to duplicate style");
+    } finally {
+      setDuplicating(false);
+    }
+  }
 
   async function handleDeleteStyle(id: string, name: string) {
     if (!window.confirm(`Are you sure you want to delete "${name}"?`)) {
@@ -153,6 +171,12 @@ export default function StylesPage() {
                           Edit Style
                         </Link>
                         <button
+                          onClick={() => { setDuplicateStyle(style); setDuplicateName(""); }}
+                          className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                        >
+                          Duplicate
+                        </button>
+                        <button
                           onClick={() => handleDeleteStyle(style.id, style.name)}
                           className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                         >
@@ -177,6 +201,43 @@ export default function StylesPage() {
           </>
         )}
       </div>
+
+      {/* Duplicate Style Modal */}
+      {duplicateStyle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setDuplicateStyle(null)}>
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-bold">Duplicate Style</h2>
+              <button onClick={() => setDuplicateStyle(null)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              Duplicating <strong>{duplicateStyle.name}</strong>. The copy will have the same ranks and belt colors but no curriculum, PDFs, or test data.
+            </p>
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-gray-700 mb-1">New Style Name</label>
+              <input
+                type="text"
+                value={duplicateName}
+                onChange={e => setDuplicateName(e.target.value)}
+                placeholder="Enter a unique name..."
+                autoFocus
+                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                onKeyDown={e => { if (e.key === "Enter" && duplicateName.trim()) handleDuplicate(); }}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={handleDuplicate} disabled={duplicating || !duplicateName.trim()} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                {duplicating ? "Duplicating..." : "Duplicate"}
+              </button>
+              <button onClick={() => setDuplicateStyle(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
