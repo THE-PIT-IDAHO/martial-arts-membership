@@ -26,7 +26,8 @@ export async function GET(_request: NextRequest) {
     const pngBuffer = await QRCode.toBuffer(qrData, {
       type: "png",
       width: 300,
-      margin: 2,
+      margin: 3,
+      errorCorrectionLevel: "H", // Highest error correction — better for phone screens
       color: { dark: "#000000", light: "#ffffff" },
     });
 

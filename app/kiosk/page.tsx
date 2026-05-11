@@ -497,6 +497,11 @@ export default function KioskPage() {
   // Use ref for selectedClass so autoCheckIn always has the current value
   const selectedClassRef = useRef(selectedClass);
   selectedClassRef.current = selectedClass;
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  function refocusInput() {
+    setTimeout(() => searchInputRef.current?.focus(), 100);
+  }
 
   // Auto check-in from QR scan — skip confirm screen
   const autoCheckIn = useCallback(async (member: Member) => {
@@ -525,19 +530,20 @@ export default function KioskPage() {
       if (res.status === 409) {
         setCheckInState("success");
         setErrorMessage("Already checked in!");
-        setTimeout(() => { setCheckInState("idle"); setSelectedMember(null); setErrorMessage(""); }, 3000);
+        setTimeout(() => { setCheckInState("idle"); setSelectedMember(null); setErrorMessage(""); refocusInput(); }, 3000);
       } else if (res.ok) {
         setCheckInState("success");
-        setTimeout(() => { setCheckInState("idle"); setSelectedMember(null); }, 3000);
+        setRecentCheckIns((prev) => [{ member, time: new Date() }, ...prev.slice(0, 4)]);
+        setTimeout(() => { setCheckInState("idle"); setSelectedMember(null); refocusInput(); }, 3000);
       } else {
         setErrorMessage("Check-in failed");
         setCheckInState("error");
-        setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); }, 3000);
+        setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); refocusInput(); }, 3000);
       }
     } catch {
       setErrorMessage("Check-in failed");
       setCheckInState("error");
-      setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); }, 3000);
+      setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); refocusInput(); }, 3000);
     }
   }, []);
 
@@ -576,6 +582,8 @@ export default function KioskPage() {
     if (memberId) {
       const found = members.find((m) => m.id === memberId);
       if (found) {
+        // Show member name in search field
+        setSearchQuery(`${found.firstName} ${found.lastName}`);
         // Auto check-in from QR scan — skip confirm screen
         autoCheckIn(found);
       } else {
@@ -598,15 +606,12 @@ export default function KioskPage() {
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
 
-    // Auto-detect QR data: short MBR: format
+    // Auto-detect QR data: short MBR: format or URL
     if (query.startsWith("MBR:") && query.length > 6) {
-      // Show name portion while scanner finishes
       const parts = query.slice(4).split(":");
       if (parts[1]) setSearchQuery(parts.slice(1).join(":").trim());
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
-      scanTimerRef.current = setTimeout(() => {
-        handleQrScan(query.trim());
-      }, 200);
+      scanTimerRef.current = setTimeout(() => { handleQrScan(query.trim()); }, 200);
       return;
     }
     if (query.length > 20 && (query.includes("member=") || query.includes("kiosk") || query.startsWith("http") || query.startsWith("{"))) {
@@ -751,7 +756,7 @@ export default function KioskPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col select-none overflow-hidden">
+    <div className="min-h-screen bg-gray-50 flex flex-col select-none overflow-hidden" onClick={() => { if (checkInState === "idle" || checkInState === "search") refocusInput(); }}>
       {/* Header */}
       <header className="bg-primary px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
@@ -858,6 +863,7 @@ export default function KioskPage() {
                           }
                         }
                       }}
+                      ref={searchInputRef}
                       placeholder="Start typing..."
                       autoFocus
                       className="w-full text-xl md:text-2xl px-6 py-4 rounded-2xl border-2 border-gray-200 focus:border-primary focus:outline-none transition-colors"
