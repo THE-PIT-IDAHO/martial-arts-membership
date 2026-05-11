@@ -81,6 +81,7 @@ export async function PATCH(req: Request, { params }: Params) {
       bookingCutoffMins,
       bookingAdvanceDays,
       kioskEnabled,
+      mobileConfirm,
       locationId,
       spaceId,
       minAge,
@@ -122,6 +123,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (locationId !== undefined) updateData.locationId = locationId || null;
     if (spaceId !== undefined) updateData.spaceId = spaceId || null;
     if (kioskEnabled !== undefined) updateData.kioskEnabled = kioskEnabled;
+    if (mobileConfirm !== undefined) updateData.mobileConfirm = mobileConfirm;
     if (minAge !== undefined) updateData.minAge = minAge != null ? parseInt(minAge) || null : null;
     if (maxAge !== undefined) updateData.maxAge = maxAge != null ? parseInt(maxAge) || null : null;
 

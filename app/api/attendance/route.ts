@@ -69,7 +69,7 @@ export async function POST(req: Request) {
     if (!member || member.clientId !== clientId) {
       return NextResponse.json({ error: "Member not found" }, { status: 404 });
     }
-    const classSession = await prisma.classSession.findUnique({ where: { id: classSessionId }, select: { clientId: true } });
+    const classSession = await prisma.classSession.findUnique({ where: { id: classSessionId }, select: { clientId: true, mobileConfirm: true } });
     if (!classSession || classSession.clientId !== clientId) {
       return NextResponse.json({ error: "Class not found" }, { status: 404 });
     }
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
         classSessionId,
         attendanceDate: date,
         source: source || "MANUAL",
-        confirmed: source === "KIOSK" ? true : false,
+        confirmed: source === "KIOSK" || source === "MANUAL" ? true : (classSession?.mobileConfirm ? true : false),
         requirementOverride: requirementOverride || false,
       },
       include: {

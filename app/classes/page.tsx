@@ -132,6 +132,7 @@ type ClassSession = {
   bookingCutoffMins?: number | null;
   bookingAdvanceDays?: number | null;
   kioskEnabled?: boolean;
+  mobileConfirm?: boolean;
   spaceId?: string | null;
 };
 
@@ -219,6 +220,7 @@ export default function ClassesPage() {
   const [selectedCoachId, setSelectedCoachId] = useState("");
   const [bookingEnabled, setBookingEnabled] = useState(false);
   const [kioskEnabled, setKioskEnabled] = useState(false);
+  const [mobileConfirm, setMobileConfirm] = useState(false);
   const [maxCapacity, setMaxCapacity] = useState("");
   const [bookingCutoffMins, setBookingCutoffMins] = useState("");
   const [minAge, setMinAge] = useState("");
@@ -453,6 +455,7 @@ export default function ClassesPage() {
     // Set booking fields
     setBookingEnabled(classSession.bookingEnabled || false);
     setKioskEnabled(classSession.kioskEnabled || false);
+    setMobileConfirm(classSession.mobileConfirm || false);
     setMaxCapacity(classSession.maxCapacity != null ? String(classSession.maxCapacity) : "");
     setMinAge(classSession.minAge != null ? String(classSession.minAge) : "");
     setMaxAge(classSession.maxAge != null ? String(classSession.maxAge) : "");
@@ -640,6 +643,7 @@ export default function ClassesPage() {
                 coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
                 bookingEnabled,
                 kioskEnabled,
+                mobileConfirm,
                 maxCapacity: maxCapacity || null,
                 minAge: minAge || null,
                 maxAge: maxAge || null,
@@ -712,6 +716,7 @@ export default function ClassesPage() {
                 coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
                 bookingEnabled,
                 kioskEnabled,
+                mobileConfirm,
                 maxCapacity: maxCapacity || null,
                 minAge: minAge || null,
                 maxAge: maxAge || null,
@@ -1770,6 +1775,21 @@ export default function ClassesPage() {
                     />
                     <label htmlFor="bookingEnabled" className="text-xs font-medium text-gray-700 cursor-pointer">
                       Enable Portal Booking
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="mobileConfirm"
+                      checked={mobileConfirm}
+                      onChange={(e) => setMobileConfirm(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary"
+                    />
+                    <label htmlFor="mobileConfirm" className="text-xs font-medium text-gray-700 cursor-pointer">
+                      Mobile Check-In Confirms Attendance
                     </label>
                   </div>
                 </div>

@@ -328,6 +328,7 @@ model ClassSession {
   bookingCutoffMins Int?
   bookingAdvanceDays Int?
   kioskEnabled      Boolean      @default(false)
+  mobileConfirm     Boolean      @default(false)
   minAge            Int?
   maxAge            Int?
   attendances       Attendance[]
