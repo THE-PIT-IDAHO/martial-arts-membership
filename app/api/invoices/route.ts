@@ -36,6 +36,8 @@ export async function GET(req: Request) {
         paidAt: true,
         paymentMethod: true,
         transactionId: true,
+        externalPaymentId: true,
+        paymentProcessor: true,
         notes: true,
         createdAt: true,
         member: {

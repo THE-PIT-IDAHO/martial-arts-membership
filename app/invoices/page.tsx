@@ -15,6 +15,8 @@ type Invoice = {
   paidAt: string | null;
   paymentMethod: string | null;
   transactionId: string | null;
+  externalPaymentId: string | null;
+  paymentProcessor: string | null;
   notes: string | null;
   createdAt: string;
   member: { id: string; firstName: string; lastName: string };
@@ -164,6 +166,29 @@ export default function InvoicesPage() {
       await loadInvoices();
     } catch {
       alert("Failed to void invoice");
+    }
+  }
+
+  async function refundInvoice(invoice: Invoice) {
+    if (!invoice.externalPaymentId || !invoice.paymentProcessor) {
+      alert("This invoice was not paid through a payment processor and cannot be refunded automatically. Use Void instead.");
+      return;
+    }
+    if (!confirm(`Refund ${formatCents(invoice.amountCents)} to ${invoice.member.firstName} ${invoice.member.lastName}? This will reverse the payment through ${invoice.paymentProcessor}.`)) return;
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/refund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        alert("Refund processed successfully.");
+        await loadInvoices();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Refund failed");
+      }
+    } catch {
+      alert("Failed to process refund");
     }
   }
 
@@ -326,6 +351,14 @@ export default function InvoicesPage() {
                               Void
                             </button>
                           </>
+                        )}
+                        {inv.status === "PAID" && (
+                          <button
+                            onClick={() => refundInvoice(inv)}
+                            className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark"
+                          >
+                            Refund
+                          </button>
                         )}
                         {inv.status === "FAILED" && (
                           <button
