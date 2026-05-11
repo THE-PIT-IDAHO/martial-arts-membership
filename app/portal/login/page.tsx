@@ -7,7 +7,7 @@ export default function PortalLoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loginMode, setLoginMode] = useState<"magic" | "password">("magic");
+  const [loginMode, setLoginMode] = useState<"magic" | "password">("password");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -224,14 +224,6 @@ export default function PortalLoginPage() {
             <p className="text-gray-400 text-xs text-center mt-4">
               Forgot your password? Ask your instructor to send you a reset link.
             </p>
-
-            <button
-              type="button"
-              onClick={() => { setError(""); setLoginMode("magic"); }}
-              className="w-full mt-3 text-primary text-sm font-medium hover:underline"
-            >
-              Sign in with magic link instead
-            </button>
           </form>
         )}
       </div>
