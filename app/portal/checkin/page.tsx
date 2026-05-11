@@ -62,7 +62,7 @@ export default function PortalCheckinPage() {
             <img
               src="/api/portal/qrcode"
               alt="Your Check-In QR Code"
-              className="w-56 h-56"
+              className="w-40 h-40"
             />
           </div>
 

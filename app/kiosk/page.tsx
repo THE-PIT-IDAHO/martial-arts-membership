@@ -494,16 +494,65 @@ export default function KioskPage() {
     setScanMode(false);
   };
 
+  // Auto check-in from QR scan — skip confirm screen
+  const autoCheckIn = useCallback(async (member: Member) => {
+    if (!selectedClass) {
+      setErrorMessage("No class selected");
+      setCheckInState("error");
+      setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); }, 3000);
+      return;
+    }
+    setSelectedMember(member);
+    setSearchQuery("");
+    setSearchResults([]);
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const res = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberId: member.id,
+          classSessionId: selectedClass.id,
+          attendanceDate: today,
+          source: "QR",
+        }),
+      });
+      if (res.status === 409) {
+        setCheckInState("success");
+        setErrorMessage("Already checked in!");
+        setTimeout(() => { setCheckInState("idle"); setSelectedMember(null); setErrorMessage(""); }, 3000);
+      } else if (res.ok) {
+        setCheckInState("success");
+        setTimeout(() => { setCheckInState("idle"); setSelectedMember(null); }, 3000);
+      } else {
+        setErrorMessage("Check-in failed");
+        setCheckInState("error");
+        setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); }, 3000);
+      }
+    } catch {
+      setErrorMessage("Check-in failed");
+      setCheckInState("error");
+      setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); }, 3000);
+    }
+  }, [selectedClass]);
+
   // Handle QR code scan result (from camera or Bluetooth scanner)
   const handleQrScan = useCallback((decodedText: string) => {
     let memberId: string | null = null;
 
+    // Try short format: MBR:abc123
+    if (decodedText.startsWith("MBR:")) {
+      memberId = decodedText.slice(4).trim();
+    }
+
     // Try URL format: .../kiosk/checkin?member=abc123
-    try {
-      const url = new URL(decodedText);
-      memberId = url.searchParams.get("member");
-    } catch {
-      // Not a URL
+    if (!memberId) {
+      try {
+        const url = new URL(decodedText);
+        memberId = url.searchParams.get("member");
+      } catch {
+        // Not a URL
+      }
     }
 
     // Try JSON format: {"memberId":"abc123"}
@@ -519,7 +568,8 @@ export default function KioskPage() {
     if (memberId) {
       const found = members.find((m) => m.id === memberId);
       if (found) {
-        handleSelectMember(found);
+        // Auto check-in from QR scan — skip confirm screen
+        autoCheckIn(found);
       } else {
         setErrorMessage("Member not found");
         setCheckInState("error");
@@ -530,7 +580,7 @@ export default function KioskPage() {
     // Try matching by member number
     const found = members.find((m) => m.memberNumber?.toString() === decodedText);
     if (found) {
-      handleSelectMember(found);
+      autoCheckIn(found);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members]);
@@ -540,7 +590,15 @@ export default function KioskPage() {
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
 
-    // Auto-detect QR data: if input looks like a URL/JSON, wait 300ms for scanner to finish then process
+    // Auto-detect QR data: short MBR: format, URL, or JSON
+    if (query.startsWith("MBR:") && query.length > 6) {
+      if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+      scanTimerRef.current = setTimeout(() => {
+        handleQrScan(query.trim());
+        setSearchQuery("");
+      }, 200);
+      return;
+    }
     if (query.length > 20 && (query.includes("member=") || query.includes("kiosk") || query.startsWith("http") || query.startsWith("{"))) {
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
       scanTimerRef.current = setTimeout(() => {

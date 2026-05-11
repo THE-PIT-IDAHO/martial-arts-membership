@@ -12,7 +12,8 @@ export async function GET(_request: NextRequest) {
   // Build check-in URL from request origin
   const host = _request.headers.get("x-forwarded-host") || _request.headers.get("host") || "localhost:3000";
   const protocol = _request.headers.get("x-forwarded-proto") || "http";
-  const qrData = `${protocol}://${host}/kiosk/checkin?member=${auth.memberId}`;
+  // Short format: just the member ID — kiosk detects it automatically
+  const qrData = `MBR:${auth.memberId}`;
 
   try {
     const pngBuffer = await QRCode.toBuffer(qrData, {
