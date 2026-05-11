@@ -590,7 +590,25 @@ export default function CurriculumV2Page() {
 
     loadOrCreate().catch(() => {});
     return () => { cancelled = true; };
-  }, [selectedRankId, selectedStyleId, ranks, styleCatNames]);
+  }, [selectedRankId, selectedStyleId, ranks]);
+
+  // When styleCatNames loads/changes, merge virtual categories into dropdown
+  useEffect(() => {
+    if (styleCatNames.length === 0 || rankTests.length === 0) return;
+    setAllCategories(prev => {
+      const currentNames = new Set(prev.map(c => c.name.trim().toLowerCase()));
+      let changed = false;
+      const updated = [...prev];
+      for (const name of styleCatNames) {
+        if (!currentNames.has(name.trim().toLowerCase())) {
+          updated.push({ id: `virtual-${name}`, name, testId: rankTests[0]?.id || "" });
+          currentNames.add(name.trim().toLowerCase());
+          changed = true;
+        }
+      }
+      return changed ? updated : prev;
+    });
+  }, [styleCatNames, rankTests]);
 
   // Rebuild rows when category changes — create category on-demand if virtual
   useEffect(() => {
