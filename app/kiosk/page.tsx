@@ -494,9 +494,14 @@ export default function KioskPage() {
     setScanMode(false);
   };
 
+  // Use ref for selectedClass so autoCheckIn always has the current value
+  const selectedClassRef = useRef(selectedClass);
+  selectedClassRef.current = selectedClass;
+
   // Auto check-in from QR scan — skip confirm screen
   const autoCheckIn = useCallback(async (member: Member) => {
-    if (!selectedClass) {
+    const cls = selectedClassRef.current;
+    if (!cls) {
       setErrorMessage("No class selected");
       setCheckInState("error");
       setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); }, 3000);
@@ -512,7 +517,7 @@ export default function KioskPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           memberId: member.id,
-          classSessionId: selectedClass.id,
+          classSessionId: cls.id,
           attendanceDate: today,
           source: "QR",
         }),
@@ -534,15 +539,18 @@ export default function KioskPage() {
       setCheckInState("error");
       setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); }, 3000);
     }
-  }, [selectedClass]);
+  }, []);
 
   // Handle QR code scan result (from camera or Bluetooth scanner)
   const handleQrScan = useCallback((decodedText: string) => {
     let memberId: string | null = null;
 
-    // Try short format: MBR:abc123
+    // Try short format: MBR:memberId or MBR:memberId:Name
     if (decodedText.startsWith("MBR:")) {
-      memberId = decodedText.slice(4).trim();
+      const parts = decodedText.slice(4).split(":");
+      memberId = parts[0].trim();
+      // Show the member name in search field while processing
+      if (parts[1]) setSearchQuery(parts.slice(1).join(":").trim());
     }
 
     // Try URL format: .../kiosk/checkin?member=abc123
@@ -590,12 +598,14 @@ export default function KioskPage() {
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
 
-    // Auto-detect QR data: short MBR: format, URL, or JSON
+    // Auto-detect QR data: short MBR: format
     if (query.startsWith("MBR:") && query.length > 6) {
+      // Show name portion while scanner finishes
+      const parts = query.slice(4).split(":");
+      if (parts[1]) setSearchQuery(parts.slice(1).join(":").trim());
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
       scanTimerRef.current = setTimeout(() => {
         handleQrScan(query.trim());
-        setSearchQuery("");
       }, 200);
       return;
     }
