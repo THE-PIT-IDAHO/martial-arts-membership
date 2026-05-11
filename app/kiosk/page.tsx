@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 type GymSettings = {
   name: string;
@@ -535,8 +535,21 @@ export default function KioskPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members]);
 
+  const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
+
+    // Auto-detect QR data: if input looks like a URL/JSON, wait 300ms for scanner to finish then process
+    if (query.length > 20 && (query.includes("member=") || query.includes("kiosk") || query.startsWith("http") || query.startsWith("{"))) {
+      if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+      scanTimerRef.current = setTimeout(() => {
+        handleQrScan(query.trim());
+        setSearchQuery("");
+      }, 300);
+      return;
+    }
+    if (scanTimerRef.current) { clearTimeout(scanTimerRef.current); scanTimerRef.current = null; }
 
     if (query.length < 2) {
       setSearchResults([]);
