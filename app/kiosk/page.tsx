@@ -110,6 +110,7 @@ export default function KioskPage() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [scanMode, setScanMode] = useState(false);
+  const [showKeyboard, setShowKeyboard] = useState(false);
 
   // Update clock every second
   useEffect(() => {
@@ -500,6 +501,7 @@ export default function KioskPage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   function refocusInput() {
+    setShowKeyboard(false); // Hide keyboard after check-in
     setTimeout(() => searchInputRef.current?.focus(), 100);
   }
 
@@ -865,8 +867,10 @@ export default function KioskPage() {
                         }
                       }}
                       ref={searchInputRef}
-                      placeholder="Start typing..."
+                      placeholder={showKeyboard ? "Type your name..." : "Scan barcode or tap to type"}
                       autoFocus
+                      inputMode={showKeyboard ? "text" : "none"}
+                      onClick={() => setShowKeyboard(prev => !prev)}
                       className="w-full text-xl md:text-2xl px-6 py-4 rounded-2xl border-2 border-gray-200 focus:border-primary focus:outline-none transition-colors"
                     />
                     {searchQuery && (
