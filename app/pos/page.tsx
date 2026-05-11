@@ -388,9 +388,9 @@ export default function POSPage() {
   const filteredMembers = members.filter(member => {
     if (memberSearch) {
       const search = memberSearch.toLowerCase();
+      const fullName = `${member.firstName} ${member.lastName}`.toLowerCase();
       return (
-        member.firstName.toLowerCase().includes(search) ||
-        member.lastName.toLowerCase().includes(search) ||
+        fullName.includes(search) ||
         member.email?.toLowerCase().includes(search) ||
         member.phone?.includes(search) ||
         member.memberNumber?.toString().includes(search)

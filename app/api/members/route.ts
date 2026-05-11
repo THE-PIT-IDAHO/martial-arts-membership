@@ -66,11 +66,28 @@ export async function GET(req: Request) {
 
     // Add search filter for name or member number
     if (search && search.length >= 2) {
-      const searchConditions = [
-        { firstName: { contains: search, mode: "insensitive" as const } },
-        { lastName: { contains: search, mode: "insensitive" as const } },
-        { email: { contains: search, mode: "insensitive" as const } },
-      ];
+      const parts = search.trim().split(/\s+/);
+      let searchConditions;
+
+      if (parts.length >= 2) {
+        // "John Smith" → match firstName contains "John" AND lastName contains "Smith"
+        searchConditions = [
+          { AND: [
+            { firstName: { contains: parts[0], mode: "insensitive" as const } },
+            { lastName: { contains: parts.slice(1).join(" "), mode: "insensitive" as const } },
+          ]},
+          // Also try single-field matches
+          { firstName: { contains: search, mode: "insensitive" as const } },
+          { lastName: { contains: search, mode: "insensitive" as const } },
+          { email: { contains: search, mode: "insensitive" as const } },
+        ];
+      } else {
+        searchConditions = [
+          { firstName: { contains: search, mode: "insensitive" as const } },
+          { lastName: { contains: search, mode: "insensitive" as const } },
+          { email: { contains: search, mode: "insensitive" as const } },
+        ];
+      }
       // Also search by member number if the search is numeric
       const searchNum = parseInt(search, 10);
       if (!isNaN(searchNum)) {
