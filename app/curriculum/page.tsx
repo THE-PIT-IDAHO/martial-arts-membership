@@ -146,7 +146,12 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
   const [copying, setCopying] = useState(false);
 
   async function copyToAllRanks() {
-    if (!confirm(`Copy "${categoryName}" items to all other ranks in this style?`)) return;
+    const choice = window.prompt(
+      `Copy "${categoryName}" to all other ranks?\n\nType "skip" to only copy to ranks that have no items in this category.\nType "replace" to overwrite all ranks.\n\nCancel to abort.`
+    );
+    if (!choice) return;
+    const mode = choice.trim().toLowerCase();
+    if (mode !== "skip" && mode !== "replace") { alert('Please type "skip" or "replace"'); return; }
     setCopying(true);
     try {
       const otherRanks = ranks.filter(r => r.id !== selectedRankId);
@@ -170,9 +175,13 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
           otherCat = createData.category;
           if (!otherCat) return;
         }
-        // Delete existing items in this category on the other rank
-        for (const item of otherCat.items) {
-          await fetch(`/api/rank-tests/${otherTestId}/items?itemId=${item.id}`, { method: "DELETE" });
+        // Skip if mode is "skip" and category already has items
+        if (mode === "skip" && otherCat.items && otherCat.items.length > 0) return;
+        // Delete existing items if replacing
+        if (otherCat.items && otherCat.items.length > 0) {
+          for (const item of otherCat.items) {
+            await fetch(`/api/rank-tests/${otherTestId}/items?itemId=${item.id}`, { method: "DELETE" });
+          }
         }
         // Copy current items
         for (const item of items) {
@@ -885,7 +894,12 @@ export default function CurriculumV2Page() {
 
   async function copyMainCategoryToAllRanks() {
     if (!selectedCategoryId || !selectedCategory) return;
-    if (!confirm(`Copy "${selectedCategory.name}" items to all other ranks in this style?`)) return;
+    const mainChoice = window.prompt(
+      `Copy "${selectedCategory.name}" to all other ranks?\n\nType "skip" to only copy to ranks that have no items in this category.\nType "replace" to overwrite all ranks.\n\nCancel to abort.`
+    );
+    if (!mainChoice) return;
+    const mainMode = mainChoice.trim().toLowerCase();
+    if (mainMode !== "skip" && mainMode !== "replace") { alert('Please type "skip" or "replace"'); return; }
     // Save first if there are changes
     if (hasChanges) await handleSave();
     setCopyingMain(true);
@@ -917,8 +931,10 @@ export default function CurriculumV2Page() {
           otherCat = createData.category;
           if (!otherCat) return;
         }
-        // Delete existing items
-        for (const item of otherCat.items) {
+        // Skip if mode is "skip" and category already has items
+        if (mainMode === "skip" && otherCat.items && otherCat.items.length > 0) return;
+        // Delete existing items if replacing
+        for (const item of otherCat.items || []) {
           await fetch(`/api/rank-tests/${otherTestId}/items?itemId=${item.id}`, { method: "DELETE" });
         }
         // Copy items
