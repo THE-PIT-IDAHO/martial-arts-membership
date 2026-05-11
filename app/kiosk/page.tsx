@@ -602,37 +602,33 @@ export default function KioskPage() {
   }, [members]);
 
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scanDataRef = useRef("");
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
 
-    // Auto-detect QR data: hide raw string, process after scanner finishes
-    if (query.startsWith("MBR:") || (query.length > 20 && (query.includes("member=") || query.startsWith("http") || query.startsWith("{")))) {
-      // Don't show raw QR text — keep input blank until we have the member name
-      setSearchQuery("");
-      if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
-      // Store the full QR data in a ref, process when scanner stops typing
-      scanDataRef.current = query;
+    // Debounced scan detection — if input stops for 500ms and looks like scan data, process it
+    if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+    if (query.length > 10) {
       scanTimerRef.current = setTimeout(() => {
-        const data = scanDataRef.current;
-        if (data) { handleQrScan(data.trim()); scanDataRef.current = ""; }
-      }, 800);
-      return;
+        // Check if final value looks like scan data
+        const val = query.trim();
+        if (val.startsWith("MBR:") || val.includes("member=") || val.startsWith("http") || val.startsWith("{")) {
+          handleQrScan(val);
+          setSearchQuery("");
+        }
+      }, 500);
     }
-    if (scanTimerRef.current) { clearTimeout(scanTimerRef.current); scanTimerRef.current = null; }
 
     if (query.length < 2) {
       setSearchResults([]);
       return;
     }
 
+    // Normal name/number search
     const q = query.toLowerCase();
     const results = members
       .filter((m) => {
-        // Check if member can check in to the selected class
         if (!canMemberCheckInToClass(m, selectedClass)) return false;
-
         const fullName = `${m.firstName} ${m.lastName}`.toLowerCase();
         const memberNum = m.memberNumber?.toString() || "";
         return fullName.includes(q) || memberNum.includes(q);
