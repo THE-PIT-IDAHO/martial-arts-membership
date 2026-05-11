@@ -602,24 +602,22 @@ export default function KioskPage() {
   }, [members]);
 
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scanDataRef = useRef("");
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
 
-    // Auto-detect QR data: short MBR: format or URL
-    if (query.startsWith("MBR:") && query.length > 6) {
-      const parts = query.slice(4).split(":");
-      if (parts[1]) setSearchQuery(parts.slice(1).join(":").trim());
+    // Auto-detect QR data: hide raw string, process after scanner finishes
+    if (query.startsWith("MBR:") || (query.length > 20 && (query.includes("member=") || query.startsWith("http") || query.startsWith("{")))) {
+      // Don't show raw QR text — keep input blank until we have the member name
+      setSearchQuery("");
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
-      scanTimerRef.current = setTimeout(() => { handleQrScan(query.trim()); }, 200);
-      return;
-    }
-    if (query.length > 20 && (query.includes("member=") || query.includes("kiosk") || query.startsWith("http") || query.startsWith("{"))) {
-      if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+      // Store the full QR data in a ref, process when scanner stops typing
+      scanDataRef.current = query;
       scanTimerRef.current = setTimeout(() => {
-        handleQrScan(query.trim());
-        setSearchQuery("");
-      }, 300);
+        const data = scanDataRef.current;
+        if (data) { handleQrScan(data.trim()); scanDataRef.current = ""; }
+      }, 800);
       return;
     }
     if (scanTimerRef.current) { clearTimeout(scanTimerRef.current); scanTimerRef.current = null; }
