@@ -107,6 +107,7 @@ export default function KioskPage() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [recentCheckIns, setRecentCheckIns] = useState<{ member: Member; time: Date }[]>([]);
+  const [classAttendees, setClassAttendees] = useState<Array<{ memberId: string; memberName: string }>>([]);
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [scanMode, setScanMode] = useState(false);
@@ -500,6 +501,26 @@ export default function KioskPage() {
   selectedClassRef.current = selectedClass;
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const loadAttendees = useCallback(async (classId: string) => {
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const res = await fetch(`/api/attendance?classSessionId=${classId}&date=${today}`);
+      if (res.ok) {
+        const data = await res.json();
+        setClassAttendees((data.attendance || []).map((a: { memberId: string; member?: { firstName: string; lastName: string } }) => ({
+          memberId: a.memberId,
+          memberName: a.member ? `${a.member.firstName} ${a.member.lastName}` : "Unknown",
+        })));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // Load attendees when class changes
+  useEffect(() => {
+    if (selectedClass) loadAttendees(selectedClass.id);
+    else setClassAttendees([]);
+  }, [selectedClass, loadAttendees]);
+
   function refocusInput() {
     setShowKeyboard(false); // Hide keyboard after check-in
     setTimeout(() => searchInputRef.current?.focus(), 100);
@@ -545,6 +566,7 @@ export default function KioskPage() {
       } else if (res.ok) {
         setCheckInState("success");
         setRecentCheckIns((prev) => [{ member, time: new Date() }, ...prev.slice(0, 4)]);
+        if (cls) loadAttendees(cls.id);
         setTimeout(() => { setCheckInState("idle"); setSelectedMember(null); refocusInput(); }, 3000);
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -701,8 +723,9 @@ export default function KioskPage() {
         setCheckInState("success");
         setRecentCheckIns((prev) => [
           { member: selectedMember, time: new Date() },
-          ...prev.slice(0, 4), // Keep last 5
+          ...prev.slice(0, 4),
         ]);
+        loadAttendees(selectedClass.id);
 
         // Auto-reset after 3 seconds
         setTimeout(() => {
@@ -834,6 +857,29 @@ export default function KioskPage() {
           >
             Back
           </button>
+
+          {/* Checked In — below classes */}
+          {selectedClass && (
+            <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm mt-3">
+              <h2 className="text-gray-500 text-sm font-medium mb-3 uppercase tracking-wide">
+                Checked In ({classAttendees.length})
+              </h2>
+              {classAttendees.length === 0 ? (
+                <p className="text-gray-400 text-sm">No one yet</p>
+              ) : (
+                <div className="space-y-1 max-h-60 overflow-y-auto">
+                  {classAttendees.map((a, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm text-gray-700">
+                      <svg className="w-3 h-3 text-green-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                      <span className="truncate">{a.memberName}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Center Panel - Check-in Interface */}
@@ -1049,33 +1095,6 @@ export default function KioskPage() {
           )}
         </div>
 
-        {/* Right Panel - Recent Check-ins */}
-        <div className="w-full md:w-64 shrink-0">
-          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-            <h2 className="text-gray-500 text-sm font-medium mb-3 uppercase tracking-wide">Recent Check-ins</h2>
-            {recentCheckIns.length === 0 ? (
-              <p className="text-gray-400 text-sm">No check-ins yet</p>
-            ) : (
-              <div className="space-y-2">
-                {recentCheckIns.map((checkIn, i) => (
-                  <div key={i} className="flex items-center gap-3 text-gray-700 text-sm">
-                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div className="flex-1 truncate">
-                      {checkIn.member.firstName} {checkIn.member.lastName}
-                    </div>
-                    <div className="text-xs text-gray-400">
-                      {formatTime(checkIn.time)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       </main>
 
       {/* Footer */}
