@@ -538,13 +538,6 @@ export default function KioskPage() {
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
 
-    // Detect QR code data from Bluetooth scanner (URL or JSON)
-    if (query.includes("member=") || query.startsWith("{") || query.startsWith("http")) {
-      handleQrScan(query.trim());
-      setSearchQuery("");
-      return;
-    }
-
     if (query.length < 2) {
       setSearchResults([]);
       return;
@@ -769,9 +762,19 @@ export default function KioskPage() {
                       value={searchQuery}
                       onChange={(e) => handleSearch(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && searchResults.length > 0) {
+                        if (e.key === "Enter") {
                           e.preventDefault();
-                          handleSelectMember(searchResults[0]);
+                          const val = searchQuery.trim();
+                          // Check if it's QR code data (URL or JSON from Bluetooth scanner)
+                          if (val.includes("member=") || val.startsWith("{") || val.startsWith("http")) {
+                            handleQrScan(val);
+                            setSearchQuery("");
+                            return;
+                          }
+                          // Otherwise select first search result
+                          if (searchResults.length > 0) {
+                            handleSelectMember(searchResults[0]);
+                          }
                         }
                       }}
                       placeholder="Start typing..."
