@@ -159,7 +159,7 @@ export default function PortalDashboard() {
         </div>
         <div className="flex-1 text-left">
           <p className="font-semibold text-gray-900 text-sm">Check In</p>
-          <p className="text-xs text-gray-500">Show your QR code at the front desk</p>
+          <p className="text-xs text-gray-500">Scan your member barcode at the front desk</p>
         </div>
         <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
