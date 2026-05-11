@@ -536,12 +536,13 @@ export default function KioskPage() {
         setRecentCheckIns((prev) => [{ member, time: new Date() }, ...prev.slice(0, 4)]);
         setTimeout(() => { setCheckInState("idle"); setSelectedMember(null); refocusInput(); }, 3000);
       } else {
-        setErrorMessage("Check-in failed");
+        const errData = await res.json().catch(() => ({}));
+        setErrorMessage(errData.error || "Check-in failed");
         setCheckInState("error");
         setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); refocusInput(); }, 3000);
       }
-    } catch {
-      setErrorMessage("Check-in failed");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Check-in failed");
       setCheckInState("error");
       setTimeout(() => { setCheckInState("idle"); setErrorMessage(""); refocusInput(); }, 3000);
     }
@@ -632,14 +633,12 @@ export default function KioskPage() {
       return;
     }
 
-    // Normal name/number search
+    // Normal name search — show all members, not just class-eligible
     const q = query.toLowerCase();
     const results = members
       .filter((m) => {
-        if (!canMemberCheckInToClass(m, selectedClass)) return false;
         const fullName = `${m.firstName} ${m.lastName}`.toLowerCase();
-        const memberNum = m.memberNumber?.toString() || "";
-        return fullName.includes(q) || memberNum.includes(q);
+        return fullName.includes(q);
       })
       .slice(0, 8);
 
