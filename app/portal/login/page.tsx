@@ -13,6 +13,8 @@ export default function PortalLoginPage() {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [devLoginUrl, setDevLoginUrl] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   async function handleMagicLink(e: React.FormEvent) {
     e.preventDefault();
@@ -221,9 +223,32 @@ export default function PortalLoginPage() {
               {loading ? "Signing in..." : "Sign In"}
             </button>
 
-            <p className="text-gray-400 text-xs text-center mt-4">
-              Forgot your password? Ask your instructor to send you a reset link.
-            </p>
+            <div className="text-center mt-4">
+              {forgotSent ? (
+                <p className="text-green-600 text-xs">If an account exists with that email, a reset link has been sent.</p>
+              ) : (
+                <button
+                  type="button"
+                  disabled={forgotLoading || !email.trim()}
+                  onClick={async () => {
+                    if (!email.trim()) { setError("Enter your email first"); return; }
+                    setForgotLoading(true);
+                    try {
+                      await fetch("/api/portal/auth/forgot-password", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ email: email.trim() }),
+                      });
+                      setForgotSent(true);
+                    } catch { setError("Failed to send reset email"); }
+                    finally { setForgotLoading(false); }
+                  }}
+                  className="text-primary text-xs font-medium hover:underline disabled:opacity-50"
+                >
+                  {forgotLoading ? "Sending..." : "Forgot your password?"}
+                </button>
+              )}
+            </div>
           </form>
         )}
       </div>
