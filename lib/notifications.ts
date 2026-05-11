@@ -259,11 +259,14 @@ export async function sendPasswordResetEmail(params: {
   resetUrl: string;
 }) {
   const brand = await getGymBranding();
-  const resolved = await resolveTemplate("password_reset", {
-    memberName: params.memberName,
-    resetUrl: params.resetUrl,
-    gymName: brand.gymName,
-  });
+  let resolved = null;
+  try {
+    resolved = await resolveTemplate("password_reset", {
+      memberName: params.memberName,
+      resetUrl: params.resetUrl,
+      gymName: brand.gymName,
+    });
+  } catch { /* no template, use fallback */ }
   if (resolved) {
     const html = wrapInTemplate(brand, resolved.bodyHtml);
     await sendEmail({ to: [params.email], subject: resolved.subject, html });
