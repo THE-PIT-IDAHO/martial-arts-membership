@@ -96,6 +96,35 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // Add curriculum PDFs from ranks (based on member's current rank in each style)
+  for (const es of enrolledStyles) {
+    if (!es.name || (es as { active?: boolean }).active === false) continue;
+    const rank = (es as { rank?: string }).rank;
+    if (!rank) continue;
+
+    const style = await prisma.style.findFirst({
+      where: { name: es.name },
+      select: { id: true, ranks: { orderBy: { order: "asc" }, select: { name: true, order: true, pdfDocument: true } } },
+    });
+    if (!style) continue;
+
+    const currentRank = style.ranks.find(r => r.name === rank);
+    if (!currentRank) continue;
+
+    for (const r of style.ranks) {
+      if (r.order > currentRank.order) continue;
+      if (r.pdfDocument) {
+        documents.push({
+          id: `rank-pdf-${r.name}`,
+          name: `${r.name} Curriculum`,
+          url: r.pdfDocument,
+          type: "curriculum",
+          date: "",
+        });
+      }
+    }
+  }
+
   // Sort by date descending
   documents.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
