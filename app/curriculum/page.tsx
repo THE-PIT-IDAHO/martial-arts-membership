@@ -1162,7 +1162,7 @@ export default function CurriculumV2Page() {
   function openReorderModal() {
     // Use the current saved order (allCategories is already sorted by sortOrder)
     setReorderList(allCategories.map(c => ({ id: c.id, name: c.name })));
-    setReorderThisRankOnly(false);
+    // Keep previous checkbox state — don't reset
     setShowReorderModal(true);
   }
 
