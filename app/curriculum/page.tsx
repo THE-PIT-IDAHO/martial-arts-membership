@@ -465,6 +465,25 @@ export default function CurriculumV2Page() {
   const [reorderList, setReorderList] = useState<{ id: string; name: string }[]>([]);
   const [savingReorder, setSavingReorder] = useState(false);
   const [reorderThisRankOnly, setReorderThisRankOnly] = useState(false);
+  const [lockedRankIds, setLockedRankIds] = useState<Set<string>>(new Set());
+
+  // Load locked ranks from localStorage when style changes
+  useEffect(() => {
+    if (!selectedStyleId) return;
+    try {
+      const stored = localStorage.getItem(`locked-reorder-${selectedStyleId}`);
+      if (stored) setLockedRankIds(new Set(JSON.parse(stored)));
+      else setLockedRankIds(new Set());
+    } catch { setLockedRankIds(new Set()); }
+  }, [selectedStyleId]);
+
+  // Save locked ranks to localStorage
+  function updateLockedRanks(newSet: Set<string>) {
+    setLockedRankIds(newSet);
+    if (selectedStyleId) {
+      localStorage.setItem(`locked-reorder-${selectedStyleId}`, JSON.stringify([...newSet]));
+    }
+  }
   const tableRef = useRef<HTMLTableElement>(null);
   const [disclaimer, setDisclaimer] = useState("Coach has final say for promotion and not everyone will promote every ceremony. Promotion depends on the following:\nattendance, skill recollection, good behavior, effort and fitness");
   const [disclaimerSaving, setDisclaimerSaving] = useState(false);
@@ -1160,9 +1179,8 @@ export default function CurriculumV2Page() {
   );
 
   function openReorderModal() {
-    // Use the current saved order (allCategories is already sorted by sortOrder)
     setReorderList(allCategories.map(c => ({ id: c.id, name: c.name })));
-    // Keep previous checkbox state — don't reset
+    setReorderThisRankOnly(lockedRankIds.has(selectedRankId));
     setShowReorderModal(true);
   }
 
@@ -1190,12 +1208,21 @@ export default function CurriculumV2Page() {
         })
       ));
 
-      // Apply to all other ranks unless "this rank only" is checked
+      // Update locked state for this rank
+      const newLocked = new Set(lockedRankIds);
+      if (reorderThisRankOnly) {
+        newLocked.add(selectedRankId);
+      } else {
+        newLocked.delete(selectedRankId);
+      }
+      updateLockedRanks(newLocked);
+
+      // Apply to all other unlocked ranks
       if (!reorderThisRankOnly) {
         const orderByName: Record<string, number> = {};
         reorderList.forEach((cat, i) => { orderByName[cat.name.trim().toLowerCase()] = i; });
 
-        const otherRanks = ranks.filter(r => r.id !== selectedRankId);
+        const otherRanks = ranks.filter(r => r.id !== selectedRankId && !newLocked.has(r.id));
         await Promise.all(otherRanks.map(async (rank) => {
           const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
           if (!res.ok) return;
@@ -1815,7 +1842,6 @@ export default function CurriculumV2Page() {
               </button>
             </div>
             <div className="p-5">
-              <p className="text-xs text-gray-500 mb-3">Drag to reorder. This only affects the current rank.</p>
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleReorderDragEnd}>
                 <SortableContext items={reorderList.map(c => c.id)} strategy={verticalListSortingStrategy}>
                   <div className="space-y-1">
@@ -1834,7 +1860,7 @@ export default function CurriculumV2Page() {
                   onChange={e => setReorderThisRankOnly(e.target.checked)}
                   className="w-4 h-4 rounded border-gray-300 accent-primary"
                 />
-                <span className="text-xs text-gray-600">Apply to this rank only</span>
+                <span className="text-xs text-gray-600">Lock this rank&apos;s order</span>
               </label>
               <div className="flex justify-end gap-2">
                 <button onClick={saveReorder} disabled={savingReorder} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
