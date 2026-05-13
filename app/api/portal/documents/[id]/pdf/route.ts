@@ -3,9 +3,10 @@ import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/portal/documents/[id]/pdf
-// Streams a PDF for the authenticated member. Handles two ID formats:
-//   rank-pdf-<rankName>   → look up the rank PDF for one of the member's enrolled styles
-//   <uuid>                → look up an entry in member.styleDocuments by id
+// Streams a PDF for the authenticated member. Handles ID formats:
+//   rank-pdf-<rankName>   → Rank.pdfDocument for one of the member's enrolled styles
+//   waiver-<id>           → SignedWaiver.pdfData
+//   <uuid>                → entry in member.styleDocuments by id
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -23,7 +24,7 @@ export async function GET(
   if (!member) return new NextResponse("Not found", { status: 404 });
 
   let dataUri: string | null = null;
-  let displayName = "document.pdf";
+  let displayName = "Document";
 
   if (id.startsWith("rank-pdf-")) {
     const rankName = id.slice("rank-pdf-".length);
@@ -51,9 +52,19 @@ export async function GET(
       );
       if (target?.pdfDocument) {
         dataUri = target.pdfDocument;
-        displayName = `${rankName} Curriculum.pdf`;
+        displayName = rankName;
         break;
       }
+    }
+  } else if (id.startsWith("waiver-")) {
+    const waiverId = id.slice("waiver-".length);
+    const waiver = await prisma.signedWaiver.findFirst({
+      where: { id: waiverId, memberId: auth.memberId },
+      select: { templateName: true, pdfData: true },
+    });
+    if (waiver?.pdfData) {
+      dataUri = waiver.pdfData;
+      displayName = waiver.templateName || "Signed Waiver";
     }
   } else if (member.styleDocuments) {
     try {
@@ -78,11 +89,15 @@ export async function GET(
 
   const buffer = Buffer.from(b64, "base64");
 
+  const safeName = displayName.replace(/[\r\n"\\]/g, "").trim() || "Document";
+  const asciiFallback = safeName.replace(/[^\x20-\x7e]/g, "_");
+  const encoded = encodeURIComponent(safeName);
+
   return new NextResponse(buffer, {
     status: 200,
     headers: {
       "Content-Type": mime,
-      "Content-Disposition": `inline; filename="${displayName.replace(/"/g, "")}"`,
+      "Content-Disposition": `inline; filename="${asciiFallback}.pdf"; filename*=UTF-8''${encoded}.pdf`,
       "Content-Length": String(buffer.length),
       "Cache-Control": "private, max-age=300",
     },

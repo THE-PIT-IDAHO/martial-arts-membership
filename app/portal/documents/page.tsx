@@ -30,10 +30,7 @@ export default function PortalDocumentsPage() {
       return;
     }
     setErrorMsg(null);
-    const win = window.open(doc.url, "_blank", "noopener");
-    if (!win) {
-      setErrorMsg("Your browser blocked the new tab. Please allow popups for this site.");
-    }
+    window.open(doc.url, "_blank", "noopener");
   }
 
   if (loading) {

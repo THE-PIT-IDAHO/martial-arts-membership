@@ -14,8 +14,10 @@ export async function GET(req: NextRequest) {
     select: {
       styleDocuments: true,
       stylesNotes: true,
+      waiverSigned: true,
+      waiverSignedAt: true,
       signedWaivers: {
-        select: { id: true, templateName: true, signedAt: true },
+        select: { id: true, templateName: true, signedAt: true, pdfData: true },
         orderBy: { signedAt: "desc" },
       },
     },
@@ -73,12 +75,25 @@ export async function GET(req: NextRequest) {
 
   // Signed waivers
   for (const w of member.signedWaivers) {
+    const docId = `waiver-${w.id}`;
     documents.push({
-      id: `waiver-${w.id}`,
+      id: docId,
       name: w.templateName || "Signed Waiver",
-      url: "",
+      url: w.pdfData ? `/api/portal/documents/${encodeURIComponent(docId)}/pdf` : "",
       type: "waiver",
       date: new Date(w.signedAt).toISOString(),
+    });
+  }
+
+  // Legacy fallback: member is marked waiverSigned but has no SignedWaiver row.
+  // Show a placeholder so the user knows the waiver is on file, even without a PDF.
+  if (member.waiverSigned && member.signedWaivers.length === 0) {
+    documents.push({
+      id: "waiver-legacy",
+      name: "Signed Waiver",
+      url: "",
+      type: "waiver",
+      date: member.waiverSignedAt ? new Date(member.waiverSignedAt).toISOString() : "",
     });
   }
 
