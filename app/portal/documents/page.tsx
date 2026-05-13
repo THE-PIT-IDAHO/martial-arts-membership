@@ -13,6 +13,8 @@ interface DocItem {
 export default function PortalDocumentsPage() {
   const [documents, setDocuments] = useState<DocItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/portal/documents")
@@ -23,9 +25,31 @@ export default function PortalDocumentsPage() {
       });
   }, []);
 
-  function openDoc(doc: DocItem) {
+  async function openDoc(doc: DocItem) {
     if (!doc.url) return;
-    window.open(doc.url, "_blank");
+    setErrorMsg(null);
+    setBusyId(doc.id);
+    try {
+      const res = await fetch(doc.url, { credentials: "include" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`${res.status} ${res.statusText} ${text}`.trim());
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${doc.name}.pdf`.replace(/\.pdf\.pdf$/i, ".pdf");
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      setErrorMsg(`Could not load document: ${(e as Error).message}`);
+    } finally {
+      setBusyId(null);
+    }
   }
 
   if (loading) {
@@ -39,6 +63,12 @@ export default function PortalDocumentsPage() {
   return (
     <div className="px-4 pt-6 pb-4 max-w-lg mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-4">Documents</h1>
+
+      {errorMsg && (
+        <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 break-words">
+          {errorMsg}
+        </div>
+      )}
 
       {documents.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
@@ -76,11 +106,13 @@ export default function PortalDocumentsPage() {
                   </p>
                 )}
               </div>
-              {doc.url && (
+              {busyId === doc.id ? (
+                <div className="w-4 h-4 border-2 border-gray-200 border-t-primary rounded-full animate-spin flex-shrink-0" />
+              ) : doc.url ? (
                 <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                 </svg>
-              )}
+              ) : null}
             </button>
           ))}
         </div>
