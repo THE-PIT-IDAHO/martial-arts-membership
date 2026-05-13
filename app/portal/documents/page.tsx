@@ -28,8 +28,12 @@ export default function PortalDocumentsPage() {
   function openDoc(doc: DocItem) {
     if (!doc.url) return;
     try {
+      sessionStorage.setItem("pdf_viewer_url", doc.url);
+      sessionStorage.setItem("pdf_viewer_title", doc.name);
+      router.push("/portal/pdf-viewer");
+    } catch {
+      // Document too large for sessionStorage — fall back to direct open
       if (doc.url.startsWith("data:")) {
-        // Convert data URI to blob URL for reliable viewing
         const byteString = atob(doc.url.split(",")[1]);
         const mimeString = doc.url.split(",")[0].split(":")[1].split(";")[0];
         const ab = new ArrayBuffer(byteString.length);
@@ -40,11 +44,6 @@ export default function PortalDocumentsPage() {
       } else {
         window.open(doc.url, "_blank");
       }
-    } catch {
-      // Fallback to sessionStorage viewer
-      sessionStorage.setItem("pdf_viewer_url", doc.url);
-      sessionStorage.setItem("pdf_viewer_title", doc.name);
-      router.push("/portal/pdf-viewer");
     }
   }
 
