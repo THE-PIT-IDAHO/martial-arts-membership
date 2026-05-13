@@ -73,25 +73,24 @@ export async function GET(req: NextRequest) {
     } catch { /* ignore */ }
   }
 
-  // Signed waivers
+  // Signed waivers — endpoint renders the PDF on the fly when pdfData is missing
   for (const w of member.signedWaivers) {
     const docId = `waiver-${w.id}`;
     documents.push({
       id: docId,
       name: w.templateName || "Signed Waiver",
-      url: w.pdfData ? `/api/portal/documents/${encodeURIComponent(docId)}/pdf` : "",
+      url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf`,
       type: "waiver",
       date: new Date(w.signedAt).toISOString(),
     });
   }
 
-  // Legacy fallback: member is marked waiverSigned but has no SignedWaiver row.
-  // Show a placeholder so the user knows the waiver is on file, even without a PDF.
+  // Legacy: member marked waiverSigned but no SignedWaiver row — endpoint generates a stub PDF
   if (member.waiverSigned && member.signedWaivers.length === 0) {
     documents.push({
       id: "waiver-legacy",
       name: "Signed Waiver",
-      url: "",
+      url: "/api/portal/documents/waiver-legacy/pdf",
       type: "waiver",
       date: member.waiverSignedAt ? new Date(member.waiverSignedAt).toISOString() : "",
     });
