@@ -3,7 +3,8 @@ import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/portal/documents
-// Returns account documents (contracts, waivers, uploaded docs) — excludes rank/belt PDFs
+// Returns the member's waivers and manually-uploaded documents only.
+// Curriculum PDFs live under /portal/styles; contracts have their own admin space.
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -17,16 +18,12 @@ export async function GET(req: NextRequest) {
         select: { id: true, templateName: true, signedAt: true },
         orderBy: { signedAt: "desc" },
       },
-      signedContracts: {
-        select: { id: true, planName: true, signedAt: true },
-        orderBy: { signedAt: "desc" },
-      },
     },
   });
 
   if (!member) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Collect rank doc IDs from all enrolled styles' beltConfigs so we can exclude them
+  // Collect rank doc IDs from enrolled styles' beltConfigs so we can exclude them
   const rankDocIds = new Set<string>();
 
   let enrolledStyles: Array<{ name: string }> = [];
@@ -53,16 +50,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Filter styleDocuments to exclude rank PDFs
   const documents: Array<{ id: string; name: string; url: string; type: string; date: string }> = [];
 
+  // Manually uploaded docs in member.styleDocuments (excluding anything tagged as a rank/curriculum doc)
   if (member.styleDocuments) {
     try {
       const docs: Array<{ id: string; name: string; url: string; uploadedAt?: string; fromRank?: string }> =
         JSON.parse(member.styleDocuments);
       for (const doc of docs) {
         if (rankDocIds.has(doc.id)) continue;
-        if (doc.fromRank) continue; // explicitly tagged as rank doc
+        if (doc.fromRank) continue;
         documents.push({
           id: doc.id,
           name: doc.name,
@@ -74,59 +71,17 @@ export async function GET(req: NextRequest) {
     } catch { /* ignore */ }
   }
 
-  // Add signed waivers
+  // Signed waivers
   for (const w of member.signedWaivers) {
     documents.push({
       id: `waiver-${w.id}`,
       name: w.templateName || "Signed Waiver",
-      url: "", // no direct URL — viewed via dedicated endpoint
+      url: "",
       type: "waiver",
       date: new Date(w.signedAt).toISOString(),
     });
   }
 
-  // Add signed contracts
-  for (const c of member.signedContracts) {
-    documents.push({
-      id: `contract-${c.id}`,
-      name: `Contract: ${c.planName}`,
-      url: "",
-      type: "contract",
-      date: new Date(c.signedAt).toISOString(),
-    });
-  }
-
-  // Add curriculum PDFs from ranks (based on member's current rank in each style)
-  for (const es of enrolledStyles) {
-    if (!es.name || (es as { active?: boolean }).active === false) continue;
-    const rank = (es as { rank?: string }).rank;
-    if (!rank) continue;
-
-    const style = await prisma.style.findFirst({
-      where: { name: es.name },
-      select: { id: true, ranks: { orderBy: { order: "asc" }, select: { name: true, order: true, pdfDocument: true } } },
-    });
-    if (!style) continue;
-
-    const currentRank = style.ranks.find(r => r.name === rank);
-    if (!currentRank) continue;
-
-    for (const r of style.ranks) {
-      if (r.order > currentRank.order) continue;
-      if (r.pdfDocument) {
-        const docId = `rank-pdf-${r.name}`;
-        documents.push({
-          id: docId,
-          name: `${r.name} Curriculum`,
-          url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf`,
-          type: "curriculum",
-          date: "",
-        });
-      }
-    }
-  }
-
-  // Sort by date descending
   documents.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
   return NextResponse.json({ documents });
