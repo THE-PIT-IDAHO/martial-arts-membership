@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 interface DocItem {
   id: string;
@@ -14,7 +13,6 @@ interface DocItem {
 export default function PortalDocumentsPage() {
   const [documents, setDocuments] = useState<DocItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
 
   useEffect(() => {
     fetch("/api/portal/documents")
@@ -27,24 +25,7 @@ export default function PortalDocumentsPage() {
 
   function openDoc(doc: DocItem) {
     if (!doc.url) return;
-    try {
-      sessionStorage.setItem("pdf_viewer_url", doc.url);
-      sessionStorage.setItem("pdf_viewer_title", doc.name);
-      router.push("/portal/pdf-viewer");
-    } catch {
-      // Document too large for sessionStorage — fall back to direct open
-      if (doc.url.startsWith("data:")) {
-        const byteString = atob(doc.url.split(",")[1]);
-        const mimeString = doc.url.split(",")[0].split(":")[1].split(";")[0];
-        const ab = new ArrayBuffer(byteString.length);
-        const ia = new Uint8Array(ab);
-        for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-        const blob = new Blob([ab], { type: mimeString });
-        window.open(URL.createObjectURL(blob), "_blank");
-      } else {
-        window.open(doc.url, "_blank");
-      }
-    }
+    window.open(doc.url, "_blank");
   }
 
   if (loading) {

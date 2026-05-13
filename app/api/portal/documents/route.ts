@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
         documents.push({
           id: doc.id,
           name: doc.name,
-          url: doc.url,
+          url: `/api/portal/documents/${encodeURIComponent(doc.id)}/pdf`,
           type: "document",
           date: doc.uploadedAt || "",
         });
@@ -114,10 +114,11 @@ export async function GET(req: NextRequest) {
     for (const r of style.ranks) {
       if (r.order > currentRank.order) continue;
       if (r.pdfDocument) {
+        const docId = `rank-pdf-${r.name}`;
         documents.push({
-          id: `rank-pdf-${r.name}`,
+          id: docId,
           name: `${r.name} Curriculum`,
-          url: r.pdfDocument,
+          url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf`,
           type: "curriculum",
           date: "",
         });
