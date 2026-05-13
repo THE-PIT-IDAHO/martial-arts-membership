@@ -13,7 +13,6 @@ interface DocItem {
 export default function PortalDocumentsPage() {
   const [documents, setDocuments] = useState<DocItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,30 +24,15 @@ export default function PortalDocumentsPage() {
       });
   }, []);
 
-  async function openDoc(doc: DocItem) {
-    if (!doc.url) return;
+  function openDoc(doc: DocItem) {
+    if (!doc.url) {
+      setErrorMsg("This document is missing — please contact the gym.");
+      return;
+    }
     setErrorMsg(null);
-    setBusyId(doc.id);
-    try {
-      const res = await fetch(doc.url, { credentials: "include" });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`${res.status} ${res.statusText} ${text}`.trim());
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${doc.name}.pdf`.replace(/\.pdf\.pdf$/i, ".pdf");
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      setErrorMsg(`Could not load document: ${(e as Error).message}`);
-    } finally {
-      setBusyId(null);
+    const win = window.open(doc.url, "_blank", "noopener");
+    if (!win) {
+      setErrorMsg("Your browser blocked the new tab. Please allow popups for this site.");
     }
   }
 
@@ -106,13 +90,11 @@ export default function PortalDocumentsPage() {
                   </p>
                 )}
               </div>
-              {busyId === doc.id ? (
-                <div className="w-4 h-4 border-2 border-gray-200 border-t-primary rounded-full animate-spin flex-shrink-0" />
-              ) : doc.url ? (
+              {doc.url && (
                 <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                 </svg>
-              ) : null}
+              )}
             </button>
           ))}
         </div>

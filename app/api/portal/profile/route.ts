@@ -90,7 +90,10 @@ export async function GET(req: NextRequest) {
 
     const style = await prisma.style.findFirst({
       where: { name: enrolled.name },
-      select: { beltConfig: true },
+      select: {
+        beltConfig: true,
+        ranks: { orderBy: { order: "asc" }, select: { name: true, order: true, pdfDocument: true } },
+      },
     });
 
     let beltLayers: Record<string, unknown> | null = null;
@@ -132,12 +135,21 @@ export async function GET(req: NextRequest) {
           const currentRank = sortedRanks[currentRankIndex];
           beltLayers = { ...defaultStyleLayers, ...(currentRank.layers || {}), fabric: true };
 
-          // Collect PDFs from all ranks up to and including current rank
+          // Collect PDFs from all ranks up to and including current rank.
+          // Source from the Rank model (Rank.pdfDocument) and emit streaming URLs
+          // — beltConfig.pdfDocuments URLs were stripped to keep beltConfig under 1MB.
+          const seenRankNames = new Set<string>();
           for (const r of sortedRanks) {
-            if (r.order <= currentRank.order && r.pdfDocuments) {
-              for (const doc of r.pdfDocuments) {
-                documents.push({ id: doc.id, name: doc.name, url: doc.url });
-              }
+            if (r.order > currentRank.order) continue;
+            const rankRow = style.ranks.find((rr) => rr.name === r.name);
+            if (rankRow?.pdfDocument && !seenRankNames.has(r.name)) {
+              seenRankNames.add(r.name);
+              const docId = `rank-pdf-${r.name}`;
+              documents.push({
+                id: docId,
+                name: `${r.name} Curriculum`,
+                url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf`,
+              });
             }
           }
 
@@ -243,7 +255,11 @@ export async function GET(req: NextRequest) {
             // Include if it's in this style's beltConfig, or if it's a manual upload (not in any beltConfig)
             if (thisStyleDocIds.has(doc.id) || (!otherStyleDocIds.has(doc.id) && rankInfo.length === 1)) {
               seenIds.add(doc.id);
-              ri.documents.push({ id: doc.id, name: doc.name, url: doc.url });
+              ri.documents.push({
+                id: doc.id,
+                name: doc.name,
+                url: `/api/portal/documents/${encodeURIComponent(doc.id)}/pdf`,
+              });
             }
           }
         }
