@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 interface BeltLayers {
   fabric?: boolean;
@@ -37,7 +36,8 @@ interface RankStyle {
 export default function PortalStylesPage() {
   const [rankInfo, setRankInfo] = useState<RankStyle[]>([]);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/portal/profile")
@@ -47,6 +47,43 @@ export default function PortalStylesPage() {
         setLoading(false);
       });
   }, []);
+
+  async function openDoc(doc: { id: string; name: string; url: string }) {
+    if (!doc.url) return;
+    setErrorMsg(null);
+    setBusyId(doc.id);
+    try {
+      let blob: Blob;
+      if (doc.url.startsWith("data:")) {
+        const commaIdx = doc.url.indexOf(",");
+        const header = doc.url.slice(0, commaIdx);
+        const b64 = doc.url.slice(commaIdx + 1);
+        const mimeMatch = header.match(/data:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : "application/pdf";
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        blob = new Blob([bytes], { type: mime });
+      } else {
+        const res = await fetch(doc.url, { credentials: "include" });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        blob = await res.blob();
+      }
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${doc.name}.pdf`.replace(/\.pdf\.pdf$/i, ".pdf");
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } catch (e) {
+      setErrorMsg(`Could not load document: ${(e as Error).message}`);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -59,6 +96,12 @@ export default function PortalStylesPage() {
   return (
     <div className="px-4 pt-6 pb-4 max-w-lg mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-4">My Styles</h1>
+
+      {errorMsg && (
+        <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 break-words">
+          {errorMsg}
+        </div>
+      )}
 
       {rankInfo.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
@@ -118,16 +161,9 @@ export default function PortalStylesPage() {
                     {rs.documents.map((doc) => (
                       <button
                         key={doc.id}
-                        onClick={() => {
-                          if (doc.url.startsWith("data:")) {
-                            sessionStorage.setItem("pdf_viewer_url", doc.url);
-                            sessionStorage.setItem("pdf_viewer_title", doc.name);
-                            router.push("/portal/pdf-viewer");
-                          } else {
-                            window.open(doc.url, "_blank");
-                          }
-                        }}
-                        className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                        onClick={() => openDoc(doc)}
+                        disabled={busyId === doc.id}
+                        className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-gray-50 active:bg-gray-100 transition-colors disabled:opacity-60"
                       >
                         <div className="w-9 h-9 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
                           <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -137,9 +173,13 @@ export default function PortalStylesPage() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{doc.name}</p>
                         </div>
-                        <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                        </svg>
+                        {busyId === doc.id ? (
+                          <div className="w-4 h-4 border-2 border-gray-200 border-t-primary rounded-full animate-spin flex-shrink-0" />
+                        ) : (
+                          <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                          </svg>
+                        )}
                       </button>
                     ))}
                   </div>
