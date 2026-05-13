@@ -15,24 +15,19 @@ export async function DELETE(req: Request, props: { params: Promise<{ id: string
 
   await prisma.signedWaiver.delete({ where: { id: waiver.id } });
 
-  // If this was the member's only signed waiver, clear waiverSigned on the member
-  // so the profile reflects "no waiver on file".
-  const remaining = await prisma.signedWaiver.count({
-    where: { memberId: waiver.memberId, clientId },
+  // Deleting a waiver resets the member's waiver status to "not on file"
+  // — matches the staff mental model of one active waiver per member.
+  await prisma.member.update({
+    where: { id: waiver.memberId },
+    data: { waiverSigned: false, waiverSignedAt: null },
   });
-  if (remaining === 0) {
-    await prisma.member.update({
-      where: { id: waiver.memberId },
-      data: { waiverSigned: false, waiverSignedAt: null },
-    });
-  }
 
   logAudit({
     entityType: "SignedWaiver",
     entityId: waiver.id,
     action: "DELETE",
-    summary: `Deleted waiver "${waiver.templateName}" for member ${waiver.memberId}${remaining === 0 ? " (status reset)" : ""}`,
+    summary: `Deleted waiver "${waiver.templateName}" for member ${waiver.memberId} (status reset)`,
   }).catch(() => {});
 
-  return NextResponse.json({ success: true, waiverSignedReset: remaining === 0 });
+  return NextResponse.json({ success: true, waiverSignedReset: true });
 }

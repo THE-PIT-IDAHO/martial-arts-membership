@@ -2443,7 +2443,7 @@ export default function MemberProfilePage() {
                             </div>
                           )}
 
-                          <div className="mt-2 flex gap-2">
+                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                             <button
                               onClick={async () => {
                                 setWaiverActionMsg(null);
@@ -2479,6 +2479,30 @@ export default function MemberProfilePage() {
                             >
                               Copy Link
                             </button>
+                            {member.waiverSigned && signedWaivers.length === 0 && (
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm("Reset waiver status? The member will be marked as not having signed.")) return;
+                                  setWaiverActionMsg(null);
+                                  const res = await fetch(`/api/members/${member.id}`, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ waiverSigned: false, waiverSignedAt: null }),
+                                  });
+                                  if (res.ok) {
+                                    setMember((prev) => prev ? { ...prev, waiverSigned: false, waiverSignedAt: null } : prev);
+                                    setWaiverSigned(false);
+                                    setWaiverSignedAt("");
+                                    setWaiverActionMsg("Waiver status reset.");
+                                  } else {
+                                    setWaiverActionMsg("Failed to reset status.");
+                                  }
+                                }}
+                                className="text-xs text-red-600 hover:text-red-700 font-medium"
+                              >
+                                Reset Status
+                              </button>
+                            )}
                           </div>
 
                           {waiverActionMsg && (
