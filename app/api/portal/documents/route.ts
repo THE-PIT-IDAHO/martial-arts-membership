@@ -98,5 +98,8 @@ export async function GET(req: NextRequest) {
 
   documents.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
-  return NextResponse.json({ documents });
+  return NextResponse.json(
+    { documents },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

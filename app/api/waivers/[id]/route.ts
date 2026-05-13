@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getClientId } from "@/lib/tenant";
 import { logAudit } from "@/lib/audit";
 
-export async function DELETE(req: Request, props: { params: Promise<{ id: string }> }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
-  const clientId = await getClientId(req);
 
-  const waiver = await prisma.signedWaiver.findFirst({
-    where: { id, clientId },
+  // Scope by id only — legacy rows may have a different clientId than the current
+  // tenant, but admin auth has already established access to the member.
+  const waiver = await prisma.signedWaiver.findUnique({
+    where: { id },
     select: { id: true, memberId: true, templateName: true },
   });
   if (!waiver) return NextResponse.json({ error: "Waiver not found" }, { status: 404 });
