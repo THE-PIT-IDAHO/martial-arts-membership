@@ -2190,24 +2190,12 @@ export default function MemberProfilePage() {
                       <dt className="text-gray-500 text-xs uppercase">
                         Member #
                       </dt>
-                      <dd className="text-gray-900 flex items-center gap-2">
+                      <dd className="text-gray-900">
                         {member.memberNumber != null ? (
                           member.memberNumber
                         ) : (
                           <span className="text-gray-400">—</span>
                         )}
-                        <button
-                          onClick={() => {
-                            const w = window.open("", "_blank", "width=350,height=400");
-                            if (w) {
-                              w.document.write(`<html><head><title>QR - ${member.firstName} ${member.lastName}</title></head><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif"><img src="/api/members/${member.id}/qrcode" width="250" height="250" /><p style="margin-top:12px;font-size:14px;color:#333">${member.firstName} ${member.lastName}</p></body></html>`);
-                            }
-                          }}
-                          className="text-xs text-primary hover:text-primaryDark font-medium"
-                          title="Show QR Code"
-                        >
-                          QR
-                        </button>
                       </dd>
                     </div>
 
