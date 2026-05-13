@@ -6,7 +6,13 @@ import { logAudit } from "@/lib/audit";
 export async function POST(request: Request) {
   try {
     const clientId = await getClientId(request);
-    const { memberId, templateId, signatureData } = await request.json();
+    const {
+      memberId,
+      templateId,
+      signatureData,
+      waiverContent: bodyWaiverContent,
+      templateName: bodyTemplateName,
+    } = await request.json();
 
     if (!memberId || !signatureData) {
       return NextResponse.json(
@@ -25,8 +31,8 @@ export async function POST(request: Request) {
       });
     }
 
-    const templateName = template?.name || "General Waiver";
-    const waiverContent = template?.content || "Standard liability waiver";
+    const templateName = bodyTemplateName || template?.name || "General Waiver";
+    const waiverContent = bodyWaiverContent || template?.content || "Standard liability waiver";
 
     const signed = await prisma.signedWaiver.create({
       data: {

@@ -339,11 +339,54 @@ export default function WaiverSignPage() {
         }),
       });
 
-      if (res.ok) {
-        setSuccess(true);
-      } else {
+      if (!res.ok) {
         setError("Failed to submit waiver");
+        return;
       }
+
+      // Persist a SignedWaiver row so the member can view the signed waiver later
+      const fullName = participantName || `${member?.firstName ?? ""} ${member?.lastName ?? ""}`.trim();
+      const waiverContentText = waiverSections
+        .map((s) => {
+          const title = s.title ? `${s.title}\n` : "";
+          const body = replacePlaceholders(s.content, member, gymSettings, fullName);
+          return `${title}${body}`;
+        })
+        .join("\n\n");
+
+      let signatureDataUrl = "";
+      const canvas = canvasRef.current;
+      if (hasSignature && canvas) {
+        signatureDataUrl = canvas.toDataURL("image/png");
+      } else if (signatureName) {
+        // Typed signature: render the name to a canvas so we have an image to store
+        const c = document.createElement("canvas");
+        c.width = 400;
+        c.height = 100;
+        const ctx = c.getContext("2d");
+        if (ctx) {
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.fillStyle = "#000";
+          ctx.font = "italic 36px 'Times New Roman', serif";
+          ctx.textBaseline = "middle";
+          ctx.fillText(signatureName, 10, c.height / 2);
+        }
+        signatureDataUrl = c.toDataURL("image/png");
+      }
+
+      await fetch("/api/waivers/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberId,
+          signatureData: signatureDataUrl,
+          waiverContent: waiverContentText,
+          templateName: "Liability Waiver",
+        }),
+      }).catch(() => { /* don't block UI on this */ });
+
+      setSuccess(true);
     } catch (err) {
       setError("Failed to submit waiver");
     } finally {
