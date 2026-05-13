@@ -2467,6 +2467,36 @@ export default function MemberProfilePage() {
                             >
                               Copy Link
                             </button>
+                            <button
+                              onClick={async () => {
+                                setWaiverActionMsg(null);
+                                const res = await fetch("/api/waivers/send-add-child-link", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ memberId: member.id }),
+                                });
+                                const data = await res.json().catch(() => ({}));
+                                if (res.ok) {
+                                  setWaiverActionMsg(`Add-child link sent to ${data.sentTo}.`);
+                                } else {
+                                  setWaiverActionMsg(data.error || "Failed to send add-child link.");
+                                }
+                              }}
+                              disabled={!member.email}
+                              className="text-xs text-primary hover:text-primaryDark font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Send Add-Child Link
+                            </button>
+                            <button
+                              onClick={() => {
+                                const url = `${window.location.origin}/waiver/add-child/${member.id}`;
+                                navigator.clipboard.writeText(url);
+                                setWaiverActionMsg("Add-child link copied to clipboard.");
+                              }}
+                              className="text-xs text-gray-600 hover:text-gray-800 font-medium"
+                            >
+                              Copy Add-Child Link
+                            </button>
                             {member.waiverSigned && signedWaivers.length === 0 && (
                               <button
                                 onClick={async () => {
