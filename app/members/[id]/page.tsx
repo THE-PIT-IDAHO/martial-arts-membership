@@ -535,6 +535,10 @@ export default function MemberProfilePage() {
   const [waiverSigned, setWaiverSigned] = useState(false);
   const [waiverSignedAt, setWaiverSignedAt] = useState("");
 
+  const [signedWaivers, setSignedWaivers] = useState<Array<{ id: string; templateName: string; signedAt: string; confirmed: boolean }>>([]);
+  const [waiverActionMsg, setWaiverActionMsg] = useState<string | null>(null);
+  const [sendingWaiverLink, setSendingWaiverLink] = useState(false);
+
   // styles: array of { name, rank, beltSize, uniformSize, startDate }
   const [styles, setStyles] = useState<StyleEntry[]>([]);
   const [availableStyles, setAvailableStyles] = useState<AvailableStyle[]>([]);
@@ -673,6 +677,12 @@ export default function MemberProfilePage() {
       fetch(`/api/members/${memberId}/service-credits`)
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d?.credits) setServiceCredits(d.credits); })
+        .catch(() => {});
+
+      // Fetch signed waivers
+      fetch(`/api/waivers/signed/${memberId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.waivers) setSignedWaivers(d.waivers); })
         .catch(() => {});
     } catch (err: any) {
       console.error(err);
@@ -2385,7 +2395,7 @@ export default function MemberProfilePage() {
                         Waiver
                       </dt>
                       <dd className="text-gray-900">
-                        <div className="space-y-0.5 text-sm">
+                        <div className="space-y-1 text-sm">
                           <div>
                             Status:{" "}
                             <span className={member.waiverSigned ? "text-green-600 font-medium" : "text-gray-500"}>
@@ -2397,25 +2407,83 @@ export default function MemberProfilePage() {
                               Date: <span>{new Date(member.waiverSignedAt).toLocaleDateString()}</span>
                             </div>
                           )}
-                          <button
-                            onClick={() => {
-                              fetch(`/api/waivers/signed/${member.id}`)
-                                .then(r => r.json())
-                                .then(data => {
-                                  if (data.waivers?.length) {
-                                    const list = data.waivers.map((w: { templateName: string; signedAt: string; confirmed: boolean }) =>
-                                      `${w.templateName} — ${new Date(w.signedAt).toLocaleDateString()} (${w.confirmed ? "Confirmed" : "Pending"})`
-                                    ).join("\n");
-                                    alert("Signed Waivers:\n\n" + list);
+
+                          {signedWaivers.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              {signedWaivers.map((w) => (
+                                <div key={w.id} className="flex items-center justify-between gap-2 px-2 py-1 bg-gray-50 rounded text-xs">
+                                  <div className="flex-1 min-w-0 truncate">
+                                    <span className="font-medium">{w.templateName}</span>
+                                    <span className="text-gray-500"> — {new Date(w.signedAt).toLocaleDateString()}</span>
+                                  </div>
+                                  <button
+                                    onClick={async () => {
+                                      if (!window.confirm(`Delete "${w.templateName}"? This will reset the waiver status if it's the only one on file.`)) return;
+                                      setWaiverActionMsg(null);
+                                      const res = await fetch(`/api/waivers/${w.id}`, { method: "DELETE" });
+                                      if (res.ok) {
+                                        const result = await res.json().catch(() => ({}));
+                                        setSignedWaivers((prev) => prev.filter((x) => x.id !== w.id));
+                                        if (result.waiverSignedReset) {
+                                          setMember((prev) => prev ? { ...prev, waiverSigned: false, waiverSignedAt: null } : prev);
+                                          setWaiverSigned(false);
+                                          setWaiverSignedAt("");
+                                        }
+                                        setWaiverActionMsg("Waiver deleted.");
+                                      } else {
+                                        setWaiverActionMsg("Failed to delete waiver.");
+                                      }
+                                    }}
+                                    className="text-red-600 hover:text-red-700 font-medium"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="mt-2 flex gap-2">
+                            <button
+                              onClick={async () => {
+                                setWaiverActionMsg(null);
+                                setSendingWaiverLink(true);
+                                try {
+                                  const res = await fetch("/api/waivers/send-link", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ memberId: member.id }),
+                                  });
+                                  const data = await res.json().catch(() => ({}));
+                                  if (res.ok) {
+                                    setWaiverActionMsg(`Waiver link sent to ${data.sentTo}.`);
                                   } else {
-                                    alert("No signed waivers on file.");
+                                    setWaiverActionMsg(data.error || "Failed to send waiver link.");
                                   }
-                                });
-                            }}
-                            className="text-xs text-primary hover:text-primaryDark font-medium"
-                          >
-                            View Signed Waivers
-                          </button>
+                                } finally {
+                                  setSendingWaiverLink(false);
+                                }
+                              }}
+                              disabled={sendingWaiverLink || !member.email}
+                              className="text-xs text-primary hover:text-primaryDark font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {sendingWaiverLink ? "Sending…" : "Send Waiver Link"}
+                            </button>
+                            <button
+                              onClick={() => {
+                                const url = `${window.location.origin}/waiver/sign/${member.id}`;
+                                navigator.clipboard.writeText(url);
+                                setWaiverActionMsg("Link copied to clipboard.");
+                              }}
+                              className="text-xs text-gray-600 hover:text-gray-800 font-medium"
+                            >
+                              Copy Link
+                            </button>
+                          </div>
+
+                          {waiverActionMsg && (
+                            <div className="text-xs text-gray-500 mt-1">{waiverActionMsg}</div>
+                          )}
                         </div>
                       </dd>
                     </div>
