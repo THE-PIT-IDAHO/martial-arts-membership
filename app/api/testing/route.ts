@@ -33,7 +33,19 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, date, time, styleId, styleName, location, notes } = body;
+    // Accept either single styleId/styleName (legacy) or styleIds/styleNames
+    // arrays (multi-style). Normalize so both are saved for backward compat.
+    const { name, date, time, location, notes } = body;
+    let { styleId, styleName, styleIds, styleNames } = body as {
+      styleId?: string; styleName?: string; styleIds?: string[]; styleNames?: string[];
+    };
+
+    if (Array.isArray(styleIds) && styleIds.length > 0) {
+      styleId = styleId || styleIds[0];
+    }
+    if (Array.isArray(styleNames) && styleNames.length > 0) {
+      styleName = styleName || styleNames[0];
+    }
 
     if (!name || !date || !styleId || !styleName) {
       return new NextResponse("Name, date, styleId, and styleName are required", { status: 400 });
@@ -48,6 +60,8 @@ export async function POST(req: Request) {
         time: time || null,
         styleId,
         styleName,
+        styleIds: Array.isArray(styleIds) && styleIds.length > 0 ? JSON.stringify(styleIds) : null,
+        styleNames: Array.isArray(styleNames) && styleNames.length > 0 ? JSON.stringify(styleNames) : null,
         location: location?.trim() || null,
         notes: notes?.trim() || null,
         clientId,

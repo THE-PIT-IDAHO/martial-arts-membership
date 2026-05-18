@@ -37,7 +37,7 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await req.json();
-    const { name, date, time, location, notes, status } = body;
+    const { name, date, time, location, notes, status, styleId, styleName, styleIds, styleNames } = body;
 
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name.trim();
@@ -46,6 +46,21 @@ export async function PATCH(
     if (location !== undefined) updateData.location = location?.trim() || null;
     if (notes !== undefined) updateData.notes = notes?.trim() || null;
     if (status !== undefined) updateData.status = status.toUpperCase();
+
+    // Multi-style updates: when arrays are provided, also mirror first entry
+    // into the legacy singular columns so older queries keep working.
+    if (Array.isArray(styleIds)) {
+      updateData.styleIds = styleIds.length > 0 ? JSON.stringify(styleIds) : null;
+      if (styleIds.length > 0) updateData.styleId = styleIds[0];
+    } else if (styleId !== undefined) {
+      updateData.styleId = styleId;
+    }
+    if (Array.isArray(styleNames)) {
+      updateData.styleNames = styleNames.length > 0 ? JSON.stringify(styleNames) : null;
+      if (styleNames.length > 0) updateData.styleName = styleNames[0];
+    } else if (styleName !== undefined) {
+      updateData.styleName = styleName;
+    }
 
     const event = await prisma.testingEvent.update({
       where: { id },

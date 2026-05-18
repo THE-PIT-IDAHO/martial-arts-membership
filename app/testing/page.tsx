@@ -103,6 +103,8 @@ type TestingEvent = {
   time?: string | null;
   styleId: string;
   styleName: string;
+  styleIds?: string | null;   // JSON array
+  styleNames?: string | null; // JSON array
   location?: string | null;
   notes?: string | null;
   status: string;
@@ -125,6 +127,10 @@ type GymSettings = {
 export default function TestingPage() {
   const [styles, setStyles] = useState<Style[]>([]);
   const [selectedStyleId, setSelectedStyleId] = useState<string>("");
+  // For the create/edit test modal: multi-style selection. selectedStyleId
+  // stays in sync with the first entry for backward compat with downstream
+  // logic (rank-test lookup, member filtering, etc.).
+  const [eventStyleIds, setEventStyleIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"upcoming" | "schedule" | "results">("upcoming");
 
@@ -395,6 +401,17 @@ export default function TestingPage() {
     setTestLocation(event.location || "");
     setTestNotes(event.notes || "");
     setSelectedStyleId(event.styleId);
+    // Hydrate the multi-style selection from styleIds JSON, falling back to
+    // the legacy single styleId for older events.
+    let ids: string[] = [];
+    if (event.styleIds) {
+      try {
+        const parsed = JSON.parse(event.styleIds);
+        if (Array.isArray(parsed)) ids = parsed.filter((v): v is string => typeof v === "string");
+      } catch { /* ignore */ }
+    }
+    if (ids.length === 0 && event.styleId) ids = [event.styleId];
+    setEventStyleIds(ids);
     setShowScheduleModal(true);
   };
 
@@ -406,13 +423,21 @@ export default function TestingPage() {
     setTestTime("10:00");
     setTestLocation("");
     setTestNotes("");
+    setEventStyleIds([]);
   };
 
   const handleScheduleTest = async () => {
-    if (!testName || !testDate || !selectedStyleId) {
-      alert("Please fill in all required fields");
+    // Use the multi-style array if populated, else fall back to the single
+    // dropdown value so older create flows still work.
+    const effectiveStyleIds = eventStyleIds.length > 0 ? eventStyleIds : (selectedStyleId ? [selectedStyleId] : []);
+    if (!testName || !testDate || effectiveStyleIds.length === 0) {
+      alert("Please fill in all required fields (at least one style)");
       return;
     }
+
+    const effectiveStyleNames = effectiveStyleIds
+      .map((id) => styles.find((s) => s.id === id)?.name || "")
+      .filter((n) => !!n);
 
     setSaving(true);
     try {
@@ -427,8 +452,10 @@ export default function TestingPage() {
           name: testName,
           date: testDate,
           time: testTime,
-          styleId: selectedStyleId,
-          styleName: selectedStyle?.name || "",
+          styleId: effectiveStyleIds[0],
+          styleName: effectiveStyleNames[0] || "",
+          styleIds: effectiveStyleIds,
+          styleNames: effectiveStyleNames,
           location: testLocation,
           notes: testNotes,
         }),
@@ -1670,6 +1697,20 @@ export default function TestingPage() {
     });
   };
 
+  // Pretty-print the styles for an event: prefer the multi-style names array
+  // when present, fall back to the single styleName.
+  const formatEventStyles = (event: TestingEvent): string => {
+    if (event.styleNames) {
+      try {
+        const arr = JSON.parse(event.styleNames);
+        if (Array.isArray(arr) && arr.length > 0) {
+          return arr.filter((n) => typeof n === "string").join(", ");
+        }
+      } catch { /* ignore */ }
+    }
+    return event.styleName || "";
+  };
+
   if (loading) {
     return (
       <AppLayout>
@@ -2113,7 +2154,7 @@ export default function TestingPage() {
                           {event.time && ` at ${event.time}`}
                         </p>
                         <p className="text-sm text-gray-500">
-                          {event.styleName}
+                          {formatEventStyles(event)}
                           {event.location && ` • ${event.location}`}
                         </p>
                         {(() => {
@@ -2564,7 +2605,7 @@ export default function TestingPage() {
                           </span>
                         </div>
                         <p className="text-sm text-gray-600">{formatDate(event.date)}</p>
-                        <p className="text-sm text-gray-500">{event.styleName}</p>
+                        <p className="text-sm text-gray-500">{formatEventStyles(event)}</p>
                         <div className="flex gap-4 mt-2 text-sm">
                           <span className="text-green-600">
                             Passed: {event.participants.filter(p => p.status === "PASSED").length}
@@ -2630,19 +2671,35 @@ export default function TestingPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Style *
+                    Styles * <span className="text-gray-400 font-normal">(check all that apply)</span>
                   </label>
-                  <select
-                    value={selectedStyleId}
-                    onChange={(e) => setSelectedStyleId(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {styles.map((style) => (
-                      <option key={style.id} value={style.id}>
-                        {style.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="rounded-md border border-gray-300 px-3 py-2 space-y-1 max-h-40 overflow-y-auto">
+                    {styles.map((style) => {
+                      const checked = eventStyleIds.includes(style.id);
+                      return (
+                        <label key={style.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded text-sm">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...eventStyleIds, style.id]
+                                : eventStyleIds.filter((id) => id !== style.id);
+                              setEventStyleIds(next);
+                              // Keep singular in sync with first selected for
+                              // the rest of the page (rank lookups etc.).
+                              if (next.length > 0) setSelectedStyleId(next[0]);
+                            }}
+                            className="rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <span>{style.name}</span>
+                        </label>
+                      );
+                    })}
+                    {styles.length === 0 && (
+                      <p className="text-xs text-gray-400">No styles configured yet.</p>
+                    )}
+                  </div>
                 </div>
 
                 {selectedStyle?.testNamingConvention && (

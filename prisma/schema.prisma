@@ -681,8 +681,10 @@ model TestingEvent {
   name         String
   date         DateTime
   time         String?
-  styleId      String
+  styleId      String                // legacy single style — mirrors first entry of styleIds when multi
   styleName    String
+  styleIds     String?               // JSON array of style IDs for multi-style tests
+  styleNames   String?               // JSON array of style names for multi-style tests
   location     String?
   notes        String?
   status       String               @default("SCHEDULED")
