@@ -122,12 +122,19 @@ export default function PortalStylesPage() {
                         </p>
                       )}
 
-                      {rs.beltLayers && rs.beltLayers.fabricColor ? (
-                        <BeltImage layers={rs.beltLayers} />
-                      ) : rs.beltThumbnail ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={rs.beltThumbnail} alt={`${rs.rankName} belt`} className="mt-2 max-h-16 object-contain" />
-                      ) : null}
+                      {(() => {
+                        // Always render a belt — fall back to white fabric if the style
+                        // has no beltConfig yet, so styles without curriculum/belt setup
+                        // still look complete to the member.
+                        if (rs.beltLayers && rs.beltLayers.fabricColor) {
+                          return <BeltImage layers={rs.beltLayers} />;
+                        }
+                        if (rs.beltThumbnail) {
+                          // eslint-disable-next-line @next/next/no-img-element
+                          return <img src={rs.beltThumbnail} alt={`${rs.rankName} belt`} className="mt-2 max-h-16 object-contain" />;
+                        }
+                        return <BeltImage layers={{ ...(rs.beltLayers || {}), fabric: true, fabricColor: "#ffffff" }} />;
+                      })()}
 
                       {rs.classRequirements.length > 0 && (
                         <div className="space-y-2 mt-2">
