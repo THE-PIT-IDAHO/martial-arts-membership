@@ -148,7 +148,10 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
   // Capture-phase keydown handler at document level. Attaching on the element
   // alone did not intercept Tab in time (focus jumped to the Save button).
   // Capture phase + document target guarantees this runs before any default
-  // focus behavior or modal focus trap.
+  // focus behavior or modal focus trap. We also use a focusin guard as a
+  // fallback: if preventDefault somehow doesn't stop the focus move (rare
+  // browser quirk), focus jumps back to the editor immediately.
+  const tabJustHandledRef = useRef(false);
   useEffect(() => {
     if (!editPopup) return;
     function handleKeyDown(e: KeyboardEvent) {
@@ -161,6 +164,8 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+        tabJustHandledRef.current = true;
+        setTimeout(() => { tabJustHandledRef.current = false; }, 50);
         const TAB_SIZE = 4;
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0) return;
@@ -206,8 +211,22 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
         document.execCommand(e.key === "b" ? "bold" : e.key === "i" ? "italic" : "underline");
       }
     }
+    function handleFocusIn(e: FocusEvent) {
+      if (!tabJustHandledRef.current) return;
+      const el = popupEditorRef.current;
+      if (!el) return;
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (t === el || el.contains(t)) return;
+      // Focus moved out of the editor right after a Tab — push it back.
+      el.focus();
+    }
     document.addEventListener("keydown", handleKeyDown, true);
-    return () => document.removeEventListener("keydown", handleKeyDown, true);
+    document.addEventListener("focusin", handleFocusIn, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("focusin", handleFocusIn, true);
+    };
   }, [editPopup]);
   const [copying, setCopying] = useState(false);
   const [showCopyMenu, setShowCopyMenu] = useState(false);
