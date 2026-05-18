@@ -550,7 +550,14 @@ export async function GET(req: Request) {
               }];
             }
 
-            const allMet = classRequirements.length === 0 || classRequirements.every((r) => r.count >= r.required);
+            // Eligibility requires AT LEAST ONE configured requirement AND that
+            // every one of them is met. If a rank has no requirements set up
+            // (no beltConfig.classRequirements and no Rank.classRequirement),
+            // there's no measurable basis for "eligible" — leave it to the
+            // instructor's discretion via the Promotions page instead of
+            // surfacing false positives on the dashboard.
+            const allMet = classRequirements.length > 0
+              && classRequirements.every((r) => r.count >= r.required);
             if (allMet) {
               eligibleForPromotion.push({
                 memberId: member.id,

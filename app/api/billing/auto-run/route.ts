@@ -459,7 +459,10 @@ export async function POST(req: Request) {
             if (reqs.length === 0 && nr.classRequirement) {
               reqs = [{ count: sa.length, required: nr.classRequirement }];
             }
-            if (reqs.length === 0 || reqs.every((r) => r.count >= r.required)) {
+            // Match dashboard: only flag when there ARE configured requirements
+            // and the member has met all of them. Empty requirements list
+            // means undefined criteria, not "automatically eligible".
+            if (reqs.length > 0 && reqs.every((r) => r.count >= r.required)) {
               eligible.push({ memberName: `${m.firstName} ${m.lastName}`, styleName: s.name, currentRank: sc.ranks[ci].name, nextRank: nr.name });
             }
           }
