@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   try {
     const clientId = await getClientId(req);
     const body = await req.json();
-    const { memberId, memberName, lineItems, paymentMethod, notes, discountCents = 0, taxCents = 0 } = body;
+    const { memberId, memberName, lineItems, paymentMethod, notes, discountCents = 0, taxCents = 0, paymentIntentId, paymentProcessor } = body;
 
     if (!lineItems || lineItems.length === 0) {
       return new NextResponse("At least one line item is required", { status: 400 });
@@ -81,6 +81,8 @@ export async function POST(req: Request) {
         totalCents,
         paymentMethod: paymentMethod || "CASH",
         notes: notes || null,
+        paymentIntentId: paymentIntentId || null,
+        paymentProcessor: paymentProcessor || null,
         updatedAt: new Date(),
         POSLineItem: {
           create: lineItems.map((item: any) => ({
