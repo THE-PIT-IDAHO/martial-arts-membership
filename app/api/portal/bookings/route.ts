@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import { sendBookingConfirmationEmail } from "@/lib/notifications";
+import { memberCanAttendClass } from "@/lib/class-eligibility";
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
@@ -71,6 +72,12 @@ export async function POST(req: NextRequest) {
 
   if (!cls) {
     return NextResponse.json({ error: "Class not found" }, { status: 404 });
+  }
+
+  // Enforce class style eligibility
+  const eligibility = await memberCanAttendClass(bookingMemberId, classSessionId);
+  if (!eligibility.ok) {
+    return NextResponse.json({ error: eligibility.reason }, { status: 403 });
   }
 
   // Check advance booking limit (how far out someone can book)

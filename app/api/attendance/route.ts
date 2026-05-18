@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { memberCanAttendClass } from "@/lib/class-eligibility";
 
 // GET /api/attendance?classSessionId=xxx&date=yyyy-mm-dd
 export async function GET(req: Request) {
@@ -99,6 +100,19 @@ export async function POST(req: Request) {
 
     if (existing) {
       return new NextResponse("Member is already signed in to this class", { status: 409 });
+    }
+
+    // Enforce class style eligibility — block check-in if member has no active enrolled
+    // style matching the class's allowed styles. Admin can pass requirementOverride:true
+    // to bypass (same flag used for rank-requirement overrides).
+    if (!requirementOverride) {
+      const eligibility = await memberCanAttendClass(memberId, classSessionId);
+      if (!eligibility.ok) {
+        return NextResponse.json(
+          { error: eligibility.reason, code: "STYLE_NOT_ALLOWED" },
+          { status: 403 },
+        );
+      }
     }
 
     const attendance = await prisma.attendance.create({
