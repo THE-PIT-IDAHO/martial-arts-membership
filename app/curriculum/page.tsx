@@ -558,6 +558,93 @@ export default function CurriculumV2Page() {
   const [hasChanges, setHasChanges] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [popupCell, setPopupCell] = useState<{ rowIdx: number; field: keyof Row; value: string } | null>(null);
+  const popupCellEditorRef = useRef<HTMLDivElement>(null);
+  const popupCellTabHandledRef = useRef(false);
+
+  // Autofocus the "Edit Content" popup editor when it opens
+  useEffect(() => {
+    if (!popupCell) return;
+    const t = setTimeout(() => popupCellEditorRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [popupCell]);
+
+  // Capture-phase keydown for the "Edit Content" popup: Tab inserts spaces to
+  // the next tab stop, Cmd/Ctrl+B/I/U toggle formatting. focusin backup snaps
+  // focus back if the browser still moves it.
+  useEffect(() => {
+    if (!popupCell) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      const el = popupCellEditorRef.current;
+      if (!el) return;
+      const target = e.target as Node | null;
+      if (!target || (target !== el && !el.contains(target))) return;
+
+      if (e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        popupCellTabHandledRef.current = true;
+        setTimeout(() => { popupCellTabHandledRef.current = false; }, 50);
+        const TAB_SIZE = 4;
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const range = sel.getRangeAt(0);
+        const node = range.startContainer;
+        let col = 0;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent || "";
+          const lineStart = text.lastIndexOf("\n", Math.max(0, range.startOffset - 1)) + 1;
+          col = range.startOffset - lineStart;
+        }
+        if (e.shiftKey) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.textContent || "";
+            const targetRemove = col === 0 ? 0 : ((col - 1) % TAB_SIZE) + 1;
+            let actuallyRemove = 0;
+            for (let i = 0; i < targetRemove; i++) {
+              const ch = text.charAt(range.startOffset - 1 - i);
+              if (ch === " " || ch === " ") actuallyRemove++;
+              else break;
+            }
+            if (actuallyRemove > 0) {
+              const before = text.slice(0, range.startOffset - actuallyRemove);
+              const after = text.slice(range.startOffset);
+              node.textContent = before + after;
+              const newRange = document.createRange();
+              newRange.setStart(node, before.length);
+              newRange.collapse(true);
+              sel.removeAllRanges();
+              sel.addRange(newRange);
+            }
+          }
+        } else {
+          const spacesNeeded = TAB_SIZE - (col % TAB_SIZE);
+          document.execCommand("insertHTML", false, "&nbsp;".repeat(spacesNeeded));
+        }
+        return;
+      }
+      if ((e.key === "b" || e.key === "i" || e.key === "u") && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        document.execCommand(e.key === "b" ? "bold" : e.key === "i" ? "italic" : "underline");
+      }
+    }
+    function handleFocusIn(e: FocusEvent) {
+      if (!popupCellTabHandledRef.current) return;
+      const el = popupCellEditorRef.current;
+      if (!el) return;
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (t === el || el.contains(t)) return;
+      el.focus();
+    }
+    document.addEventListener("keydown", handleKeyDown, true);
+    document.addEventListener("focusin", handleFocusIn, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("focusin", handleFocusIn, true);
+    };
+  }, [popupCell]);
+
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [styleCatNames, setStyleCatNames] = useState<string[]>([]);
   const [showReorderModal, setShowReorderModal] = useState(false);
@@ -2017,6 +2104,7 @@ export default function CurriculumV2Page() {
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
               <h2 className="text-sm font-bold text-gray-900">Edit Content</h2>
               <button
+                tabIndex={-1}
                 onClick={() => {
                   const el = document.getElementById("popup-editor");
                   if (el) updateRow(popupCell.rowIdx, popupCell.field, el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0"));
@@ -2031,12 +2119,13 @@ export default function CurriculumV2Page() {
             </div>
             {/* Formatting toolbar */}
             <div className="border-b border-gray-200 px-5 py-2 flex items-center gap-1">
-              <button type="button" onMouseDown={e => { e.preventDefault(); document.execCommand("bold"); }} className="rounded px-2 py-1 text-xs font-bold text-gray-700 hover:bg-gray-100" title="Bold">B</button>
-              <button type="button" onMouseDown={e => { e.preventDefault(); document.execCommand("italic"); }} className="rounded px-2 py-1 text-xs italic text-gray-700 hover:bg-gray-100" title="Italic">I</button>
-              <button type="button" onMouseDown={e => { e.preventDefault(); document.execCommand("underline"); }} className="rounded px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-100" title="Underline">U</button>
+              <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("bold"); }} className="rounded px-2 py-1 text-xs font-bold text-gray-700 hover:bg-gray-100" title="Bold">B</button>
+              <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("italic"); }} className="rounded px-2 py-1 text-xs italic text-gray-700 hover:bg-gray-100" title="Italic">I</button>
+              <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("underline"); }} className="rounded px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-100" title="Underline">U</button>
             </div>
             <div className="flex-1 overflow-y-auto p-5">
               <div
+                ref={popupCellEditorRef}
                 id="popup-editor"
                 contentEditable
                 suppressContentEditableWarning
@@ -2045,7 +2134,7 @@ export default function CurriculumV2Page() {
               />
             </div>
             <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
-              <button
+              <button tabIndex={-1}
                 onClick={() => {
                   const el = document.getElementById("popup-editor");
                   if (el) updateRow(popupCell.rowIdx, popupCell.field, el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0"));
@@ -2055,7 +2144,7 @@ export default function CurriculumV2Page() {
               >
                 Save
               </button>
-              <button
+              <button tabIndex={-1}
                 onClick={() => setPopupCell(null)}
                 className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
               >
