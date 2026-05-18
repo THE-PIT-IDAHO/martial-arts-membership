@@ -54,6 +54,8 @@ type ReportDataFields = {
   showMembershipTypes: boolean;
   showMembershipPlans: boolean;
   showMonthlyPayments: boolean;
+  showNextPaymentDate: boolean;
+  showLastPaymentDate: boolean;
   showFailedPayments: boolean;
   showPendingPayments: boolean;
   showPaymentHistory: boolean;
@@ -137,6 +139,8 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showMembershipTypes: false,
   showMembershipPlans: false,
   showMonthlyPayments: false,
+  showNextPaymentDate: false,
+  showLastPaymentDate: false,
   showFailedPayments: false,
   showPendingPayments: false,
   showPaymentHistory: false,
@@ -249,6 +253,8 @@ const COLUMN_FIELDS = [
       { key: "showMembershipTypes", label: "Membership Type" },
       { key: "showMembershipPlans", label: "Membership Plan" },
       { key: "showMonthlyPayments", label: "Monthly Payment" },
+      { key: "showNextPaymentDate", label: "Next Payment Date" },
+      { key: "showLastPaymentDate", label: "Last Payment Date" },
       { key: "showAutoRenewStatus", label: "Auto-Renew Status" },
       { key: "showMembershipExpiring", label: "Expiration Date" },
     ],
@@ -400,7 +406,7 @@ type PaymentSummary = {
 };
 
 // Base column identifiers for the member list table
-type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "autoRenew" | "expirationDate" | "totalClasses";
+type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
 
 // Column ID can be a base column or a class type column (prefixed with "classType:")
 type ColumnId = BaseColumnId | `classType:${string}` | `styleRank:${string}`;
@@ -420,6 +426,8 @@ const DEFAULT_COLUMN_ORDER: BaseColumnId[] = [
   "membershipType",
   "membershipPlan",
   "monthlyPayment",
+  "nextPaymentDate",
+  "lastPaymentDate",
   "autoRenew",
   "expirationDate",
   "totalClasses",
@@ -440,6 +448,8 @@ const COLUMN_LABELS: Record<BaseColumnId, string> = {
   membershipType: "Membership Type",
   membershipPlan: "Membership Plan",
   monthlyPayment: "Monthly Payment",
+  nextPaymentDate: "Next Payment",
+  lastPaymentDate: "Last Payment",
   autoRenew: "Auto-Renew",
   expirationDate: "Expiration",
   totalClasses: "Total Classes",
@@ -2088,6 +2098,10 @@ export default function ReportsPage() {
                                   return activeReport.fields.showMembershipPlans;
                                 case "monthlyPayment":
                                   return activeReport.fields.showMonthlyPayments;
+                                case "nextPaymentDate":
+                                  return activeReport.fields.showNextPaymentDate;
+                                case "lastPaymentDate":
+                                  return activeReport.fields.showLastPaymentDate;
                                 case "autoRenew":
                                   return activeReport.fields.showAutoRenewStatus;
                                 case "expirationDate":
@@ -2256,6 +2270,10 @@ export default function ReportsPage() {
                                           // (was rendering "—" for 0, which made it look like the data
                                           // was missing instead of "no active priced membership").
                                           return `$${((m.monthlyPaymentCents || 0) / 100).toFixed(2)}`;
+                                        case "nextPaymentDate":
+                                          return m.nextPaymentDate ? new Date(m.nextPaymentDate).toLocaleDateString() : "—";
+                                        case "lastPaymentDate":
+                                          return m.lastPaymentDate ? new Date(m.lastPaymentDate).toLocaleDateString() : "—";
                                         case "autoRenew":
                                           return m.autoRenew === true ? "Yes" : m.autoRenew === false ? "No" : "—";
                                         case "expirationDate":

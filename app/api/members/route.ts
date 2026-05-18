@@ -129,6 +129,7 @@ export async function GET(req: Request) {
                 name: true,
                 priceCents: true,
                 autoRenew: true,
+                billingCycle: true,
                 allowedStyles: true,
                 membershipType: true,
               },
@@ -176,6 +177,8 @@ export async function GET(req: Request) {
       let membershipPlanName: string | null = null;
       let autoRenew: boolean | null = null;
       let membershipEndDate: Date | null = null;
+      let nextPaymentDate: Date | null = null;
+      let lastPaymentDate: Date | null = null;
 
       // Sort memberships so ACTIVE ones come first (prioritize active over canceled)
       const sortedMemberships = [...m.memberships].sort((a, b) => {
@@ -216,6 +219,18 @@ export async function GET(req: Request) {
             membershipEndDate = new Date(membership.endDate);
           }
         }
+
+        // Earliest upcoming payment across all the member's memberships
+        if (membership.nextPaymentDate) {
+          const d = new Date(membership.nextPaymentDate);
+          if (!nextPaymentDate || d < nextPaymentDate) nextPaymentDate = d;
+        }
+
+        // Most recent payment received
+        if (membership.lastPaymentDate) {
+          const d = new Date(membership.lastPaymentDate);
+          if (!lastPaymentDate || d > lastPaymentDate) lastPaymentDate = d;
+        }
       }
 
       return {
@@ -225,6 +240,8 @@ export async function GET(req: Request) {
         membershipPlanName,
         autoRenew,
         membershipEndDate,
+        nextPaymentDate,
+        lastPaymentDate,
       };
     });
 
