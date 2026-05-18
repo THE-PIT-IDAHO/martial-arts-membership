@@ -224,6 +224,14 @@ export default function POSPage() {
   const [showContractSigning, setShowContractSigning] = useState(false);
   const [contractSigning, setContractSigning] = useState(false);
   const [globalContractClauses, setGlobalContractClauses] = useState<ContractClause[]>([]);
+
+  // Kiosk lock state: when true, hide Cancel + side nav, go fullscreen so the
+  // member can't navigate away while signing. Unlock requires the staff PIN.
+  const [kioskLocked, setKioskLocked] = useState(false);
+  const [kioskUnlockPin, setKioskUnlockPin] = useState("1234"); // loaded from Settings
+  const [showUnlockPrompt, setShowUnlockPrompt] = useState(false);
+  const [unlockAttempt, setUnlockAttempt] = useState("");
+  const [unlockError, setUnlockError] = useState("");
   const [gymName, setGymName] = useState("");
   const [gymLogo, setGymLogo] = useState("");
   const sigCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -314,6 +322,10 @@ export default function POSPage() {
           // Load global contract clauses
           const cc = settingsMap.get("contract_clauses");
           if (cc) { try { setGlobalContractClauses(JSON.parse(cc)); } catch { /* ignore */ } }
+          // Kiosk unlock PIN — defaults to 1234 if unset. Stored in Settings so
+          // the user can change it from the SQL editor or a future settings UI.
+          const pin = settingsMap.get("kiosk_unlock_pin");
+          if (pin && /^\d{4,8}$/.test(pin)) setKioskUnlockPin(pin);
           // Determine active payment processor
           const proc = settingsMap.get("payment_active_processor") as string | undefined;
           if (proc && proc !== "none") {
@@ -961,9 +973,17 @@ export default function POSPage() {
         });
       } catch (err) { console.error("Failed to save signed contract:", err); }
 
-      // 5. Close contract signing and continue checkout
+      // 5. Close contract signing and continue checkout. Auto-release any
+      // kiosk lock so staff doesn't have to enter the PIN after a successful
+      // sale.
       setShowContractSigning(false);
       setHasSignature(false);
+      if (kioskLocked) {
+        setKioskLocked(false);
+        if (typeof document !== "undefined" && document.exitFullscreen && document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
 
       // Now continue with the actual checkout (bypass the contract check by calling inner logic directly)
       await executeCheckout();
@@ -2353,8 +2373,11 @@ export default function POSPage() {
 
       {/* Contract Signing Overlay */}
       {showContractSigning && selectedMember && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-auto">
-          <div className="w-full max-w-2xl mx-4 my-8 rounded-lg bg-white shadow-2xl">
+        <div
+          className={`fixed inset-0 z-50 flex items-start justify-center overflow-auto ${kioskLocked ? "bg-black z-[100]" : "bg-black/50"}`}
+          onContextMenu={kioskLocked ? (e) => e.preventDefault() : undefined}
+        >
+          <div className={`w-full bg-white shadow-2xl ${kioskLocked ? "h-full max-w-none rounded-none" : "max-w-2xl mx-4 my-8 rounded-lg"}`}>
             {/* Header */}
             <div className="bg-primary px-6 py-4 rounded-t-lg text-center">
               <h2 className="text-lg font-bold text-white">{gymName || "Martial Arts School"}</h2>
@@ -2476,22 +2499,112 @@ export default function POSPage() {
             </div>
 
             {/* Footer Buttons */}
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-lg">
-              <button
-                onClick={handleSignContract}
-                disabled={!hasSignature || contractSigning}
-                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
-              >
-                {contractSigning ? "Processing..." : "Sign & Complete Sale"}
-              </button>
-              <button
-                onClick={() => { setShowContractSigning(false); setHasSignature(false); }}
-                className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-              >
-                Cancel
-              </button>
+            <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+              {/* Left side: lock control */}
+              <div>
+                {!kioskLocked ? (
+                  <button
+                    onClick={() => {
+                      setKioskLocked(true);
+                      // Attempt browser-level fullscreen so OS chrome is hidden too.
+                      if (typeof document !== "undefined" && document.documentElement?.requestFullscreen) {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                      }
+                    }}
+                    className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                    title="Lock the screen so the member can sign without accessing other parts of the app"
+                  >
+                    🔒 Hand to Member
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { setShowUnlockPrompt(true); setUnlockAttempt(""); setUnlockError(""); }}
+                    className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100"
+                  >
+                    Staff Unlock
+                  </button>
+                )}
+              </div>
+
+              {/* Right side: action buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSignContract}
+                  disabled={!hasSignature || contractSigning}
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                >
+                  {contractSigning ? "Processing..." : "Sign & Complete Sale"}
+                </button>
+                {!kioskLocked && (
+                  <button
+                    onClick={() => { setShowContractSigning(false); setHasSignature(false); }}
+                    className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* Staff PIN unlock prompt */}
+          {kioskLocked && showUnlockPrompt && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70" onClick={() => setShowUnlockPrompt(false)}>
+              <div className="bg-white rounded-lg shadow-2xl p-6 w-80" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Staff Unlock</h3>
+                <p className="text-xs text-gray-500 mb-3">Enter the unlock PIN to exit kiosk mode.</p>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoFocus
+                  value={unlockAttempt}
+                  onChange={(e) => { setUnlockAttempt(e.target.value); setUnlockError(""); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      if (unlockAttempt === kioskUnlockPin) {
+                        setKioskLocked(false);
+                        setShowUnlockPrompt(false);
+                        setUnlockAttempt("");
+                        if (typeof document !== "undefined" && document.exitFullscreen && document.fullscreenElement) {
+                          document.exitFullscreen().catch(() => {});
+                        }
+                      } else {
+                        setUnlockError("Incorrect PIN");
+                      }
+                    }
+                  }}
+                  placeholder="• • • •"
+                  className="w-full text-center text-lg tracking-widest border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                {unlockError && <p className="text-xs text-red-600 mt-2">{unlockError}</p>}
+                <div className="flex items-center justify-end gap-2 mt-4">
+                  <button
+                    onClick={() => { setShowUnlockPrompt(false); setUnlockAttempt(""); setUnlockError(""); }}
+                    className="text-xs text-gray-500 px-3 py-1 hover:text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (unlockAttempt === kioskUnlockPin) {
+                        setKioskLocked(false);
+                        setShowUnlockPrompt(false);
+                        setUnlockAttempt("");
+                        if (typeof document !== "undefined" && document.exitFullscreen && document.fullscreenElement) {
+                          document.exitFullscreen().catch(() => {});
+                        }
+                      } else {
+                        setUnlockError("Incorrect PIN");
+                      }
+                    }}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                  >
+                    Unlock
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {/* Embedded Card Payment Modal */}
