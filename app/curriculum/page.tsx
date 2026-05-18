@@ -143,6 +143,66 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
   const [newItemDistance, setNewItemDistance] = useState("");
   const [addingItem, setAddingItem] = useState(false);
   const [editPopup, setEditPopup] = useState<{ itemId: string; value: string } | null>(null);
+  const popupEditorRef = useRef<HTMLDivElement>(null);
+
+  // Native keydown handler on the description popup editor. We attach it
+  // imperatively (not as React onKeyDown) so preventDefault reliably stops the
+  // browser's default Tab-to-next-focusable behavior on contentEditable.
+  useEffect(() => {
+    const el = popupEditorRef.current;
+    if (!editPopup || !el) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        const TAB_SIZE = 4;
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const range = sel.getRangeAt(0);
+        const node = range.startContainer;
+
+        let col = 0;
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent || "";
+          const lineStart = text.lastIndexOf("\n", Math.max(0, range.startOffset - 1)) + 1;
+          col = range.startOffset - lineStart;
+        }
+
+        if (e.shiftKey) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.textContent || "";
+            const targetRemove = col === 0 ? 0 : ((col - 1) % TAB_SIZE) + 1;
+            let actuallyRemove = 0;
+            for (let i = 0; i < targetRemove; i++) {
+              const ch = text.charAt(range.startOffset - 1 - i);
+              if (ch === " " || ch === " ") actuallyRemove++;
+              else break;
+            }
+            if (actuallyRemove > 0) {
+              const before = text.slice(0, range.startOffset - actuallyRemove);
+              const after = text.slice(range.startOffset);
+              node.textContent = before + after;
+              const newRange = document.createRange();
+              newRange.setStart(node, before.length);
+              newRange.collapse(true);
+              sel.removeAllRanges();
+              sel.addRange(newRange);
+            }
+          }
+        } else {
+          const spacesNeeded = TAB_SIZE - (col % TAB_SIZE);
+          document.execCommand("insertHTML", false, "&nbsp;".repeat(spacesNeeded));
+        }
+        return;
+      }
+      if ((e.key === "b" || e.key === "i" || e.key === "u") && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        document.execCommand(e.key === "b" ? "bold" : e.key === "i" ? "italic" : "underline");
+      }
+    }
+    el.addEventListener("keydown", handleKeyDown);
+    return () => el.removeEventListener("keydown", handleKeyDown);
+  }, [editPopup]);
   const [copying, setCopying] = useState(false);
   const [showCopyMenu, setShowCopyMenu] = useState(false);
   const [copySelectedRanks, setCopySelectedRanks] = useState<Set<string>>(new Set());
@@ -432,66 +492,14 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
             <button type="button" onMouseDown={e => { e.preventDefault(); document.execCommand("underline"); }} className="rounded px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-100">U</button>
           </div>
           <div className="flex-1 overflow-y-auto p-5">
-            <div
-              id="cat-popup-editor"
-              contentEditable
-              suppressContentEditableWarning
-              dangerouslySetInnerHTML={{ __html: editPopup.value.replace(/\n/g, "<br>") }}
-              onKeyDown={e => {
-                if (e.key === "Tab") {
-                  e.preventDefault();
-                  const TAB_SIZE = 4;
-                  const sel = window.getSelection();
-                  if (!sel || sel.rangeCount === 0) return;
-                  const range = sel.getRangeAt(0);
-                  const node = range.startContainer;
-
-                  // Column on this line = chars since the last \n in the current text node.
-                  // (contentEditable usually puts each visual line in its own text node.)
-                  let col = 0;
-                  if (node.nodeType === Node.TEXT_NODE) {
-                    const text = node.textContent || "";
-                    const lineStart = text.lastIndexOf("\n", Math.max(0, range.startOffset - 1)) + 1;
-                    col = range.startOffset - lineStart;
-                  }
-
-                  if (e.shiftKey) {
-                    // Back up to the previous tab stop by removing spaces before the cursor.
-                    if (node.nodeType === Node.TEXT_NODE) {
-                      const text = node.textContent || "";
-                      const targetRemove = col === 0 ? 0 : ((col - 1) % TAB_SIZE) + 1;
-                      let actuallyRemove = 0;
-                      for (let i = 0; i < targetRemove; i++) {
-                        const ch = text.charAt(range.startOffset - 1 - i);
-                        if (ch === " " || ch === " ") actuallyRemove++;
-                        else break;
-                      }
-                      if (actuallyRemove > 0) {
-                        const before = text.slice(0, range.startOffset - actuallyRemove);
-                        const after = text.slice(range.startOffset);
-                        node.textContent = before + after;
-                        const newRange = document.createRange();
-                        newRange.setStart(node, before.length);
-                        newRange.collapse(true);
-                        sel.removeAllRanges();
-                        sel.addRange(newRange);
-                      }
-                    }
-                  } else {
-                    // Insert enough &nbsp; to reach the NEXT multiple of TAB_SIZE.
-                    // So tabs after text on different lines line up at consistent columns.
-                    const spacesNeeded = TAB_SIZE - (col % TAB_SIZE);
-                    document.execCommand("insertHTML", false, "&nbsp;".repeat(spacesNeeded));
-                  }
-                  return;
-                }
-                if ((e.key === "b" || e.key === "i" || e.key === "u") && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault();
-                  document.execCommand(e.key === "b" ? "bold" : e.key === "i" ? "italic" : "underline");
-                }
-              }}
-              className="w-full min-h-[256px] rounded-md border border-gray-300 px-3 py-2 text-sm whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+             <div
+               ref={popupEditorRef}
+               id="cat-popup-editor"
+               contentEditable
+               suppressContentEditableWarning
+               dangerouslySetInnerHTML={{ __html: editPopup.value.replace(/\n/g, "<br>") }}
+               className="w-full min-h-[256px] rounded-md border border-gray-300 px-3 py-2 text-sm whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
+             />
           </div>
           <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
             <button onClick={async () => { const el = document.getElementById("cat-popup-editor"); if (el) await updateField(editPopup.itemId, "description", el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0")); setEditPopup(null); await onReload(); }} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Save</button>
