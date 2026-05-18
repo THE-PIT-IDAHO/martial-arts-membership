@@ -440,31 +440,50 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
               onKeyDown={e => {
                 if (e.key === "Tab") {
                   e.preventDefault();
-                  // Insert 4 non-breaking spaces as an indent. Shift+Tab removes
-                  // one indent unit from the start of the current line if present.
+                  const TAB_SIZE = 4;
+                  const sel = window.getSelection();
+                  if (!sel || sel.rangeCount === 0) return;
+                  const range = sel.getRangeAt(0);
+                  const node = range.startContainer;
+
+                  // Column on this line = chars since the last \n in the current text node.
+                  // (contentEditable usually puts each visual line in its own text node.)
+                  let col = 0;
+                  if (node.nodeType === Node.TEXT_NODE) {
+                    const text = node.textContent || "";
+                    const lineStart = text.lastIndexOf("\n", Math.max(0, range.startOffset - 1)) + 1;
+                    col = range.startOffset - lineStart;
+                  }
+
                   if (e.shiftKey) {
-                    const sel = window.getSelection();
-                    if (sel && sel.rangeCount > 0) {
-                      const range = sel.getRangeAt(0);
-                      const node = range.startContainer;
-                      if (node.nodeType === Node.TEXT_NODE) {
-                        const text = node.textContent || "";
-                        const lineStart = text.lastIndexOf("\n", Math.max(0, range.startOffset - 1)) + 1;
-                        const head = text.slice(lineStart, lineStart + 4);
-                        if (head === "    " || head === "    ") {
-                          node.textContent = text.slice(0, lineStart) + text.slice(lineStart + 4);
-                          const newOffset = Math.max(lineStart, range.startOffset - 4);
-                          const newRange = document.createRange();
-                          newRange.setStart(node, newOffset);
-                          newRange.collapse(true);
-                          sel.removeAllRanges();
-                          sel.addRange(newRange);
-                        }
+                    // Back up to the previous tab stop by removing spaces before the cursor.
+                    if (node.nodeType === Node.TEXT_NODE) {
+                      const text = node.textContent || "";
+                      const targetRemove = col === 0 ? 0 : ((col - 1) % TAB_SIZE) + 1;
+                      let actuallyRemove = 0;
+                      for (let i = 0; i < targetRemove; i++) {
+                        const ch = text.charAt(range.startOffset - 1 - i);
+                        if (ch === " " || ch === " ") actuallyRemove++;
+                        else break;
+                      }
+                      if (actuallyRemove > 0) {
+                        const before = text.slice(0, range.startOffset - actuallyRemove);
+                        const after = text.slice(range.startOffset);
+                        node.textContent = before + after;
+                        const newRange = document.createRange();
+                        newRange.setStart(node, before.length);
+                        newRange.collapse(true);
+                        sel.removeAllRanges();
+                        sel.addRange(newRange);
                       }
                     }
                   } else {
-                    document.execCommand("insertHTML", false, "&nbsp;&nbsp;&nbsp;&nbsp;");
+                    // Insert enough &nbsp; to reach the NEXT multiple of TAB_SIZE.
+                    // So tabs after text on different lines line up at consistent columns.
+                    const spacesNeeded = TAB_SIZE - (col % TAB_SIZE);
+                    document.execCommand("insertHTML", false, "&nbsp;".repeat(spacesNeeded));
                   }
+                  return;
                 }
                 if ((e.key === "b" || e.key === "i" || e.key === "u") && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault();
