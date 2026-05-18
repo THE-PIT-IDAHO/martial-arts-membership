@@ -232,6 +232,10 @@ export default function POSPage() {
   const [showUnlockPrompt, setShowUnlockPrompt] = useState(false);
   const [unlockAttempt, setUnlockAttempt] = useState("");
   const [unlockError, setUnlockError] = useState("");
+  // When a sale completes while locked, capture a snapshot of the member name
+  // so we can show a success screen until staff unlocks. (selectedMember gets
+  // cleared by resetAfterCheckout before staff gets the tablet back.)
+  const [lockedSaleSummary, setLockedSaleSummary] = useState<{ memberName: string } | null>(null);
   const [gymName, setGymName] = useState("");
   const [gymLogo, setGymLogo] = useState("");
   const sigCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -973,20 +977,26 @@ export default function POSPage() {
         });
       } catch (err) { console.error("Failed to save signed contract:", err); }
 
-      // 5. Close contract signing and continue checkout. Auto-release any
-      // kiosk lock so staff doesn't have to enter the PIN after a successful
-      // sale.
-      setShowContractSigning(false);
+      // 5. Continue with checkout. If we're in kiosk lock mode, keep the modal
+      // and lock active and show a Sale Completed screen until staff unlocks.
+      // Otherwise close the modal as before.
       setHasSignature(false);
-      if (kioskLocked) {
-        setKioskLocked(false);
-        if (typeof document !== "undefined" && document.exitFullscreen && document.fullscreenElement) {
-          document.exitFullscreen().catch(() => {});
-        }
+      const wasLocked = kioskLocked;
+      const memberNameSnapshot = memberName;
+
+      if (!wasLocked) {
+        setShowContractSigning(false);
       }
 
       // Now continue with the actual checkout (bypass the contract check by calling inner logic directly)
       await executeCheckout();
+
+      if (wasLocked) {
+        // executeCheckout resets cart + selectedMember, so we snapshot the name
+        // beforehand. The modal will switch to the success screen because of
+        // lockedSaleSummary being set.
+        setLockedSaleSummary({ memberName: memberNameSnapshot });
+      }
     } catch (err) {
       console.error("Error during contract signing:", err);
       alert("Failed to process contract signing. Please try again.");
@@ -2371,19 +2381,38 @@ export default function POSPage() {
         );
       })()}
 
-      {/* Contract Signing Overlay */}
-      {showContractSigning && selectedMember && (
+      {/* Contract Signing Overlay. In kiosk-lock mode, stays open after the
+          sale completes (to show the Sale Completed screen) even though
+          selectedMember has been cleared by resetAfterCheckout. */}
+      {showContractSigning && (selectedMember || lockedSaleSummary) && (
         <div
           className={`fixed inset-0 z-50 flex items-start justify-center overflow-auto ${kioskLocked ? "bg-black z-[100]" : "bg-black/50"}`}
           onContextMenu={kioskLocked ? (e) => e.preventDefault() : undefined}
         >
-          <div className={`w-full bg-white shadow-2xl ${kioskLocked ? "h-full max-w-none rounded-none" : "max-w-2xl mx-4 my-8 rounded-lg"}`}>
+          <div className={`w-full bg-white shadow-2xl ${kioskLocked ? "h-full max-w-none rounded-none flex flex-col" : "max-w-2xl mx-4 my-8 rounded-lg"}`}>
             {/* Header */}
             <div className="bg-primary px-6 py-4 rounded-t-lg text-center">
               <h2 className="text-lg font-bold text-white">{gymName || "Martial Arts School"}</h2>
-              <p className="text-sm text-white/80">Membership / Service Agreement</p>
+              <p className="text-sm text-white/80">
+                {lockedSaleSummary ? "Thank you!" : "Membership / Service Agreement"}
+              </p>
             </div>
 
+            {/* Sale Completed screen — shown after a successful sale while
+                still in kiosk lock. Replaces the contract body until staff
+                unlocks. */}
+            {lockedSaleSummary ? (
+              <div className="flex-1 flex flex-col items-center justify-center px-6 py-10 text-center">
+                <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mb-6">
+                  <svg className="w-12 h-12 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">Sale Completed</h1>
+                <p className="text-base text-gray-600 mb-1">Thanks, {lockedSaleSummary.memberName}!</p>
+                <p className="text-sm text-gray-500">Please hand the tablet back to the front desk.</p>
+              </div>
+            ) : selectedMember ? (
             <div className="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
               {/* Member Info */}
               <div>
@@ -2497,16 +2526,17 @@ export default function POSPage() {
                 )}
               </div>
             </div>
+            ) : null}
 
             {/* Footer Buttons */}
             <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-lg">
-              {/* Left side: lock control */}
+              {/* Left side: lock control (always visible while locked, including
+                  on the Sale Completed screen). */}
               <div>
                 {!kioskLocked ? (
                   <button
                     onClick={() => {
                       setKioskLocked(true);
-                      // Attempt browser-level fullscreen so OS chrome is hidden too.
                       if (typeof document !== "undefined" && document.documentElement?.requestFullscreen) {
                         document.documentElement.requestFullscreen().catch(() => {});
                       }
@@ -2526,16 +2556,19 @@ export default function POSPage() {
                 )}
               </div>
 
-              {/* Right side: action buttons */}
+              {/* Right side: only sign/cancel while contract is being read,
+                  not on the Sale Completed screen. */}
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handleSignContract}
-                  disabled={!hasSignature || contractSigning}
-                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
-                >
-                  {contractSigning ? "Processing..." : "Sign & Complete Sale"}
-                </button>
-                {!kioskLocked && (
+                {!lockedSaleSummary && (
+                  <button
+                    onClick={handleSignContract}
+                    disabled={!hasSignature || contractSigning}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                  >
+                    {contractSigning ? "Processing..." : "Sign & Complete Sale"}
+                  </button>
+                )}
+                {!kioskLocked && !lockedSaleSummary && (
                   <button
                     onClick={() => { setShowContractSigning(false); setHasSignature(false); }}
                     className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
@@ -2568,6 +2601,12 @@ export default function POSPage() {
                         if (typeof document !== "undefined" && document.exitFullscreen && document.fullscreenElement) {
                           document.exitFullscreen().catch(() => {});
                         }
+                        // If unlocking after a completed sale, also dismiss
+                        // the success screen + the contract modal entirely.
+                        if (lockedSaleSummary) {
+                          setLockedSaleSummary(null);
+                          setShowContractSigning(false);
+                        }
                       } else {
                         setUnlockError("Incorrect PIN");
                       }
@@ -2592,6 +2631,12 @@ export default function POSPage() {
                         setUnlockAttempt("");
                         if (typeof document !== "undefined" && document.exitFullscreen && document.fullscreenElement) {
                           document.exitFullscreen().catch(() => {});
+                        }
+                        // If unlocking after a completed sale, also dismiss
+                        // the success screen + the contract modal entirely.
+                        if (lockedSaleSummary) {
+                          setLockedSaleSummary(null);
+                          setShowContractSigning(false);
                         }
                       } else {
                         setUnlockError("Incorrect PIN");
