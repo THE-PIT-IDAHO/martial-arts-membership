@@ -185,9 +185,20 @@ export async function GET(req: Request) {
       });
 
       // Get info from memberships (prioritizing active, but using canceled as fallback)
+      const now = new Date();
       for (const membership of sortedMemberships) {
-        // Only count active memberships for payment calculation
-        if (membership.status === "ACTIVE") {
+        // Count toward monthly payments when more revenue is expected from
+        // this membership. Includes two cases:
+        //   (a) Auto-renewing plans (charges continue indefinitely)
+        //   (b) Contract plans that haven't reached the end of their term yet
+        //       (more contracted payments are still due even if autoRenew=false)
+        // Excludes canceled, expired, and one-shot (no autoRenew, no contract).
+        const isActive = membership.status === "ACTIVE";
+        const notExpired = !membership.endDate || new Date(membership.endDate) > now;
+        const willRenew = membership.membershipPlan.autoRenew === true;
+        const stillInContract = !!membership.contractEndDate
+          && new Date(membership.contractEndDate) > now;
+        if (isActive && notExpired && (willRenew || stillInContract)) {
           const priceCents = membership.customPriceCents ?? membership.membershipPlan.priceCents ?? 0;
           monthlyPaymentCents += priceCents;
         }
