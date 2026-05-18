@@ -136,7 +136,16 @@ export async function verifyPassword(
   email: string,
   password: string,
   clientId?: string
-): Promise<{ userId: string; role: string; name: string; mustChangePassword: boolean; clientId: string } | null> {
+): Promise<{
+  userId: string;
+  role: string;
+  name: string;
+  mustChangePassword: boolean;
+  clientId: string;
+  totpEnabled: boolean;
+  totpSecret: string | null;
+  backupCodes: string | null;
+} | null> {
   const { prisma } = await import("@/lib/prisma");
   const { compare } = await import("bcryptjs");
 
@@ -148,7 +157,16 @@ export async function verifyPassword(
   if (!user) return null;
   const valid = await compare(password, user.passwordHash);
   if (!valid) return null;
-  return { userId: user.id, role: user.role, name: user.name || "", mustChangePassword: user.mustChangePassword, clientId: user.clientId };
+  return {
+    userId: user.id,
+    role: user.role,
+    name: user.name || "",
+    mustChangePassword: user.mustChangePassword,
+    clientId: user.clientId,
+    totpEnabled: user.totpEnabled,
+    totpSecret: user.totpSecret,
+    backupCodes: user.backupCodes,
+  };
 }
 
 export async function hashPassword(password: string): Promise<string> {

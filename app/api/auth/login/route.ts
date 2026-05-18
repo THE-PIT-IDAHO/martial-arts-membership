@@ -8,6 +8,8 @@ import {
 import { getRolePermissions } from "@/lib/permissions";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { getClientId } from "@/lib/tenant";
+import { verifyTotpCode, verifyBackupCode } from "@/lib/totp";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
   try {
@@ -27,7 +29,7 @@ export async function POST(request: Request) {
       console.log("Default admin user created on first login");
     }
 
-    const { email, password, rememberMe } = await request.json();
+    const { email, password, rememberMe, totpCode, backupCode } = await request.json();
     if (!email || !password) {
       return NextResponse.json(
         { error: "Email and password are required" },
@@ -50,6 +52,44 @@ export async function POST(request: Request) {
         { status: 401 }
       );
     }
+
+    // --- 2FA gate -------------------------------------------------------
+    if (user.totpEnabled) {
+      // Step 1: client just submitted password — ask for a code.
+      if (!totpCode && !backupCode) {
+        return NextResponse.json({ needs2FA: true });
+      }
+
+      // Step 2: verify TOTP or a backup code. Backup codes are single-use and
+      // we splice the matched entry out of the stored list on success.
+      let twoFactorOk = false;
+      if (totpCode && user.totpSecret) {
+        twoFactorOk = verifyTotpCode(user.totpSecret, totpCode);
+      } else if (backupCode && user.backupCodes) {
+        try {
+          const codes: string[] = JSON.parse(user.backupCodes);
+          if (Array.isArray(codes)) {
+            const matchIdx = await verifyBackupCode(backupCode, codes);
+            if (matchIdx >= 0) {
+              twoFactorOk = true;
+              const remaining = [...codes.slice(0, matchIdx), ...codes.slice(matchIdx + 1)];
+              await prisma.user.update({
+                where: { id: user.userId },
+                data: { backupCodes: remaining.length > 0 ? JSON.stringify(remaining) : null },
+              });
+            }
+          }
+        } catch { /* fall through to twoFactorOk=false */ }
+      }
+
+      if (!twoFactorOk) {
+        return NextResponse.json(
+          { needs2FA: true, error: "Invalid 2FA code" },
+          { status: 401 }
+        );
+      }
+    }
+    // --- end 2FA gate ---------------------------------------------------
 
     const permissions = await getRolePermissions(user.role);
     const token = await createAdminSessionToken(

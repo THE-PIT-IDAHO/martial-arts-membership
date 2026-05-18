@@ -1432,6 +1432,8 @@ export default function AccountPage() {
         {/* Preferences Tab */}
         {activeTab === "settings" && (
           <div className="space-y-6">
+            <TwoFactorSection />
+
             {/* Email Notification Settings */}
             <div className="rounded-lg border border-gray-200 bg-white p-6">
               <h3 className="text-lg font-semibold mb-2">Email Notifications</h3>
@@ -2528,5 +2530,243 @@ export default function AccountPage() {
           </div>
         )}
     </AppLayout>
+  );
+}
+
+// --- 2FA section ------------------------------------------------------------
+// Self-contained subcomponent that handles its own setup/enable/disable flow
+// against /api/account/totp/*. Rendered at the top of the Preferences tab.
+
+function TwoFactorSection() {
+  const [loading, setLoading] = useState(true);
+  const [enabled, setEnabled] = useState(false);
+  const [remaining, setRemaining] = useState(0);
+  const [error, setError] = useState("");
+
+  // Setup state
+  const [setupData, setSetupData] = useState<{ secret: string; qrDataUrl: string } | null>(null);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
+
+  // Disable state
+  const [showDisable, setShowDisable] = useState(false);
+  const [disablePassword, setDisablePassword] = useState("");
+  const [disableCode, setDisableCode] = useState("");
+  const [disableBusy, setDisableBusy] = useState(false);
+
+  async function refresh() {
+    try {
+      const r = await fetch("/api/account/totp/status");
+      const d = await r.json();
+      if (r.ok) {
+        setEnabled(!!d.enabled);
+        setRemaining(d.backupCodesRemaining || 0);
+      }
+    } catch { /* ignore */ }
+    setLoading(false);
+  }
+
+  useEffect(() => { refresh(); }, []);
+
+  async function startSetup() {
+    setError("");
+    setSetupBusy(true);
+    try {
+      const r = await fetch("/api/account/totp/setup", { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) { setError(d.error || "Setup failed"); return; }
+      setSetupData({ secret: d.secret, qrDataUrl: d.qrDataUrl });
+      setBackupCodes(null);
+    } finally { setSetupBusy(false); }
+  }
+
+  async function confirmEnable() {
+    setError("");
+    setSetupBusy(true);
+    try {
+      const r = await fetch("/api/account/totp/enable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: verifyCode }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.error || "Verification failed"); return; }
+      setBackupCodes(d.backupCodes || []);
+      setSetupData(null);
+      setVerifyCode("");
+      await refresh();
+    } finally { setSetupBusy(false); }
+  }
+
+  async function confirmDisable() {
+    setError("");
+    setDisableBusy(true);
+    try {
+      const r = await fetch("/api/account/totp/disable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: disablePassword, code: disableCode }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.error || "Disable failed"); return; }
+      setShowDisable(false);
+      setDisablePassword("");
+      setDisableCode("");
+      await refresh();
+    } finally { setDisableBusy(false); }
+  }
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-white p-6">
+        <h3 className="text-lg font-semibold mb-2">Two-Factor Authentication</h3>
+        <p className="text-sm text-gray-500">Loading…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <h3 className="text-lg font-semibold">Two-Factor Authentication</h3>
+          <p className="text-sm text-gray-500">
+            Require a code from an authenticator app at sign-in. Strongly recommended for admin accounts.
+          </p>
+        </div>
+        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${enabled ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+          {enabled ? "Enabled" : "Disabled"}
+        </span>
+      </div>
+
+      {error && (
+        <div className="mt-3 text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{error}</div>
+      )}
+
+      {/* Freshly-generated backup codes — show once after enabling */}
+      {backupCodes && backupCodes.length > 0 && (
+        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-4">
+          <p className="font-semibold text-amber-900 mb-2">Save these backup codes now.</p>
+          <p className="text-sm text-amber-800 mb-3">
+            Each code can be used once to sign in if you lose access to your authenticator app. They will not be shown again.
+          </p>
+          <div className="grid grid-cols-2 gap-2 font-mono text-sm bg-white rounded p-3 border border-amber-200">
+            {backupCodes.map((c) => <div key={c}>{c}</div>)}
+          </div>
+          <button
+            onClick={() => setBackupCodes(null)}
+            className="mt-3 text-xs text-amber-900 underline"
+          >
+            I've saved them
+          </button>
+        </div>
+      )}
+
+      {/* Enabled state — show status + disable option */}
+      {enabled && !backupCodes && (
+        <div className="mt-4 space-y-3">
+          <p className="text-sm text-gray-600">
+            You have <strong>{remaining}</strong> backup code{remaining === 1 ? "" : "s"} remaining.
+          </p>
+          {!showDisable ? (
+            <button
+              onClick={() => setShowDisable(true)}
+              className="text-sm text-red-600 hover:text-red-700 underline"
+            >
+              Disable 2FA
+            </button>
+          ) : (
+            <div className="rounded-md border border-red-200 bg-red-50 p-4 space-y-2">
+              <p className="text-sm text-red-800">Confirm your password and a current authenticator code to disable 2FA.</p>
+              <input
+                type="password"
+                placeholder="Current password"
+                value={disablePassword}
+                onChange={(e) => setDisablePassword(e.target.value)}
+                className="w-full text-sm border border-gray-300 rounded px-3 py-2"
+              />
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="6-digit code"
+                value={disableCode}
+                onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, ""))}
+                className="w-full text-sm border border-gray-300 rounded px-3 py-2 tracking-widest text-center"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={confirmDisable}
+                  disabled={disableBusy}
+                  className="rounded-md bg-red-600 text-white px-3 py-1 text-xs font-semibold hover:bg-red-700 disabled:opacity-50"
+                >
+                  {disableBusy ? "Disabling…" : "Disable 2FA"}
+                </button>
+                <button
+                  onClick={() => { setShowDisable(false); setDisablePassword(""); setDisableCode(""); setError(""); }}
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Disabled state — show setup flow */}
+      {!enabled && !backupCodes && (
+        <div className="mt-4 space-y-3">
+          {!setupData ? (
+            <button
+              onClick={startSetup}
+              disabled={setupBusy}
+              className="rounded-md bg-primary text-white px-3 py-1 text-xs font-semibold hover:bg-primaryDark disabled:opacity-50"
+            >
+              {setupBusy ? "Starting…" : "Enable 2FA"}
+            </button>
+          ) : (
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-3">
+              <p className="text-sm text-gray-700">
+                <strong>1.</strong> Scan this QR code with an authenticator app (Google Authenticator, Authy, 1Password, etc.):
+              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={setupData.qrDataUrl} alt="2FA QR code" className="border border-gray-200 rounded bg-white" />
+              <p className="text-xs text-gray-500">
+                Can't scan? Enter this code manually: <span className="font-mono font-semibold">{setupData.secret}</span>
+              </p>
+              <p className="text-sm text-gray-700">
+                <strong>2.</strong> Enter the 6-digit code from your app:
+              </p>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={verifyCode}
+                onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="000000"
+                className="w-40 text-sm border border-gray-300 rounded px-3 py-2 tracking-widest text-center"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={confirmEnable}
+                  disabled={setupBusy || verifyCode.length !== 6}
+                  className="rounded-md bg-primary text-white px-3 py-1 text-xs font-semibold hover:bg-primaryDark disabled:opacity-50"
+                >
+                  {setupBusy ? "Verifying…" : "Verify & Enable"}
+                </button>
+                <button
+                  onClick={() => { setSetupData(null); setVerifyCode(""); setError(""); }}
+                  className="rounded-md border border-gray-300 px-3 py-1 text-xs"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

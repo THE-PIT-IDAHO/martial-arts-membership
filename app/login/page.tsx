@@ -12,32 +12,53 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // 2FA state: once the server returns needs2FA, we switch to a code prompt
+  // and keep the email/password/rememberMe to resubmit alongside the code.
+  const [needsTotp, setNeedsTotp] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
+  const [useBackupCode, setUseBackupCode] = useState(false);
+  const [backupCode, setBackupCode] = useState("");
+
+  async function submitLogin(body: Record<string, unknown>): Promise<void> {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+
+    if (data.needs2FA) {
+      setNeedsTotp(true);
+      if (data.error) setError(data.error);
+      else setError("");
+      return;
+    }
+
+    if (!res.ok) {
+      setError(data.error || "Login failed");
+      return;
+    }
+
+    if (data.mustChangePassword) {
+      window.location.href = "/change-password";
+      return;
+    }
+
+    window.location.href = "/dashboard";
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, rememberMe }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Login failed");
-        return;
+      const body: Record<string, unknown> = { email, password, rememberMe };
+      if (needsTotp) {
+        if (useBackupCode) body.backupCode = backupCode;
+        else body.totpCode = totpCode;
       }
-
-      // Force password change on first login
-      if (data.mustChangePassword) {
-        window.location.href = "/change-password";
-        return;
-      }
-
-      window.location.href = "/dashboard";
+      await submitLogin(body);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -120,6 +141,55 @@ export default function LoginPage() {
               />
               Stay logged in
             </label>
+
+            {needsTotp && !useBackupCode && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Two-Factor Code
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                  autoFocus
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="000000"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setUseBackupCode(true); setTotpCode(""); setError(""); }}
+                  className="text-xs text-primary hover:underline mt-1"
+                >
+                  Use a backup code instead
+                </button>
+              </div>
+            )}
+
+            {needsTotp && useBackupCode && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Backup Code
+                </label>
+                <input
+                  type="text"
+                  value={backupCode}
+                  onChange={(e) => setBackupCode(e.target.value.toUpperCase())}
+                  autoFocus
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="XXXXX-XXXXX"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setUseBackupCode(false); setBackupCode(""); setError(""); }}
+                  className="text-xs text-primary hover:underline mt-1"
+                >
+                  Use authenticator app instead
+                </button>
+              </div>
+            )}
 
             {error && (
               <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/30 rounded-md px-3 py-2">
