@@ -443,9 +443,6 @@ function MembershipsContent() {
           const recurringPrice = m.firstMonthDiscountOnly
             ? (m.membershipPlan?.priceCents ?? 0)
             : (m.customPriceCents ?? m.membershipPlan?.priceCents ?? 0);
-          // Display price for Next Payment row — could be the actual upcoming
-          // charge amount if a discount applies.
-          const price = m.customPriceCents ?? m.membershipPlan?.priceCents ?? 0;
           const notExpired = !m.endDate || new Date(m.endDate) > now;
           const willRenew = m.membershipPlan?.autoRenew === true;
           const stillInContract = !!m.contractEndDate && new Date(m.contractEndDate) > now;
@@ -454,7 +451,9 @@ function MembershipsContent() {
           }
           if (m.nextPaymentDate) {
             const d = new Date(m.nextPaymentDate);
-            if (!nextDate || d < nextDate) { nextDate = d; nextAmount = price; }
+            // Next Payment is always a future cycle — use recurring price,
+            // not the (possibly-discounted) first-cycle amount.
+            if (!nextDate || d < nextDate) { nextDate = d; nextAmount = recurringPrice; }
           }
         }
         // Last payment comes from the payments list since invoices have paidAt.

@@ -4645,13 +4645,12 @@ export default function MemberProfilePage() {
                 let monthlyTotal = 0;
                 for (const mb of ms) {
                   // First-month-only discount: customPriceCents applies only
-                  // to the first cycle; recurring uses the plan price.
+                  // to the first cycle; recurring (and Next Payment) uses the plan price.
                   const recurringPrice = mb.firstMonthDiscountOnly
                     ? (mb.membershipPlan?.priceCents ?? 0)
                     : (mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0);
-                  // For Last/Next display, just show whatever the actual price
-                  // is on the membership row (could be the discounted one).
-                  const displayPrice = mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0;
+                  // First-cycle price = what was actually paid (e.g. $0 for 100%-off-first-month).
+                  const firstCyclePrice = mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0;
                   const isActive = mb.status === "ACTIVE";
                   const notExpired = !mb.endDate || new Date(mb.endDate) > now;
                   const willRenew = mb.membershipPlan?.autoRenew === true;
@@ -4659,14 +4658,22 @@ export default function MemberProfilePage() {
                   if (isActive && notExpired && (willRenew || stillInContract)) {
                     monthlyTotal += recurringPrice;
                   }
-                  const price = displayPrice;
                   if (mb.nextPaymentDate) {
                     const d = new Date(mb.nextPaymentDate);
-                    if (!nextDate || d < nextDate) { nextDate = d; nextAmount = price; }
+                    // Next Payment is always a future cycle, so use recurring price.
+                    if (!nextDate || d < nextDate) { nextDate = d; nextAmount = recurringPrice; }
                   }
                   if (mb.lastPaymentDate) {
                     const d = new Date(mb.lastPaymentDate);
-                    if (!lastDate || d > lastDate) { lastDate = d; lastAmount = price; }
+                    // Last Payment = what they actually paid. If only one payment has
+                    // happened (lastPaymentDate == startDate) and first-month-discount
+                    // was applied, use the first-cycle price. Otherwise it was a
+                    // recurring charge.
+                    const startD = mb.startDate ? new Date(mb.startDate) : null;
+                    const isFirstCycle = mb.firstMonthDiscountOnly && startD
+                      && Math.abs(d.getTime() - startD.getTime()) < 1000 * 60 * 60 * 24;
+                    const paid = isFirstCycle ? firstCyclePrice : recurringPrice;
+                    if (!lastDate || d > lastDate) { lastDate = d; lastAmount = paid; }
                   }
                 }
                 const fmtDate = (d: Date) => d.toLocaleDateString();
