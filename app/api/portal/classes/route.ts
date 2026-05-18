@@ -13,6 +13,15 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const dateStr = searchParams.get("date");
+  // Client's UTC offset in minutes west of UTC (Date.prototype.getTimezoneOffset).
+  // Needed because the server runs in UTC and JS Date.getDay() on a stored
+  // timestamp returns the UTC day, not the gym's local day.
+  const tzOffsetMin = parseInt(searchParams.get("tzOffset") || "0", 10) || 0;
+
+  // Helper: get the day-of-week (0-6) of a UTC timestamp in the client's local TZ
+  function getLocalDay(utc: Date): number {
+    return new Date(utc.getTime() - tzOffsetMin * 60 * 1000).getUTCDay();
+  }
 
   // Default to today — use "T00:00:00" to force local time parsing (not UTC)
   const targetDate = dateStr ? new Date(dateStr + "T00:00:00") : new Date();
@@ -85,9 +94,11 @@ export async function GET(req: NextRequest) {
 
     // --- Recurring logic matches admin calendar exactly ---
 
-    // Day of week must match (admin checks this for ALL recurring classes)
+    // Day of week must match. Use the client's local day for the class timestamp
+    // so a class scheduled "Mon 6pm MT" (stored as Tue 01:00 UTC) is treated as
+    // Monday rather than Tuesday.
     const classStartsAt = new Date(cls.startsAt);
-    const classDayOfWeek = classStartsAt.getDay();
+    const classDayOfWeek = getLocalDay(classStartsAt);
     const dateDayOfWeek = targetDate.getDay();
     if (classDayOfWeek !== dateDayOfWeek) return false;
 

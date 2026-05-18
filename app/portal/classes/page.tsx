@@ -34,7 +34,10 @@ export default function PortalClassesPage() {
 
   const loadClasses = useCallback((date: string) => {
     setLoading(true);
-    fetch(`/api/portal/classes?date=${date}`, { cache: "no-store" })
+    // Send browser's UTC offset so the server can compute the class's local day-of-week.
+    // Without this, server-side getDay() on UTC shifts recurring classes onto the wrong day.
+    const tzOffset = new Date().getTimezoneOffset();
+    fetch(`/api/portal/classes?date=${date}&tzOffset=${tzOffset}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         setClasses(data);
