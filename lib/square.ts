@@ -15,35 +15,33 @@ function getBaseUrl(sandbox: boolean): string {
 }
 
 /**
- * Get Square config. Prefers SQUARE_ACCESS_TOKEN / SQUARE_LOCATION_ID /
- * SQUARE_APPLICATION_ID / SQUARE_SANDBOX env vars (recommended — keeps
- * secrets out of the DB), falls back to payment_square_* Settings rows.
+ * Get Square config. Prefers per-tenant payment_square_* Settings rows
+ * (set by each gym in Account → Payments), falls back to SQUARE_ACCESS_TOKEN
+ * / SQUARE_LOCATION_ID / SQUARE_APPLICATION_ID / SQUARE_SANDBOX env vars as
+ * a platform-wide default.
+ *
+ * Priority is DB-first so that env vars can't silently override a gym's
+ * own Square credentials.
  */
 export async function getSquareConfig(): Promise<SquareConfig | null> {
-  let accessToken: string | undefined = process.env.SQUARE_ACCESS_TOKEN;
-  let locationId: string | undefined = process.env.SQUARE_LOCATION_ID;
-  let applicationId: string | undefined = process.env.SQUARE_APPLICATION_ID;
-  let sandboxEnv: string | undefined = process.env.SQUARE_SANDBOX;
-
-  if (!accessToken || !locationId) {
-    const rows = await prisma.settings.findMany({
-      where: {
-        key: {
-          in: [
-            "payment_square_access_token",
-            "payment_square_location_id",
-            "payment_square_application_id",
-            "payment_square_sandbox",
-          ],
-        },
+  const rows = await prisma.settings.findMany({
+    where: {
+      key: {
+        in: [
+          "payment_square_access_token",
+          "payment_square_location_id",
+          "payment_square_application_id",
+          "payment_square_sandbox",
+        ],
       },
-    });
-    const map = new Map(rows.map((r) => [r.key, r.value]));
-    accessToken = accessToken || map.get("payment_square_access_token");
-    locationId = locationId || map.get("payment_square_location_id");
-    applicationId = applicationId || map.get("payment_square_application_id");
-    sandboxEnv = sandboxEnv ?? map.get("payment_square_sandbox");
-  }
+    },
+  });
+  const map = new Map(rows.map((r) => [r.key, r.value]));
+
+  const accessToken: string | undefined = map.get("payment_square_access_token") || process.env.SQUARE_ACCESS_TOKEN;
+  const locationId: string | undefined = map.get("payment_square_location_id") || process.env.SQUARE_LOCATION_ID;
+  const applicationId: string | undefined = map.get("payment_square_application_id") || process.env.SQUARE_APPLICATION_ID;
+  const sandboxEnv: string | undefined = map.get("payment_square_sandbox") ?? process.env.SQUARE_SANDBOX;
 
   if (!accessToken || !locationId) return null;
   return {

@@ -17,13 +17,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing signature" }, { status: 400 });
   }
 
-  // Prefer env var; fall back to Settings row for legacy setups.
-  let webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  // Prefer per-tenant Settings (set by each gym in Account → Payments);
+  // fall back to STRIPE_WEBHOOK_SECRET env var as a platform-wide default.
+  let webhookSecret: string | undefined;
+  const row = await prisma.settings.findFirst({
+    where: { key: "payment_stripe_webhook_secret" },
+  });
+  webhookSecret = row?.value || undefined;
   if (!webhookSecret) {
-    const row = await prisma.settings.findFirst({
-      where: { key: "payment_stripe_webhook_secret" },
-    });
-    webhookSecret = row?.value || undefined;
+    webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   }
 
   if (!webhookSecret) {

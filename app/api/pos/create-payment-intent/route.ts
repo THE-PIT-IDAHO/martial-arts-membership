@@ -21,15 +21,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
   }
 
-  // Get publishable key. Prefers STRIPE_PUBLISHABLE_KEY env var; falls back
-  // to the payment_stripe_publishable_key Settings row. (Safe in either —
-  // publishable keys are public, just need to be reachable here.)
-  let publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
+  // Get publishable key. Prefers per-tenant Settings (set by each gym in
+  // Account → Payments); falls back to STRIPE_PUBLISHABLE_KEY env var as a
+  // platform-wide default. (Publishable keys are public — priority just
+  // matters for routing to the right Stripe account.)
+  let publishableKey: string | undefined;
+  const pkSetting = await prisma.settings.findUnique({
+    where: { key_clientId: { key: "payment_stripe_publishable_key", clientId } },
+  });
+  publishableKey = pkSetting?.value || undefined;
   if (!publishableKey) {
-    const pkSetting = await prisma.settings.findUnique({
-      where: { key_clientId: { key: "payment_stripe_publishable_key", clientId } },
-    });
-    publishableKey = pkSetting?.value || undefined;
+    publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
   }
   if (!publishableKey) {
     return NextResponse.json({ error: "Stripe publishable key not configured" }, { status: 400 });

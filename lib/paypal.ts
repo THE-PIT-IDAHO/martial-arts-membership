@@ -16,32 +16,30 @@ function getBaseUrl(sandbox: boolean): string {
 }
 
 /**
- * Get PayPal config. Prefers PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET /
- * PAYPAL_SANDBOX env vars (recommended — keeps secrets out of the DB),
- * falls back to the payment_paypal_* Settings rows for legacy setups.
+ * Get PayPal config. Prefers per-tenant payment_paypal_* Settings rows
+ * (set by each gym in Account → Payments), falls back to PAYPAL_CLIENT_ID /
+ * PAYPAL_CLIENT_SECRET / PAYPAL_SANDBOX env vars as a platform-wide default.
+ *
+ * Priority is DB-first so that env vars can't silently override a gym's
+ * own PayPal credentials.
  */
 export async function getPayPalConfig(): Promise<PayPalConfig | null> {
-  let clientId: string | undefined = process.env.PAYPAL_CLIENT_ID;
-  let clientSecret: string | undefined = process.env.PAYPAL_CLIENT_SECRET;
-  let sandboxEnv: string | undefined = process.env.PAYPAL_SANDBOX;
-
-  if (!clientId || !clientSecret) {
-    const rows = await prisma.settings.findMany({
-      where: {
-        key: {
-          in: [
-            "payment_paypal_client_id",
-            "payment_paypal_client_secret",
-            "payment_paypal_sandbox",
-          ],
-        },
+  const rows = await prisma.settings.findMany({
+    where: {
+      key: {
+        in: [
+          "payment_paypal_client_id",
+          "payment_paypal_client_secret",
+          "payment_paypal_sandbox",
+        ],
       },
-    });
-    const map = new Map(rows.map((r) => [r.key, r.value]));
-    clientId = clientId || map.get("payment_paypal_client_id");
-    clientSecret = clientSecret || map.get("payment_paypal_client_secret");
-    sandboxEnv = sandboxEnv ?? map.get("payment_paypal_sandbox");
-  }
+    },
+  });
+  const map = new Map(rows.map((r) => [r.key, r.value]));
+
+  let clientId: string | undefined = map.get("payment_paypal_client_id") || process.env.PAYPAL_CLIENT_ID;
+  let clientSecret: string | undefined = map.get("payment_paypal_client_secret") || process.env.PAYPAL_CLIENT_SECRET;
+  let sandboxEnv: string | undefined = map.get("payment_paypal_sandbox") ?? process.env.PAYPAL_SANDBOX;
 
   if (!clientId || !clientSecret) return null;
   return {
