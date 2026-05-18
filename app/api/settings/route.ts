@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
+import { invalidateSettingCache } from "@/lib/email";
 
 // GET /api/settings?key=waiver_content
 export async function GET(req: Request) {
@@ -45,6 +46,7 @@ export async function PUT(req: Request) {
         update: { value: String(value ?? "") },
         create: { key, value: String(value ?? ""), clientId },
       });
+      invalidateSettingCache(key, clientId);
     }
 
     const keys = entries.map(([k]) => k);
@@ -78,6 +80,7 @@ export async function POST(req: Request) {
       update: { value },
       create: { key, value, clientId },
     });
+    invalidateSettingCache(key, clientId);
 
     return NextResponse.json({ setting }, { status: 201 });
   } catch (error) {

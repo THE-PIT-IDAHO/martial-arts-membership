@@ -1162,7 +1162,7 @@ export default function MemberProfilePage() {
                 return { name: item.trim() } as StyleEntry;
               }
               if (item && typeof item === "object") {
-                const obj = item as any;
+                const obj = item as Record<string, unknown>;
                 const name = String(obj.name ?? "").trim();
                 if (!name) return null;
                 const entry: StyleEntry = {

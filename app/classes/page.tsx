@@ -418,9 +418,9 @@ export default function ClassesPage() {
     setSelectedStyleIds(styleIds.length > 0 ? styleIds : [""]);
 
     setMinRankId(classSession.minRankId || "");
-
-    // For now, set minRankIds to have the same rank for all styles
-    // TODO: Support different ranks per style when we store that data
+    // The schema stores a single minRankId per class. We mirror it across
+    // selected styles so the UI matches the data model. Adding per-style
+    // minimums would require a new minRankIds JSON column on ClassSession.
     const initialRankIds = styleIds.map(() => classSession.minRankId || "");
     setMinRankIds(initialRankIds.length > 0 ? initialRankIds : [""]);
 
@@ -1426,37 +1426,40 @@ export default function ClassesPage() {
                   placeholder="All Styles"
                 />
 
-                {/* Minimum Rank per selected style */}
+                {/* Minimum Rank — single value applied across selected styles.
+                    Per-style minimums need a schema field (minRankIds JSON column)
+                    before they can be persisted; today the data model only carries
+                    one minRankId per class, so we show a single rank dropdown. */}
                 {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").length > 0 && (
                   <div className="mt-2 space-y-1.5">
                     <label className="block text-[10px] font-medium text-gray-500 uppercase tracking-wider">
                       Minimum Rank Required
                     </label>
-                    {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").map((styleId, index) => {
-                      const style = styles.find(s => s.id === styleId);
-                      if (!style) return null;
+                    {(() => {
+                      const activeStyleIds = selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE");
+                      const firstStyle = styles.find(s => s.id === activeStyleIds[0]);
+                      if (!firstStyle) return null;
                       return (
-                        <div key={styleId} className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-24 truncate">{style.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600 w-24 truncate">
+                            {activeStyleIds.length > 1 ? "All styles" : firstStyle.name}
+                          </span>
                           <select
-                            value={minRankIds[selectedStyleIds.indexOf(styleId)] || ""}
+                            value={minRankId}
                             onChange={(e) => {
-                              const realIdx = selectedStyleIds.indexOf(styleId);
-                              const newRankIds = [...minRankIds];
-                              newRankIds[realIdx] = e.target.value;
-                              setMinRankIds(newRankIds);
-                              if (realIdx === 0) setMinRankId(e.target.value);
+                              setMinRankId(e.target.value);
+                              setMinRankIds(activeStyleIds.map(() => e.target.value));
                             }}
                             className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                           >
                             <option value="">No Rank Requirement</option>
-                            {style.ranks?.map(r => (
+                            {firstStyle.ranks?.map(r => (
                               <option key={r.id} value={r.id}>{r.name}</option>
                             ))}
                           </select>
                         </div>
                       );
-                    })}
+                    })()}
                   </div>
                 )}
               </div>

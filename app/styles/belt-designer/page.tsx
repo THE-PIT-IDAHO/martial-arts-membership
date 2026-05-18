@@ -1108,7 +1108,7 @@ export default function BeltDesignerPage() {
             const k = key as ToggleableLayerKey;
             if (!usedLayers[k]) return null;
             const colorKey = `${key}Color` as keyof BeltLayerConfig;
-            const color = (usedLayers as any)[colorKey] ?? "#ffffff";
+            const color = (usedLayers[colorKey] as string | undefined) ?? "#ffffff";
             return (
               <TintedLayer key={key} src={layerSrc[key]} color={color} />
             );
@@ -1395,7 +1395,7 @@ export default function BeltDesignerPage() {
                         {layers[k] ? (
                           <input
                             type="color"
-                            value={(layers as any)[colorKey]}
+                            value={(layers[colorKey] as string | undefined) ?? "#ffffff"}
                             onChange={(e) =>
                               setLayers((prev) => ({
                                 ...prev,

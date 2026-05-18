@@ -5,49 +5,7 @@ import { parseLocalDate } from "@/lib/dates";
 import { calculateNextPaymentDate } from "@/lib/billing";
 import { getAccountPaymentAmount } from "@/lib/payment-utils";
 
-type RankPdf = {
-  name: string;
-  url: string;
-};
-
-type BeltRank = {
-  name: string;
-  order: number;
-  pdfDocuments?: RankPdf[];
-};
-
-type StyleDocument = {
-  id: string;
-  name: string;
-  url: string;
-  uploadedAt: string;
-};
-
-// Helper function to get first rank from beltConfig
-function getFirstRankFromBeltConfig(beltConfig: string | null): string | null {
-  if (!beltConfig) return null;
-  try {
-    const config = typeof beltConfig === "string" ? JSON.parse(beltConfig) : beltConfig;
-    if (config.ranks && Array.isArray(config.ranks) && config.ranks.length > 0) {
-      // Sort by order and return the first (lowest order) rank
-      const sortedRanks = [...config.ranks].sort((a: BeltRank, b: BeltRank) => a.order - b.order);
-      return sortedRanks[0].name;
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return null;
-}
-
-// Rank PDFs are sourced from Rank.pdfDocument and shown on the portal Styles
-// page. We don't copy them into member.styleDocuments anymore.
-function addRankPdfsToDocuments(
-  _beltConfig: string | null,
-  _targetRankName: string,
-  currentDocs: StyleDocument[]
-): { docs: StyleDocument[]; hasChanges: boolean } {
-  return { docs: currentDocs, hasChanges: false };
-}
+import { getFirstRankFromBeltConfig, addRankPdfsToDocuments, type StyleDocument } from "@/lib/belt-config";
 
 // Calculate next payment date based on billing cycle
 // calculateNextPaymentDate imported from @/lib/billing

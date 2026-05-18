@@ -890,9 +890,9 @@ export default function MembershipsPage() {
   }
 
   function updatePricingTier(index: number, field: keyof PricingTier, value: string | boolean) {
-    const updated = [...pricingTiers];
-    (updated[index] as any)[field] = value;
-    setPricingTiers(updated);
+    setPricingTiers((prev) =>
+      prev.map((tier, i) => (i === index ? { ...tier, [field]: value } : tier))
+    );
   }
 
   function removePricingTier(index: number) {

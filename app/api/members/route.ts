@@ -1,6 +1,7 @@
 // app/api/members/route.ts
 
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendWelcomeEmail } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";
@@ -67,31 +68,31 @@ export async function GET(req: Request) {
     // Add search filter for name or member number
     if (search && search.length >= 2) {
       const parts = search.trim().split(/\s+/);
-      let searchConditions;
+      const searchConditions: Prisma.MemberWhereInput[] = [];
 
       if (parts.length >= 2) {
         // "John Smith" → match firstName contains "John" AND lastName contains "Smith"
-        searchConditions = [
+        searchConditions.push(
           { AND: [
-            { firstName: { contains: parts[0], mode: "insensitive" as const } },
-            { lastName: { contains: parts.slice(1).join(" "), mode: "insensitive" as const } },
+            { firstName: { contains: parts[0], mode: "insensitive" } },
+            { lastName: { contains: parts.slice(1).join(" "), mode: "insensitive" } },
           ]},
           // Also try single-field matches
-          { firstName: { contains: search, mode: "insensitive" as const } },
-          { lastName: { contains: search, mode: "insensitive" as const } },
-          { email: { contains: search, mode: "insensitive" as const } },
-        ];
+          { firstName: { contains: search, mode: "insensitive" } },
+          { lastName: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+        );
       } else {
-        searchConditions = [
-          { firstName: { contains: search, mode: "insensitive" as const } },
-          { lastName: { contains: search, mode: "insensitive" as const } },
-          { email: { contains: search, mode: "insensitive" as const } },
-        ];
+        searchConditions.push(
+          { firstName: { contains: search, mode: "insensitive" } },
+          { lastName: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+        );
       }
       // Also search by member number if the search is numeric
       const searchNum = parseInt(search, 10);
       if (!isNaN(searchNum)) {
-        searchConditions.push({ memberNumber: searchNum } as any);
+        searchConditions.push({ memberNumber: searchNum });
       }
 
       // If we already have style filter, use AND to combine

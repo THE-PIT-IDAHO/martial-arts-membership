@@ -9,25 +9,12 @@ type Params = {
   params: Promise<{ id: string }>;
 };
 
-type RankPdf = {
-  id?: string;
-  name: string;
-  url: string;
-};
-
-type BeltRank = {
-  name: string;
-  order: number;
-  pdfDocuments?: RankPdf[];
-};
-
-type StyleDocument = {
-  id: string;
-  name: string;
-  url: string;
-  uploadedAt: string;
-  fromRank?: string;
-};
+import {
+  getPdfNamesAboveRank,
+  getRankOrder,
+  addRankPdfsToDocuments,
+  type StyleDocument,
+} from "@/lib/belt-config";
 
 type MemberStyle = {
   name: string;
@@ -40,68 +27,11 @@ type MemberStyle = {
   active?: boolean;
 };
 
-function toDateOrNull(value: any): Date | null {
+function toDateOrNull(value: unknown): Date | null {
   if (!value) return null;
-  const d = new Date(value);
+  const d = new Date(value as string | number | Date);
   if (Number.isNaN(d.getTime())) return null;
   return d;
-}
-
-// Helper function to get PDF names for ranks ABOVE a target rank (for removal during downgrade)
-function getPdfNamesAboveRank(
-  beltConfig: string | null,
-  targetRankName: string
-): string[] {
-  if (!beltConfig) return [];
-
-  try {
-    const config = typeof beltConfig === "string" ? JSON.parse(beltConfig) : beltConfig;
-    if (!config.ranks || !Array.isArray(config.ranks)) return [];
-
-    // Find the target rank
-    const targetRank = config.ranks.find((r: BeltRank) => r.name === targetRankName);
-    if (!targetRank) return [];
-
-    // Get ranks ABOVE the target rank (higher order number)
-    const ranksAbove = config.ranks.filter((r: BeltRank) => r.order > targetRank.order);
-
-    const pdfNames: string[] = [];
-    for (const rank of ranksAbove) {
-      if (rank.pdfDocuments && Array.isArray(rank.pdfDocuments)) {
-        for (const pdf of rank.pdfDocuments) {
-          if (pdf.name) pdfNames.push(pdf.name);
-        }
-      }
-    }
-    return pdfNames;
-  } catch {
-    return [];
-  }
-}
-
-// Helper function to get the order number of a rank
-function getRankOrder(beltConfig: string | null, rankName: string): number | null {
-  if (!beltConfig || !rankName) return null;
-
-  try {
-    const config = typeof beltConfig === "string" ? JSON.parse(beltConfig) : beltConfig;
-    if (!config.ranks || !Array.isArray(config.ranks)) return null;
-
-    const rank = config.ranks.find((r: BeltRank) => r.name === rankName);
-    return rank ? rank.order : null;
-  } catch {
-    return null;
-  }
-}
-
-// Rank PDFs are sourced from Rank.pdfDocument and surfaced via the portal
-// Styles page. We don't copy them into member.styleDocuments anymore.
-function addRankPdfsToDocuments(
-  _beltConfig: string | null,
-  _targetRankName: string,
-  currentDocs: StyleDocument[]
-): { docs: StyleDocument[]; hasChanges: boolean } {
-  return { docs: currentDocs, hasChanges: false };
 }
 
 // GET /api/members/:id

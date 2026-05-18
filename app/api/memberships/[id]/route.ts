@@ -4,71 +4,12 @@ import { parseLocalDate } from "@/lib/dates";
 import { isUnderContract, calculateEarlyTerminationFee, calculateCancellationEffectiveDate } from "@/lib/contracts";
 import { logAudit } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
-
-type RankPdf = {
-  name: string;
-  url: string;
-};
-
-type BeltRank = {
-  name: string;
-  order: number;
-  pdfDocuments?: RankPdf[];
-};
-
-type StyleDocument = {
-  id: string;
-  name: string;
-  url: string;
-  uploadedAt: string;
-};
-
-// Helper function to get first rank from beltConfig
-function getFirstRankFromBeltConfig(beltConfig: string | null): string | null {
-  if (!beltConfig) return null;
-  try {
-    const config = typeof beltConfig === "string" ? JSON.parse(beltConfig) : beltConfig;
-    if (config.ranks && Array.isArray(config.ranks) && config.ranks.length > 0) {
-      // Sort by order and return the first (lowest order) rank
-      const sortedRanks = [...config.ranks].sort((a: BeltRank, b: BeltRank) => a.order - b.order);
-      return sortedRanks[0].name;
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return null;
-}
-
-// Helper function to get all PDF names from a style's beltConfig
-function getPdfNamesFromBeltConfig(beltConfig: string | null): string[] {
-  if (!beltConfig) return [];
-  try {
-    const config = typeof beltConfig === "string" ? JSON.parse(beltConfig) : beltConfig;
-    if (!config.ranks || !Array.isArray(config.ranks)) return [];
-
-    const pdfNames: string[] = [];
-    for (const rank of config.ranks) {
-      if (rank.pdfDocuments && Array.isArray(rank.pdfDocuments)) {
-        for (const pdf of rank.pdfDocuments) {
-          if (pdf.name) pdfNames.push(pdf.name);
-        }
-      }
-    }
-    return pdfNames;
-  } catch {
-    return [];
-  }
-}
-
-// Rank PDFs come from Rank.pdfDocument and surface via the portal Styles page.
-// We don't copy them into member.styleDocuments anymore.
-function addRankPdfsToDocuments(
-  _beltConfig: string | null,
-  _targetRankName: string,
-  currentDocs: StyleDocument[]
-): { docs: StyleDocument[]; hasChanges: boolean } {
-  return { docs: currentDocs, hasChanges: false };
-}
+import {
+  getFirstRankFromBeltConfig,
+  getPdfNamesFromBeltConfig,
+  addRankPdfsToDocuments,
+  type StyleDocument,
+} from "@/lib/belt-config";
 
 // Helper function to sync member's styles and rank documents based on their active/canceled memberships
 // Any style not covered by an active/canceled membership should be inactive

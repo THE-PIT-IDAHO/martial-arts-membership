@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendPromotionCongratsEmail } from "@/lib/notifications";
+import { addRankPdfsToMember } from "@/lib/belt-config";
 
 type MemberStyle = {
   name: string;
@@ -10,35 +11,6 @@ type MemberStyle = {
   active?: boolean;
   attendanceResetDate?: string;
 };
-
-type StyleDocument = {
-  id: string;
-  name: string;
-  url: string;
-  uploadedAt: string;
-};
-
-type RankPdf = {
-  name: string;
-  url: string;
-};
-
-type BeltRank = {
-  name: string;
-  order: number;
-  pdfDocuments?: RankPdf[];
-};
-
-// Rank PDFs are sourced from Rank.pdfDocument and shown on the portal Styles
-// page. We no longer copy them into member.styleDocuments on promotion.
-async function addRankPdfsToMember(
-  _memberId: string,
-  _styleName: string,
-  _targetRankName: string,
-  currentStyleDocuments: string | null
-): Promise<string> {
-  return currentStyleDocuments || "[]";
-}
 
 // POST /api/promotion-events/[id]/execute - Execute promotions for all registered participants
 export async function POST(
@@ -75,6 +47,14 @@ export async function POST(
     const promotedDate = promotionDate || new Date().toISOString().split("T")[0];
     const results: { memberId: string; memberName: string; success: boolean; error?: string }[] = [];
 
+    // Batch-load all members up front to avoid an N+1 query inside the loop.
+    const memberIds = Array.from(new Set(participantsToPromote.map((p) => p.memberId)));
+    const memberRows = await prisma.member.findMany({
+      where: { id: { in: memberIds } },
+      select: { id: true, stylesNotes: true, primaryStyle: true, styleDocuments: true },
+    });
+    const memberMap = new Map(memberRows.map((m) => [m.id, m]));
+
     for (const participant of participantsToPromote) {
       try {
         if (!participant.promotingToRank) {
@@ -87,11 +67,7 @@ export async function POST(
           continue;
         }
 
-        // Get the member
-        const member = await prisma.member.findUnique({
-          where: { id: participant.memberId },
-          select: { id: true, stylesNotes: true, primaryStyle: true, styleDocuments: true },
-        });
+        const member = memberMap.get(participant.memberId);
 
         if (!member) {
           results.push({

@@ -977,9 +977,6 @@ export default function CalendarPage() {
     // Filter out empty/invalid style IDs
     classStyleIds = classStyleIds.filter(id => id && id !== "NO_STYLE");
 
-    console.log("checkMemberRequirements - classStyleIds:", classStyleIds);
-    console.log("checkMemberRequirements - styles state length:", styles.length);
-
     // If no style requirements, check age only
     if (classStyleIds.length === 0) {
       if (missingRequirements.length > 0) {
@@ -1124,13 +1121,8 @@ export default function CalendarPage() {
 
   async function handleAddMember(member: MemberWithStyles, forceAdd: boolean = false) {
     // Check if member meets requirements
-    console.log("handleAddMember called for:", member.firstName, member.lastName);
-    console.log("Member styles:", JSON.stringify(member.styles));
-    console.log("Selected class:", selectedClass?.name, "styleIds:", selectedClass?.styleIds);
     const { meets, reason } = checkMemberRequirements(member);
-    console.log("checkMemberRequirements result:", { meets, reason });
     if (!meets && !forceAdd) {
-      console.log("Setting showRequirementError to true");
       setRequirementErrorMessage(reason);
       setPendingMember(member);
       setShowRequirementError(true);
