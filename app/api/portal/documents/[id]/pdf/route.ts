@@ -116,33 +116,67 @@ export async function GET(
   const gymName = member.client?.name || "Gym";
 
   if (id.startsWith("rank-pdf-")) {
-    const rankName = id.slice("rank-pdf-".length);
-    let enrolledStyles: Array<{ name?: string; rank?: string; active?: boolean }> = [];
-    if (member.stylesNotes) {
-      try { enrolledStyles = JSON.parse(member.stylesNotes); } catch { /* ignore */ }
+    const tail = id.slice("rank-pdf-".length);
+    // Look up directly by Rank ID first (current format). Falls back to the
+    // legacy name-based format for any old cached URLs.
+    const rankById = await prisma.rank.findUnique({
+      where: { id: tail },
+      select: {
+        id: true, name: true, pdfDocument: true, styleId: true,
+        style: { select: { clientId: true } },
+      },
+    }).catch(() => null);
+
+    // Verify the member is enrolled in this rank's style (and tenant) before serving.
+    if (rankById?.pdfDocument && rankById.style?.clientId) {
+      let enrolledStyles: Array<{ name?: string; rank?: string; active?: boolean }> = [];
+      if (member.stylesNotes) {
+        try { enrolledStyles = JSON.parse(member.stylesNotes); } catch { /* ignore */ }
+      }
+      // Find which style this rank belongs to, then make sure the member is enrolled.
+      const ownerStyle = await prisma.style.findUnique({
+        where: { id: rankById.styleId },
+        select: { name: true, clientId: true },
+      });
+      if (ownerStyle && enrolledStyles.some((es) =>
+        es.name && es.active !== false && es.name.toLowerCase() === ownerStyle.name.toLowerCase()
+      )) {
+        dataUri = rankById.pdfDocument;
+        displayName = rankById.name;
+      }
     }
 
-    for (const es of enrolledStyles) {
-      if (!es.name || es.active === false || !es.rank) continue;
-      const style = await prisma.style.findFirst({
-        where: { name: { equals: es.name, mode: "insensitive" } },
-        select: {
-          ranks: {
-            orderBy: { order: "asc" },
-            select: { name: true, order: true, pdfDocument: true },
+    // Legacy fallback: tail is a rank name. Walk the member's enrolled styles
+    // (in tenant scope) and pick the first matching rank that has a PDF.
+    if (!dataUri) {
+      const rankName = tail;
+      let enrolledStyles: Array<{ name?: string; rank?: string; active?: boolean }> = [];
+      if (member.stylesNotes) {
+        try { enrolledStyles = JSON.parse(member.stylesNotes); } catch { /* ignore */ }
+      }
+
+      for (const es of enrolledStyles) {
+        if (!es.name || es.active === false || !es.rank) continue;
+        const style = await prisma.style.findFirst({
+          where: { name: { equals: es.name, mode: "insensitive" } },
+          select: {
+            ranks: {
+              orderBy: { order: "asc" },
+              select: { name: true, order: true, pdfDocument: true },
+            },
           },
-        },
-      });
-      if (!style) continue;
-      const currentRank = style.ranks.find((r) => r.name.toLowerCase() === es.rank!.toLowerCase());
-      if (!currentRank) continue;
-      const target = style.ranks.find(
-        (r) => r.name.toLowerCase() === rankName.toLowerCase() && r.order <= currentRank.order
-      );
-      if (target?.pdfDocument) {
-        dataUri = target.pdfDocument;
-        displayName = rankName;
-        break;
+        });
+        if (!style) continue;
+        const currentRank = style.ranks.find((r) => r.name.toLowerCase() === es.rank!.toLowerCase());
+        if (!currentRank) continue;
+        const target = style.ranks.find(
+          (r) => r.name.toLowerCase() === rankName.toLowerCase() && r.order <= currentRank.order
+        );
+        if (target?.pdfDocument) {
+          dataUri = target.pdfDocument;
+          displayName = rankName;
+          break;
+        }
       }
     }
   } else if (id === "waiver-legacy") {

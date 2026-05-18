@@ -148,13 +148,16 @@ export async function GET(req: NextRequest) {
           // Collect PDFs from all ranks up to and including current rank.
           // Source from the Rank model (Rank.pdfDocument) and emit streaming URLs
           // — beltConfig.pdfDocuments URLs were stripped to keep beltConfig under 1MB.
-          const seenRankNames = new Set<string>();
+          const seenRankIds = new Set<string>();
           for (const r of sortedRanks) {
             if (r.order > currentRank.order) continue;
             const rankRow = style.ranks.find((rr) => rr.name.toLowerCase() === r.name.toLowerCase());
-            if (rankRow?.pdfDocument && !seenRankNames.has(r.name)) {
-              seenRankNames.add(r.name);
-              const docId = `rank-pdf-${r.name}`;
+            if (rankRow?.pdfDocument && !seenRankIds.has(rankRow.id)) {
+              seenRankIds.add(rankRow.id);
+              // Use the Rank's unique ID rather than its name so two different
+              // styles with same-named ranks (e.g. White Belt) resolve to the
+              // correct PDF.
+              const docId = `rank-pdf-${rankRow.id}`;
               documents.push({
                 id: docId,
                 name: `${r.name} Curriculum`,
@@ -242,9 +245,9 @@ export async function GET(req: NextRequest) {
           const seen = new Set<string>();
           for (const r of sortedRankRows) {
             if (r.order > curRank.order) continue;
-            if (r.pdfDocument && !seen.has(r.name)) {
-              seen.add(r.name);
-              const docId = `rank-pdf-${r.name}`;
+            if (r.pdfDocument && !seen.has(r.id)) {
+              seen.add(r.id);
+              const docId = `rank-pdf-${r.id}`;
               documents.push({
                 id: docId,
                 name: `${r.name} Curriculum`,
