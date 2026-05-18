@@ -504,17 +504,13 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
       </table>
     </div>
 
-    {/* Description edit popup */}
+    {/* Description edit popup — close only via Save / Cancel / X, not backdrop click,
+        so dragging the resize corner can't accidentally dismiss the popup. */}
     {editPopup && (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={async () => {
-        await updateField(editPopup.itemId, "description", editPopup.value);
-        setEditPopup(null);
-        await onReload();
-      }}>
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
         <div
           className="rounded-lg bg-white shadow-xl flex flex-col overflow-hidden"
           style={{ width: "min(640px, 95vw)", height: "min(560px, 85vh)", minWidth: 320, minHeight: 280, maxWidth: "95vw", maxHeight: "90vh", resize: "both" }}
-          onClick={e => e.stopPropagation()}
         >
           <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
             <h2 className="text-sm font-bold text-gray-900">Edit Description <span className="text-gray-400 font-normal text-[10px]">(drag corner to resize)</span></h2>
@@ -534,7 +530,7 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
                contentEditable
                suppressContentEditableWarning
                dangerouslySetInnerHTML={{ __html: editPopup.value.replace(/\n/g, "<br>") }}
-               style={{ fontFamily: "Helvetica, Arial, sans-serif", fontSize: "12px", lineHeight: 1.45 }}
+               style={{ fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace", fontSize: "12px", lineHeight: 1.45 }}
                className="w-full h-full min-h-[200px] rounded-md border border-gray-300 px-3 py-2 whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
              />
           </div>
@@ -2098,17 +2094,12 @@ export default function CurriculumV2Page() {
         </div>
       )}
 
-      {/* Full content popup editor */}
+      {/* Full content popup editor — close only via Save / Cancel / X. */}
       {popupCell && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4" onClick={() => {
-          // Save and close
-          updateRow(popupCell.rowIdx, popupCell.field, popupCell.value);
-          setPopupCell(null);
-        }}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
           <div
             className="rounded-lg bg-white shadow-xl flex flex-col overflow-hidden"
             style={{ width: "min(640px, 95vw)", height: "min(560px, 85vh)", minWidth: 320, minHeight: 280, maxWidth: "95vw", maxHeight: "90vh", resize: "both" }}
-            onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
               <h2 className="text-sm font-bold text-gray-900">Edit Content <span className="text-gray-400 font-normal text-[10px]">(drag corner to resize)</span></h2>
@@ -2139,7 +2130,7 @@ export default function CurriculumV2Page() {
                 contentEditable
                 suppressContentEditableWarning
                 dangerouslySetInnerHTML={{ __html: popupCell.value.replace(/\n/g, "<br>") }}
-                style={{ fontFamily: "Helvetica, Arial, sans-serif", fontSize: "12px", lineHeight: 1.45 }}
+                style={{ fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace", fontSize: "12px", lineHeight: 1.45 }}
                 className="w-full h-full min-h-[200px] rounded-md border border-gray-300 px-3 py-2 whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
