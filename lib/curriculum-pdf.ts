@@ -21,16 +21,17 @@ function measureRichLineRows(
   pdf: jsPDF,
   lineSegments: Array<{ text: string; bold: boolean }>,
   width: number,
+  font: string = "helvetica",
 ): number {
   if (lineSegments.length === 0) return 1;
   let rows = 1;
   let curW = 0;
   const spaceW = (bold: boolean): number => {
-    pdf.setFont("helvetica", bold ? "bold" : "normal");
+    pdf.setFont(font, bold ? "bold" : "normal");
     return pdf.getTextWidth(" ");
   };
   for (const seg of lineSegments) {
-    pdf.setFont("helvetica", seg.bold ? "bold" : "normal");
+    pdf.setFont(font, seg.bold ? "bold" : "normal");
     const tokens = seg.text.split(/(\s+)/).filter((t) => t.length > 0);
     for (const tok of tokens) {
       if (/^\s+$/.test(tok)) {
@@ -59,13 +60,14 @@ function renderRichLine(
   width: number,
   lineHeight: number,
   lineSegments: Array<{ text: string; bold: boolean }>,
+  font: string = "helvetica",
 ): number {
   if (lineSegments.length === 0) return y + lineHeight;
   let curX = x;
   let curY = y;
   let lineHasContent = false;
   for (const seg of lineSegments) {
-    pdf.setFont("helvetica", seg.bold ? "bold" : "normal");
+    pdf.setFont(font, seg.bold ? "bold" : "normal");
     const tokens = seg.text.split(/(\s+)/).filter((t) => t.length > 0);
     for (const tok of tokens) {
       const w = pdf.getTextWidth(tok);
@@ -328,7 +330,7 @@ export function generateCurriculumPdf(
           pdf.setFontSize(9);
           const lineSegs = segmentsByLine(parseHtmlForPdf(item.desc));
           for (const segs of lineSegs) {
-            const rows = measureRichLineRows(pdf, segs, cw - 6);
+            const rows = measureRichLineRows(pdf, segs, cw - 6, "courier");
             measY += rows * 3.5;
           }
         }
@@ -361,7 +363,7 @@ export function generateCurriculumPdf(
           pdf.setFontSize(9);
           const lineSegs = segmentsByLine(parseHtmlForPdf(item.desc));
           for (const segs of lineSegs) {
-            const rows = measureRichLineRows(pdf, segs, cw - 6);
+            const rows = measureRichLineRows(pdf, segs, cw - 6, "courier");
             itemH += rows * 3.5;
           }
         }
@@ -386,8 +388,10 @@ export function generateCurriculumPdf(
           pdf.setFontSize(9);
           const lineSegs = segmentsByLine(parseHtmlForPdf(item.desc));
           for (const segs of lineSegs) {
-            // renderRichLine returns the y AFTER the last visual row of this line
-            y = renderRichLine(pdf, margin + 3, y, cw - 6, 3.5, segs);
+            // renderRichLine returns the y AFTER the last visual row of this line.
+            // Use courier (monospace) so it matches the editor and column alignment
+            // via spaces actually works.
+            y = renderRichLine(pdf, margin + 3, y, cw - 6, 3.5, segs, "courier");
           }
         }
 
