@@ -4492,111 +4492,115 @@ export default function MemberProfilePage() {
                   </label>
                 </div>
 
-                {/* Curriculum PDFs from ranks */}
-                {rankPdfs.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-[11px] font-semibold uppercase text-gray-500 mb-2">Curriculum</p>
-                    <div className="flex flex-wrap gap-2">
-                      {rankPdfs.map((pdf, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => {
-                            try {
-                              if (pdf.url.startsWith("data:")) {
-                                const byteString = atob(pdf.url.split(",")[1]);
-                                const ab = new ArrayBuffer(byteString.length);
-                                const ia = new Uint8Array(ab);
-                                for (let j = 0; j < byteString.length; j++) ia[j] = byteString.charCodeAt(j);
-                                const blob = new Blob([ab], { type: "application/pdf" });
-                                window.open(URL.createObjectURL(blob), "_blank");
-                              } else {
-                                window.open(pdf.url, "_blank");
-                              }
-                            } catch { /* ignore */ }
-                          }}
-                          className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
-                          title={`${pdf.rankName} Curriculum`}
-                        >
-                          <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
-                            <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
-                            <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
-                            <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
-                          </svg>
-                          <span className="text-[10px] text-gray-600 text-center max-w-[80px] truncate">{pdf.rankName}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {(() => {
+                  // Group curriculum PDFs by style for per-style banners
+                  const byStyle = new Map<string, Array<{ rankName: string; url: string }>>();
+                  for (const pdf of rankPdfs) {
+                    const arr = byStyle.get(pdf.styleName) || [];
+                    arr.push({ rankName: pdf.rankName, url: pdf.url });
+                    byStyle.set(pdf.styleName, arr);
+                  }
+                  function openPdf(url: string) {
+                    try {
+                      if (url.startsWith("data:")) {
+                        const byteString = atob(url.split(",")[1]);
+                        const mimeString = url.split(",")[0].split(":")[1].split(";")[0];
+                        const ab = new ArrayBuffer(byteString.length);
+                        const ia = new Uint8Array(ab);
+                        for (let j = 0; j < byteString.length; j++) ia[j] = byteString.charCodeAt(j);
+                        const blob = new Blob([ab], { type: mimeString });
+                        window.open(URL.createObjectURL(blob), "_blank", "noopener,noreferrer");
+                      } else {
+                        window.open(url, "_blank", "noopener,noreferrer");
+                      }
+                    } catch (e) {
+                      console.error("Failed to open document:", e);
+                    }
+                  }
 
-                <div className="space-y-2 text-sm">
-                  {styleDocuments.length === 0 && rankPdfs.length === 0 ? (
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                      <p className="text-xs text-gray-400">
-                        No documents uploaded yet. Click "Upload PDF" to add documents.
-                      </p>
-                    </div>
-                  ) : styleDocuments.length === 0 ? null : (
-                    <div className="flex flex-wrap gap-2">
-                      {styleDocuments.map((doc) => (
-                        <div key={doc.id} className="relative group">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              try {
-                                // Check if it's a regular URL (file path) vs base64 data URL
-                                if (doc.url.startsWith('/') || doc.url.startsWith('http')) {
-                                  // Regular file URL - open directly
-                                  window.open(doc.url, '_blank', 'noopener,noreferrer');
-                                } else {
-                                  // Base64 data URL - convert to blob
-                                  const byteString = atob(doc.url.split(',')[1]);
-                                  const mimeString = doc.url.split(',')[0].split(':')[1].split(';')[0];
-                                  const ab = new ArrayBuffer(byteString.length);
-                                  const ia = new Uint8Array(ab);
-                                  for (let j = 0; j < byteString.length; j++) {
-                                    ia[j] = byteString.charCodeAt(j);
-                                  }
-                                  const blob = new Blob([ab], { type: mimeString });
-                                  const blobUrl = URL.createObjectURL(blob);
-                                  window.open(blobUrl, '_blank', 'noopener,noreferrer');
-                                }
-                              } catch (e) {
-                                console.error("Failed to open document:", e);
-                              }
-                            }}
-                            className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
-                            title={doc.name}
-                          >
-                            {doc.thumbnail ? (
-                              <img
-                                src={doc.thumbnail}
-                                alt="PDF"
-                                className="w-10 h-10"
-                              />
-                            ) : (
-                              <svg className="w-10 h-10 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                            )}
-                            <span className="text-[10px] font-medium text-gray-600 max-w-[80px] truncate">{doc.name}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveDocument(doc.id)}
-                            className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                            title="Remove document"
-                          >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
+                  if (styleDocuments.length === 0 && rankPdfs.length === 0) {
+                    return (
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                        <p className="text-xs text-gray-400">
+                          No documents uploaded yet. Click &quot;Upload PDF&quot; to add documents.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-4 text-sm">
+                      {Array.from(byStyle.entries()).map(([styleName, pdfs]) => (
+                        <div key={styleName}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="h-px flex-1 bg-gray-200" />
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 px-2 py-0.5 rounded-full bg-gray-100">{styleName}</p>
+                            <div className="h-px flex-1 bg-gray-200" />
+                          </div>
+                          <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
+                            {pdfs.map((pdf, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => openPdf(pdf.url)}
+                                className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
+                                title={`${pdf.rankName} Curriculum`}
+                              >
+                                <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
+                                  <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
+                                  <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
+                                  <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
+                                </svg>
+                                <span className="text-[10px] text-gray-700 text-center leading-tight line-clamp-2 break-words">{pdf.rankName}</span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       ))}
+
+                      {styleDocuments.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="h-px flex-1 bg-gray-200" />
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 px-2 py-0.5 rounded-full bg-gray-100">Uploaded Documents</p>
+                            <div className="h-px flex-1 bg-gray-200" />
+                          </div>
+                          <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
+                            {styleDocuments.map((doc) => (
+                              <div key={doc.id} className="relative group">
+                                <button
+                                  type="button"
+                                  onClick={() => openPdf(doc.url)}
+                                  className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors w-full"
+                                  title={doc.name}
+                                >
+                                  {doc.thumbnail ? (
+                                    <img src={doc.thumbnail} alt="PDF" className="w-10 h-10" />
+                                  ) : (
+                                    <svg className="w-10 h-10 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                  )}
+                                  <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{doc.name}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveDocument(doc.id)}
+                                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                                  title="Remove document"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
               </section>
 
             </div>
