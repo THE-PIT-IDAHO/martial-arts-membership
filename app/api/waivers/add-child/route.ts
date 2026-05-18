@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canAddMember } from "@/lib/trial";
 import { logAudit } from "@/lib/audit";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 
 async function getNextMemberNumber(): Promise<number> {
   const lastMember = await prisma.member.findFirst({
@@ -18,6 +19,17 @@ async function getNextMemberNumber(): Promise<number> {
 // reflects the updated family.
 export async function POST(req: Request) {
   try {
+    // Public form — throttle so abuse can't flood the members table or
+    // bombard the parent's profile with bogus children.
+    const ip = getClientIp(req);
+    const { limited } = rateLimit(`add-child:${ip}`, 10, 60 * 60 * 1000);
+    if (limited) {
+      return NextResponse.json(
+        { error: "Too many submissions. Please try again later." },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const {
       parentMemberId,

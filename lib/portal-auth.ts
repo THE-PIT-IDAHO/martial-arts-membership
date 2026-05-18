@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { randomBytes, createHmac } from "crypto";
+import { randomBytes, createHmac, createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
@@ -19,6 +19,16 @@ function signToken(token: string): string {
   return createHmac("sha256", getSecret()).update(token).digest("hex");
 }
 
+/**
+ * Hash a token for storage. Auth tokens are high-entropy random bytes, so
+ * a plain SHA-256 (no salt, no bcrypt cost) is sufficient — the purpose is
+ * to ensure a DB leak doesn't yield usable session / magic-link tokens, not
+ * to slow down a password-cracking attack.
+ */
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 // --- Magic Link Tokens ---
 
 export async function generateMagicLinkToken(
@@ -28,8 +38,9 @@ export async function generateMagicLinkToken(
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_MINUTES * 60 * 1000);
 
+  // Only the hash is persisted — the raw token leaves over the email URL.
   await prisma.memberAuthToken.create({
-    data: { token, memberId, email, expiresAt },
+    data: { token: hashToken(token), memberId, email, expiresAt },
   });
 
   return token;
@@ -38,7 +49,9 @@ export async function generateMagicLinkToken(
 export async function validateMagicLinkToken(
   token: string
 ): Promise<{ memberId: string; email: string } | null> {
-  const record = await prisma.memberAuthToken.findUnique({ where: { token } });
+  const record = await prisma.memberAuthToken.findUnique({
+    where: { token: hashToken(token) },
+  });
 
   if (!record) return null;
   if (record.usedAt) return null;
@@ -60,8 +73,9 @@ export async function createMemberSession(memberId: string): Promise<string> {
     Date.now() + SESSION_DURATION_DAYS * 24 * 60 * 60 * 1000
   );
 
+  // Session row stores hash; the raw token is set as the portal_session cookie.
   await prisma.memberSession.create({
-    data: { token, memberId, expiresAt },
+    data: { token: hashToken(token), memberId, expiresAt },
   });
 
   return token;
@@ -70,7 +84,9 @@ export async function createMemberSession(memberId: string): Promise<string> {
 export async function validateMemberSession(
   token: string
 ): Promise<{ memberId: string } | null> {
-  const session = await prisma.memberSession.findUnique({ where: { token } });
+  const session = await prisma.memberSession.findUnique({
+    where: { token: hashToken(token) },
+  });
 
   if (!session) return null;
   if (session.expiresAt < new Date()) {
@@ -83,7 +99,7 @@ export async function validateMemberSession(
 
 export async function destroyMemberSession(token: string): Promise<void> {
   await prisma.memberSession
-    .delete({ where: { token } })
+    .delete({ where: { token: hashToken(token) } })
     .catch(() => {});
 }
 
@@ -144,7 +160,7 @@ export async function generatePasswordResetToken(
   const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_MINUTES * 60 * 1000);
 
   await prisma.memberAuthToken.create({
-    data: { token, memberId, email, expiresAt },
+    data: { token: hashToken(token), memberId, email, expiresAt },
   });
 
   return token;
@@ -153,7 +169,9 @@ export async function generatePasswordResetToken(
 export async function validatePasswordResetToken(
   token: string
 ): Promise<{ memberId: string; email: string } | null> {
-  const record = await prisma.memberAuthToken.findUnique({ where: { token } });
+  const record = await prisma.memberAuthToken.findUnique({
+    where: { token: hashToken(token) },
+  });
 
   if (!record) return null;
   if (record.usedAt) return null;

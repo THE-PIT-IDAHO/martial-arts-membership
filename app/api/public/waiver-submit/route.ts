@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { canAddMember } from "@/lib/trial";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 
 async function getNextMemberNumber(): Promise<number> {
   const lastMember = await prisma.member.findFirst({
@@ -33,6 +34,16 @@ async function savePdfToMember(memberId: string, pdfBase64: string) {
 // Handles both adult and guardian waiver submissions
 export async function POST(req: Request) {
   try {
+    // Public form — throttle hard so spam/abuse can't flood the members table.
+    const ip = getClientIp(req);
+    const { limited } = rateLimit(`waiver-submit:${ip}`, 10, 60 * 60 * 1000);
+    if (limited) {
+      return NextResponse.json(
+        { error: "Too many submissions. Please try again later." },
+        { status: 429 }
+      );
+    }
+
     const clientId = await getClientId(req);
     const body = await req.json();
     const { type = "adult" } = body;

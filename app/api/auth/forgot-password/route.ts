@@ -1,10 +1,23 @@
 import { NextResponse } from "next/server";
+import { randomBytes, createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { sendEmail, getSettings } from "@/lib/email";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 
 // POST /api/auth/forgot-password — send a reset link to admin email
 export async function POST(req: Request) {
   try {
+    // Throttle so an attacker can't burn through generating reset links for
+    // every email address they have or bomb a real user's inbox.
+    const ip = getClientIp(req);
+    const { limited } = rateLimit(`admin-forgot:${ip}`, 5, 15 * 60 * 1000);
+    if (limited) {
+      return NextResponse.json(
+        { error: "Too many reset requests. Please try again later." },
+        { status: 429 }
+      );
+    }
+
     const { email } = await req.json();
 
     if (!email) {
@@ -22,10 +35,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // Create reset token (expires in 1 hour)
-    const resetToken = await prisma.adminResetToken.create({
+    // Create reset token (expires in 1 hour). The DB row stores SHA-256(token);
+    // the plain token leaves over the email URL and is hashed again at verify
+    // time. If the DB leaks, no live reset tokens are usable.
+    const plainToken = randomBytes(32).toString("hex");
+    await prisma.adminResetToken.create({
       data: {
         userId: user.id,
+        token: createHash("sha256").update(plainToken).digest("hex"),
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       },
     });
@@ -33,7 +50,7 @@ export async function POST(req: Request) {
     // Build reset URL
     const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000";
     const protocol = req.headers.get("x-forwarded-proto") || "http";
-    const resetUrl = `${protocol}://${host}/reset-password?token=${resetToken.token}`;
+    const resetUrl = `${protocol}://${host}/reset-password?token=${plainToken}`;
 
     // Send email
     const settings = await getSettings(["gymName"], user.clientId);

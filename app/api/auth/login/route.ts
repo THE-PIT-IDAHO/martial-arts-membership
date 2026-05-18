@@ -13,15 +13,17 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
   try {
-    // Rate limit disabled for now
-    // const ip = getClientIp(request);
-    // const { limited, resetAt } = rateLimit(`admin-login:${ip}`, 10, 15 * 60 * 1000);
-    // if (limited) {
-    //   return NextResponse.json(
-    //     { error: "Too many login attempts. Please try again later." },
-    //     { status: 429 }
-    //   );
-    // }
+    // Rate limit: max 10 attempts per IP per 15 min. Blocks casual brute force
+    // even when bcrypt's slowness already makes large-scale attacks expensive.
+    const ip = getClientIp(request);
+    const { limited, resetAt } = rateLimit(`admin-login:${ip}`, 10, 15 * 60 * 1000);
+    if (limited) {
+      const retrySecs = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
+      return NextResponse.json(
+        { error: `Too many login attempts. Try again in ${Math.ceil(retrySecs / 60)} minute(s).` },
+        { status: 429, headers: { "Retry-After": String(retrySecs) } }
+      );
+    }
 
     // Ensure default admin exists on first-ever login attempt
     const created = await ensureDefaultAdmin();

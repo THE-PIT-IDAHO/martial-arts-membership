@@ -5,9 +5,20 @@ import {
   setSessionCookie,
 } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
   try {
+    // Throttle so magic-link tokens can't be brute-forced.
+    const ip = getClientIp(req);
+    const { limited } = rateLimit(`portal-verify:${ip}`, 20, 15 * 60 * 1000);
+    if (limited) {
+      return NextResponse.json(
+        { error: "Too many attempts. Please try again later." },
+        { status: 429 }
+      );
+    }
+
     const { token } = await req.json();
 
     if (!token || typeof token !== "string") {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateSlug } from "@/lib/tenant";
 import { hashPassword } from "@/lib/admin-auth";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import defaultStyles from "@/lib/default-styles.json";
 
 // GET /api/public/signup?token=xxx — validate a signup token
@@ -38,6 +39,16 @@ export async function GET(req: Request) {
 // POST /api/public/signup — create a gym account using a signup token
 export async function POST(req: Request) {
   try {
+    // Rate-limit gym signup attempts so a single IP can't burn through tokens.
+    const ip = getClientIp(req);
+    const { limited } = rateLimit(`signup:${ip}`, 5, 60 * 60 * 1000);
+    if (limited) {
+      return NextResponse.json(
+        { error: "Too many signup attempts. Please try again later." },
+        { status: 429 }
+      );
+    }
+
     const { token, gymName, adminName, adminEmail, adminPassword } = await req.json();
 
     if (!token || !gymName || !adminEmail || !adminPassword) {
