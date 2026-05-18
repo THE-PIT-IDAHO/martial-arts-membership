@@ -28,6 +28,7 @@ interface RankStyle {
   styleName: string;
   rankName: string;
   beltLayers: BeltLayers | null;
+  beltThumbnail?: string | null;
   nextRankName: string | null;
   classRequirements: ClassRequirement[];
   documents: Array<{ id: string; name: string; url: string }>;
@@ -93,9 +94,12 @@ export default function PortalStylesPage() {
                 </div>
                 <p className="font-semibold text-gray-900 text-lg">{rs.rankName}</p>
 
-                {rs.beltLayers && rs.beltLayers.fabricColor && (
+                {rs.beltLayers && rs.beltLayers.fabricColor ? (
                   <BeltImage layers={rs.beltLayers} />
-                )}
+                ) : rs.beltThumbnail ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={rs.beltThumbnail} alt={`${rs.rankName} belt`} className="mt-2 max-h-16 object-contain" />
+                ) : null}
 
                 {rs.classRequirements.length > 0 && (
                   <div className="space-y-2 mt-1">

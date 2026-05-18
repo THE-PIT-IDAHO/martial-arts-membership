@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
     styleName: string;
     rankName: string;
     beltLayers: Record<string, unknown> | null;
+    beltThumbnail?: string | null;
     nextRankName: string | null;
     classRequirements: Array<{ label: string; attended: number; required: number; met: boolean }>;
     documents: Array<{ id: string; name: string; url: string }>;
@@ -94,7 +95,7 @@ export async function GET(req: NextRequest) {
       where: { name: { equals: enrolled.name, mode: "insensitive" } },
       select: {
         beltConfig: true,
-        ranks: { orderBy: { order: "asc" }, select: { name: true, order: true, pdfDocument: true } },
+        ranks: { orderBy: { order: "asc" }, select: { id: true, name: true, order: true, pdfDocument: true, thumbnail: true } },
       },
     });
 
@@ -219,10 +220,86 @@ export async function GET(req: NextRequest) {
       } catch { /* ignore */ }
     }
 
+    // Fallback path: if the style's beltConfig is missing or broken, derive PDFs
+    // and class requirements straight from the Rank table. This guarantees
+    // documents + progress show even when beltConfig is empty for this style.
+    if (style && (documents.length === 0 || classRequirements.length === 0)) {
+      const sortedRankRows = [...style.ranks].sort((a, b) => a.order - b.order);
+      const currentRankIdx = sortedRankRows.findIndex(
+        (r) => r.name.toLowerCase() === enrolled.rank!.toLowerCase(),
+      );
+      if (currentRankIdx >= 0) {
+        const curRank = sortedRankRows[currentRankIdx];
+
+        if (documents.length === 0) {
+          const seen = new Set<string>();
+          for (const r of sortedRankRows) {
+            if (r.order > curRank.order) continue;
+            if (r.pdfDocument && !seen.has(r.name)) {
+              seen.add(r.name);
+              const docId = `rank-pdf-${r.name}`;
+              documents.push({
+                id: docId,
+                name: `${r.name} Curriculum`,
+                url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf`,
+              });
+            }
+          }
+        }
+
+        if (classRequirements.length === 0 && currentRankIdx < sortedRankRows.length - 1) {
+          const nextRank = sortedRankRows[currentRankIdx + 1];
+          if (!nextRankName) nextRankName = nextRank.name;
+          const rankModel = await prisma.rank.findFirst({
+            where: { id: nextRank.id || undefined, name: nextRank.name },
+            select: { classRequirement: true },
+          }).catch(() => null);
+          const requirement = rankModel?.classRequirement;
+          if (requirement) {
+            const styleAttendances = (member.attendances || []).filter((att) => {
+              if (enrolled.attendanceResetDate) {
+                const attDate = att.attendanceDate
+                  ? new Date(att.attendanceDate).toISOString().split("T")[0]
+                  : att.checkedInAt
+                    ? new Date(att.checkedInAt).toISOString().split("T")[0]
+                    : null;
+                if (attDate && attDate < enrolled.attendanceResetDate) return false;
+              }
+              if (att.source === "IMPORTED") return true;
+              if (!att.classSession) return false;
+              if (att.classSession.styleNames) {
+                try {
+                  const names: string[] = JSON.parse(att.classSession.styleNames);
+                  return names.some((n) => n.toLowerCase() === enrolled.name.toLowerCase());
+                } catch { /* ignore */ }
+              }
+              return att.classSession.styleName?.toLowerCase() === enrolled.name.toLowerCase();
+            });
+            classRequirements = [{
+              label: "Classes",
+              attended: styleAttendances.length,
+              required: requirement,
+              met: styleAttendances.length >= requirement,
+            }];
+          }
+        }
+      }
+    }
+
+    // Belt thumbnail fallback: if beltLayers don't include fabricColor (so the
+    // portal can't render a colored belt), expose the current rank's stored
+    // thumbnail image so the portal can show that instead.
+    let beltThumbnail: string | null = null;
+    if (style) {
+      const cur = style.ranks.find((rr) => rr.name.toLowerCase() === enrolled.rank!.toLowerCase());
+      if (cur?.thumbnail) beltThumbnail = cur.thumbnail;
+    }
+
     rankInfo.push({
       styleName: enrolled.name,
       rankName: enrolled.rank,
       beltLayers,
+      beltThumbnail,
       nextRankName,
       classRequirements,
       documents,
