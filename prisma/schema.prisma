@@ -311,6 +311,7 @@ model ClassSession {
   styleName         String?
   minRankId         String?
   minRankName       String?
+  minRankIds        String?       // JSON array of rank IDs aligned with styleIds, for per-style min ranks
   isRecurring       Boolean      @default(false)
   frequencyNumber   Int?
   frequencyUnit     String?

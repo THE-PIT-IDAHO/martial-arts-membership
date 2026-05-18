@@ -116,6 +116,7 @@ type ClassSession = {
   styleName?: string | null;
   minRankId?: string | null;
   minRankName?: string | null;
+  minRankIds?: string | null; // JSON array aligned with styleIds for per-style mins
   isRecurring?: boolean;
   frequencyNumber?: number | null;
   frequencyUnit?: string | null;
@@ -418,10 +419,18 @@ export default function ClassesPage() {
     setSelectedStyleIds(styleIds.length > 0 ? styleIds : [""]);
 
     setMinRankId(classSession.minRankId || "");
-    // The schema stores a single minRankId per class. We mirror it across
-    // selected styles so the UI matches the data model. Adding per-style
-    // minimums would require a new minRankIds JSON column on ClassSession.
-    const initialRankIds = styleIds.map(() => classSession.minRankId || "");
+    // Per-style min ranks are stored in minRankIds as a JSON array aligned with
+    // styleIds. Falls back to the legacy single minRankId mirrored across styles.
+    let initialRankIds: string[] = [];
+    if (classSession.minRankIds) {
+      try {
+        const parsed = JSON.parse(classSession.minRankIds);
+        if (Array.isArray(parsed)) initialRankIds = parsed.map((v) => String(v ?? ""));
+      } catch { /* ignore */ }
+    }
+    if (initialRankIds.length !== styleIds.length) {
+      initialRankIds = styleIds.map(() => classSession.minRankId || "");
+    }
     setMinRankIds(initialRankIds.length > 0 ? initialRankIds : [""]);
 
     // Set recurring schedule fields
@@ -630,6 +639,15 @@ export default function ClassesPage() {
                 styleName: styleName,
                 minRankId: minRankId || null,
                 minRankName: minRankName,
+                minRankIds: (() => {
+                  const active = selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE");
+                  if (active.length === 0) return null;
+                  const aligned = active.map(id => {
+                    const i = selectedStyleIds.indexOf(id);
+                    return minRankIds[i] || "";
+                  });
+                  return aligned.some(v => v) ? JSON.stringify(aligned) : null;
+                })(),
                 startsAt: startsAt.toISOString(),
                 endsAt: endsAt.toISOString(),
                 isRecurring: isRecurring,
@@ -703,6 +721,15 @@ export default function ClassesPage() {
                 styleName: styleName,
                 minRankId: minRankId || null,
                 minRankName: minRankName,
+                minRankIds: (() => {
+                  const active = selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE");
+                  if (active.length === 0) return null;
+                  const aligned = active.map(id => {
+                    const i = selectedStyleIds.indexOf(id);
+                    return minRankIds[i] || "";
+                  });
+                  return aligned.some(v => v) ? JSON.stringify(aligned) : null;
+                })(),
                 startsAt: startsAt.toISOString(),
                 endsAt: endsAt.toISOString(),
                 isRecurring: isRecurring,
@@ -1426,40 +1453,40 @@ export default function ClassesPage() {
                   placeholder="All Styles"
                 />
 
-                {/* Minimum Rank — single value applied across selected styles.
-                    Per-style minimums need a schema field (minRankIds JSON column)
-                    before they can be persisted; today the data model only carries
-                    one minRankId per class, so we show a single rank dropdown. */}
+                {/* Minimum Rank per selected style. minRankIds is stored as a
+                    JSON array aligned to styleIds; minRankId mirrors index 0
+                    for backward compat. */}
                 {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").length > 0 && (
                   <div className="mt-2 space-y-1.5">
                     <label className="block text-[10px] font-medium text-gray-500 uppercase tracking-wider">
                       Minimum Rank Required
                     </label>
-                    {(() => {
-                      const activeStyleIds = selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE");
-                      const firstStyle = styles.find(s => s.id === activeStyleIds[0]);
-                      if (!firstStyle) return null;
+                    {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").map((styleId) => {
+                      const style = styles.find(s => s.id === styleId);
+                      if (!style) return null;
+                      const idx = selectedStyleIds.indexOf(styleId);
                       return (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-24 truncate">
-                            {activeStyleIds.length > 1 ? "All styles" : firstStyle.name}
-                          </span>
+                        <div key={styleId} className="flex items-center gap-2">
+                          <span className="text-xs text-gray-600 w-24 truncate">{style.name}</span>
                           <select
-                            value={minRankId}
+                            value={minRankIds[idx] || ""}
                             onChange={(e) => {
-                              setMinRankId(e.target.value);
-                              setMinRankIds(activeStyleIds.map(() => e.target.value));
+                              const next = [...minRankIds];
+                              while (next.length < selectedStyleIds.length) next.push("");
+                              next[idx] = e.target.value;
+                              setMinRankIds(next);
+                              if (idx === 0) setMinRankId(e.target.value);
                             }}
                             className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                           >
                             <option value="">No Rank Requirement</option>
-                            {firstStyle.ranks?.map(r => (
+                            {style.ranks?.map(r => (
                               <option key={r.id} value={r.id}>{r.name}</option>
                             ))}
                           </select>
                         </div>
                       );
-                    })()}
+                    })}
                   </div>
                 )}
               </div>

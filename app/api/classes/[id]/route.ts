@@ -71,6 +71,7 @@ export async function PATCH(req: Request, { params }: Params) {
       styleName,
       minRankId,
       minRankName,
+      minRankIds,
       programId,
       color,
       excludedDates,
@@ -111,6 +112,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (styleName !== undefined) updateData.styleName = styleName;
     if (minRankId !== undefined) updateData.minRankId = minRankId;
     if (minRankName !== undefined) updateData.minRankName = minRankName;
+    if (minRankIds !== undefined) updateData.minRankIds = minRankIds;
     if (programId !== undefined) updateData.programId = programId;
     if (color !== undefined) updateData.color = color;
     if (excludedDates !== undefined) updateData.excludedDates = excludedDates;

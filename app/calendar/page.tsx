@@ -22,6 +22,7 @@ interface ClassSession {
   styleName: string | null;
   minRankId: string | null;
   minRankName: string | null;
+  minRankIds: string | null;
   isRecurring: boolean;
   frequencyNumber: number | null;
   frequencyUnit: string | null;
@@ -1062,41 +1063,55 @@ export default function CalendarPage() {
       }
     }
 
-    // Check rank requirement (applies if class has minRankId set)
-    if (selectedClass.minRankId && selectedClass.minRankName) {
+    // Check rank requirement. Per-style mins come from minRankIds (JSON array
+    // aligned with classStyleIds); falls back to the legacy minRankId/Name for
+    // backward compat with classes saved before that field existed.
+    let perStyleMinRankIds: string[] = [];
+    if (selectedClass.minRankIds) {
+      try {
+        const parsed = JSON.parse(selectedClass.minRankIds);
+        if (Array.isArray(parsed)) perStyleMinRankIds = parsed.map((v) => String(v ?? ""));
+      } catch { /* ignore */ }
+    }
+    const hasAnyRankReq = perStyleMinRankIds.some((v) => v) ||
+      !!(selectedClass.minRankId && selectedClass.minRankName);
+
+    if (hasAnyRankReq) {
       if (!hasMatchingStyle) {
-        // No style match, so can't check rank - just show rank requirement
-        missingRequirements.push(`Missing minimum rank requirement: ${selectedClass.minRankName}`);
+        const label = selectedClass.minRankName || "configured rank";
+        missingRequirements.push(`Missing minimum rank requirement: ${label}`);
       } else if (matchedMemberStyle) {
-        // Has the style, check the rank
-        const requiredStyleId = classStyleIds.find(id => {
+        const matchedClassIdx = classStyleIds.findIndex(id => {
           const s = styles.find(st => st.id === id);
           return s?.name.toLowerCase() === matchedStyleName.toLowerCase();
         });
-        const requiredStyle = styles.find(s => s.id === requiredStyleId);
+        const requiredStyle = styles.find(s => s.id === classStyleIds[matchedClassIdx]);
 
-        if (requiredStyle?.beltConfig) {
+        // Pick the rank ID for this specific style. Per-style first, else the
+        // legacy single minRankId (only applies if it actually belongs to this
+        // style's beltConfig — otherwise skip the check rather than mismatch).
+        const minRankIdForStyle = perStyleMinRankIds[matchedClassIdx] || selectedClass.minRankId || "";
+
+        if (requiredStyle?.beltConfig && minRankIdForStyle) {
           try {
             const beltConfig = JSON.parse(requiredStyle.beltConfig);
             if (beltConfig.ranks && Array.isArray(beltConfig.ranks)) {
               const minRank = beltConfig.ranks.find((r: { id: string; name: string }) =>
-                r.id === selectedClass.minRankId || r.name === selectedClass.minRankName
+                r.id === minRankIdForStyle
               );
 
               if (minRank) {
-                // If member has no rank set
                 if (!matchedMemberStyle.rank || matchedMemberStyle.rank.trim() === "") {
-                  missingRequirements.push(`No rank assigned (minimum required: ${minRank.name})`);
+                  missingRequirements.push(`No rank assigned in ${requiredStyle.name} (minimum required: ${minRank.name})`);
                 } else {
                   const memberRank = beltConfig.ranks.find((r: { name: string }) =>
                     r.name === matchedMemberStyle!.rank
                   );
 
                   if (!memberRank) {
-                    // Member's rank doesn't match any known rank in the system
-                    missingRequirements.push(`Rank "${matchedMemberStyle.rank}" is not recognized (minimum required: ${minRank.name})`);
+                    missingRequirements.push(`Rank "${matchedMemberStyle.rank}" is not recognized in ${requiredStyle.name} (minimum required: ${minRank.name})`);
                   } else if (memberRank.order < minRank.order) {
-                    missingRequirements.push(`Current rank: ${matchedMemberStyle.rank} (minimum required: ${minRank.name})`);
+                    missingRequirements.push(`Current rank in ${requiredStyle.name}: ${matchedMemberStyle.rank} (minimum required: ${minRank.name})`);
                   }
                 }
               }
@@ -1489,7 +1504,17 @@ export default function CalendarPage() {
     setSelectedStyleIds(styleIds.length > 0 ? styleIds : [""]);
 
     setMinRankId(selectedClass.minRankId || "");
-    const initialRankIds = styleIds.map(() => selectedClass.minRankId || "");
+    // Per-style min ranks from minRankIds JSON; fall back to legacy single value.
+    let initialRankIds: string[] = [];
+    if (selectedClass.minRankIds) {
+      try {
+        const parsed = JSON.parse(selectedClass.minRankIds);
+        if (Array.isArray(parsed)) initialRankIds = parsed.map((v) => String(v ?? ""));
+      } catch { /* ignore */ }
+    }
+    if (initialRankIds.length !== styleIds.length) {
+      initialRankIds = styleIds.map(() => selectedClass.minRankId || "");
+    }
     setMinRankIds(initialRankIds.length > 0 ? initialRankIds : [""]);
 
     setIsRecurring(selectedClass.isRecurring || false);
