@@ -429,10 +429,21 @@ export async function POST(req: Request) {
           for (const s of ms) {
             if (s.active === false) continue;
             const sc = stylesWithBelts.find((st) => st.name.toLowerCase() === (s.name || "").toLowerCase());
-            if (!sc || sc.ranks.length === 0) continue;
-            const ci = sc.ranks.findIndex((r) => r.name === s.rank);
-            if (ci < 0 || ci >= sc.ranks.length - 1) continue;
-            const nr = sc.ranks[ci + 1];
+            if (!sc) continue;
+            // Prefer beltConfig.ranks (granular progression with stripes etc.)
+            let ranks: Array<{ name: string; order?: number; classRequirement?: number | null }> = sc.ranks;
+            if (sc.beltConfig) {
+              try {
+                const bc = typeof sc.beltConfig === "string" ? JSON.parse(sc.beltConfig) : sc.beltConfig;
+                if (Array.isArray(bc.ranks) && bc.ranks.length > 0) {
+                  ranks = [...bc.ranks].sort((a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0));
+                }
+              } catch {}
+            }
+            if (ranks.length === 0) continue;
+            const ci = ranks.findIndex((r) => r.name.toLowerCase() === (s.rank || "").toLowerCase());
+            if (ci < 0 || ci >= ranks.length - 1) continue;
+            const nr = ranks[ci + 1];
             const sa = m.attendances.filter((a) => {
               if (s.attendanceResetDate) {
                 const ad = a.attendanceDate ? new Date(a.attendanceDate).toISOString().split("T")[0] : a.checkedInAt ? new Date(a.checkedInAt).toISOString().split("T")[0] : null;
@@ -463,7 +474,7 @@ export async function POST(req: Request) {
             // and the member has met all of them. Empty requirements list
             // means undefined criteria, not "automatically eligible".
             if (reqs.length > 0 && reqs.every((r) => r.count >= r.required)) {
-              eligible.push({ memberName: `${m.firstName} ${m.lastName}`, styleName: s.name, currentRank: sc.ranks[ci].name, nextRank: nr.name });
+              eligible.push({ memberName: `${m.firstName} ${m.lastName}`, styleName: s.name, currentRank: ranks[ci].name, nextRank: nr.name });
             }
           }
         }

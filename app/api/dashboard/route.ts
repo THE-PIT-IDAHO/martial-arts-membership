@@ -488,10 +488,27 @@ export async function GET(req: Request) {
             const styleConfig = stylesWithBelts.find(
               (st) => st.name.toLowerCase() === (ms.name || "").toLowerCase()
             );
-            if (!styleConfig || styleConfig.ranks.length === 0) continue;
+            if (!styleConfig) continue;
 
-            const sortedRanks = styleConfig.ranks; // already sorted by order asc
-            const currentIdx = sortedRanks.findIndex((r) => r.name === ms.rank);
+            // Prefer beltConfig.ranks as the source of truth — that's where the
+            // full granular progression lives (e.g. "White Belt - 1 stripe").
+            // The Prisma Rank table often only carries the main belts.
+            let sortedRanks: Array<{ name: string; order?: number; classRequirement?: number | null }> = styleConfig.ranks;
+            if (styleConfig.beltConfig) {
+              try {
+                const bc = typeof styleConfig.beltConfig === "string"
+                  ? JSON.parse(styleConfig.beltConfig)
+                  : styleConfig.beltConfig;
+                if (Array.isArray(bc.ranks) && bc.ranks.length > 0) {
+                  sortedRanks = [...bc.ranks].sort(
+                    (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0)
+                  );
+                }
+              } catch { /* ignore */ }
+            }
+            if (sortedRanks.length === 0) continue;
+
+            const currentIdx = sortedRanks.findIndex((r) => r.name.toLowerCase() === (ms.rank || "").toLowerCase());
             if (currentIdx < 0 || currentIdx >= sortedRanks.length - 1) continue;
 
             const nextRank = sortedRanks[currentIdx + 1];
