@@ -145,16 +145,22 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
   const [editPopup, setEditPopup] = useState<{ itemId: string; value: string } | null>(null);
   const popupEditorRef = useRef<HTMLDivElement>(null);
 
-  // Native keydown handler on the description popup editor. We attach it
-  // imperatively (not as React onKeyDown) so preventDefault reliably stops the
-  // browser's default Tab-to-next-focusable behavior on contentEditable.
+  // Capture-phase keydown handler at document level. Attaching on the element
+  // alone did not intercept Tab in time (focus jumped to the Save button).
+  // Capture phase + document target guarantees this runs before any default
+  // focus behavior or modal focus trap.
   useEffect(() => {
-    const el = popupEditorRef.current;
-    if (!editPopup || !el) return;
+    if (!editPopup) return;
     function handleKeyDown(e: KeyboardEvent) {
+      const el = popupEditorRef.current;
+      if (!el) return;
+      const target = e.target as Node | null;
+      if (!target || (target !== el && !el.contains(target))) return;
+
       if (e.key === "Tab") {
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         const TAB_SIZE = 4;
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0) return;
@@ -200,8 +206,8 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
         document.execCommand(e.key === "b" ? "bold" : e.key === "i" ? "italic" : "underline");
       }
     }
-    el.addEventListener("keydown", handleKeyDown);
-    return () => el.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [editPopup]);
   const [copying, setCopying] = useState(false);
   const [showCopyMenu, setShowCopyMenu] = useState(false);
