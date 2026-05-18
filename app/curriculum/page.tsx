@@ -432,7 +432,47 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
             <button type="button" onMouseDown={e => { e.preventDefault(); document.execCommand("underline"); }} className="rounded px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-100">U</button>
           </div>
           <div className="flex-1 overflow-y-auto p-5">
-            <div id="cat-popup-editor" contentEditable suppressContentEditableWarning dangerouslySetInnerHTML={{ __html: editPopup.value.replace(/\n/g, "<br>") }} className="w-full min-h-[256px] rounded-md border border-gray-300 px-3 py-2 text-sm whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary" />
+            <div
+              id="cat-popup-editor"
+              contentEditable
+              suppressContentEditableWarning
+              dangerouslySetInnerHTML={{ __html: editPopup.value.replace(/\n/g, "<br>") }}
+              onKeyDown={e => {
+                if (e.key === "Tab") {
+                  e.preventDefault();
+                  // Insert 4 non-breaking spaces as an indent. Shift+Tab removes
+                  // one indent unit from the start of the current line if present.
+                  if (e.shiftKey) {
+                    const sel = window.getSelection();
+                    if (sel && sel.rangeCount > 0) {
+                      const range = sel.getRangeAt(0);
+                      const node = range.startContainer;
+                      if (node.nodeType === Node.TEXT_NODE) {
+                        const text = node.textContent || "";
+                        const lineStart = text.lastIndexOf("\n", Math.max(0, range.startOffset - 1)) + 1;
+                        const head = text.slice(lineStart, lineStart + 4);
+                        if (head === "    " || head === "    ") {
+                          node.textContent = text.slice(0, lineStart) + text.slice(lineStart + 4);
+                          const newOffset = Math.max(lineStart, range.startOffset - 4);
+                          const newRange = document.createRange();
+                          newRange.setStart(node, newOffset);
+                          newRange.collapse(true);
+                          sel.removeAllRanges();
+                          sel.addRange(newRange);
+                        }
+                      }
+                    }
+                  } else {
+                    document.execCommand("insertHTML", false, "&nbsp;&nbsp;&nbsp;&nbsp;");
+                  }
+                }
+                if ((e.key === "b" || e.key === "i" || e.key === "u") && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  document.execCommand(e.key === "b" ? "bold" : e.key === "i" ? "italic" : "underline");
+                }
+              }}
+              className="w-full min-h-[256px] rounded-md border border-gray-300 px-3 py-2 text-sm whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
+            />
           </div>
           <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
             <button onClick={async () => { const el = document.getElementById("cat-popup-editor"); if (el) await updateField(editPopup.itemId, "description", el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0")); setEditPopup(null); await onReload(); }} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Save</button>

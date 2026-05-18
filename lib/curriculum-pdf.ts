@@ -1,6 +1,94 @@
 import jsPDF from "jspdf";
 import { parseHtmlForPdf } from "@/components/rich-text-input";
 
+// Split a flat segment list into per-line segment arrays (split on "\n" inside segment text)
+function segmentsByLine(segments: Array<{ text: string; bold: boolean }>): Array<Array<{ text: string; bold: boolean }>> {
+  const lines: Array<Array<{ text: string; bold: boolean }>> = [[]];
+  for (const seg of segments) {
+    const parts = seg.text.split("\n");
+    for (let i = 0; i < parts.length; i++) {
+      if (i > 0) lines.push([]);
+      if (parts[i].length > 0) lines[lines.length - 1].push({ text: parts[i], bold: seg.bold });
+    }
+  }
+  // Trim trailing empty lines
+  while (lines.length > 0 && lines[lines.length - 1].length === 0) lines.pop();
+  return lines;
+}
+
+// Measure how many visual lines a rich line will occupy after word-wrapping to `width`.
+function measureRichLineRows(
+  pdf: jsPDF,
+  lineSegments: Array<{ text: string; bold: boolean }>,
+  width: number,
+): number {
+  if (lineSegments.length === 0) return 1;
+  let rows = 1;
+  let curW = 0;
+  const spaceW = (bold: boolean): number => {
+    pdf.setFont("helvetica", bold ? "bold" : "normal");
+    return pdf.getTextWidth(" ");
+  };
+  for (const seg of lineSegments) {
+    pdf.setFont("helvetica", seg.bold ? "bold" : "normal");
+    const tokens = seg.text.split(/(\s+)/).filter((t) => t.length > 0);
+    for (const tok of tokens) {
+      if (/^\s+$/.test(tok)) {
+        const sw = spaceW(seg.bold) * tok.length;
+        if (curW + sw <= width) curW += sw;
+        continue;
+      }
+      const w = pdf.getTextWidth(tok);
+      if (curW + w > width && curW > 0) {
+        rows += 1;
+        curW = w;
+      } else {
+        curW += w;
+      }
+    }
+  }
+  return rows;
+}
+
+// Render a rich line at (x, y) with word-wrap to `width`. Each segment renders with its
+// own font weight. Returns the y position AFTER the line (caller adds lineHeight typically).
+function renderRichLine(
+  pdf: jsPDF,
+  x: number,
+  y: number,
+  width: number,
+  lineHeight: number,
+  lineSegments: Array<{ text: string; bold: boolean }>,
+): number {
+  if (lineSegments.length === 0) return y + lineHeight;
+  let curX = x;
+  let curY = y;
+  let lineHasContent = false;
+  for (const seg of lineSegments) {
+    pdf.setFont("helvetica", seg.bold ? "bold" : "normal");
+    const tokens = seg.text.split(/(\s+)/).filter((t) => t.length > 0);
+    for (const tok of tokens) {
+      const w = pdf.getTextWidth(tok);
+      if (/^\s+$/.test(tok)) {
+        if (curX + w <= x + width) {
+          curX += w;
+          lineHasContent = true;
+        }
+        continue;
+      }
+      if (curX + w > x + width && lineHasContent) {
+        curY += lineHeight;
+        curX = x;
+        lineHasContent = false;
+      }
+      pdf.text(tok, curX, curY);
+      curX += w;
+      lineHasContent = true;
+    }
+  }
+  return curY + lineHeight;
+}
+
 export type PdfRankTestItem = {
   id: string;
   name: string;
@@ -238,28 +326,10 @@ export function generateCurriculumPdf(
         }
         if (item.desc) {
           pdf.setFontSize(9);
-          const segments = parseHtmlForPdf(item.desc);
-          let fullDescText = "";
-          const boldRanges: Array<{ start: number; end: number }> = [];
-          let pos = 0;
-          for (const seg of segments) {
-            if (seg.bold) boldRanges.push({ start: pos, end: pos + seg.text.length });
-            fullDescText += seg.text;
-            pos += seg.text.length;
-          }
-          const descLinesRaw2 = fullDescText.split("\n");
-          while (descLinesRaw2.length > 0 && !descLinesRaw2[descLinesRaw2.length - 1].trim()) descLinesRaw2.pop();
-          const descLines = descLinesRaw2;
-          let charPos = 0;
-          for (const line of descLines) {
-            const lineStart = charPos;
-            const lineEnd = charPos + line.length;
-            charPos = lineEnd + 1;
-            if (!line.trim()) { measY += 3.5; continue; }
-            const isBold = boldRanges.some(r => r.start < lineEnd && r.end > lineStart);
-            pdf.setFont("helvetica", isBold ? "bold" : "normal");
-            const wrapped = pdf.splitTextToSize(line, cw - 6);
-            measY += wrapped.length * 3.5;
+          const lineSegs = segmentsByLine(parseHtmlForPdf(item.desc));
+          for (const segs of lineSegs) {
+            const rows = measureRichLineRows(pdf, segs, cw - 6);
+            measY += rows * 3.5;
           }
         }
         if (item.videoUrl) measY += 3.5;
@@ -289,28 +359,10 @@ export function generateCurriculumPdf(
         }
         if (item.desc) {
           pdf.setFontSize(9);
-          const segments = parseHtmlForPdf(item.desc);
-          let fullDescText = "";
-          const boldRanges2: Array<{ start: number; end: number }> = [];
-          let pos2 = 0;
-          for (const seg of segments) {
-            if (seg.bold) boldRanges2.push({ start: pos2, end: pos2 + seg.text.length });
-            fullDescText += seg.text;
-            pos2 += seg.text.length;
-          }
-          const descLinesRaw = fullDescText.split("\n");
-          while (descLinesRaw.length > 0 && !descLinesRaw[descLinesRaw.length - 1].trim()) descLinesRaw.pop();
-          const descLines = descLinesRaw;
-          let charPos2 = 0;
-          for (const line of descLines) {
-            const lineStart = charPos2;
-            const lineEnd = charPos2 + line.length;
-            charPos2 = lineEnd + 1;
-            if (!line.trim()) { itemH += 3.5; continue; }
-            const isBold = boldRanges2.some(r => r.start < lineEnd && r.end > lineStart);
-            pdf.setFont("helvetica", isBold ? "bold" : "normal");
-            const wrapped = pdf.splitTextToSize(line, cw - 6);
-            itemH += wrapped.length * 3.5;
+          const lineSegs = segmentsByLine(parseHtmlForPdf(item.desc));
+          for (const segs of lineSegs) {
+            const rows = measureRichLineRows(pdf, segs, cw - 6);
+            itemH += rows * 3.5;
           }
         }
         if (item.videoUrl) itemH += 3.5;
@@ -331,30 +383,11 @@ export function generateCurriculumPdf(
         }
 
         if (item.desc) {
-          const segments = parseHtmlForPdf(item.desc);
-          let fullDescText = "";
-          const boldRanges3: Array<{ start: number; end: number }> = [];
-          let pos3 = 0;
-          for (const seg of segments) {
-            if (seg.bold) boldRanges3.push({ start: pos3, end: pos3 + seg.text.length });
-            fullDescText += seg.text;
-            pos3 += seg.text.length;
-          }
-          const descLines = fullDescText.split("\n");
-          let charPos3 = 0;
-          for (const textLine of descLines) {
-            const lineStart = charPos3;
-            const lineEnd = charPos3 + textLine.length;
-            charPos3 = lineEnd + 1;
-            if (!textLine.trim()) { y += 3.5; continue; }
-            const isBold = boldRanges3.some(r => r.start < lineEnd && r.end > lineStart);
-            pdf.setFont("helvetica", isBold ? "bold" : "normal");
-            pdf.setFontSize(9);
-            const wrapped = pdf.splitTextToSize(textLine, cw - 6);
-            for (const wl of wrapped) {
-              pdf.text(wl, margin + 3, y);
-              y += 3.5;
-            }
+          pdf.setFontSize(9);
+          const lineSegs = segmentsByLine(parseHtmlForPdf(item.desc));
+          for (const segs of lineSegs) {
+            // renderRichLine returns the y AFTER the last visual row of this line
+            y = renderRichLine(pdf, margin + 3, y, cw - 6, 3.5, segs);
           }
         }
 
