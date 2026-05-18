@@ -511,9 +511,13 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
         setEditPopup(null);
         await onReload();
       }}>
-        <div className="w-full max-w-lg rounded-lg bg-white shadow-xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div
+          className="rounded-lg bg-white shadow-xl flex flex-col overflow-hidden"
+          style={{ width: "min(640px, 95vw)", height: "min(560px, 85vh)", minWidth: 320, minHeight: 280, maxWidth: "95vw", maxHeight: "90vh", resize: "both" }}
+          onClick={e => e.stopPropagation()}
+        >
           <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-            <h2 className="text-sm font-bold text-gray-900">Edit Description</h2>
+            <h2 className="text-sm font-bold text-gray-900">Edit Description <span className="text-gray-400 font-normal text-[10px]">(drag corner to resize)</span></h2>
             <button tabIndex={-1} onClick={async () => { await updateField(editPopup.itemId, "description", editPopup.value); setEditPopup(null); await onReload(); }} className="text-gray-400 hover:text-gray-600">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
@@ -523,14 +527,15 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
             <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("italic"); }} className="rounded px-2 py-1 text-xs italic text-gray-700 hover:bg-gray-100">I</button>
             <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("underline"); }} className="rounded px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-100">U</button>
           </div>
-          <div className="flex-1 overflow-y-auto p-5">
+          <div className="flex-1 overflow-y-auto p-5 min-h-0">
              <div
                ref={popupEditorRef}
                id="cat-popup-editor"
                contentEditable
                suppressContentEditableWarning
                dangerouslySetInnerHTML={{ __html: editPopup.value.replace(/\n/g, "<br>") }}
-               className="w-full min-h-[256px] rounded-md border border-gray-300 px-3 py-2 text-sm whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
+               style={{ fontFamily: "Helvetica, Arial, sans-serif", fontSize: "12px", lineHeight: 1.45 }}
+               className="w-full h-full min-h-[200px] rounded-md border border-gray-300 px-3 py-2 whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
              />
           </div>
           <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
@@ -2100,9 +2105,13 @@ export default function CurriculumV2Page() {
           updateRow(popupCell.rowIdx, popupCell.field, popupCell.value);
           setPopupCell(null);
         }}>
-          <div className="w-full max-w-lg rounded-lg bg-white shadow-xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div
+            className="rounded-lg bg-white shadow-xl flex flex-col overflow-hidden"
+            style={{ width: "min(640px, 95vw)", height: "min(560px, 85vh)", minWidth: 320, minHeight: 280, maxWidth: "95vw", maxHeight: "90vh", resize: "both" }}
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-              <h2 className="text-sm font-bold text-gray-900">Edit Content</h2>
+              <h2 className="text-sm font-bold text-gray-900">Edit Content <span className="text-gray-400 font-normal text-[10px]">(drag corner to resize)</span></h2>
               <button
                 tabIndex={-1}
                 onClick={() => {
@@ -2123,14 +2132,15 @@ export default function CurriculumV2Page() {
               <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("italic"); }} className="rounded px-2 py-1 text-xs italic text-gray-700 hover:bg-gray-100" title="Italic">I</button>
               <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("underline"); }} className="rounded px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-100" title="Underline">U</button>
             </div>
-            <div className="flex-1 overflow-y-auto p-5">
+            <div className="flex-1 overflow-y-auto p-5 min-h-0">
               <div
                 ref={popupCellEditorRef}
                 id="popup-editor"
                 contentEditable
                 suppressContentEditableWarning
                 dangerouslySetInnerHTML={{ __html: popupCell.value.replace(/\n/g, "<br>") }}
-                className="w-full min-h-[256px] rounded-md border border-gray-300 px-3 py-2 text-sm whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
+                style={{ fontFamily: "Helvetica, Arial, sans-serif", fontSize: "12px", lineHeight: 1.45 }}
+                className="w-full h-full min-h-[200px] rounded-md border border-gray-300 px-3 py-2 whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
             <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
