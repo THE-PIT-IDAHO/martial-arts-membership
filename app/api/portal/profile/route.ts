@@ -66,6 +66,7 @@ export async function GET(req: NextRequest) {
     nextRankName: string | null;
     classRequirements: Array<{ label: string; attended: number; required: number; met: boolean }>;
     documents: Array<{ id: string; name: string; url: string }>;
+    _debug?: Record<string, unknown>;
   }> = [];
 
   // Parse stylesNotes to get enrolled styles and ranks
@@ -309,6 +310,17 @@ export async function GET(req: NextRequest) {
       nextRankName,
       classRequirements,
       documents,
+      _debug: {
+        enrolledName: enrolled.name,
+        enrolledRank: enrolled.rank,
+        styleFound: !!style,
+        beltConfigPresent: !!style?.beltConfig,
+        rankRowsCount: style?.ranks?.length || 0,
+        rankRows: style?.ranks?.map(r => ({ name: r.name, order: r.order, hasPdf: !!r.pdfDocument, hasThumbnail: !!r.thumbnail })) || [],
+        beltLayersHasColor: !!(beltLayers && (beltLayers as Record<string, unknown>).fabricColor),
+        documentsCount: documents.length,
+        classReqCount: classRequirements.length,
+      },
     });
   }
 
