@@ -84,6 +84,7 @@ type ReportDataFields = {
   showSalesByCategory: boolean;
   showRefunds: boolean;
   showOutstandingBalance: boolean;
+  showRevenueTrend: boolean;
 
   // Classes & Programs
   showClassSchedule: boolean;
@@ -162,6 +163,7 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showSalesByCategory: false,
   showRefunds: false,
   showOutstandingBalance: false,
+  showRevenueTrend: false,
   showClassSchedule: false,
   showClassAttendance: false,
   showPopularClasses: false,
@@ -307,6 +309,7 @@ const STATISTICS_FIELDS = [
       { key: "showSalesByCategory", label: "Sales by Category" },
       { key: "showRefunds", label: "Refunds" },
       { key: "showOutstandingBalance", label: "Outstanding Balances" },
+      { key: "showRevenueTrend", label: "Revenue Trend Chart" },
     ],
   },
   {
@@ -2249,7 +2252,10 @@ export default function ReportsPage() {
                                         case "membershipPlan":
                                           return m.membershipPlanName || "—";
                                         case "monthlyPayment":
-                                          return m.monthlyPaymentCents ? `$${(m.monthlyPaymentCents / 100).toFixed(2)}` : "—";
+                                          // Always render a dollar amount when the column is enabled
+                                          // (was rendering "—" for 0, which made it look like the data
+                                          // was missing instead of "no active priced membership").
+                                          return `$${((m.monthlyPaymentCents || 0) / 100).toFixed(2)}`;
                                         case "autoRenew":
                                           return m.autoRenew === true ? "Yes" : m.autoRenew === false ? "No" : "—";
                                         case "expirationDate":
@@ -2484,8 +2490,8 @@ export default function ReportsPage() {
                 </div>
               )}
 
-              {/* Revenue Trend Chart */}
-              {revenueData && (Object.keys(revenueData.monthlyPosRevenue).length > 0 || Object.keys(revenueData.monthlyMembershipRevenue).length > 0) && (
+              {/* Revenue Trend Chart — only shown when explicitly toggled on */}
+              {activeReport.fields.showRevenueTrend && revenueData && (Object.keys(revenueData.monthlyPosRevenue).length > 0 || Object.keys(revenueData.monthlyMembershipRevenue).length > 0) && (
                 <div className="mb-6">
                   <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Revenue Trend</h4>
                   <div className="rounded-lg border border-gray-100 p-3 bg-white">
