@@ -11,7 +11,7 @@ import {
 
 type ReportDateRange = "today" | "week" | "month" | "quarter" | "year" | "custom";
 
-type ReportType = "membership" | "attendance" | "revenue" | "retention" | "custom";
+type ReportType = "membership" | "attendance" | "revenue" | "retention" | "recurring" | "custom";
 
 // All possible data fields that can be included in reports
 type ReportDataFields = {
@@ -506,6 +506,55 @@ const BASE_FILTERS = {
 
 const DEFAULT_REPORTS: ReportConfig[] = [
   {
+    id: "recurring",
+    name: "Monthly Payments",
+    description: "All upcoming monthly payments, soonest first",
+    type: "recurring",
+    enabled: true,
+    dateRange: "month",
+    fields: {
+      ...DEFAULT_FIELDS,
+      ...BASE_FILTERS,
+      // Show the member list itself
+      showMemberNames: true,
+      // Member list columns we want shown
+      showMembershipPlans: true,
+      showMonthlyPayments: true,
+      showNextPaymentDate: true,
+      // Hide all stats blocks — this report is a flat list with a total
+      showTotalMembers: false,
+      showActiveMembers: true,
+      showProspects: false,
+      showInactiveMembers: false,
+      showNewMembers: false,
+      showCanceledMembers: false,
+      showStatusDistribution: false,
+      showMembershipPlanDistribution: false,
+      showMembershipTypeDistribution: false,
+      showTotalCheckIns: false,
+      showAvgDailyCheckIns: false,
+      showUniqueAttendees: false,
+      showTopAttendees: false,
+      showAttendanceByDay: false,
+      showTotalRevenue: false,
+      showMembershipRevenue: false,
+      showPosRevenue: false,
+      showAvgTransaction: false,
+      showTransactionCount: false,
+      showTopProducts: false,
+      showRetentionRate: false,
+      showNetGrowth: false,
+    },
+    columnOrder: [
+      "firstName",
+      "lastName",
+      "status",
+      "membershipPlan",
+      "monthlyPayment",
+      "nextPaymentDate",
+    ],
+  },
+  {
     id: "membership",
     name: "Membership Summary",
     description: "Overview of member counts, status distribution, and growth",
@@ -775,7 +824,11 @@ export default function ReportsPage() {
           type: r.type || (r.id as ReportType),
           fields: { ...DEFAULT_FIELDS, ...(r.fields || {}) },
         }));
-        setReportConfigs(withDefaults);
+        // Merge in any DEFAULT_REPORTS that the user doesn't have yet
+        // (e.g. new built-in reports added in later versions).
+        const existingIds = new Set(withDefaults.map((r) => r.id));
+        const missingDefaults = DEFAULT_REPORTS.filter((r) => !existingIds.has(r.id));
+        setReportConfigs([...missingDefaults, ...withDefaults]);
       }
     } catch (err) {
       console.warn("Failed to load report configs", err);
@@ -1746,7 +1799,15 @@ export default function ReportsPage() {
                 <div className="mb-6">
                   {(() => {
                     // Filter members based on selected status checkboxes, styles, ranks, and memberships
+                    const isRecurringReport = activeReport.id === "recurring";
                     const filteredMembers = membershipData.membersList.filter((m: any) => {
+                      // Recurring Payments report: only members with an upcoming
+                      // recurring charge (next payment date set + nonzero monthly).
+                      if (isRecurringReport) {
+                        if (!m.nextPaymentDate) return false;
+                        if (!m.monthlyPaymentCents || m.monthlyPaymentCents <= 0) return false;
+                      }
+
                       // Filter by styles if specified (multiple selection)
                       if (activeReport.filterByStyles && activeReport.filterByStyles.length > 0) {
                         let memberHasSelectedStyle = false;
@@ -1980,6 +2041,34 @@ export default function ReportsPage() {
                             aVal = a.waiverSigned ? 1 : 0;
                             bVal = b.waiverSigned ? 1 : 0;
                             break;
+                          case "membershipType":
+                            aVal = (a.membershipTypeName || "").toLowerCase();
+                            bVal = (b.membershipTypeName || "").toLowerCase();
+                            break;
+                          case "membershipPlan":
+                            aVal = (a.membershipPlanName || "").toLowerCase();
+                            bVal = (b.membershipPlanName || "").toLowerCase();
+                            break;
+                          case "monthlyPayment":
+                            aVal = a.monthlyPaymentCents || 0;
+                            bVal = b.monthlyPaymentCents || 0;
+                            break;
+                          case "nextPaymentDate":
+                            aVal = a.nextPaymentDate ? new Date(a.nextPaymentDate).getTime() : Number.MAX_SAFE_INTEGER;
+                            bVal = b.nextPaymentDate ? new Date(b.nextPaymentDate).getTime() : Number.MAX_SAFE_INTEGER;
+                            break;
+                          case "lastPaymentDate":
+                            aVal = a.lastPaymentDate ? new Date(a.lastPaymentDate).getTime() : 0;
+                            bVal = b.lastPaymentDate ? new Date(b.lastPaymentDate).getTime() : 0;
+                            break;
+                          case "autoRenew":
+                            aVal = a.autoRenew === true ? 1 : 0;
+                            bVal = b.autoRenew === true ? 1 : 0;
+                            break;
+                          case "expirationDate":
+                            aVal = a.membershipEndDate ? new Date(a.membershipEndDate).getTime() : Number.MAX_SAFE_INTEGER;
+                            bVal = b.membershipEndDate ? new Date(b.membershipEndDate).getTime() : Number.MAX_SAFE_INTEGER;
+                            break;
                           case "totalClasses":
                             aVal = a.attendanceCounts?.total || 0;
                             bVal = b.attendanceCounts?.total || 0;
@@ -1996,7 +2085,16 @@ export default function ReportsPage() {
                       }
                       const comparison = String(aVal).localeCompare(String(bVal));
                       return sortAscending ? comparison : -comparison;
-                    }) : filteredMembers;
+                    }) : (
+                      // Default sort for Monthly Payments report: soonest nextPaymentDate first.
+                      isRecurringReport
+                        ? [...filteredMembers].sort((a: any, b: any) => {
+                            const aT = a.nextPaymentDate ? new Date(a.nextPaymentDate).getTime() : Number.MAX_SAFE_INTEGER;
+                            const bT = b.nextPaymentDate ? new Date(b.nextPaymentDate).getTime() : Number.MAX_SAFE_INTEGER;
+                            return aT - bT;
+                          })
+                        : filteredMembers
+                    );
 
                     // Pagination calculations
                     const totalMembers = sortedMembers.length;
@@ -2299,6 +2397,47 @@ export default function ReportsPage() {
                                     );
                                   })}
                                 </tbody>
+                                {isRecurringReport && (() => {
+                                  // Total monthly payments across the whole filtered set
+                                  // (not just the current page).
+                                  const totalCents = sortedMembers.reduce(
+                                    (sum: number, m: any) => sum + (m.monthlyPaymentCents || 0),
+                                    0
+                                  );
+                                  const monthlyIdx = enabledColumns.indexOf("monthlyPayment");
+                                  return (
+                                    <tfoot>
+                                      <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
+                                        {enabledColumns.map((colId, idx) => {
+                                          if (idx === 0) {
+                                            return (
+                                              <td key={colId} className="py-2 text-gray-700">
+                                                Total ({sortedMembers.length})
+                                              </td>
+                                            );
+                                          }
+                                          if (colId === "monthlyPayment") {
+                                            return (
+                                              <td key={colId} className="py-2 text-gray-900">
+                                                ${(totalCents / 100).toFixed(2)}
+                                              </td>
+                                            );
+                                          }
+                                          // Leave other columns blank, but if there's no monthlyPayment
+                                          // column, fall back to last cell showing total.
+                                          if (monthlyIdx === -1 && idx === enabledColumns.length - 1) {
+                                            return (
+                                              <td key={colId} className="py-2 text-gray-900 text-right">
+                                                ${(totalCents / 100).toFixed(2)}
+                                              </td>
+                                            );
+                                          }
+                                          return <td key={colId} className="py-2" />;
+                                        })}
+                                      </tr>
+                                    </tfoot>
+                                  );
+                                })()}
                               </table>
                             );
                           })()}
