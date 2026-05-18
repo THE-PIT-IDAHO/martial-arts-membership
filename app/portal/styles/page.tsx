@@ -38,6 +38,17 @@ export default function PortalStylesPage() {
   const [rankInfo, setRankInfo] = useState<RankStyle[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Which style cards are expanded. Default: all collapsed so the user sees a
+  // compact list of "Style — Rank" rows and taps to drill in.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  function toggleExpanded(i: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }
 
   useEffect(() => {
     fetch("/api/portal/profile")
@@ -81,82 +92,102 @@ export default function PortalStylesPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {rankInfo.map((rs, i) => (
-            <div key={i} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">{rs.styleName}</p>
-                  {rs.nextRankName && (
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">
-                      Next: {rs.nextRankName}
-                    </p>
-                  )}
-                </div>
-                <p className="font-semibold text-gray-900 text-lg">{rs.rankName}</p>
-
-                {rs.beltLayers && rs.beltLayers.fabricColor ? (
-                  <BeltImage layers={rs.beltLayers} />
-                ) : rs.beltThumbnail ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={rs.beltThumbnail} alt={`${rs.rankName} belt`} className="mt-2 max-h-16 object-contain" />
-                ) : null}
-
-                {rs.classRequirements.length > 0 && (
-                  <div className="space-y-2 mt-1">
-                    {rs.classRequirements.map((req, j) => {
-                      const pct = Math.min(100, Math.round((req.attended / req.required) * 100));
-                      return (
-                        <div key={j}>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-medium text-gray-600">{req.label}</span>
-                            <span className={`text-xs font-medium ${req.met ? "text-green-600" : "text-gray-500"}`}>
-                              {req.attended}/{req.required}
-                            </span>
-                          </div>
-                          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                req.met ? "bg-green-500" : "bg-primary"
-                              }`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
+          {rankInfo.map((rs, i) => {
+            const isOpen = expanded.has(i);
+            return (
+              <div key={i} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(i)}
+                  className="w-full p-4 text-left flex items-center justify-between gap-3 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide truncate">{rs.styleName}</p>
+                    <p className="font-semibold text-gray-900 text-lg truncate">{rs.rankName}</p>
                   </div>
+                  <svg
+                    className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+
+                {isOpen && (
+                  <>
+                    <div className="px-4 pb-4 -mt-2">
+                      {rs.nextRankName && (
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-2">
+                          Next: {rs.nextRankName}
+                        </p>
+                      )}
+
+                      {rs.beltLayers && rs.beltLayers.fabricColor ? (
+                        <BeltImage layers={rs.beltLayers} />
+                      ) : rs.beltThumbnail ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={rs.beltThumbnail} alt={`${rs.rankName} belt`} className="mt-2 max-h-16 object-contain" />
+                      ) : null}
+
+                      {rs.classRequirements.length > 0 && (
+                        <div className="space-y-2 mt-2">
+                          {rs.classRequirements.map((req, j) => {
+                            const pct = Math.min(100, Math.round((req.attended / req.required) * 100));
+                            return (
+                              <div key={j}>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-medium text-gray-600">{req.label}</span>
+                                  <span className={`text-xs font-medium ${req.met ? "text-green-600" : "text-gray-500"}`}>
+                                    {req.attended}/{req.required}
+                                  </span>
+                                </div>
+                                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      req.met ? "bg-green-500" : "bg-primary"
+                                    }`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    {rs.documents.length > 0 && (
+                      <div className="border-t border-gray-100">
+                        <div className="px-4 pt-3 pb-1">
+                          <p className="text-xs text-gray-400 uppercase tracking-wide">Documents</p>
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                          {rs.documents.map((doc) => (
+                            <button
+                              key={doc.id}
+                              onClick={() => openDoc(doc)}
+                              className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                            >
+                              <div className="w-9 h-9 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                </svg>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">{doc.name}</p>
+                              </div>
+                              <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                              </svg>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
-              {rs.documents.length > 0 && (
-                <div className="border-t border-gray-100">
-                  <div className="px-4 pt-3 pb-1">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide">Documents</p>
-                  </div>
-                  <div className="divide-y divide-gray-100">
-                    {rs.documents.map((doc) => (
-                      <button
-                        key={doc.id}
-                        onClick={() => openDoc(doc)}
-                        className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
-                      >
-                        <div className="w-9 h-9 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                          </svg>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">{doc.name}</p>
-                        </div>
-                        <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                        </svg>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
