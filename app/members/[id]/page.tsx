@@ -4619,14 +4619,22 @@ export default function MemberProfilePage() {
                 let lastAmount = 0;
                 let monthlyTotal = 0;
                 for (const mb of ms) {
-                  const price = mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0;
+                  // First-month-only discount: customPriceCents applies only
+                  // to the first cycle; recurring uses the plan price.
+                  const recurringPrice = mb.firstMonthDiscountOnly
+                    ? (mb.membershipPlan?.priceCents ?? 0)
+                    : (mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0);
+                  // For Last/Next display, just show whatever the actual price
+                  // is on the membership row (could be the discounted one).
+                  const displayPrice = mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0;
                   const isActive = mb.status === "ACTIVE";
                   const notExpired = !mb.endDate || new Date(mb.endDate) > now;
                   const willRenew = mb.membershipPlan?.autoRenew === true;
                   const stillInContract = !!mb.contractEndDate && new Date(mb.contractEndDate) > now;
                   if (isActive && notExpired && (willRenew || stillInContract)) {
-                    monthlyTotal += price;
+                    monthlyTotal += recurringPrice;
                   }
+                  const price = displayPrice;
                   if (mb.nextPaymentDate) {
                     const d = new Date(mb.nextPaymentDate);
                     if (!nextDate || d < nextDate) { nextDate = d; nextAmount = price; }

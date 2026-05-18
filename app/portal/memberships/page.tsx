@@ -12,6 +12,7 @@ interface Membership {
   nextPaymentDate?: string;
   lastPaymentDate?: string;
   customPriceCents?: number;
+  firstMonthDiscountOnly?: boolean;
   pauseEndDate?: string;
   membershipPlan: {
     name: string;
@@ -437,12 +438,19 @@ function MembershipsContent() {
         let nextAmount = 0;
         let monthlyTotal = 0;
         for (const m of memberships) {
-          const price = m.membershipPlan?.priceCents ?? 0;
+          // Recurring price (used for "Monthly" total). First-month-only
+          // discounts don't apply to the recurring calc.
+          const recurringPrice = m.firstMonthDiscountOnly
+            ? (m.membershipPlan?.priceCents ?? 0)
+            : (m.customPriceCents ?? m.membershipPlan?.priceCents ?? 0);
+          // Display price for Next Payment row — could be the actual upcoming
+          // charge amount if a discount applies.
+          const price = m.customPriceCents ?? m.membershipPlan?.priceCents ?? 0;
           const notExpired = !m.endDate || new Date(m.endDate) > now;
           const willRenew = m.membershipPlan?.autoRenew === true;
           const stillInContract = !!m.contractEndDate && new Date(m.contractEndDate) > now;
           if (m.status === "ACTIVE" && notExpired && (willRenew || stillInContract)) {
-            monthlyTotal += price;
+            monthlyTotal += recurringPrice;
           }
           if (m.nextPaymentDate) {
             const d = new Date(m.nextPaymentDate);
