@@ -309,6 +309,7 @@ type MembershipRecord = {
     membershipId: string | null;
     priceCents: number | null;
     billingCycle: string;
+    autoRenew?: boolean;
     allowedStyles: string | null;
     color: string | null;
     cancellationFeeCents?: number | null;
@@ -4607,6 +4608,63 @@ export default function MemberProfilePage() {
 
             {/* RIGHT: Payments + Activity */}
             <div className="flex flex-col gap-4">
+              {/* ACCOUNT SUMMARY — Last/Next/Monthly at a glance */}
+              {(() => {
+                // Pull next/last/monthly out of the member's memberships.
+                const ms = member.memberships || [];
+                const now = new Date();
+                let nextDate: Date | null = null;
+                let nextAmount = 0;
+                let lastDate: Date | null = null;
+                let lastAmount = 0;
+                let monthlyTotal = 0;
+                for (const mb of ms) {
+                  const price = mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0;
+                  const isActive = mb.status === "ACTIVE";
+                  const notExpired = !mb.endDate || new Date(mb.endDate) > now;
+                  const willRenew = mb.membershipPlan?.autoRenew === true;
+                  const stillInContract = !!mb.contractEndDate && new Date(mb.contractEndDate) > now;
+                  if (isActive && notExpired && (willRenew || stillInContract)) {
+                    monthlyTotal += price;
+                  }
+                  if (mb.nextPaymentDate) {
+                    const d = new Date(mb.nextPaymentDate);
+                    if (!nextDate || d < nextDate) { nextDate = d; nextAmount = price; }
+                  }
+                  if (mb.lastPaymentDate) {
+                    const d = new Date(mb.lastPaymentDate);
+                    if (!lastDate || d > lastDate) { lastDate = d; lastAmount = price; }
+                  }
+                }
+                const fmtDate = (d: Date) => d.toLocaleDateString();
+                const fmtMoney = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+                return (
+                  <section className="rounded-lg border border-gray-200 bg-white p-4">
+                    <h2 className="text-sm font-semibold mb-3">Account Summary</h2>
+                    <div className="grid grid-cols-3 gap-3 text-xs">
+                      <div className="rounded-md bg-gray-50 p-3">
+                        <p className="text-gray-500 uppercase tracking-wide text-[10px]">Monthly</p>
+                        <p className="text-base font-bold text-gray-900 mt-0.5">{fmtMoney(monthlyTotal)}</p>
+                      </div>
+                      <div className="rounded-md bg-gray-50 p-3">
+                        <p className="text-gray-500 uppercase tracking-wide text-[10px]">Last Payment</p>
+                        <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                          {lastDate ? fmtDate(lastDate) : "—"}
+                        </p>
+                        {lastDate && <p className="text-[11px] text-gray-500">{fmtMoney(lastAmount)}</p>}
+                      </div>
+                      <div className="rounded-md bg-gray-50 p-3">
+                        <p className="text-gray-500 uppercase tracking-wide text-[10px]">Next Payment</p>
+                        <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                          {nextDate ? fmtDate(nextDate) : "—"}
+                        </p>
+                        {nextDate && <p className="text-[11px] text-gray-500">{fmtMoney(nextAmount)}</p>}
+                      </div>
+                    </div>
+                  </section>
+                );
+              })()}
+
               {/* PAYMENTS */}
               <section className="rounded-lg border border-gray-200 bg-white p-4">
                 <div className="flex items-center justify-between mb-3">

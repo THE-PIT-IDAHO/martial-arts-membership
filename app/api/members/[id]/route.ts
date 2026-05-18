@@ -74,6 +74,7 @@ export async function GET(_req: Request, { params }: Params) {
                 membershipId: true,
                 priceCents: true,
                 billingCycle: true,
+                autoRenew: true,
                 allowedStyles: true,
                 color: true,
                 cancellationFeeCents: true,

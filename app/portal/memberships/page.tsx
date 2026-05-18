@@ -8,6 +8,7 @@ interface Membership {
   status: string;
   startDate: string;
   endDate?: string;
+  contractEndDate?: string;
   nextPaymentDate?: string;
   lastPaymentDate?: string;
   customPriceCents?: number;
@@ -428,6 +429,51 @@ function MembershipsContent() {
           )}
         </button>
       </div>
+
+      {/* Account Summary — Last/Next at a glance, computed from active memberships */}
+      {(() => {
+        const now = new Date();
+        let nextDate: Date | null = null;
+        let nextAmount = 0;
+        let monthlyTotal = 0;
+        for (const m of memberships) {
+          const price = m.membershipPlan?.priceCents ?? 0;
+          const notExpired = !m.endDate || new Date(m.endDate) > now;
+          const willRenew = m.membershipPlan?.autoRenew === true;
+          const stillInContract = !!m.contractEndDate && new Date(m.contractEndDate) > now;
+          if (m.status === "ACTIVE" && notExpired && (willRenew || stillInContract)) {
+            monthlyTotal += price;
+          }
+          if (m.nextPaymentDate) {
+            const d = new Date(m.nextPaymentDate);
+            if (!nextDate || d < nextDate) { nextDate = d; nextAmount = price; }
+          }
+        }
+        // Last payment comes from the payments list since invoices have paidAt.
+        const lastPaid = payments.find((p) => p.paidAt || p.type === "pos");
+        const lastDate = lastPaid?.paidAt || lastPaid?.date;
+        const fmtDate = (s: string | Date) => new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        const fmtMoney = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+        if (!nextDate && !lastDate && monthlyTotal === 0) return null;
+        return (
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="bg-white rounded-2xl border border-gray-200 p-3">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wide">Monthly</p>
+              <p className="text-sm font-bold text-gray-900 mt-0.5">{fmtMoney(monthlyTotal)}</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-200 p-3">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wide">Last Payment</p>
+              <p className="text-sm font-semibold text-gray-900 mt-0.5">{lastDate ? fmtDate(lastDate) : "—"}</p>
+              {lastPaid && <p className="text-[10px] text-gray-500">{fmtMoney(lastPaid.amountCents)}</p>}
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-200 p-3">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wide">Next Payment</p>
+              <p className="text-sm font-semibold text-gray-900 mt-0.5">{nextDate ? fmtDate(nextDate) : "—"}</p>
+              {nextDate && <p className="text-[10px] text-gray-500">{fmtMoney(nextAmount)}</p>}
+            </div>
+          </div>
+        );
+      })()}
 
       <h2 className="text-lg font-semibold text-gray-900 mb-3">Payment History</h2>
       {payments.length === 0 ? (
