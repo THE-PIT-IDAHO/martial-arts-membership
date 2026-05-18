@@ -21,11 +21,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
   }
 
-  // Get publishable key
-  const pkSetting = await prisma.settings.findUnique({
-    where: { key_clientId: { key: "payment_stripe_publishable_key", clientId } },
-  });
-  if (!pkSetting?.value) {
+  // Get publishable key. Prefers STRIPE_PUBLISHABLE_KEY env var; falls back
+  // to the payment_stripe_publishable_key Settings row. (Safe in either —
+  // publishable keys are public, just need to be reachable here.)
+  let publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
+  if (!publishableKey) {
+    const pkSetting = await prisma.settings.findUnique({
+      where: { key_clientId: { key: "payment_stripe_publishable_key", clientId } },
+    });
+    publishableKey = pkSetting?.value || undefined;
+  }
+  if (!publishableKey) {
     return NextResponse.json({ error: "Stripe publishable key not configured" }, { status: 400 });
   }
 
@@ -71,7 +77,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       clientSecret: paymentIntent.client_secret,
-      publishableKey: pkSetting.value,
+      publishableKey,
       paymentIntentId: paymentIntent.id,
       memberName: memberName || "",
     });
