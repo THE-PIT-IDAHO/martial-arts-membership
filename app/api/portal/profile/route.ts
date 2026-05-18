@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
       medicalNotes: true,
       parentGuardianName: true,
       uniformSize: true,
+      clientId: true,
     },
   });
 
@@ -92,8 +93,15 @@ export async function GET(req: NextRequest) {
 
     // Case-insensitive style lookup so e.g. "Brazilian Jiu-Jitsu" in stylesNotes
     // still matches "brazilian jiu-jitsu" in the Style table.
+    // Filter Style lookup by the member's tenant. Without this, findFirst can
+    // return a same-named Style from a different tenant (e.g. default-client
+    // seed) that has no PDFs/beltConfig, even when the user's own tenant has a
+    // fully-populated Style with the same name.
     const style = await prisma.style.findFirst({
-      where: { name: { equals: enrolled.name, mode: "insensitive" } },
+      where: {
+        name: { equals: enrolled.name, mode: "insensitive" },
+        clientId: member.clientId,
+      },
       select: {
         beltConfig: true,
         ranks: { orderBy: { order: "asc" }, select: { id: true, name: true, order: true, pdfDocument: true, thumbnail: true } },
