@@ -530,8 +530,7 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
                contentEditable
                suppressContentEditableWarning
                dangerouslySetInnerHTML={{ __html: editPopup.value.replace(/\n/g, "<br>") }}
-               style={{ fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace", fontSize: "12px", lineHeight: 1.45 }}
-               className="w-full h-full min-h-[200px] rounded-md border border-gray-300 px-3 py-2 whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
+               className="w-full h-full min-h-[200px] rounded-md border border-gray-300 px-3 py-2 text-sm whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
              />
           </div>
           <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
@@ -2130,8 +2129,7 @@ export default function CurriculumV2Page() {
                 contentEditable
                 suppressContentEditableWarning
                 dangerouslySetInnerHTML={{ __html: popupCell.value.replace(/\n/g, "<br>") }}
-                style={{ fontFamily: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace", fontSize: "12px", lineHeight: 1.45 }}
-                className="w-full h-full min-h-[200px] rounded-md border border-gray-300 px-3 py-2 whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full h-full min-h-[200px] rounded-md border border-gray-300 px-3 py-2 text-sm whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
             <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">

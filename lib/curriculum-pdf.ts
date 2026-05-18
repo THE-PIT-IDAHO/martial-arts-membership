@@ -330,7 +330,7 @@ export function generateCurriculumPdf(
           pdf.setFontSize(9);
           const lineSegs = segmentsByLine(parseHtmlForPdf(item.desc));
           for (const segs of lineSegs) {
-            const rows = measureRichLineRows(pdf, segs, cw - 6, "courier");
+            const rows = measureRichLineRows(pdf, segs, cw - 6);
             measY += rows * 3.5;
           }
         }
@@ -363,7 +363,7 @@ export function generateCurriculumPdf(
           pdf.setFontSize(9);
           const lineSegs = segmentsByLine(parseHtmlForPdf(item.desc));
           for (const segs of lineSegs) {
-            const rows = measureRichLineRows(pdf, segs, cw - 6, "courier");
+            const rows = measureRichLineRows(pdf, segs, cw - 6);
             itemH += rows * 3.5;
           }
         }
@@ -388,10 +388,8 @@ export function generateCurriculumPdf(
           pdf.setFontSize(9);
           const lineSegs = segmentsByLine(parseHtmlForPdf(item.desc));
           for (const segs of lineSegs) {
-            // renderRichLine returns the y AFTER the last visual row of this line.
-            // Use courier (monospace) so it matches the editor and column alignment
-            // via spaces actually works.
-            y = renderRichLine(pdf, margin + 3, y, cw - 6, 3.5, segs, "courier");
+            // renderRichLine returns the y AFTER the last visual row of this line
+            y = renderRichLine(pdf, margin + 3, y, cw - 6, 3.5, segs);
           }
         }
 
