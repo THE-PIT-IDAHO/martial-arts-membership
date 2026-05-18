@@ -67,7 +67,6 @@ export async function GET(req: NextRequest) {
     nextRankName: string | null;
     classRequirements: Array<{ label: string; attended: number; required: number; met: boolean }>;
     documents: Array<{ id: string; name: string; url: string }>;
-    _debug?: Record<string, unknown>;
   }> = [];
 
   // Parse stylesNotes to get enrolled styles and ranks
@@ -93,10 +92,9 @@ export async function GET(req: NextRequest) {
 
     // Case-insensitive style lookup so e.g. "Brazilian Jiu-Jitsu" in stylesNotes
     // still matches "brazilian jiu-jitsu" in the Style table.
-    // Filter Style lookup by the member's tenant. Without this, findFirst can
-    // return a same-named Style from a different tenant (e.g. default-client
-    // seed) that has no PDFs/beltConfig, even when the user's own tenant has a
-    // fully-populated Style with the same name.
+    // Scope Style lookup to the member's tenant. Without this, findFirst could
+    // return a same-named Style from another client (a stale duplicate from
+    // earlier imports) that had no beltConfig/PDFs.
     const style = await prisma.style.findFirst({
       where: {
         name: { equals: enrolled.name, mode: "insensitive" },
@@ -107,12 +105,6 @@ export async function GET(req: NextRequest) {
         ranks: { orderBy: { order: "asc" }, select: { id: true, name: true, order: true, pdfDocument: true, thumbnail: true } },
       },
     });
-
-    // Diagnostic: log what we found so we can debug missing styles in Vercel logs
-    console.log(`[portal/profile] enrolled style="${enrolled.name}" rank="${enrolled.rank}" → ` +
-      `styleFound=${!!style}, beltConfigPresent=${!!style?.beltConfig}, ` +
-      `rankRowsCount=${style?.ranks?.length || 0}, ` +
-      `rankNames=${JSON.stringify(style?.ranks?.map(r => `${r.name}(pdf:${!!r.pdfDocument})`) || [])}`);
 
     let beltLayers: Record<string, unknown> | null = null;
     let nextRankName: string | null = null;
@@ -318,17 +310,6 @@ export async function GET(req: NextRequest) {
       nextRankName,
       classRequirements,
       documents,
-      _debug: {
-        enrolledName: enrolled.name,
-        enrolledRank: enrolled.rank,
-        styleFound: !!style,
-        beltConfigPresent: !!style?.beltConfig,
-        rankRowsCount: style?.ranks?.length || 0,
-        rankRows: style?.ranks?.map(r => ({ name: r.name, order: r.order, hasPdf: !!r.pdfDocument, hasThumbnail: !!r.thumbnail })) || [],
-        beltLayersHasColor: !!(beltLayers && (beltLayers as Record<string, unknown>).fabricColor),
-        documentsCount: documents.length,
-        classReqCount: classRequirements.length,
-      },
     });
   }
 
