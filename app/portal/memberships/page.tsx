@@ -36,6 +36,19 @@ interface Invoice {
   };
 }
 
+interface PaymentEntry {
+  id: string;
+  type: "invoice" | "pos";
+  date: string;
+  amountCents: number;
+  status: string;
+  label: string;
+  invoiceNumber?: string;
+  paidAt?: string | null;
+  dueDate?: string;
+  paymentMethod?: string;
+}
+
 interface PaymentMethod {
   id: string;
   brand: string;
@@ -86,6 +99,7 @@ function MembershipsContent() {
   const searchParams = useSearchParams();
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [payments, setPayments] = useState<PaymentEntry[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [defaultPaymentId, setDefaultPaymentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,10 +123,12 @@ function MembershipsContent() {
     Promise.all([
       fetch("/api/portal/memberships").then((r) => r.json()).catch(() => []),
       fetch("/api/portal/invoices").then((r) => r.json()).catch(() => []),
+      fetch("/api/portal/payments").then((r) => r.json()).catch(() => []),
       fetch("/api/portal/payment-methods").then((r) => r.json()).catch(() => ({ paymentMethods: [], defaultId: null })),
-    ]).then(([ms, inv, pm]) => {
+    ]).then(([ms, inv, pay, pm]) => {
       setMemberships(Array.isArray(ms) ? ms : []);
       setInvoices(Array.isArray(inv) ? inv : []);
+      setPayments(Array.isArray(pay) ? pay : []);
       setPaymentMethods(pm.paymentMethods || []);
       setDefaultPaymentId(pm.defaultId || null);
       setLoading(false);
@@ -439,44 +455,57 @@ function MembershipsContent() {
         </button>
       </div>
 
-      <h2 className="text-lg font-semibold text-gray-900 mb-3">Invoice History</h2>
-      {invoices.length === 0 ? (
+      <h2 className="text-lg font-semibold text-gray-900 mb-3">Payment History</h2>
+      {payments.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-200 p-6 text-center text-gray-500">
-          No invoices yet.
+          No payments yet.
         </div>
       ) : (
         <div className="space-y-2">
-          {invoices.map((inv) => (
-            <div key={inv.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-semibold text-gray-900">{formatCents(inv.amountCents)}</p>
-                  <p className="text-sm text-gray-500 mt-0.5">{inv.membership.membershipPlan.name}</p>
-                  {inv.invoiceNumber && (
-                    <p className="text-xs text-gray-400 mt-0.5">#{inv.invoiceNumber}</p>
+          {payments.map((p) => {
+            // Real invoice ID without the "inv-" prefix is needed for the Pay button.
+            const rawInvoiceId = p.type === "invoice" ? p.id.replace(/^inv-/, "") : null;
+            return (
+              <div key={p.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900">{formatCents(p.amountCents)}</p>
+                    <p className="text-sm text-gray-500 mt-0.5 truncate">{p.label}</p>
+                    {p.invoiceNumber && (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {p.type === "pos" ? "Receipt " : ""}#{p.invoiceNumber}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full uppercase tracking-wide ${p.type === "pos" ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600"}`}>
+                      {p.type === "pos" ? "POS" : "Invoice"}
+                    </span>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColors[p.status] || "bg-gray-100 text-gray-500"}`}>
+                      {p.status.replace("_", " ")}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-400">
+                    <span>{new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                    {p.dueDate && <span>Due {new Date(p.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+                    {p.paidAt && <span>Paid {new Date(p.paidAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+                    {p.paymentMethod && <span>{p.paymentMethod}</span>}
+                  </div>
+                  {rawInvoiceId && (p.status === "PENDING" || p.status === "PAST_DUE") && (
+                    <button
+                      onClick={() => handlePayInvoice(rawInvoiceId)}
+                      disabled={payingInvoiceId === rawInvoiceId}
+                      className="text-xs font-semibold text-white bg-primary rounded-lg px-3 py-1.5 hover:bg-primaryDark active:scale-[0.98] transition-all disabled:opacity-50"
+                    >
+                      {payingInvoiceId === rawInvoiceId ? "Redirecting..." : "Pay Now"}
+                    </button>
                   )}
                 </div>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColors[inv.status] || "bg-gray-100 text-gray-500"}`}>
-                  {inv.status.replace("_", " ")}
-                </span>
               </div>
-              <div className="flex items-center justify-between mt-2">
-                <div className="flex items-center gap-4 text-xs text-gray-400">
-                  <span>Due: {new Date(inv.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-                  {inv.paidAt && <span>Paid: {new Date(inv.paidAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
-                </div>
-                {(inv.status === "PENDING" || inv.status === "PAST_DUE") && (
-                  <button
-                    onClick={() => handlePayInvoice(inv.id)}
-                    disabled={payingInvoiceId === inv.id}
-                    className="text-xs font-semibold text-white bg-primary rounded-lg px-3 py-1.5 hover:bg-primaryDark active:scale-[0.98] transition-all disabled:opacity-50"
-                  >
-                    {payingInvoiceId === inv.id ? "Redirecting..." : "Pay Now"}
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
