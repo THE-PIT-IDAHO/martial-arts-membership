@@ -1711,6 +1711,25 @@ export default function AccountPage() {
               Configure payment processors for accepting credit card payments. Each processor requires API credentials from their respective dashboards.
             </p>
 
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm">
+              <p className="font-semibold text-blue-900 mb-1">🔒 Recommended: set secrets in Vercel env vars</p>
+              <p className="text-blue-800">
+                For production, set the secret keys below as <strong>environment variables</strong> in Vercel (Settings → Environment Variables) instead of entering them here.
+                The app prefers env vars over DB values, so any keys set there will override what's stored in this UI — and they're never readable by anything that gains access to the database.
+              </p>
+              <details className="mt-2 text-xs text-blue-900">
+                <summary className="cursor-pointer font-semibold">Env var names</summary>
+                <ul className="mt-2 ml-4 space-y-0.5 font-mono">
+                  <li>Stripe: <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_WEBHOOK_SECRET</code></li>
+                  <li>PayPal: <code>PAYPAL_CLIENT_ID</code>, <code>PAYPAL_CLIENT_SECRET</code>, <code>PAYPAL_SANDBOX</code> (true/false), <code>PAYPAL_WEBHOOK_ID</code></li>
+                  <li>Square: <code>SQUARE_ACCESS_TOKEN</code>, <code>SQUARE_LOCATION_ID</code>, <code>SQUARE_APPLICATION_ID</code>, <code>SQUARE_SANDBOX</code> (true/false), <code>SQUARE_WEBHOOK_SIGNATURE_KEY</code></li>
+                </ul>
+                <p className="mt-2 text-blue-800">
+                  After adding them in Vercel, redeploy. You can leave the fields below blank — or fill them as a backup if env vars aren't set.
+                </p>
+              </details>
+            </div>
+
             {/* Active Processor Selector */}
             <div className="rounded-lg border border-gray-200 bg-white p-6">
               <h3 className="text-lg font-semibold mb-1">Active Payment Processor</h3>

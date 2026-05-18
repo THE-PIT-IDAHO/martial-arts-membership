@@ -17,10 +17,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing signature" }, { status: 400 });
   }
 
-  const whSecretSetting = await prisma.settings.findFirst({
-    where: { key: "payment_stripe_webhook_secret" },
-  });
-  const webhookSecret = whSecretSetting?.value || process.env.STRIPE_WEBHOOK_SECRET;
+  // Prefer env var; fall back to Settings row for legacy setups.
+  let webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    const row = await prisma.settings.findFirst({
+      where: { key: "payment_stripe_webhook_secret" },
+    });
+    webhookSecret = row?.value || undefined;
+  }
 
   if (!webhookSecret) {
     return NextResponse.json({ error: "Webhook secret not configured" }, { status: 500 });

@@ -15,26 +15,39 @@ function getBaseUrl(sandbox: boolean): string {
     : "https://api-m.paypal.com";
 }
 
+/**
+ * Get PayPal config. Prefers PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET /
+ * PAYPAL_SANDBOX env vars (recommended — keeps secrets out of the DB),
+ * falls back to the payment_paypal_* Settings rows for legacy setups.
+ */
 export async function getPayPalConfig(): Promise<PayPalConfig | null> {
-  const rows = await prisma.settings.findMany({
-    where: {
-      key: {
-        in: [
-          "payment_paypal_client_id",
-          "payment_paypal_client_secret",
-          "payment_paypal_sandbox",
-        ],
+  let clientId: string | undefined = process.env.PAYPAL_CLIENT_ID;
+  let clientSecret: string | undefined = process.env.PAYPAL_CLIENT_SECRET;
+  let sandboxEnv: string | undefined = process.env.PAYPAL_SANDBOX;
+
+  if (!clientId || !clientSecret) {
+    const rows = await prisma.settings.findMany({
+      where: {
+        key: {
+          in: [
+            "payment_paypal_client_id",
+            "payment_paypal_client_secret",
+            "payment_paypal_sandbox",
+          ],
+        },
       },
-    },
-  });
-  const map = new Map(rows.map((r) => [r.key, r.value]));
-  const clientId = map.get("payment_paypal_client_id");
-  const clientSecret = map.get("payment_paypal_client_secret");
+    });
+    const map = new Map(rows.map((r) => [r.key, r.value]));
+    clientId = clientId || map.get("payment_paypal_client_id");
+    clientSecret = clientSecret || map.get("payment_paypal_client_secret");
+    sandboxEnv = sandboxEnv ?? map.get("payment_paypal_sandbox");
+  }
+
   if (!clientId || !clientSecret) return null;
   return {
     clientId,
     clientSecret,
-    sandbox: map.get("payment_paypal_sandbox") === "true",
+    sandbox: sandboxEnv === "true",
   };
 }
 

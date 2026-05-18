@@ -11,11 +11,14 @@ import {
 export async function POST(req: NextRequest) {
   const body = await req.text();
 
-  // Verify webhook signature
-  const sigKeySetting = await prisma.settings.findFirst({
-    where: { key: "payment_square_webhook_signature_key" },
-  });
-  const signatureKey = sigKeySetting?.value;
+  // Verify webhook signature. Prefer env var; fall back to Settings row.
+  let signatureKey: string | undefined = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+  if (!signatureKey) {
+    const row = await prisma.settings.findFirst({
+      where: { key: "payment_square_webhook_signature_key" },
+    });
+    signatureKey = row?.value || undefined;
+  }
 
   if (signatureKey) {
     const signature = req.headers.get("x-square-hmacsha256-signature") || "";

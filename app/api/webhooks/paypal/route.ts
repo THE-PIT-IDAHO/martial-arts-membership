@@ -16,11 +16,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "PayPal not configured" }, { status: 500 });
   }
 
-  // Verify webhook signature
-  const webhookIdSetting = await prisma.settings.findFirst({
-    where: { key: "payment_paypal_webhook_id" },
-  });
-  const webhookId = webhookIdSetting?.value;
+  // Verify webhook signature. Prefer env var; fall back to Settings row.
+  let webhookId: string | undefined = process.env.PAYPAL_WEBHOOK_ID;
+  if (!webhookId) {
+    const row = await prisma.settings.findFirst({
+      where: { key: "payment_paypal_webhook_id" },
+    });
+    webhookId = row?.value || undefined;
+  }
 
   if (webhookId) {
     const headers: Record<string, string> = {};

@@ -14,29 +14,43 @@ function getBaseUrl(sandbox: boolean): string {
     : "https://connect.squareup.com";
 }
 
+/**
+ * Get Square config. Prefers SQUARE_ACCESS_TOKEN / SQUARE_LOCATION_ID /
+ * SQUARE_APPLICATION_ID / SQUARE_SANDBOX env vars (recommended — keeps
+ * secrets out of the DB), falls back to payment_square_* Settings rows.
+ */
 export async function getSquareConfig(): Promise<SquareConfig | null> {
-  const rows = await prisma.settings.findMany({
-    where: {
-      key: {
-        in: [
-          "payment_square_access_token",
-          "payment_square_location_id",
-          "payment_square_application_id",
-          "payment_square_sandbox",
-        ],
+  let accessToken: string | undefined = process.env.SQUARE_ACCESS_TOKEN;
+  let locationId: string | undefined = process.env.SQUARE_LOCATION_ID;
+  let applicationId: string | undefined = process.env.SQUARE_APPLICATION_ID;
+  let sandboxEnv: string | undefined = process.env.SQUARE_SANDBOX;
+
+  if (!accessToken || !locationId) {
+    const rows = await prisma.settings.findMany({
+      where: {
+        key: {
+          in: [
+            "payment_square_access_token",
+            "payment_square_location_id",
+            "payment_square_application_id",
+            "payment_square_sandbox",
+          ],
+        },
       },
-    },
-  });
-  const map = new Map(rows.map((r) => [r.key, r.value]));
-  const accessToken = map.get("payment_square_access_token");
-  const locationId = map.get("payment_square_location_id");
-  const applicationId = map.get("payment_square_application_id");
+    });
+    const map = new Map(rows.map((r) => [r.key, r.value]));
+    accessToken = accessToken || map.get("payment_square_access_token");
+    locationId = locationId || map.get("payment_square_location_id");
+    applicationId = applicationId || map.get("payment_square_application_id");
+    sandboxEnv = sandboxEnv ?? map.get("payment_square_sandbox");
+  }
+
   if (!accessToken || !locationId) return null;
   return {
     accessToken,
     locationId,
     applicationId: applicationId || "",
-    sandbox: map.get("payment_square_sandbox") === "true",
+    sandbox: sandboxEnv === "true",
   };
 }
 
