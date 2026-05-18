@@ -3403,25 +3403,50 @@ export default function MemberProfilePage() {
                                   </div>
                                 </div>
 
-                                {/* Price and Billing */}
-                                <div className="flex items-baseline gap-1">
-                                  <span className="text-lg font-bold text-gray-900">
-                                    ${(displayPrice / 100).toFixed(2)}
-                                  </span>
-                                  <span className="text-[10px] text-gray-500 uppercase">
-                                    /{membership.membershipPlan.billingCycle.toLowerCase().replace("ly", "")}
-                                  </span>
-                                  {membership.customPriceCents !== null && membership.customPriceCents !== planPrice && (
-                                    <span className="text-[10px] text-gray-400 line-through ml-1">
-                                      ${(planPrice / 100).toFixed(2)}
-                                    </span>
-                                  )}
-                                  {membership.firstMonthDiscountOnly && (
-                                    <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full ml-1">
-                                      1st mo.
-                                    </span>
-                                  )}
-                                </div>
+                                {/* Price and Billing.
+                                    - If firstMonthDiscountOnly: headline the
+                                      RECURRING (plan) price; show the
+                                      discounted first-month price below.
+                                    - Else: headline the customPriceCents (or
+                                      plan price if no custom). */}
+                                {(() => {
+                                  const cycleSuffix = membership.membershipPlan.billingCycle.toLowerCase().replace("ly", "");
+                                  if (membership.firstMonthDiscountOnly) {
+                                    return (
+                                      <div>
+                                        <div className="flex items-baseline gap-1">
+                                          <span className="text-lg font-bold text-gray-900">
+                                            ${(planPrice / 100).toFixed(2)}
+                                          </span>
+                                          <span className="text-[10px] text-gray-500 uppercase">
+                                            /{cycleSuffix}
+                                          </span>
+                                          <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full ml-1">
+                                            1st mo. discount
+                                          </span>
+                                        </div>
+                                        <p className="text-[10px] text-gray-500 mt-0.5">
+                                          First {cycleSuffix}: ${(displayPrice / 100).toFixed(2)}
+                                        </p>
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <div className="flex items-baseline gap-1">
+                                      <span className="text-lg font-bold text-gray-900">
+                                        ${(displayPrice / 100).toFixed(2)}
+                                      </span>
+                                      <span className="text-[10px] text-gray-500 uppercase">
+                                        /{cycleSuffix}
+                                      </span>
+                                      {membership.customPriceCents !== null && membership.customPriceCents !== planPrice && (
+                                        <span className="text-[10px] text-gray-400 line-through ml-1">
+                                          ${(planPrice / 100).toFixed(2)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
 
                                 {/* Dates */}
                                 <div className="space-y-1">
