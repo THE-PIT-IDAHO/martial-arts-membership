@@ -152,6 +152,13 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
   // fallback: if preventDefault somehow doesn't stop the focus move (rare
   // browser quirk), focus jumps back to the editor immediately.
   const tabJustHandledRef = useRef(false);
+  // Autofocus the editor when the popup opens so keystrokes (including Tab)
+  // route through it from the start.
+  useEffect(() => {
+    if (!editPopup) return;
+    const t = setTimeout(() => popupEditorRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [editPopup]);
   useEffect(() => {
     if (!editPopup) return;
     function handleKeyDown(e: KeyboardEvent) {
@@ -507,14 +514,14 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
         <div className="w-full max-w-lg rounded-lg bg-white shadow-xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
             <h2 className="text-sm font-bold text-gray-900">Edit Description</h2>
-            <button onClick={async () => { await updateField(editPopup.itemId, "description", editPopup.value); setEditPopup(null); await onReload(); }} className="text-gray-400 hover:text-gray-600">
+            <button tabIndex={-1} onClick={async () => { await updateField(editPopup.itemId, "description", editPopup.value); setEditPopup(null); await onReload(); }} className="text-gray-400 hover:text-gray-600">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
           <div className="border-b border-gray-200 px-5 py-2 flex items-center gap-1">
-            <button type="button" onMouseDown={e => { e.preventDefault(); document.execCommand("bold"); }} className="rounded px-2 py-1 text-xs font-bold text-gray-700 hover:bg-gray-100">B</button>
-            <button type="button" onMouseDown={e => { e.preventDefault(); document.execCommand("italic"); }} className="rounded px-2 py-1 text-xs italic text-gray-700 hover:bg-gray-100">I</button>
-            <button type="button" onMouseDown={e => { e.preventDefault(); document.execCommand("underline"); }} className="rounded px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-100">U</button>
+            <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("bold"); }} className="rounded px-2 py-1 text-xs font-bold text-gray-700 hover:bg-gray-100">B</button>
+            <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("italic"); }} className="rounded px-2 py-1 text-xs italic text-gray-700 hover:bg-gray-100">I</button>
+            <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("underline"); }} className="rounded px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-100">U</button>
           </div>
           <div className="flex-1 overflow-y-auto p-5">
              <div
@@ -527,8 +534,8 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
              />
           </div>
           <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
-            <button onClick={async () => { const el = document.getElementById("cat-popup-editor"); if (el) await updateField(editPopup.itemId, "description", el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0")); setEditPopup(null); await onReload(); }} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Save</button>
-            <button onClick={() => setEditPopup(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button tabIndex={-1} onClick={async () => { const el = document.getElementById("cat-popup-editor"); if (el) await updateField(editPopup.itemId, "description", el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0")); setEditPopup(null); await onReload(); }} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Save</button>
+            <button tabIndex={-1} onClick={() => setEditPopup(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
           </div>
         </div>
       </div>
