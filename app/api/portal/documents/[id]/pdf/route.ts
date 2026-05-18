@@ -125,7 +125,7 @@ export async function GET(
     for (const es of enrolledStyles) {
       if (!es.name || es.active === false || !es.rank) continue;
       const style = await prisma.style.findFirst({
-        where: { name: es.name },
+        where: { name: { equals: es.name, mode: "insensitive" } },
         select: {
           ranks: {
             orderBy: { order: "asc" },
@@ -134,10 +134,10 @@ export async function GET(
         },
       });
       if (!style) continue;
-      const currentRank = style.ranks.find((r) => r.name === es.rank);
+      const currentRank = style.ranks.find((r) => r.name.toLowerCase() === es.rank!.toLowerCase());
       if (!currentRank) continue;
       const target = style.ranks.find(
-        (r) => r.name === rankName && r.order <= currentRank.order
+        (r) => r.name.toLowerCase() === rankName.toLowerCase() && r.order <= currentRank.order
       );
       if (target?.pdfDocument) {
         dataUri = target.pdfDocument;

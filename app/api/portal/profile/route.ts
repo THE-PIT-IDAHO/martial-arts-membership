@@ -88,8 +88,10 @@ export async function GET(req: NextRequest) {
     if (!enrolled.name || !enrolled.rank) continue;
     if (enrolled.active === false) continue;
 
+    // Case-insensitive style lookup so e.g. "Brazilian Jiu-Jitsu" in stylesNotes
+    // still matches "brazilian jiu-jitsu" in the Style table.
     const style = await prisma.style.findFirst({
-      where: { name: enrolled.name },
+      where: { name: { equals: enrolled.name, mode: "insensitive" } },
       select: {
         beltConfig: true,
         ranks: { orderBy: { order: "asc" }, select: { name: true, order: true, pdfDocument: true } },
@@ -141,7 +143,7 @@ export async function GET(req: NextRequest) {
           const seenRankNames = new Set<string>();
           for (const r of sortedRanks) {
             if (r.order > currentRank.order) continue;
-            const rankRow = style.ranks.find((rr) => rr.name === r.name);
+            const rankRow = style.ranks.find((rr) => rr.name.toLowerCase() === r.name.toLowerCase());
             if (rankRow?.pdfDocument && !seenRankNames.has(r.name)) {
               seenRankNames.add(r.name);
               const docId = `rank-pdf-${r.name}`;
