@@ -104,7 +104,6 @@ function MembershipsContent() {
   const [defaultPaymentId, setDefaultPaymentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [addingCard, setAddingCard] = useState(false);
-  const [removingId, setRemovingId] = useState<string | null>(null);
   const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
   const [setupSuccess, setSetupSuccess] = useState(false);
   const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null);
@@ -185,18 +184,6 @@ function MembershipsContent() {
     } catch {
       setAddingCard(false);
     }
-  };
-
-  const handleRemoveCard = async (id: string) => {
-    setRemovingId(id);
-    try {
-      const res = await fetch(`/api/portal/payment-methods/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setPaymentMethods((prev) => prev.filter((pm) => pm.id !== id));
-        if (defaultPaymentId === id) setDefaultPaymentId(null);
-      }
-    } catch { /* ignore */ }
-    setRemovingId(null);
   };
 
   const handleSetDefault = async (id: string) => {
@@ -416,19 +403,6 @@ function MembershipsContent() {
                       {settingDefaultId === pm.id ? "..." : "Set default"}
                     </button>
                   )}
-                  <button
-                    onClick={() => handleRemoveCard(pm.id)}
-                    disabled={removingId === pm.id}
-                    className="text-xs text-gray-400 hover:text-red-500 p-1 rounded transition-colors disabled:opacity-50"
-                  >
-                    {removingId === pm.id ? (
-                      <span className="w-4 h-4 block border-2 border-gray-300 border-t-red-500 rounded-full animate-spin" />
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    )}
-                  </button>
                 </div>
               </div>
             ))}
