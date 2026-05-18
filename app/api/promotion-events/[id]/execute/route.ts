@@ -29,80 +29,15 @@ type BeltRank = {
   pdfDocuments?: RankPdf[];
 };
 
-// Helper function to add rank PDFs to member's styleDocuments
+// Rank PDFs are sourced from Rank.pdfDocument and shown on the portal Styles
+// page. We no longer copy them into member.styleDocuments on promotion.
 async function addRankPdfsToMember(
-  memberId: string,
-  styleName: string,
-  targetRankName: string,
+  _memberId: string,
+  _styleName: string,
+  _targetRankName: string,
   currentStyleDocuments: string | null
 ): Promise<string> {
-  // Get the style with beltConfig (fetch all and do case-insensitive match)
-  const allStyles = await prisma.style.findMany({
-    select: { name: true, beltConfig: true },
-  });
-  const style = allStyles.find(s => s.name.toLowerCase() === styleName.toLowerCase());
-
-  if (!style?.beltConfig) {
-    return currentStyleDocuments || "[]";
-  }
-
-  // Parse beltConfig
-  let beltConfig: { ranks?: BeltRank[] };
-  try {
-    beltConfig = typeof style.beltConfig === "string"
-      ? JSON.parse(style.beltConfig)
-      : style.beltConfig;
-  } catch {
-    return currentStyleDocuments || "[]";
-  }
-
-  if (!beltConfig.ranks || !Array.isArray(beltConfig.ranks)) {
-    return currentStyleDocuments || "[]";
-  }
-
-  // Find the target rank
-  const targetRank = beltConfig.ranks.find((r) => r.name === targetRankName);
-  if (!targetRank) {
-    return currentStyleDocuments || "[]";
-  }
-
-  // Parse current style documents
-  let currentDocs: StyleDocument[] = [];
-  if (currentStyleDocuments) {
-    try {
-      currentDocs = JSON.parse(currentStyleDocuments);
-    } catch {
-      currentDocs = [];
-    }
-  }
-
-  // Get all ranks up to and including the target rank (by order number)
-  const ranksToInclude = beltConfig.ranks.filter((r) => r.order <= targetRank.order);
-
-  let hasNewDocs = false;
-  const updatedDocs = [...currentDocs];
-
-  // Add PDFs from all these ranks
-  for (const rank of ranksToInclude) {
-    if (!rank.pdfDocuments || rank.pdfDocuments.length === 0) continue;
-
-    for (const rankPdf of rank.pdfDocuments) {
-      // Check if this PDF already exists (by name)
-      const exists = updatedDocs.some((doc) => doc.name === rankPdf.name);
-      if (!exists) {
-        const newDoc: StyleDocument = {
-          id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          name: rankPdf.name,
-          url: rankPdf.url,
-          uploadedAt: new Date().toISOString(),
-        };
-        updatedDocs.push(newDoc);
-        hasNewDocs = true;
-      }
-    }
-  }
-
-  return hasNewDocs ? JSON.stringify(updatedDocs) : (currentStyleDocuments || "[]");
+  return currentStyleDocuments || "[]";
 }
 
 // POST /api/promotion-events/[id]/execute - Execute promotions for all registered participants

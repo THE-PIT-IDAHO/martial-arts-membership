@@ -94,56 +94,14 @@ function getRankOrder(beltConfig: string | null, rankName: string): number | nul
   }
 }
 
-// Helper function to add rank PDFs to member's styleDocuments
+// Rank PDFs are sourced from Rank.pdfDocument and surfaced via the portal
+// Styles page. We don't copy them into member.styleDocuments anymore.
 function addRankPdfsToDocuments(
-  beltConfig: string | null,
-  targetRankName: string,
+  _beltConfig: string | null,
+  _targetRankName: string,
   currentDocs: StyleDocument[]
 ): { docs: StyleDocument[]; hasChanges: boolean } {
-  if (!beltConfig) return { docs: currentDocs, hasChanges: false };
-
-  try {
-    const config = typeof beltConfig === "string" ? JSON.parse(beltConfig) : beltConfig;
-    if (!config.ranks || !Array.isArray(config.ranks)) {
-      return { docs: currentDocs, hasChanges: false };
-    }
-
-    // Find the target rank
-    const targetRank = config.ranks.find((r: BeltRank) => r.name === targetRankName);
-    if (!targetRank) return { docs: currentDocs, hasChanges: false };
-
-    // Get all ranks up to and including the target rank (by order number)
-    const ranksToInclude = config.ranks.filter((r: BeltRank) => r.order <= targetRank.order);
-
-    let hasChanges = false;
-    const updatedDocs = [...currentDocs];
-
-    // Add PDFs from all these ranks
-    for (const rank of ranksToInclude) {
-      if (!rank.pdfDocuments || rank.pdfDocuments.length === 0) continue;
-
-      for (const rankPdf of rank.pdfDocuments) {
-        // Check if this PDF already exists (by name)
-        const exists = updatedDocs.some((doc) => doc.name === rankPdf.name);
-        if (!exists) {
-          const docId = rankPdf.id || rankPdf.name.replace(/\s+/g, '-');
-          const newDoc: StyleDocument = {
-            id: `rank-${rank.name}-${docId}`,
-            name: rankPdf.name,
-            url: rankPdf.url,
-            uploadedAt: new Date().toISOString(),
-            fromRank: rank.name,
-          };
-          updatedDocs.push(newDoc);
-          hasChanges = true;
-        }
-      }
-    }
-
-    return { docs: updatedDocs, hasChanges };
-  } catch {
-    return { docs: currentDocs, hasChanges: false };
-  }
+  return { docs: currentDocs, hasChanges: false };
 }
 
 // GET /api/members/:id

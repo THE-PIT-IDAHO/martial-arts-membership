@@ -60,50 +60,14 @@ function getPdfNamesFromBeltConfig(beltConfig: string | null): string[] {
   }
 }
 
-// Helper function to add rank PDFs for a specific rank
+// Rank PDFs come from Rank.pdfDocument and surface via the portal Styles page.
+// We don't copy them into member.styleDocuments anymore.
 function addRankPdfsToDocuments(
-  beltConfig: string | null,
-  targetRankName: string,
+  _beltConfig: string | null,
+  _targetRankName: string,
   currentDocs: StyleDocument[]
 ): { docs: StyleDocument[]; hasChanges: boolean } {
-  if (!beltConfig) return { docs: currentDocs, hasChanges: false };
-
-  try {
-    const config = typeof beltConfig === "string" ? JSON.parse(beltConfig) : beltConfig;
-    if (!config.ranks || !Array.isArray(config.ranks)) {
-      return { docs: currentDocs, hasChanges: false };
-    }
-
-    const targetRank = config.ranks.find((r: BeltRank) => r.name === targetRankName);
-    if (!targetRank) return { docs: currentDocs, hasChanges: false };
-
-    const ranksToInclude = config.ranks.filter((r: BeltRank) => r.order <= targetRank.order);
-
-    let hasChanges = false;
-    const updatedDocs = [...currentDocs];
-
-    for (const rank of ranksToInclude) {
-      if (!rank.pdfDocuments || rank.pdfDocuments.length === 0) continue;
-
-      for (const rankPdf of rank.pdfDocuments) {
-        const exists = updatedDocs.some((doc) => doc.name === rankPdf.name);
-        if (!exists) {
-          const newDoc: StyleDocument = {
-            id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            name: rankPdf.name,
-            url: rankPdf.url,
-            uploadedAt: new Date().toISOString(),
-          };
-          updatedDocs.push(newDoc);
-          hasChanges = true;
-        }
-      }
-    }
-
-    return { docs: updatedDocs, hasChanges };
-  } catch {
-    return { docs: currentDocs, hasChanges: false };
-  }
+  return { docs: currentDocs, hasChanges: false };
 }
 
 // Helper function to sync member's styles and rank documents based on their active/canceled memberships

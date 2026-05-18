@@ -39,54 +39,15 @@ function getFirstRankFromBeltConfig(beltConfig: string | null): string | null {
   return null;
 }
 
-// Helper function to add rank PDFs to member's styleDocuments
+// Rank PDFs are sourced from Rank.pdfDocument and shown on the portal Styles
+// page directly. We no longer copy them into member.styleDocuments — that field
+// is reserved for waivers and manually uploaded documents.
 function addRankPdfsToDocuments(
-  beltConfig: string | null,
-  targetRankName: string,
+  _beltConfig: string | null,
+  _targetRankName: string,
   currentDocs: StyleDocument[]
 ): { docs: StyleDocument[]; hasChanges: boolean } {
-  if (!beltConfig) return { docs: currentDocs, hasChanges: false };
-
-  try {
-    const config = typeof beltConfig === "string" ? JSON.parse(beltConfig) : beltConfig;
-    if (!config.ranks || !Array.isArray(config.ranks)) {
-      return { docs: currentDocs, hasChanges: false };
-    }
-
-    // Find the target rank
-    const targetRank = config.ranks.find((r: BeltRank) => r.name === targetRankName);
-    if (!targetRank) return { docs: currentDocs, hasChanges: false };
-
-    // Get all ranks up to and including the target rank (by order number)
-    const ranksToInclude = config.ranks.filter((r: BeltRank) => r.order <= targetRank.order);
-
-    let hasChanges = false;
-    const updatedDocs = [...currentDocs];
-
-    // Add PDFs from all these ranks
-    for (const rank of ranksToInclude) {
-      if (!rank.pdfDocuments || rank.pdfDocuments.length === 0) continue;
-
-      for (const rankPdf of rank.pdfDocuments) {
-        // Check if this PDF already exists (by name)
-        const exists = updatedDocs.some((doc) => doc.name === rankPdf.name);
-        if (!exists) {
-          const newDoc: StyleDocument = {
-            id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            name: rankPdf.name,
-            url: rankPdf.url,
-            uploadedAt: new Date().toISOString(),
-          };
-          updatedDocs.push(newDoc);
-          hasChanges = true;
-        }
-      }
-    }
-
-    return { docs: updatedDocs, hasChanges };
-  } catch {
-    return { docs: currentDocs, hasChanges: false };
-  }
+  return { docs: currentDocs, hasChanges: false };
 }
 
 // Calculate next payment date based on billing cycle
