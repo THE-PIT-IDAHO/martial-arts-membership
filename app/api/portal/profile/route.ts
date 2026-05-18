@@ -99,6 +99,12 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // Diagnostic: log what we found so we can debug missing styles in Vercel logs
+    console.log(`[portal/profile] enrolled style="${enrolled.name}" rank="${enrolled.rank}" → ` +
+      `styleFound=${!!style}, beltConfigPresent=${!!style?.beltConfig}, ` +
+      `rankRowsCount=${style?.ranks?.length || 0}, ` +
+      `rankNames=${JSON.stringify(style?.ranks?.map(r => `${r.name}(pdf:${!!r.pdfDocument})`) || [])}`);
+
     let beltLayers: Record<string, unknown> | null = null;
     let nextRankName: string | null = null;
     let classRequirements: Array<{ label: string; attended: number; required: number; met: boolean }> = [];
