@@ -38,6 +38,7 @@ export async function POST(_request: NextRequest, props: { params: Promise<{ id:
       email: member.email,
       memberName: `${member.firstName} ${member.lastName}`.trim(),
       resetUrl,
+      memberId: member.id,
     });
 
     return NextResponse.json({ success: true });

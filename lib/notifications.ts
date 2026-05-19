@@ -74,7 +74,7 @@ export async function sendWelcomeEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: "WELCOME" });
 }
 
 // --- 2. Invoice Created ---
@@ -102,7 +102,7 @@ export async function sendInvoiceCreatedEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: "INVOICE_CREATED" });
 }
 
 // --- 3. Payment Received ---
@@ -128,7 +128,7 @@ export async function sendPaymentReceivedEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: "PAYMENT_RECEIVED" });
 }
 
 // --- 4. Past Due Alert ---
@@ -155,7 +155,7 @@ export async function sendPastDueAlertEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: "PAST_DUE" });
 }
 
 // --- 5. Promotion Congrats ---
@@ -179,7 +179,7 @@ export async function sendPromotionCongratsEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: "PROMOTION_CONGRATS" });
 }
 
 // --- 6. Class Reminder ---
@@ -205,7 +205,7 @@ export async function sendClassReminderEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: "CLASS_REMINDER" });
 }
 
 // --- 7. Membership Expiry Warning ---
@@ -229,7 +229,7 @@ export async function sendMembershipExpiryWarningEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: "MEMBERSHIP_EXPIRY" });
 }
 
 // --- 8. Magic Link Login ---
@@ -238,6 +238,7 @@ export async function sendMagicLinkEmail(params: {
   email: string;
   memberName: string;
   loginUrl: string;
+  memberId?: string;
 }) {
   const brand = await getGymBranding();
   const resolved = await resolveTemplate("magic_link", {
@@ -248,7 +249,7 @@ export async function sendMagicLinkEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [params.email], subject, html });
+  await sendEmail({ to: [params.email], subject, html, memberId: params.memberId, eventType: "MAGIC_LINK" });
 }
 
 // --- 8b. Password Reset Email ---
@@ -257,6 +258,7 @@ export async function sendPasswordResetEmail(params: {
   email: string;
   memberName: string;
   resetUrl: string;
+  memberId?: string;
 }) {
   const brand = await getGymBranding();
   let resolved = null;
@@ -269,7 +271,7 @@ export async function sendPasswordResetEmail(params: {
   } catch { /* no template, use fallback */ }
   if (resolved) {
     const html = wrapInTemplate(brand, resolved.bodyHtml);
-    await sendEmail({ to: [params.email], subject: resolved.subject, html });
+    await sendEmail({ to: [params.email], subject: resolved.subject, html, memberId: params.memberId, eventType: "PASSWORD_RESET" });
     return;
   }
   // Fallback if no template configured
@@ -286,7 +288,7 @@ export async function sendPasswordResetEmail(params: {
     <p style="font-size:13px;color:#666;">If you didn't request this, you can safely ignore this email.</p>
   `;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [params.email], subject, html });
+  await sendEmail({ to: [params.email], subject, html, memberId: params.memberId, eventType: "PASSWORD_RESET" });
 }
 
 // --- 9. Booking Confirmation ---
@@ -319,7 +321,7 @@ export async function sendBookingConfirmationEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: isWaitlisted ? "BOOKING_WAITLISTED" : "BOOKING_CONFIRMED" });
 }
 
 // --- 10. Waitlist Promotion ---
@@ -344,7 +346,7 @@ export async function sendWaitlistPromotionEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: "WAITLIST_PROMOTION" });
 }
 
 // --- 11. Waiver Confirmation (sent to submitter after waiver submission) ---
@@ -383,6 +385,7 @@ export async function sendWaiverWelcomeEmail(params: {
   email: string;
   memberName: string;
   portalUrl: string;
+  memberId?: string;
 }) {
   const brand = await getGymBranding();
   const resolved = await resolveTemplate("waiver_welcome", {
@@ -395,7 +398,7 @@ export async function sendWaiverWelcomeEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [params.email], subject, html });
+  await sendEmail({ to: [params.email], subject, html, memberId: params.memberId, eventType: "WAIVER_WELCOME" });
 }
 
 // --- 11c. Waiver Confirmed (sent after admin confirms waiver) ---
@@ -406,6 +409,7 @@ export async function sendWaiverConfirmationEmail(params: {
   portalUrl: string;
   magicLoginUrl: string;
   clientId?: string;
+  memberId?: string;
 }) {
   const brand = await getGymBranding(params.clientId);
   const resolved = await resolveTemplate("waiver_confirmed", {
@@ -419,7 +423,7 @@ export async function sendWaiverConfirmationEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [params.email], subject, html, clientId: params.clientId });
+  await sendEmail({ to: [params.email], subject, html, clientId: params.clientId, memberId: params.memberId, eventType: "WAIVER_CONFIRMED" });
 }
 
 // --- 12. Custom Message (for calendar "message attendees") ---
@@ -442,7 +446,7 @@ export async function sendCustomMessageEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: "CUSTOM_MESSAGE" });
 }
 
 // --- 13. Cancellation Confirmation ---
@@ -471,7 +475,7 @@ export async function sendCancellationConfirmationEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: "CANCELLATION_CONFIRMED" });
 }
 
 // --- 14. Low Stock Alert (sent to admin) ---
@@ -520,7 +524,7 @@ export async function sendDunningEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: emails, subject, html });
+  await sendEmail({ to: emails, subject, html, memberId: params.memberId, eventType: `DUNNING_${params.level.toUpperCase()}` });
 }
 
 // --- 16. Promotion Eligibility Alert (sent to admin) ---
@@ -584,7 +588,7 @@ export async function sendBirthdayEmail(params: {
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
   for (const to of emails) {
-    await sendEmail({ to, subject, html });
+    await sendEmail({ to, subject, html, memberId: params.memberId, eventType: "BIRTHDAY" });
   }
 }
 
@@ -608,7 +612,7 @@ export async function sendInactiveReengagementEmail(params: {
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
   for (const to of emails) {
-    await sendEmail({ to, subject, html });
+    await sendEmail({ to, subject, html, memberId: params.memberId, eventType: "INACTIVE_REENGAGEMENT" });
   }
 }
 
@@ -636,7 +640,7 @@ export async function sendRenewalReminderEmail(params: {
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
   for (const to of emails) {
-    await sendEmail({ to, subject, html });
+    await sendEmail({ to, subject, html, memberId: params.memberId, eventType: "RENEWAL_REMINDER" });
   }
 }
 
@@ -664,7 +668,7 @@ export async function sendTrialExpiringEmail(params: {
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
   for (const to of emails) {
-    await sendEmail({ to, subject, html });
+    await sendEmail({ to, subject, html, memberId: params.memberId, eventType: "TRIAL_EXPIRING" });
   }
 }
 
@@ -698,6 +702,8 @@ export async function sendReceiptEmail(params: {
       subject: `Your Receipt from ${brand.gymName}`,
       html,
       attachments: [{ filename: params.fileName, content: params.pdfBase64 }],
+      memberId: params.memberId,
+      eventType: "RECEIPT",
     });
   }
 }

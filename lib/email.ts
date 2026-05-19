@@ -222,23 +222,35 @@ export async function sendEmail(params: {
     return false;
   } finally {
     // Best-effort logging — never block or surface failures from email send.
-    if (params.eventType && params.clientId) {
+    // Caller must pass eventType to opt in. clientId is looked up from the
+    // member if not provided directly.
+    if (params.eventType) {
       const recipients = Array.isArray(params.to) ? params.to : [params.to];
-      prisma.emailLog
-        .create({
+      const writeLog = async () => {
+        let clientId = params.clientId;
+        if (!clientId && params.memberId) {
+          const m = await prisma.member.findUnique({
+            where: { id: params.memberId },
+            select: { clientId: true },
+          });
+          clientId = m?.clientId || undefined;
+        }
+        if (!clientId) return; // no tenant scope, skip log rather than orphan
+        await prisma.emailLog.create({
           data: {
-            clientId: params.clientId,
+            clientId,
             memberId: params.memberId || null,
-            eventType: params.eventType,
+            eventType: params.eventType!,
             subject: params.subject,
             recipients: JSON.stringify(recipients),
             success,
             errorText: errorText || null,
           },
-        })
-        .catch((err) => {
-          console.error("[Email] Failed to log:", err);
         });
+      };
+      writeLog().catch((err) => {
+        console.error("[Email] Failed to log:", err);
+      });
     }
   }
 }

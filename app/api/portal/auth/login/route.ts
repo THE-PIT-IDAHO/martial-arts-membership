@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
         email: member.email,
         memberName: `${member.firstName} ${member.lastName}`,
         loginUrl,
+        memberId: member.id,
       });
     }
 
