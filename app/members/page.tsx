@@ -144,6 +144,7 @@ export default function MembersPage() {
 
   // CSV Import state
   const [showImportModal, setShowImportModal] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const [portalLinkCopied, setPortalLinkCopied] = useState(false);
   const [showPortalMenu, setShowPortalMenu] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -1148,10 +1149,28 @@ export default function MembersPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => window.open("/api/export/members", "_blank")}
-              className="text-xs rounded-md border border-gray-300 bg-white px-3 py-1 font-semibold text-gray-700 hover:bg-gray-50"
+              onClick={async () => {
+                if (exportingCsv) return;
+                setExportingCsv(true);
+                try {
+                  const res = await fetch("/api/export/members/email", { method: "POST" });
+                  const data = await res.json().catch(() => null);
+                  if (res.ok) {
+                    alert(`CSV emailed to ${data?.recipient || "your gym email"} (${data?.memberCount ?? 0} members).`);
+                  } else {
+                    alert(data?.error || "Failed to email export.");
+                  }
+                } catch {
+                  alert("Connection error while emailing export.");
+                } finally {
+                  setExportingCsv(false);
+                }
+              }}
+              disabled={exportingCsv}
+              title="Email this CSV to your gym email so you can open it from Drive / Sheets"
+              className="text-xs rounded-md border border-gray-300 bg-white px-3 py-1 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
-              Export CSV
+              {exportingCsv ? "Sending..." : "Export CSV (Email)"}
             </button>
             <button
               type="button"
