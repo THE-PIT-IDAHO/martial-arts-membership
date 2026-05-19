@@ -8,6 +8,7 @@ import {
 } from "@/lib/billing";
 import { sendInvoiceCreatedEmail } from "@/lib/notifications";
 import { getClientId } from "@/lib/tenant";
+import { getGymTimezone, localMidnightUtc, formatDateInTimezone } from "@/lib/dates";
 
 // POST /api/billing/run
 // Scans active memberships where nextPaymentDate <= today and autoRenew = true.
@@ -16,8 +17,11 @@ import { getClientId } from "@/lib/tenant";
 export async function POST(req: Request) {
   try {
     const clientId = await getClientId(req);
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
+    // End-of-today in the gym's TZ so billing rolls over at the gym's
+    // local midnight, not the server's UTC midnight.
+    const tz = await getGymTimezone(clientId);
+    const todayYmd = formatDateInTimezone(new Date(), tz);
+    const today = new Date(localMidnightUtc(todayYmd, tz) + 24 * 60 * 60 * 1000 - 1);
 
     // Read grace period from settings
     const graceSetting = await prisma.settings.findFirst({

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { getGymTimezone, getDayOfWeekInTimezone, getLocalParts, localMidnightUtc, formatDateInTimezone } from "@/lib/dates";
 
 // POST /api/board/focus/post — post the active focus to the board feed
 export async function POST(req: Request) {
@@ -25,18 +26,21 @@ export async function POST(req: Request) {
       return new NextResponse("No active focus to post", { status: 404 });
     }
 
-    // Calculate the next occurrence of the chosen weekday+hour
+    // Calculate the next occurrence of the chosen weekday+hour in gym TZ
     const now = new Date();
-    const currentDay = now.getDay();
+    const tz = await getGymTimezone();
+    const localNow = getLocalParts(now, tz);
+    const currentDay = getDayOfWeekInTimezone(now, tz);
     let daysUntil = pinnedUntilDay - currentDay;
     if (daysUntil < 0) daysUntil += 7;
-    if (daysUntil === 0) {
-      // Same day — if the hour hasn't passed, use today; otherwise next week
-      if (now.getHours() >= pinnedUntilHour) daysUntil = 7;
+    if (daysUntil === 0 && localNow.hour >= pinnedUntilHour) {
+      daysUntil = 7;
     }
-    const pinnedUntil = new Date(now);
-    pinnedUntil.setDate(pinnedUntil.getDate() + daysUntil);
-    pinnedUntil.setHours(pinnedUntilHour, 0, 0, 0);
+    // Target local YYYY-MM-DD: today + daysUntil
+    const todayLocal = formatDateInTimezone(now, tz);
+    const targetLocalMs = new Date(todayLocal + "T12:00:00Z").getTime() + daysUntil * 24 * 60 * 60 * 1000;
+    const targetLocalYmd = formatDateInTimezone(new Date(targetLocalMs), tz);
+    const pinnedUntil = new Date(localMidnightUtc(targetLocalYmd, tz) + pinnedUntilHour * 60 * 60 * 1000);
 
     // Find the target channel
     let targetChannelId = channelId;

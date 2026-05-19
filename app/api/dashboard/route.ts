@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { getGymTimezone, getDayOfWeekInTimezone, localMidnightUtc, formatDateInTimezone, getLocalParts } from "@/lib/dates";
 
 // GET /api/dashboard
 export async function GET(req: Request) {
   try {
     const clientId = await getClientId(req);
     const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(now);
-    todayEnd.setHours(23, 59, 59, 999);
+    // "Today" is defined in the gym's timezone, not the server's. On Vercel
+    // the server is UTC, so without this evening hours in any negative-UTC
+    // timezone would roll the dashboard onto tomorrow prematurely.
+    const tz = await getGymTimezone(clientId);
+    const todayLocalYmd = formatDateInTimezone(now, tz);
+    const todayStartMs = localMidnightUtc(todayLocalYmd, tz);
+    const todayStart = new Date(todayStartMs);
+    const todayEnd = new Date(todayStartMs + 24 * 60 * 60 * 1000 - 1);
 
-    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
+    const dayOfWeek = getDayOfWeekInTimezone(now, tz); // 0=Sun, 1=Mon, ...
 
     // --- Members ---
     const totalMembers = await prisma.member.count({ where: { clientId } });
@@ -101,17 +106,16 @@ export async function GET(req: Request) {
       if (scheduleStart && todayStart < scheduleStart) return false;
       if (scheduleEnd && !cls.isOngoing && todayStart > scheduleEnd) return false;
 
-      // Check excluded dates
+      // Check excluded dates (compare in gym's local date, not server's)
       if (cls.excludedDates) {
         try {
           const excluded: string[] = JSON.parse(cls.excludedDates);
-          const todayStr = `${todayStart.getFullYear()}-${String(todayStart.getMonth() + 1).padStart(2, "0")}-${String(todayStart.getDate()).padStart(2, "0")}`;
-          if (excluded.includes(todayStr)) return false;
+          if (excluded.includes(todayLocalYmd)) return false;
         } catch { /* ignore */ }
       }
 
-      // Day of week must match
-      const classDow = classStart.getDay();
+      // Day of week must match (in gym TZ, not server TZ)
+      const classDow = getDayOfWeekInTimezone(classStart, tz);
       if (classDow !== dayOfWeek) return false;
 
       const freq = cls.frequencyNumber || 1;
@@ -199,10 +203,10 @@ export async function GET(req: Request) {
 
     // Sort by time of day (not full datetime, since recurring classes have old dates)
     classesToday.sort((a, b) => {
-      const aDate = new Date(a.startsAt);
-      const bDate = new Date(b.startsAt);
-      const aMins = aDate.getHours() * 60 + aDate.getMinutes();
-      const bMins = bDate.getHours() * 60 + bDate.getMinutes();
+      const aParts = getLocalParts(new Date(a.startsAt), tz);
+      const bParts = getLocalParts(new Date(b.startsAt), tz);
+      const aMins = aParts.hour * 60 + aParts.minute;
+      const bMins = bParts.hour * 60 + bParts.minute;
       return aMins - bMins;
     });
 
@@ -513,13 +517,15 @@ export async function GET(req: Request) {
 
             const nextRank = sortedRanks[currentIdx + 1];
 
-            // Filter attendance for this style (after reset date if set)
+            // Filter attendance for this style (after reset date if set).
+            // Compare in the gym's local date so late-evening check-ins don't
+            // bleed into the next day's bucket.
             const styleAttendances = member.attendances.filter((att) => {
               if (ms.attendanceResetDate) {
                 const attDate = att.attendanceDate
-                  ? new Date(att.attendanceDate).toISOString().split("T")[0]
+                  ? formatDateInTimezone(new Date(att.attendanceDate), tz)
                   : att.checkedInAt
-                    ? new Date(att.checkedInAt).toISOString().split("T")[0]
+                    ? formatDateInTimezone(new Date(att.checkedInAt), tz)
                     : null;
                 if (attDate && attDate < ms.attendanceResetDate) return false;
               }

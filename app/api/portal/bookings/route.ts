@@ -3,21 +3,7 @@ import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import { sendBookingConfirmationEmail } from "@/lib/notifications";
 import { memberCanAttendClass } from "@/lib/class-eligibility";
-import { getSetting } from "@/lib/email";
-
-// Compute the UTC timestamp of a recurring class's occurrence on a given
-// local booking date. Avoids the trap of using getHours() on the server,
-// which returns UTC hours and silently breaks the cutoff math for any
-// class whose stored UTC datetime crosses midnight relative to its local
-// time (e.g. a 7pm Mountain class stored as 02:00 UTC next day).
-function getOccurrenceUtc(classStartsAtUtc: Date, bookingDateYmd: string, gymTimezone: string): Date {
-  const classLocalYmd = new Intl.DateTimeFormat("en-CA", { timeZone: gymTimezone }).format(classStartsAtUtc); // "YYYY-MM-DD"
-  // Anchor both at UTC noon for a DST-safe day-difference calc.
-  const classAnchor = new Date(classLocalYmd + "T12:00:00Z").getTime();
-  const bookingAnchor = new Date(bookingDateYmd + "T12:00:00Z").getTime();
-  const daysDiff = Math.round((bookingAnchor - classAnchor) / (24 * 60 * 60 * 1000));
-  return new Date(classStartsAtUtc.getTime() + daysDiff * 24 * 60 * 60 * 1000);
-}
+import { getGymTimezone, occurrenceForDate } from "@/lib/dates";
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
@@ -124,8 +110,8 @@ async function handleBookingPost(req: NextRequest) {
   // occurrence on bookingDate — otherwise evening classes whose UTC
   // datetime crosses midnight get a cutoff that's a day off.
   if (cls.bookingCutoffMins) {
-    const gymTz = (await getSetting("timezone")) || "America/Denver";
-    const occurrence = getOccurrenceUtc(new Date(cls.startsAt), bookingDate, gymTz);
+    const gymTz = await getGymTimezone();
+    const occurrence = occurrenceForDate(new Date(cls.startsAt), bookingDate, gymTz);
     const cutoff = new Date(occurrence.getTime() - cls.bookingCutoffMins * 60 * 1000);
     if (new Date() > cutoff) {
       return NextResponse.json({ error: "Booking cutoff has passed" }, { status: 400 });

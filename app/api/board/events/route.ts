@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
-import { formatInTimezone } from "@/lib/dates";
+import { formatInTimezone, getGymTimezone, localMidnightUtc, formatDateInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
 
 function formatTime12h(time: string): string {
@@ -17,7 +17,9 @@ function formatTime12h(time: string): string {
 export async function GET(req: Request) {
   try {
     await getClientId(req); // validate tenant
-    const today = new Date(new Date().setHours(0, 0, 0, 0));
+    // "Today" in gym TZ so we don't drop events early in the morning UTC
+    const tz = await getGymTimezone();
+    const today = new Date(localMidnightUtc(formatDateInTimezone(new Date(), tz), tz));
 
     // Fetch upcoming testing events and promotion events in parallel
     const [testingEvents, promotionEvents, postedEvents] = await Promise.all([
@@ -142,7 +144,8 @@ export async function POST(req: Request) {
         authorName: "Admin",
         authorInitials: "A",
         isPriority: true,
-        pinnedUntil: new Date(new Date(date).setHours(23, 59, 59, 999)),
+        // Pin until end-of-event-day in gym TZ
+        pinnedUntil: new Date(localMidnightUtc(formatDateInTimezone(new Date(date), tz), tz) + 24 * 60 * 60 * 1000 - 1),
         channelId: targetChannelId,
       },
     });
