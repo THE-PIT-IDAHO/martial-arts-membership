@@ -351,8 +351,9 @@ export default function AdultWaiverPage() {
 
       // Add signature image from canvas
       const canvas = canvasRef.current;
+      let signatureDataUrl = "";
       if (canvas && hasSignature) {
-        const signatureDataUrl = canvas.toDataURL("image/png");
+        signatureDataUrl = canvas.toDataURL("image/png");
         pdf.addImage(signatureDataUrl, "PNG", margin, yPos, 60, 20);
         yPos += 25;
       }
@@ -385,6 +386,7 @@ export default function AdultWaiverPage() {
           emergencyContactPhone: emergencyContactPhone || undefined,
           medicalNotes: medicalNotes || undefined,
           pdfBase64,
+          signatureData: signatureDataUrl || undefined,
         }),
       });
 

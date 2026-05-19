@@ -514,8 +514,9 @@ export default function GuardianWaiverPage() {
 
       // Add guardian signature image from canvas
       const guardianCanvas = canvasRef.current;
+      let signatureDataUrl = "";
       if (guardianCanvas && hasSignature) {
-        const signatureDataUrl = guardianCanvas.toDataURL("image/png");
+        signatureDataUrl = guardianCanvas.toDataURL("image/png");
         pdf.addImage(signatureDataUrl, "PNG", margin, yPos, 60, 20);
         yPos += 25;
       }
@@ -576,6 +577,7 @@ export default function GuardianWaiverPage() {
           emergencyContactPhone: emergencyContactPhone || undefined,
           medicalNotes: medicalNotes || undefined,
           pdfBase64,
+          signatureData: signatureDataUrl || undefined,
         }),
       });
 
