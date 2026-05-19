@@ -1699,6 +1699,39 @@ export default function MemberProfilePage() {
 
   const [sendingReset, setSendingReset] = useState(false);
   const [sendingPortalAccess, setSendingPortalAccess] = useState(false);
+  const [splittingAccount, setSplittingAccount] = useState(false);
+
+  async function handleSplitAccount() {
+    if (!member) return;
+    const confirmMsg =
+      `Split ${member.firstName} ${member.lastName} into their own independent account?\n\n` +
+      `• Removes their parent/guardian links\n` +
+      `• Parent/guardian loses portal switcher access to them\n` +
+      `• Emails ${member.firstName} a link to sign a fresh adult waiver\n` +
+      `• Training history, belt rank, payment methods all preserved`;
+    if (!window.confirm(confirmMsg)) return;
+    setSplittingAccount(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/members/${memberId}/split-account`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to split account");
+      const lines = [
+        `Account split.`,
+        `Removed ${data.relationshipsRemoved} parent/guardian link${data.relationshipsRemoved === 1 ? "" : "s"}.`,
+        data.adultWaiverEmailed
+          ? `Adult waiver link emailed to ${member.email}.`
+          : `No email on file — share the adult waiver link manually.`,
+      ];
+      alert(lines.join("\n"));
+      fetchMember();
+    } catch (err: any) {
+      console.error("Error splitting account:", err);
+      setError(err.message || "Failed to split account");
+    } finally {
+      setSplittingAccount(false);
+    }
+  }
 
   async function handleSendPortalAccess() {
     if (!member?.email) {
@@ -2441,6 +2474,20 @@ export default function MemberProfilePage() {
                               </div>
                             ))}
                           </div>
+                        )}
+                        {/* Split Account — only show when there's a parent
+                            linking IN to this member (i.e. they're someone's
+                            child). Hides for self-managed adults. */}
+                        {relationships.some((r) => r.toMemberId === memberId) && (
+                          <button
+                            type="button"
+                            onClick={handleSplitAccount}
+                            disabled={splittingAccount}
+                            title="Convert this dependent into a fully independent account"
+                            className="mt-2 rounded-md border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/5 disabled:opacity-50"
+                          >
+                            {splittingAccount ? "Splitting…" : "Split into Own Account"}
+                          </button>
                         )}
                       </dd>
                     </div>
