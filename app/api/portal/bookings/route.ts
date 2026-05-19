@@ -26,6 +26,16 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    return await handleBookingPost(req);
+  } catch (err) {
+    console.error("[portal/bookings] POST failed:", err);
+    const message = err instanceof Error ? err.message : "Booking failed";
+    return NextResponse.json({ error: `Booking failed: ${message}` }, { status: 500 });
+  }
+}
+
+async function handleBookingPost(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

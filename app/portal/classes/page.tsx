@@ -111,11 +111,16 @@ export default function PortalClassesPage() {
       if (res.ok) {
         loadClasses(selectedDate);
       } else {
-        const data = await res.json();
-        alert(data.error || "Failed to book");
+        // Try to parse JSON error; fall back to status text so the user sees
+        // *something* meaningful when the API returns non-JSON (e.g. an HTML
+        // error page from an unhandled exception).
+        const data = await res.json().catch(() => null);
+        alert(data?.error || `Failed to book (HTTP ${res.status})`);
       }
-    } catch {
-      alert("Connection error");
+    } catch (err) {
+      console.error("Booking error:", err);
+      const msg = err instanceof Error ? err.message : "unknown error";
+      alert(`Connection error: ${msg}`);
     } finally {
       setActionLoading(false);
       setBookingId(null);
