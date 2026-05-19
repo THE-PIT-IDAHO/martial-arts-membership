@@ -182,6 +182,7 @@ export default function WaiversPage() {
   const [search, setSearch] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [modalMember, setModalMember] = useState<Member | null>(null);
+  const [modalSignature, setModalSignature] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [waiverSections, setWaiverSections] = useState<WaiverSection[]>(DEFAULT_WAIVER_SECTIONS);
   const [editingSections, setEditingSections] = useState<WaiverSection[]>([]);
@@ -363,10 +364,20 @@ export default function WaiversPage() {
 
   async function openWaiverModal(memberId: string) {
     try {
-      const res = await fetch(`/api/members/${memberId}`);
-      if (res.ok) {
-        const data = await res.json();
+      const [memberRes, waiverRes] = await Promise.all([
+        fetch(`/api/members/${memberId}`),
+        fetch(`/api/waivers/signed/${memberId}`),
+      ]);
+      if (memberRes.ok) {
+        const data = await memberRes.json();
         setModalMember(data.member);
+      }
+      if (waiverRes.ok) {
+        const { waivers } = await waiverRes.json();
+        const latest = (waivers || []).find((w: { signatureData?: string }) => !!w.signatureData);
+        setModalSignature(latest?.signatureData || null);
+      } else {
+        setModalSignature(null);
       }
     } catch (err) {
       console.error("Failed to load member:", err);
@@ -837,7 +848,7 @@ export default function WaiversPage() {
                   Open Full Form
                 </Link>
                 <button
-                  onClick={() => setModalMember(null)}
+                  onClick={() => { setModalMember(null); setModalSignature(null); }}
                   className="text-gray-500 hover:text-gray-700"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -955,13 +966,27 @@ export default function WaiversPage() {
                 {/* Signature Section */}
                 <div className="signature-line" style={{ marginTop: "40px", display: "flex", justifyContent: "space-between" }}>
                   <div className="signature-box" style={{ width: "45%" }}>
-                    <p style={{ borderBottom: "1px solid #333", paddingBottom: "5px", minHeight: "40px" }}>
-                      {modalMember.waiverSigned ? `${modalMember.firstName} ${modalMember.lastName}` : ""}
-                    </p>
+                    <div style={{ borderBottom: "1px solid #333", paddingBottom: "5px", minHeight: "60px", display: "flex", alignItems: "flex-end" }}>
+                      {modalSignature ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={modalSignature}
+                          alt="Signature"
+                          style={{ maxHeight: "55px", maxWidth: "100%", objectFit: "contain" }}
+                        />
+                      ) : modalMember.waiverSigned ? (
+                        <span style={{ fontStyle: "italic", color: "#666" }}>(signed — signature on file)</span>
+                      ) : null}
+                    </div>
                     <span style={{ fontSize: "12px", color: "#666" }}>Signature</span>
+                    {modalMember.waiverSigned && (
+                      <div style={{ fontSize: "11px", color: "#333", marginTop: "2px" }}>
+                        {modalMember.firstName} {modalMember.lastName}
+                      </div>
+                    )}
                   </div>
                   <div className="signature-box" style={{ width: "45%" }}>
-                    <p style={{ borderBottom: "1px solid #333", paddingBottom: "5px", minHeight: "40px" }}>
+                    <p style={{ borderBottom: "1px solid #333", paddingBottom: "5px", minHeight: "60px", display: "flex", alignItems: "flex-end" }}>
                       {modalMember.waiverSignedAt ? new Date(modalMember.waiverSignedAt).toLocaleDateString() : ""}
                     </p>
                     <span style={{ fontSize: "12px", color: "#666" }}>Date</span>
