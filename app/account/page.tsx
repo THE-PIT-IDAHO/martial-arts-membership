@@ -1385,18 +1385,36 @@ export default function AccountPage() {
                   <label className="block text-xs font-medium text-gray-700 mb-1">Member</label>
                   <select
                     value={assignMemberId}
-                    onChange={(e) => setAssignMemberId(e.target.value)}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setAssignMemberId(id);
+                      // Auto-pick the first role the member doesn't already have.
+                      if (id) {
+                        const picked = allMembers.find((m) => m.id === id);
+                        if (picked) {
+                          const existing = new Set(getRolesForMember(picked));
+                          const firstAvailable = ROLES.find((r) => !existing.has(r.key));
+                          if (firstAvailable) setAssignRole(firstAvailable.key);
+                        }
+                      }
+                    }}
                     className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   >
                     <option value="">Select a member...</option>
                     {allMembers
-                      .filter((m) => !m.accessRole)
+                      .slice()
                       .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`))
-                      .map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.lastName}, {m.firstName}
-                        </option>
-                      ))}
+                      .map((m) => {
+                        const existing = getRolesForMember(m);
+                        const suffix = existing.length > 0
+                          ? ` (${existing.map((r) => ROLES.find((x) => x.key === r)?.label || r).join(", ")})`
+                          : "";
+                        return (
+                          <option key={m.id} value={m.id}>
+                            {m.lastName}, {m.firstName}{suffix}
+                          </option>
+                        );
+                      })}
                   </select>
                 </div>
                 <div>
@@ -1406,9 +1424,18 @@ export default function AccountPage() {
                     onChange={(e) => setAssignRole(e.target.value)}
                     className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   >
-                    {ROLES.map((r) => (
-                      <option key={r.key} value={r.key}>{r.label}</option>
-                    ))}
+                    {(() => {
+                      // If a member is selected, hide the roles they already have.
+                      const picked = assignMemberId ? allMembers.find((m) => m.id === assignMemberId) : null;
+                      const existingRoles = picked ? new Set(getRolesForMember(picked)) : new Set<string>();
+                      const available = ROLES.filter((r) => !existingRoles.has(r.key));
+                      if (available.length === 0) {
+                        return <option value="">All roles already assigned</option>;
+                      }
+                      return available.map((r) => (
+                        <option key={r.key} value={r.key}>{r.label}</option>
+                      ));
+                    })()}
                   </select>
                 </div>
                 <button
