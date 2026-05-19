@@ -881,6 +881,7 @@ model ClassBooking {
   bookingDate      DateTime
   status           String       @default("CONFIRMED")
   waitlistPosition Int?
+  reminderSentAt   DateTime?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   member           Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
