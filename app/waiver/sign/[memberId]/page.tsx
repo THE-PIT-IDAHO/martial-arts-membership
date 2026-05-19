@@ -148,7 +148,6 @@ export default function WaiverSignPage() {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [hasScrolledWaiver, setHasScrolledWaiver] = useState(false);
   const waiverScrollRef = useRef<HTMLDivElement>(null);
-  const [signatureName, setSignatureName] = useState("");
   const [signatureDate, setSignatureDate] = useState(getTodayString());
   const [waiverSections, setWaiverSections] = useState<WaiverSection[]>(DEFAULT_WAIVER_SECTIONS);
   const [gymSettings, setGymSettings] = useState<GymSettings>(DEFAULT_GYM_SETTINGS);
@@ -310,8 +309,8 @@ export default function WaiverSignPage() {
       return;
     }
 
-    if (!hasSignature && !signatureName) {
-      setError("Please provide a signature");
+    if (!hasSignature) {
+      setError("Please draw your signature in the box above");
       return;
     }
 
@@ -354,26 +353,8 @@ export default function WaiverSignPage() {
         })
         .join("\n\n");
 
-      let signatureDataUrl = "";
       const canvas = canvasRef.current;
-      if (hasSignature && canvas) {
-        signatureDataUrl = canvas.toDataURL("image/png");
-      } else if (signatureName) {
-        // Typed signature: render the name to a canvas so we have an image to store
-        const c = document.createElement("canvas");
-        c.width = 400;
-        c.height = 100;
-        const ctx = c.getContext("2d");
-        if (ctx) {
-          ctx.fillStyle = "#fff";
-          ctx.fillRect(0, 0, c.width, c.height);
-          ctx.fillStyle = "#000";
-          ctx.font = "italic 36px 'Times New Roman', serif";
-          ctx.textBaseline = "middle";
-          ctx.fillText(signatureName, 10, c.height / 2);
-        }
-        signatureDataUrl = c.toDataURL("image/png");
-      }
+      const signatureDataUrl = canvas ? canvas.toDataURL("image/png") : "";
 
       await fetch("/api/waivers/sign", {
         method: "POST",
@@ -703,26 +684,6 @@ export default function WaiverSignPage() {
                       Clear
                     </button>
                   </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="flex-1 border-t border-gray-300"></div>
-                  <span className="text-xs sm:text-sm text-gray-500 font-medium">OR</span>
-                  <div className="flex-1 border-t border-gray-300"></div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Type your full legal name as signature:
-                  </label>
-                  <input
-                    type="text"
-                    value={signatureName}
-                    onChange={(e) => setSignatureName(e.target.value)}
-                    placeholder="Type your full name"
-                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-lg sm:text-base focus:outline-none focus:ring-2 focus:ring-primary italic"
-                    style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive" }}
-                  />
                 </div>
 
                 <div>

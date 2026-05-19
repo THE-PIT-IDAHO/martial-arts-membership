@@ -70,7 +70,6 @@ export default function AddChildWaiverPage() {
   const [childMedicalNotes, setChildMedicalNotes] = useState("");
   const [relationship, setRelationship] = useState("Parent of");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [signatureName, setSignatureName] = useState("");
 
   const [waiverSections, setWaiverSections] = useState<WaiverSection[]>(DEFAULT_WAIVER_SECTIONS);
   const [gymSettings, setGymSettings] = useState<GymSettings>(DEFAULT_GYM_SETTINGS);
@@ -175,8 +174,8 @@ export default function AddChildWaiverPage() {
       setError("Please agree to the terms.");
       return;
     }
-    if (!hasSignature && !signatureName.trim()) {
-      setError("Please provide a signature.");
+    if (!hasSignature) {
+      setError("Please draw your signature in the box above.");
       return;
     }
 
@@ -191,25 +190,8 @@ export default function AddChildWaiverPage() {
         })
         .join("\n\n");
 
-      let signatureDataUrl = "";
       const canvas = canvasRef.current;
-      if (hasSignature && canvas) {
-        signatureDataUrl = canvas.toDataURL("image/png");
-      } else if (signatureName.trim()) {
-        const c = document.createElement("canvas");
-        c.width = 400;
-        c.height = 100;
-        const ctx = c.getContext("2d");
-        if (ctx) {
-          ctx.fillStyle = "#fff";
-          ctx.fillRect(0, 0, c.width, c.height);
-          ctx.fillStyle = "#000";
-          ctx.font = "italic 36px 'Times New Roman', serif";
-          ctx.textBaseline = "middle";
-          ctx.fillText(signatureName.trim(), 10, c.height / 2);
-        }
-        signatureDataUrl = c.toDataURL("image/png");
-      }
+      const signatureDataUrl = canvas ? canvas.toDataURL("image/png") : "";
 
       const res = await fetch("/api/waivers/add-child", {
         method: "POST",
@@ -371,15 +353,8 @@ export default function AddChildWaiverPage() {
             />
             <div className="flex items-center justify-between mt-1">
               <button type="button" onClick={clearSignature} className="text-xs text-gray-500 hover:text-gray-700">Clear</button>
-              <span className="text-xs text-gray-400">Or type your name below</span>
+              <span className="text-xs text-gray-400">Use your finger or stylus to sign</span>
             </div>
-            <input
-              type="text"
-              value={signatureName}
-              onChange={(e) => setSignatureName(e.target.value)}
-              placeholder="Type your full name"
-              className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
           </div>
 
           {error && (
