@@ -141,16 +141,19 @@ export async function POST(req: Request) {
       },
     });
 
-    // Also create a ClassBooking so it appears in the member portal
-    const existingBooking = await prisma.classBooking.findFirst({
+    // Also upsert a ClassBooking so it appears in the member portal. Have to
+    // handle three states: no row at all (create), an active row (skip), or
+    // a CANCELLED row from a prior portal cancel (re-activate). Without the
+    // re-activate branch the unique constraint (memberId+classSessionId+
+    // bookingDate) would 500 the request.
+    const existingBookingAny = await prisma.classBooking.findFirst({
       where: {
         memberId,
         classSessionId,
         bookingDate: { gte: startOfDay, lte: endOfDay },
-        status: { in: ["CONFIRMED", "WAITLISTED"] },
       },
     });
-    if (!existingBooking) {
+    if (!existingBookingAny) {
       await prisma.classBooking.create({
         data: {
           memberId,
@@ -159,7 +162,13 @@ export async function POST(req: Request) {
           status: "CONFIRMED",
         },
       });
+    } else if (existingBookingAny.status === "CANCELLED") {
+      await prisma.classBooking.update({
+        where: { id: existingBookingAny.id },
+        data: { status: "CONFIRMED", waitlistPosition: null },
+      });
     }
+    // CONFIRMED/WAITLISTED → leave as-is
 
     return NextResponse.json({ attendance }, { status: 201 });
   } catch (error) {

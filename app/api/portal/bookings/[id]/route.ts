@@ -35,13 +35,16 @@ export async function DELETE(
     data: { status: "CANCELLED" },
   });
 
-  // Remove the corresponding attendance record
+  // Remove the corresponding attendance record. Cancelling the booking
+  // should also pull the member off the class roster regardless of which
+  // path created the attendance row (PORTAL self-book, MANUAL staff
+  // sign-in, KIOSK check-in, etc.) — otherwise the dashboard's count
+  // would stay stuck after a portal cancel of a staff-added member.
   await prisma.attendance.deleteMany({
     where: {
       memberId: booking.memberId,
       classSessionId: booking.classSessionId,
       attendanceDate: booking.bookingDate,
-      source: "PORTAL",
     },
   });
 

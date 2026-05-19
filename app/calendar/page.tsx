@@ -1173,15 +1173,14 @@ export default function CalendarPage() {
             setClassAttendees([...classAttendees, member]);
           }
         } else {
-          // Surface real errors to the user so they know what to fix.
-          let msg = "Failed to add member.";
+          // Surface real errors to the user. Read text once (handler may
+          // return JSON or plain text), then try to parse JSON from it.
+          const raw = await res.text().catch(() => "");
+          let msg = raw || `Failed to add member (HTTP ${res.status})`;
           try {
-            const data = await res.json();
-            if (data?.error) msg = data.error;
-          } catch {
-            const text = await res.text().catch(() => "");
-            if (text) msg = text;
-          }
+            const parsed = JSON.parse(raw);
+            if (parsed?.error) msg = parsed.error;
+          } catch { /* not JSON, use raw text */ }
           console.error("Failed to save attendance:", msg);
           alert(msg);
           return;
@@ -3288,7 +3287,7 @@ export default function CalendarPage() {
                                 e.preventDefault();
                                 handleAddMember(member);
                               }}
-                              className={`cursor-pointer px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 ${idx === 0 ? "bg-gray-100" : ""}`}
+                              className={`cursor-pointer px-3 py-2 text-xs text-gray-700 hover:bg-primary hover:text-white ${idx === 0 ? "bg-gray-100" : ""}`}
                             >
                               {member.firstName} {member.lastName}
                             </li>
