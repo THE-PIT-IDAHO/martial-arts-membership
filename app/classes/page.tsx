@@ -133,6 +133,7 @@ type ClassSession = {
   bookingCutoffMins?: number | null;
   bookingAdvanceDays?: number | null;
   kioskEnabled?: boolean;
+  coachAttendsAsStudent?: boolean;
   mobileConfirm?: boolean;
   spaceId?: string | null;
 };
@@ -221,6 +222,7 @@ export default function ClassesPage() {
   const [selectedCoachId, setSelectedCoachId] = useState("");
   const [bookingEnabled, setBookingEnabled] = useState(false);
   const [kioskEnabled, setKioskEnabled] = useState(false);
+  const [coachAttendsAsStudent, setCoachAttendsAsStudent] = useState(false);
   const [mobileConfirm, setMobileConfirm] = useState(false);
   const [maxCapacity, setMaxCapacity] = useState("");
   const [bookingCutoffMins, setBookingCutoffMins] = useState("");
@@ -403,6 +405,7 @@ export default function ClassesPage() {
     setSelectedCoachId("");
     setBookingEnabled(false);
     setKioskEnabled(false);
+    setCoachAttendsAsStudent(false);
     setMaxCapacity("");
     setMinAge("");
     setMaxAge("");
@@ -497,6 +500,7 @@ export default function ClassesPage() {
     // Set booking fields
     setBookingEnabled(classSession.bookingEnabled || false);
     setKioskEnabled(classSession.kioskEnabled || false);
+    setCoachAttendsAsStudent(classSession.coachAttendsAsStudent || false);
     setMobileConfirm(classSession.mobileConfirm || false);
     setMaxCapacity(classSession.maxCapacity != null ? String(classSession.maxCapacity) : "");
     setMinAge(classSession.minAge != null ? String(classSession.minAge) : "");
@@ -701,6 +705,7 @@ export default function ClassesPage() {
                 coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
                 bookingEnabled,
                 kioskEnabled,
+                coachAttendsAsStudent,
                 mobileConfirm,
                 maxCapacity: maxCapacity || null,
                 minAge: minAge || null,
@@ -785,6 +790,7 @@ export default function ClassesPage() {
                 coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
                 bookingEnabled,
                 kioskEnabled,
+                coachAttendsAsStudent,
                 mobileConfirm,
                 maxCapacity: maxCapacity || null,
                 minAge: minAge || null,
@@ -1738,6 +1744,15 @@ export default function ClassesPage() {
                         </option>
                       ))}
                     </select>
+                    <label className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={coachAttendsAsStudent}
+                        onChange={(e) => setCoachAttendsAsStudent(e.target.checked)}
+                        className="rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <span>Count coach&apos;s attendance toward their own style</span>
+                    </label>
                   </div>
 
                   {/* Location Section */}

@@ -77,6 +77,7 @@ export async function PATCH(req: Request, { params }: Params) {
       excludedDates,
       coachId,
       coachName,
+      coachAttendsAsStudent,
       maxCapacity,
       bookingEnabled,
       bookingCutoffMins,
@@ -118,6 +119,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (excludedDates !== undefined) updateData.excludedDates = excludedDates;
     if (coachId !== undefined) updateData.coachId = coachId;
     if (coachName !== undefined) updateData.coachName = coachName;
+    if (coachAttendsAsStudent !== undefined) updateData.coachAttendsAsStudent = !!coachAttendsAsStudent;
     if (maxCapacity !== undefined) updateData.maxCapacity = maxCapacity != null ? parseInt(maxCapacity) || null : null;
     if (bookingEnabled !== undefined) updateData.bookingEnabled = bookingEnabled;
     if (bookingCutoffMins !== undefined) updateData.bookingCutoffMins = bookingCutoffMins != null ? parseInt(bookingCutoffMins) || null : null;

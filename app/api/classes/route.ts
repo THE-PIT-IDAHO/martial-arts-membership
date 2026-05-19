@@ -62,7 +62,7 @@ export async function POST(req: Request) {
   try {
     const clientId = await getClientId(req);
     const body = await req.json();
-    const { name, startsAt, endsAt, classType, classTypes, styleIds, styleNames, styleId, styleName, minRankId, minRankName, minRankIds, programId, isRecurring, frequencyNumber, frequencyUnit, scheduleStartDate, scheduleEndDate, isOngoing, color, coachId, coachName, maxCapacity, bookingEnabled, bookingCutoffMins, bookingAdvanceDays, kioskEnabled, mobileConfirm, locationId, spaceId, minAge, maxAge } = body;
+    const { name, startsAt, endsAt, classType, classTypes, styleIds, styleNames, styleId, styleName, minRankId, minRankName, minRankIds, programId, isRecurring, frequencyNumber, frequencyUnit, scheduleStartDate, scheduleEndDate, isOngoing, color, coachId, coachName, coachAttendsAsStudent, maxCapacity, bookingEnabled, bookingCutoffMins, bookingAdvanceDays, kioskEnabled, mobileConfirm, locationId, spaceId, minAge, maxAge } = body;
 
     if (!name || typeof name !== "string") {
       return new NextResponse("Name is required", { status: 400 });
@@ -102,6 +102,7 @@ export async function POST(req: Request) {
         color: color || "#a3a3a3",
         coachId: coachId || null,
         coachName: coachName || null,
+        coachAttendsAsStudent: !!coachAttendsAsStudent,
         maxCapacity: maxCapacity != null ? parseInt(maxCapacity) || null : null,
         bookingEnabled: bookingEnabled || false,
         bookingCutoffMins: bookingCutoffMins != null ? parseInt(bookingCutoffMins) || null : null,

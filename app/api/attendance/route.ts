@@ -22,6 +22,44 @@ export async function GET(req: Request) {
     const startOfDay = new Date(dayStartMs);
     const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
+    // If the class is configured to count the coach as an attendee and has a
+    // coach assigned, lazy-create their Attendance row on first roster load
+    // for this date. Cheap (single findUnique + create) and means the coach
+    // appears alongside students automatically — no separate cron needed.
+    const cls = await prisma.classSession.findUnique({
+      where: { id: classSessionId },
+      select: { coachId: true, coachAttendsAsStudent: true, clientId: true },
+    });
+    if (cls?.coachAttendsAsStudent && cls.coachId && cls.clientId === clientId) {
+      // Coach must be a real Member to attend (some coaches are Users without
+      // a matching Member row).
+      const coachMember = await prisma.member.findUnique({
+        where: { id: cls.coachId },
+        select: { id: true },
+      });
+      if (coachMember) {
+        const existing = await prisma.attendance.findFirst({
+          where: {
+            memberId: cls.coachId,
+            classSessionId,
+            attendanceDate: { gte: startOfDay, lte: endOfDay },
+          },
+        });
+        if (!existing) {
+          await prisma.attendance.create({
+            data: {
+              memberId: cls.coachId,
+              classSessionId,
+              attendanceDate: startOfDay,
+              source: "MANUAL",
+              confirmed: false,
+              requirementOverride: true,
+            },
+          }).catch(() => { /* ignore unique-race */ });
+        }
+      }
+    }
+
     const attendances = await prisma.attendance.findMany({
       where: {
         classSessionId,

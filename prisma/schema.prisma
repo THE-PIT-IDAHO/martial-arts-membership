@@ -336,6 +336,9 @@ model ClassSession {
   bookingAdvanceDays Int?
   kioskEnabled      Boolean      @default(false)
   mobileConfirm     Boolean      @default(false)
+  // When true, the assigned coach is auto-added to the attendance roster
+  // (and counts toward their own style requirements). Opt-in per class.
+  coachAttendsAsStudent Boolean  @default(false)
   minAge            Int?
   maxAge            Int?
   attendances       Attendance[]
