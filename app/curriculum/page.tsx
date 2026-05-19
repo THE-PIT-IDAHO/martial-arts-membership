@@ -1248,32 +1248,15 @@ export default function CurriculumV2Page() {
       const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
       if (res.ok) {
         const d = await res.json();
-        let tests: RankTest[] = d.rankTests || d.tests || [];
+        const tests: RankTest[] = d.rankTests || d.tests || [];
 
-        // Check if the current category is now empty — if it's not a default, delete it
-        // If it IS a default, just leave it empty (it'll stay in the dropdown)
-        const defaultCats = ["Knowledge", "Techniques", "Combos", "Fitness", "Sparring", "Forms/Katas", "Board Breaking"];
-        let needsReload = false;
-
-        for (const test of tests) {
-          for (const cat of test.categories) {
-            if (cat.items.length === 0 && !defaultCats.includes(cat.name)) {
-              // Non-default empty category — delete it
-              await fetch(`/api/rank-tests/${test.id}/categories?categoryId=${cat.id}`, { method: "DELETE" });
-              needsReload = true;
-            }
-          }
-        }
-
-        if (needsReload) {
-          const res2 = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
-          if (res2.ok) { const d2 = await res2.json(); tests = d2.rankTests || d2.tests || []; }
-          const updatedCats = buildCategoryList(tests);
-          setAllCategories(updatedCats);
-          if (!updatedCats.find(c => c.id === selectedCategoryId) && updatedCats.length > 0) {
-            setSelectedCategoryId(updatedCats[0].id);
-          }
-        }
+        // NOTE: we used to auto-delete any non-default category that was
+        // empty after save. That silently destroyed user-created categories
+        // (e.g. \"Stances\", \"Fran\") that the admin had added via the UI but
+        // hadn't filled in yet — they'd vanish entirely on the next save
+        // and disappear from the published PDF. Empty categories are
+        // already filtered out at PDF-render time, so leaving them alone
+        // here is safe and preserves the admin's structure.
 
         setRankTests(tests);
         buildRowsForCategory(tests, selectedCategoryId);
