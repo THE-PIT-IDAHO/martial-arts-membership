@@ -333,9 +333,9 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     <div style="text-align:center;margin:24px 0;">
       <a href="{{loginUrl}}" style="display:inline-block;background:#c41111;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;">Sign In</a>
     </div>
-    <p style="color:#6b7280;font-size:14px;">This link expires in 15 minutes. If you didn't request this, you can safely ignore this email.</p>
+    <p style="color:#6b7280;font-size:14px;">This link expires in {{linkExpiry}}. If you didn't request this, you can safely ignore this email.</p>
     <p style="color:#6b7280;font-size:12px;word-break:break-all;">Or copy this URL: {{loginUrl}}</p>`,
-    variables: ["memberName", "loginUrl", "gymName"],
+    variables: ["memberName", "loginUrl", "linkExpiry", "gymName"],
   },
 
   // --- Other ---

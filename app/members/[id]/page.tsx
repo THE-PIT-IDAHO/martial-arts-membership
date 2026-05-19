@@ -1698,6 +1698,31 @@ export default function MemberProfilePage() {
   }
 
   const [sendingReset, setSendingReset] = useState(false);
+  const [sendingPortalAccess, setSendingPortalAccess] = useState(false);
+
+  async function handleSendPortalAccess() {
+    if (!member?.email) {
+      setError("This member does not have an email address.");
+      return;
+    }
+    setSendingPortalAccess(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/members/${memberId}/send-portal-access`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send portal access email");
+      }
+      alert(`Portal access link sent to ${member.email} (valid for 7 days)`);
+    } catch (err: any) {
+      console.error("Error sending portal access:", err);
+      setError(err.message || "Failed to send portal access email");
+    } finally {
+      setSendingPortalAccess(false);
+    }
+  }
 
   async function handleSendPasswordReset() {
     if (!member?.email) {
@@ -2172,14 +2197,25 @@ export default function MemberProfilePage() {
                   {!editingPersonal ? (
                     <div className="flex items-center gap-2">
                       {member?.email && (
-                        <button
-                          type="button"
-                          onClick={handleSendPasswordReset}
-                          disabled={sendingReset}
-                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
-                        >
-                          {sendingReset ? "Sending..." : "Send Password Link"}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleSendPortalAccess}
+                            disabled={sendingPortalAccess}
+                            title="Email this member a 7-day magic link to access their member portal"
+                            className="rounded-md border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/5 disabled:opacity-50"
+                          >
+                            {sendingPortalAccess ? "Sending..." : "Send Portal Access"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSendPasswordReset}
+                            disabled={sendingReset}
+                            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                          >
+                            {sendingReset ? "Sending..." : "Send Password Link"}
+                          </button>
+                        </>
                       )}
                       <button
                         type="button"

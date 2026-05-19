@@ -298,11 +298,13 @@ export async function sendMagicLinkEmail(params: {
   memberName: string;
   loginUrl: string;
   memberId?: string;
+  linkExpiry?: string; // Human-readable expiry shown in the email body (default "15 minutes")
 }) {
   const brand = await getGymBranding();
   const resolved = await resolveTemplate("magic_link", {
     memberName: params.memberName,
     loginUrl: params.loginUrl,
+    linkExpiry: params.linkExpiry || "15 minutes",
     gymName: brand.gymName,
   });
   if (!resolved) return;
