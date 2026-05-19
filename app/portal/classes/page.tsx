@@ -325,9 +325,10 @@ export default function PortalClassesPage() {
                     <button
                       onClick={() => handleCancel(cls.memberBooking!.id, cls.id)}
                       disabled={isActioning}
-                      className="w-full py-2.5 rounded-xl font-semibold text-sm active:scale-[0.98] transition-all disabled:opacity-50 bg-white text-gray-700 border border-gray-300"
+                      title="Tap to cancel"
+                      className="w-full py-2.5 rounded-xl font-semibold text-sm active:scale-[0.98] transition-all disabled:opacity-50 bg-white text-primary border border-primary"
                     >
-                      {isActioning ? "..." : "Cancel Class"}
+                      {isActioning ? "..." : "Booked"}
                     </button>
                   ) : isWaitlisted ? (
                     <button
