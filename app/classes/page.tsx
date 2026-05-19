@@ -1495,68 +1495,168 @@ export default function ClassesPage() {
                 </div>
               </div>
 
-              {/* Styles Selection */}
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Allowed Styles
-                </label>
-                <MultiSelectCheckbox
-                  options={styles.map(s => ({ value: s.id, label: s.name }))}
-                  selected={selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE")}
-                  onChange={(values) => {
-                    setSelectedStyleIds(values.length > 0 ? values : [""]);
-                    // Keep minRankIds in sync
-                    const newRankIds = values.map(id => {
-                      const oldIdx = selectedStyleIds.indexOf(id);
-                      return oldIdx >= 0 ? (minRankIds[oldIdx] || "") : "";
-                    });
-                    setMinRankIds(newRankIds.length > 0 ? newRankIds : [""]);
-                    setMinRankId(newRankIds[0] || "");
-                  }}
-                  placeholder="All Styles"
-                />
+              {/* Styles + per-class extras (color/coach/location/space) on the right */}
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Left column — Allowed Styles + Min Rank Required */}
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Allowed Styles
+                  </label>
+                  <MultiSelectCheckbox
+                    options={styles.map(s => ({ value: s.id, label: s.name }))}
+                    selected={selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE")}
+                    onChange={(values) => {
+                      setSelectedStyleIds(values.length > 0 ? values : [""]);
+                      // Keep minRankIds in sync
+                      const newRankIds = values.map(id => {
+                        const oldIdx = selectedStyleIds.indexOf(id);
+                        return oldIdx >= 0 ? (minRankIds[oldIdx] || "") : "";
+                      });
+                      setMinRankIds(newRankIds.length > 0 ? newRankIds : [""]);
+                      setMinRankId(newRankIds[0] || "");
+                    }}
+                    placeholder="All Styles"
+                  />
 
-                {/* Minimum Rank per selected style. minRankIds is stored as a
-                    JSON array aligned to styleIds; minRankId mirrors index 0
-                    for backward compat. */}
-                {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").length > 0 && (
-                  <div className="mt-2 space-y-1.5">
-                    <label className="block text-[10px] font-medium text-gray-500 uppercase tracking-wider">
-                      Minimum Rank Required
+                  {/* Minimum Rank per selected style. minRankIds is stored as a
+                      JSON array aligned to styleIds; minRankId mirrors index 0
+                      for backward compat. */}
+                  {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      <label className="block text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+                        Minimum Rank Required
+                      </label>
+                      {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").map((styleId) => {
+                        const style = styles.find(s => s.id === styleId);
+                        if (!style) return null;
+                        const idx = selectedStyleIds.indexOf(styleId);
+                        return (
+                          <div key={styleId} className="flex items-center gap-2">
+                            <span className="text-xs text-gray-600 w-24 truncate">{style.name}</span>
+                            <select
+                              value={minRankIds[idx] || ""}
+                              onChange={(e) => {
+                                const next = [...minRankIds];
+                                while (next.length < selectedStyleIds.length) next.push("");
+                                next[idx] = e.target.value;
+                                setMinRankIds(next);
+                                if (idx === 0) setMinRankId(e.target.value);
+                              }}
+                              className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                            >
+                              <option value="">No Rank Requirement</option>
+                              {style.ranks?.map(r => (
+                                <option key={r.id} value={r.id}>{r.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right column — Calendar Color, Default Coach, Location, Space */}
+                <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      Calendar Color
                     </label>
-                    {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").map((styleId) => {
-                      const style = styles.find(s => s.id === styleId);
-                      if (!style) return null;
-                      const idx = selectedStyleIds.indexOf(styleId);
-                      return (
-                        <div key={styleId} className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-24 truncate">{style.name}</span>
-                          <select
-                            value={minRankIds[idx] || ""}
-                            onChange={(e) => {
-                              const next = [...minRankIds];
-                              while (next.length < selectedStyleIds.length) next.push("");
-                              next[idx] = e.target.value;
-                              setMinRankIds(next);
-                              if (idx === 0) setMinRankId(e.target.value);
-                            }}
-                            className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                          >
-                            <option value="">No Rank Requirement</option>
-                            {style.ranks?.map(r => (
-                              <option key={r.id} value={r.id}>{r.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      );
-                    })}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={color}
+                        onChange={(e) => setColor(e.target.value)}
+                        style={{ minWidth: '64px' }}
+                        className="h-[26px] w-16 cursor-pointer rounded border border-gray-300"
+                      />
+                      <input
+                        type="text"
+                        value={color}
+                        onChange={(e) => setColor(e.target.value)}
+                        style={{ width: '75px' }}
+                        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="#a3a3a3"
+                      />
+                    </div>
                   </div>
-                )}
+
+                  <div>
+                    <label
+                      className="mb-1 block text-xs font-medium text-gray-700"
+                      title="Used for any day below that doesn't set its own coach"
+                    >
+                      Default Coach
+                    </label>
+                    <select
+                      value={selectedCoachId}
+                      onChange={(e) => setSelectedCoachId(e.target.value)}
+                      style={{ minWidth: '150px' }}
+                      className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">No Coach</option>
+                      {coaches.map(coach => (
+                        <option key={coach.id} value={coach.id}>
+                          {coach.firstName} {coach.lastName}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[10px] text-gray-400">
+                      Applies to any day below that doesn&apos;t pick its own coach.
+                    </p>
+                    <label className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={coachAttendsAsStudent}
+                        onChange={(e) => setCoachAttendsAsStudent(e.target.checked)}
+                        className="rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <span>Count coach&apos;s attendance toward their own style</span>
+                    </label>
+                  </div>
+
+                  {allLocations.length > 0 && (
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-700">
+                        Location
+                      </label>
+                      <select
+                        value={selectedLocationId}
+                        onChange={(e) => setSelectedLocationId(e.target.value)}
+                        style={{ minWidth: '150px' }}
+                        className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">No Location</option>
+                        {allLocations.map(loc => (
+                          <option key={loc.id} value={loc.id}>{loc.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {allSpaces.length > 0 && (
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-700">
+                        Space
+                      </label>
+                      <select
+                        value={selectedSpaceId}
+                        onChange={(e) => setSelectedSpaceId(e.target.value)}
+                        style={{ minWidth: '150px' }}
+                        className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">No Space</option>
+                        {allSpaces.map(space => (
+                          <option key={space.id} value={space.id}>{space.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Day Schedules, Calendar Color, and Coach */}
-              <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
-                {/* Day Schedules Section */}
+              {/* Day Schedules */}
+              <div>
                 <div className="min-w-0 flex-shrink">
                 <div className="mb-1 flex items-center gap-2">
                   <label className="block text-xs font-medium text-gray-700" style={{ width: '100px' }}>
@@ -1700,105 +1800,6 @@ export default function ClassesPage() {
                   </div>
                 </div>
 
-                {/* Calendar Color and Coach - grouped to wrap together */}
-                <div className="color-coach-recurring-group flex flex-wrap items-start gap-x-8 gap-y-4">
-                  {/* Calendar Color Section */}
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-700">
-                      Calendar Color
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={color}
-                        onChange={(e) => setColor(e.target.value)}
-                        style={{ minWidth: '64px' }}
-                        className="h-[26px] w-16 cursor-pointer rounded border border-gray-300"
-                      />
-                      <input
-                        type="text"
-                        value={color}
-                        onChange={(e) => setColor(e.target.value)}
-                        style={{ width: '75px' }}
-                        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-primary"
-                        placeholder="#a3a3a3"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Coach Section */}
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-700">
-                      Coach
-                    </label>
-                    <select
-                      value={selectedCoachId}
-                      onChange={(e) => setSelectedCoachId(e.target.value)}
-                      style={{ minWidth: '150px' }}
-                      className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">No Coach</option>
-                      {coaches.map(coach => (
-                        <option key={coach.id} value={coach.id}>
-                          {coach.firstName} {coach.lastName}
-                        </option>
-                      ))}
-                    </select>
-                    <label className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={coachAttendsAsStudent}
-                        onChange={(e) => setCoachAttendsAsStudent(e.target.checked)}
-                        className="rounded border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <span>Count coach&apos;s attendance toward their own style</span>
-                    </label>
-                  </div>
-
-                  {/* Location Section */}
-                  {allLocations.length > 0 && (
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-700">
-                        Location
-                      </label>
-                      <select
-                        value={selectedLocationId}
-                        onChange={(e) => setSelectedLocationId(e.target.value)}
-                        style={{ minWidth: '150px' }}
-                        className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="">No Location</option>
-                        {allLocations.map(loc => (
-                          <option key={loc.id} value={loc.id}>
-                            {loc.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Space Section */}
-                  {allSpaces.length > 0 && (
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-700">
-                        Space
-                      </label>
-                      <select
-                        value={selectedSpaceId}
-                        onChange={(e) => setSelectedSpaceId(e.target.value)}
-                        style={{ minWidth: '150px' }}
-                        className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="">No Space</option>
-                        {allSpaces.map(space => (
-                          <option key={space.id} value={space.id}>
-                            {space.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
               </div>
 
               {/* Schedule Dates and Recurring */}

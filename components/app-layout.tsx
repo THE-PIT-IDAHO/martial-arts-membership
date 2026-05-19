@@ -15,7 +15,7 @@ const navItems: NavItem[] = [
   { label: "Members", href: "/members", permissionKey: "members" },
   { label: "Memberships", href: "/memberships", permissionKey: "memberships" },
   { label: "Styles", href: "/styles", permissionKey: "styles" },
-  { label: "Scheduling", href: "/classes", permissionKey: "classes" },
+  { label: "Classes", href: "/classes", permissionKey: "classes" },
   { label: "Calendar", href: "/calendar", permissionKey: "calendar" },
   { label: "Testing", href: "/testing", permissionKey: "testing" },
   { label: "Curriculum", href: "/curriculum", permissionKey: "curriculum" },
