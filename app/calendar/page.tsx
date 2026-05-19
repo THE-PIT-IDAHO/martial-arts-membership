@@ -1166,12 +1166,29 @@ export default function CalendarPage() {
       });
 
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Failed to save attendance:", errorText);
-        return;
+        // Already-attended (409) is fine — pretend the add succeeded so the
+        // UI reflects current reality.
+        if (res.status === 409) {
+          if (!classAttendees.some((a) => a.id === member.id)) {
+            setClassAttendees([...classAttendees, member]);
+          }
+        } else {
+          // Surface real errors to the user so they know what to fix.
+          let msg = "Failed to add member.";
+          try {
+            const data = await res.json();
+            if (data?.error) msg = data.error;
+          } catch {
+            const text = await res.text().catch(() => "");
+            if (text) msg = text;
+          }
+          console.error("Failed to save attendance:", msg);
+          alert(msg);
+          return;
+        }
+      } else {
+        setClassAttendees([...classAttendees, member]);
       }
-
-      setClassAttendees([...classAttendees, member]);
 
       // Track if member was added with a warning (didn't meet requirements)
       if (hasOverride) {
