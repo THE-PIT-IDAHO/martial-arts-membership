@@ -2203,7 +2203,7 @@ export default function MemberProfilePage() {
                             onClick={handleSendPortalAccess}
                             disabled={sendingPortalAccess}
                             title="Email this member a 7-day magic link to access their member portal"
-                            className="rounded-md border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/5 disabled:opacity-50"
+                            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                           >
                             {sendingPortalAccess ? "Sending..." : "Send Portal Access"}
                           </button>
