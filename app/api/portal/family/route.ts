@@ -2,16 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 
-// GET /api/portal/family — returns linked children for the authenticated parent
+// GET /api/portal/family — returns linked children for the SIGNED-IN member.
+// (Uses sessionMemberId — not the effective/viewing-as id — so the switcher
+// always lists what the real signed-in parent can switch into, even when
+// they're currently viewing as a child.)
+//
+// Relationship matching is loose: stored values vary historically between
+// "PARENT" / "Parent of" / "GUARDIAN" / "Guardian of", so we just return
+// every outgoing relationship from the signed-in member.
 export async function GET(request: NextRequest) {
   const auth = await getAuthenticatedMember(request);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Find children via MemberRelationship where this member is the parent/guardian
   const relationships = await prisma.memberRelationship.findMany({
     where: {
-      fromMemberId: auth.memberId,
-      relationship: { in: ["PARENT", "GUARDIAN"] },
+      fromMemberId: auth.sessionMemberId,
     },
     include: {
       toMember: {
@@ -58,5 +63,17 @@ export async function GET(request: NextRequest) {
     activeTrial: rel.toMember.trialPasses[0] || null,
   }));
 
-  return NextResponse.json({ children });
+  // Self (the signed-in parent) — used by the switcher dropdown to render
+  // their own row alongside the kids.
+  const self = await prisma.member.findUnique({
+    where: { id: auth.sessionMemberId },
+    select: { id: true, firstName: true, lastName: true, photoUrl: true },
+  });
+
+  return NextResponse.json({
+    children,
+    self,
+    sessionMemberId: auth.sessionMemberId,
+    viewingAsMemberId: auth.memberId, // equals sessionMemberId when not switched
+  });
 }

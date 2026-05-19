@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
 const SESSION_COOKIE = "portal_session";
+const VIEWING_AS_COOKIE = "portal_viewing_as";
 const SESSION_DURATION_DAYS = 30;
 const TOKEN_EXPIRY_MINUTES = 15;
 
@@ -141,14 +142,73 @@ export function clearSessionCookie(response: NextResponse): void {
   });
 }
 
+// --- Viewing-As (parent acting on behalf of a related child) ---
+// Stored in a separate signed cookie. getAuthenticatedMember resolves it
+// against MemberRelationship on every request so that data ops auto-route
+// to whichever account the parent has switched into.
+
+function getViewingAsFromRequest(request: NextRequest): string | null {
+  const cookie = request.cookies.get(VIEWING_AS_COOKIE);
+  if (!cookie?.value) return null;
+  const parts = cookie.value.split(".");
+  if (parts.length !== 2) return null;
+  const [token, sig] = parts;
+  if (sig !== signToken(token)) return null;
+  return token;
+}
+
+export function setViewingAsCookie(response: NextResponse, memberId: string): void {
+  const signed = `${memberId}.${signToken(memberId)}`;
+  response.cookies.set(VIEWING_AS_COOKIE, signed, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: SESSION_DURATION_DAYS * 24 * 60 * 60,
+  });
+}
+
+export function clearViewingAsCookie(response: NextResponse): void {
+  response.cookies.set(VIEWING_AS_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+}
+
 // --- Request Auth Helper (for API routes) ---
+//
+// `memberId` is the EFFECTIVE member — equals sessionMemberId unless the
+// signed-in member is currently "viewing as" a related child, in which
+// case it's the child's id. Most routes should use memberId so they
+// automatically operate on whoever the user has switched into.
+//
+// `sessionMemberId` is the real logged-in user. Use this for identity
+// concerns (password change, logout, the switcher itself).
 
 export async function getAuthenticatedMember(
   request: NextRequest
-): Promise<{ memberId: string } | null> {
+): Promise<{ memberId: string; sessionMemberId: string } | null> {
   const token = getSessionTokenFromRequest(request);
   if (!token) return null;
-  return validateMemberSession(token);
+  const session = await validateMemberSession(token);
+  if (!session) return null;
+
+  const viewingAs = getViewingAsFromRequest(request);
+  if (viewingAs && viewingAs !== session.memberId) {
+    // Confirm the session member actually has a relationship to the target.
+    const rel = await prisma.memberRelationship.findFirst({
+      where: { fromMemberId: session.memberId, toMemberId: viewingAs },
+      select: { id: true },
+    });
+    if (rel) {
+      return { memberId: viewingAs, sessionMemberId: session.memberId };
+    }
+  }
+
+  return { memberId: session.memberId, sessionMemberId: session.memberId };
 }
 
 // --- Password Reset Tokens ---

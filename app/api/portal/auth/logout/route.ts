@@ -3,6 +3,7 @@ import {
   getSessionTokenFromRequest,
   destroyMemberSession,
   clearSessionCookie,
+  clearViewingAsCookie,
 } from "@/lib/portal-auth";
 
 export async function POST(req: NextRequest) {
@@ -13,5 +14,6 @@ export async function POST(req: NextRequest) {
 
   const response = NextResponse.json({ success: true });
   clearSessionCookie(response);
+  clearViewingAsCookie(response);
   return response;
 }

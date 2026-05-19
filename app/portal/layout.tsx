@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import BottomNav from "@/components/portal/BottomNav";
+import AccountSwitcher from "@/components/portal/AccountSwitcher";
 
 const PUBLIC_PATHS = ["/portal/login", "/portal/verify", "/portal/enroll", "/portal/set-password"];
 
@@ -93,6 +94,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           </div>
         </div>
       </header>
+      <AccountSwitcher />
       <main className="pb-20">
         {children}
       </main>
