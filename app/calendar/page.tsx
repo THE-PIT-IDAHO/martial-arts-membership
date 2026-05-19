@@ -1577,10 +1577,101 @@ export default function CalendarPage() {
     try {
       // Handle different edit options
       if (editOption === "single") {
-        // Create or update a single instance
-        // For now, we'll just update the class time for this specific date
-        // You would need to implement exception handling in your backend
-        alert("Editing single instance - implementation needed");
+        if (!selectedDate) {
+          alert("No date selected for this instance.");
+          return;
+        }
+
+        // Build the new startsAt/endsAt from selectedDate + daySchedules[0].times[0].
+        const time = daySchedules[0]?.times[0];
+        if (!time) {
+          alert("No start/end time set.");
+          return;
+        }
+        const [sh, sm] = time.startTime.split(":").map(Number);
+        const [eh, em] = time.endTime.split(":").map(Number);
+        const newStartsAt = new Date(selectedDate);
+        newStartsAt.setHours(sh, sm, 0, 0);
+        const newEndsAt = new Date(selectedDate);
+        newEndsAt.setHours(eh, em, 0, 0);
+
+        const selectedCoach = coaches.find(c => c.id === selectedCoachId);
+        const activeStyleIds = selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE");
+        const styleNames = activeStyleIds
+          .map(id => styles.find(s => s.id === id)?.name)
+          .filter((n): n is string => !!n);
+        const minRankIdsAligned = (() => {
+          if (activeStyleIds.length === 0) return null;
+          const aligned = activeStyleIds.map(id => {
+            const i = selectedStyleIds.indexOf(id);
+            return minRankIds[i] || "";
+          });
+          return aligned.some(v => v) ? JSON.stringify(aligned) : null;
+        })();
+
+        const sharedFields = {
+          name,
+          classType,
+          styleIds: activeStyleIds.length > 0 ? JSON.stringify(activeStyleIds) : null,
+          styleNames: styleNames.length > 0 ? JSON.stringify(styleNames) : null,
+          styleId: activeStyleIds[0] || null,
+          styleName: styleNames[0] || null,
+          minRankId: minRankId || null,
+          minRankIds: minRankIdsAligned,
+          coachId: selectedCoachId || null,
+          coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
+          bookingEnabled,
+          kioskEnabled,
+          maxCapacity: maxCapacity || null,
+          bookingCutoffMins: bookingCutoffMins || null,
+          bookingAdvanceDays: bookingAdvanceDays || null,
+          locationId: selectedLocationId || null,
+          spaceId: selectedSpaceId || null,
+        };
+
+        if (selectedClass.isRecurring) {
+          // Fork: exclude this date from the recurring parent + create a new
+          // non-recurring class at the new time so the change only affects
+          // this one occurrence.
+          const dateStr = toLocalDateStr(selectedDate);
+          let excludedDates: string[] = [];
+          if (selectedClass.excludedDates) {
+            try { excludedDates = JSON.parse(selectedClass.excludedDates); } catch { /* ignore */ }
+          }
+          if (!excludedDates.includes(dateStr)) excludedDates.push(dateStr);
+
+          const excludeRes = await fetch(`/api/classes/${selectedClass.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ excludedDates: JSON.stringify(excludedDates) }),
+          });
+          if (!excludeRes.ok) throw new Error("Failed to exclude original date");
+
+          const createRes = await fetch("/api/classes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...sharedFields,
+              startsAt: newStartsAt.toISOString(),
+              endsAt: newEndsAt.toISOString(),
+              isRecurring: false,
+              color: selectedClass.color || "#a3a3a3",
+            }),
+          });
+          if (!createRes.ok) throw new Error("Failed to create one-off class");
+        } else {
+          // Non-recurring: just update the row in place.
+          const patchRes = await fetch(`/api/classes/${selectedClass.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...sharedFields,
+              startsAt: newStartsAt.toISOString(),
+              endsAt: newEndsAt.toISOString(),
+            }),
+          });
+          if (!patchRes.ok) throw new Error("Failed to update class");
+        }
       } else if (editOption === "day") {
         // Update all classes on this day
         alert("Editing all classes on this day - implementation needed");
