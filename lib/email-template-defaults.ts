@@ -18,9 +18,10 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     bodyHtml: `<h2 style="color:#c41111;">Welcome to {{gymName}}!</h2>
     <p>Hi {{memberName}},</p>
     <p>We're excited to have you join our martial arts family. Your membership account has been created.</p>
+    {{portalSection}}
     <p>If you have any questions, feel free to reach out to us at {{gymEmail}}.</p>
     <p>See you on the mat!</p>`,
-    variables: ["memberName", "gymName", "gymEmail"],
+    variables: ["memberName", "gymName", "gymEmail", "portalSection"],
   },
   {
     eventKey: "birthday",
@@ -247,6 +248,19 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     variables: ["memberName", "className", "classDate", "classTime", "gymName"],
   },
 
+  // --- Contracts ---
+  {
+    eventKey: "contract_signed",
+    name: "Contract Signed",
+    subject: "Your Contract — {{planName}}",
+    bodyHtml: `<h2 style="color:#c41111;">Your Signed Contract</h2>
+    <p>Thank you, {{memberName}}! Your signed contract for <strong>{{planName}}</strong> is attached to this email.</p>
+    <p>Please keep this document for your records.</p>
+    {{portalSection}}
+    <p style="color:#666;font-size:12px;margin-top:24px;">If you have any questions, please contact us at {{gymEmail}}.</p>`,
+    variables: ["memberName", "planName", "gymName", "gymEmail", "portalSection"],
+  },
+
   // --- Enrollment ---
   {
     eventKey: "enrollment_confirmation",
@@ -255,8 +269,9 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     bodyHtml: `<h2 style="color:#c41111;">Your Waiver Has Been Confirmed!</h2>
     <p>Hi {{firstName}},</p>
     <p>Your liability waiver at <strong>{{gymName}}</strong> has been reviewed and confirmed.</p>
+    {{portalSection}}
     <p>Thank you for completing your waiver. If you have any questions, feel free to contact us at {{gymEmail}}.</p>`,
-    variables: ["firstName", "gymName", "gymEmail"],
+    variables: ["firstName", "gymName", "gymEmail", "portalSection"],
   },
 
   // --- Waiver ---
@@ -395,13 +410,14 @@ export const TEMPLATE_TRIGGERS: Record<string, { description: string; wired: boo
   custom_message: { description: 'Calendar → "Message Attendees" feature (manual admin send)', wired: true },
   low_stock_alert: { description: "POS inventory drops at/below reorderThreshold — sent to gymEmail", wired: true },
   promotion_eligibility: { description: "Weekly auto-billing sweep detects members at next-rank threshold — sent to gymEmail", wired: true },
+  contract_signed: { description: "Fires when a member signs a contract at POS — includes the signed PDF and a 7-day magic link to their portal", wired: true },
 };
 
 // Template category groupings for the UI
 export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
   {
     label: "Member Lifecycle",
-    keys: ["welcome", "enrollment_confirmation", "waiver_welcome", "waiver_confirmed", "birthday", "inactive_reengagement", "promotion_congrats"],
+    keys: ["welcome", "enrollment_confirmation", "waiver_welcome", "waiver_confirmed", "contract_signed", "birthday", "inactive_reengagement", "promotion_congrats"],
   },
   {
     label: "Billing",

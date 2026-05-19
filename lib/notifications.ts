@@ -1,5 +1,7 @@
 import { sendEmail, resolveRecipientEmails, getSettings } from "@/lib/email";
 import { resolveTemplate as _resolveTemplate } from "@/lib/email-template-resolver";
+import { prisma } from "@/lib/prisma";
+import { generateMagicLinkToken } from "@/lib/portal-auth";
 
 // Wrapper: returns { subject, bodyHtml } or null if the template is disabled
 async function resolveTemplate(
@@ -56,6 +58,61 @@ function formatDate(date: Date): string {
   return date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 }
 
+// Resolve the portal base URL. Used to build magic-link URLs from server-side
+// jobs (cron, webhook handlers) that don't have a request context.
+function getPortalBaseUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
+  if (envUrl) return envUrl.replace(/\/$/, "");
+  return "https://app.dojostormsoftware.com";
+}
+
+// Build the "Open My Portal" CTA block included in welcome / waiver-confirm
+// / contract-signed emails. Returns empty string when the member has no
+// email (no token can be minted). expiresInMinutes defaults to 7 days for
+// account-setup emails — much longer than the 15-min default for regular
+// login magic links since these may sit unopened for days.
+export async function buildPortalSection(params: {
+  memberId: string;
+  expiresInMinutes?: number;
+  blurb?: string;
+}): Promise<string> {
+  const member = await prisma.member.findUnique({
+    where: { id: params.memberId },
+    select: { email: true },
+  });
+  if (!member?.email) return "";
+
+  try {
+    const token = await generateMagicLinkToken(
+      params.memberId,
+      member.email,
+      params.expiresInMinutes ?? 60 * 24 * 7, // 7 days
+    );
+    const portalUrl = `${getPortalBaseUrl()}/portal/verify?token=${token}`;
+    const expiryDays = Math.round((params.expiresInMinutes ?? 60 * 24 * 7) / (60 * 24));
+    const blurb =
+      params.blurb
+      ?? "Use the button below to sign in to your member portal — book classes, view payments, and update your profile.";
+    return `
+      <div style="margin:24px 0;padding:18px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+        <h3 style="margin:0 0 8px;color:#111;">Access your member portal</h3>
+        <p style="margin:0 0 14px;color:#444;font-size:14px;">${blurb}</p>
+        <p style="margin:0;">
+          <a href="${portalUrl}" style="display:inline-block;padding:10px 20px;background:#c41111;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+            Open My Portal
+          </a>
+        </p>
+        <p style="margin:12px 0 0;color:#777;font-size:12px;">
+          This link works for the next ${expiryDays} day${expiryDays === 1 ? "" : "s"}. Once you're in, you can set a permanent password under Profile.
+        </p>
+      </div>
+    `;
+  } catch (err) {
+    console.error("Failed to build portal section:", err);
+    return "";
+  }
+}
+
 // --- 1. Welcome Email ---
 
 export async function sendWelcomeEmail(params: {
@@ -66,10 +123,12 @@ export async function sendWelcomeEmail(params: {
   const emails = await resolveRecipientEmails(params.memberId);
   if (emails.length === 0) return;
   const brand = await getGymBranding();
+  const portalSection = await buildPortalSection({ memberId: params.memberId });
   const resolved = await resolveTemplate("welcome", {
     memberName: params.memberName,
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
+    portalSection,
   });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
@@ -358,10 +417,14 @@ export async function sendWaiverReceivedEmail(params: {
   memberId?: string;
 }) {
   const brand = await getGymBranding(params.clientId);
+  const portalSection = params.memberId
+    ? await buildPortalSection({ memberId: params.memberId })
+    : "";
   const resolved = await resolveTemplate("enrollment_confirmation", {
     firstName: params.firstName,
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
+    portalSection,
   });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
@@ -378,6 +441,41 @@ export async function sendWaiverReceivedEmail(params: {
 
 // Keep old name as alias for backwards compatibility
 export const sendEnrollmentConfirmationEmail = sendWaiverReceivedEmail;
+
+// --- 11d. Contract Signed (sent to member after POS contract sign) ---
+
+export async function sendContractSignedEmail(params: {
+  memberId: string;
+  memberName: string;
+  planName: string;
+  pdfBase64: string;
+  fileName: string;
+  clientId?: string;
+}) {
+  const emails = await resolveRecipientEmails(params.memberId);
+  if (emails.length === 0) return;
+  const brand = await getGymBranding(params.clientId);
+  const portalSection = await buildPortalSection({ memberId: params.memberId });
+  const resolved = await resolveTemplate("contract_signed", {
+    memberName: params.memberName,
+    planName: params.planName,
+    gymName: brand.gymName,
+    gymEmail: brand.gymEmail,
+    portalSection,
+  });
+  if (!resolved) return;
+  const { subject, bodyHtml } = resolved;
+  const html = wrapInTemplate(brand, bodyHtml);
+  await sendEmail({
+    to: emails,
+    subject,
+    html,
+    attachments: [{ filename: params.fileName, content: params.pdfBase64 }],
+    clientId: params.clientId,
+    memberId: params.memberId,
+    eventType: "CONTRACT_SIGNED",
+  });
+}
 
 // --- 11b. Waiver Welcome (portal access email sent after waiver submission) ---
 
