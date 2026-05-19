@@ -3,7 +3,7 @@ import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import { sendBookingConfirmationEmail } from "@/lib/notifications";
 import { memberCanAttendClass } from "@/lib/class-eligibility";
-import { getGymTimezone, occurrenceForDate } from "@/lib/dates";
+import { getGymTimezone, occurrenceForDate, localMidnightUtc } from "@/lib/dates";
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
@@ -62,9 +62,12 @@ async function handleBookingPost(req: NextRequest) {
     return NextResponse.json({ error: "classSessionId and bookingDate required" }, { status: 400 });
   }
 
-  // Use "T00:00:00" to force local time parsing (not UTC)
-  const parsedDate = new Date(bookingDate + "T00:00:00");
-  parsedDate.setHours(0, 0, 0, 0);
+  // Store the booking's date as the UTC timestamp of the gym's local midnight
+  // for that date. This way the same booking row is in range for both the
+  // portal classes page (filters by client-local day) and the dashboard
+  // (filters by gym-local day) — no straddling-midnight surprises.
+  const bookingTz = await getGymTimezone();
+  const parsedDate = new Date(localMidnightUtc(bookingDate, bookingTz));
 
   // Get class info
   const cls = await prisma.classSession.findUnique({
@@ -110,8 +113,7 @@ async function handleBookingPost(req: NextRequest) {
   // occurrence on bookingDate — otherwise evening classes whose UTC
   // datetime crosses midnight get a cutoff that's a day off.
   if (cls.bookingCutoffMins) {
-    const gymTz = await getGymTimezone();
-    const occurrence = occurrenceForDate(new Date(cls.startsAt), bookingDate, gymTz);
+    const occurrence = occurrenceForDate(new Date(cls.startsAt), bookingDate, bookingTz);
     const cutoff = new Date(occurrence.getTime() - cls.bookingCutoffMins * 60 * 1000);
     if (new Date() > cutoff) {
       return NextResponse.json({ error: "Booking cutoff has passed" }, { status: 400 });
