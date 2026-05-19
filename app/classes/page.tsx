@@ -135,6 +135,7 @@ type ClassSession = {
   kioskEnabled?: boolean;
   coachAttendsAsStudent?: boolean;
   mobileConfirm?: boolean;
+  locationId?: string | null;
   spaceId?: string | null;
 };
 
@@ -507,6 +508,11 @@ export default function ClassesPage() {
     setMaxAge(classSession.maxAge != null ? String(classSession.maxAge) : "");
     setBookingCutoffMins(classSession.bookingCutoffMins != null ? String(classSession.bookingCutoffMins) : "");
     setBookingAdvanceDays(classSession.bookingAdvanceDays != null ? String(classSession.bookingAdvanceDays) : "");
+
+    // Location and Space — without these, the edit form would always start
+    // blank and save would wipe whatever was previously stored.
+    setSelectedLocationId(classSession.locationId || "");
+    setSelectedSpaceId(classSession.spaceId || "");
 
     // Build day schedules from all related classes
     const dayMap = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
