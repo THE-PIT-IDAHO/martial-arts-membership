@@ -49,45 +49,53 @@ export async function PATCH(req: Request, { params }: Params) {
 
     // 3. Cascade-confirm any paired waiver on a related member (parent/guardian
     // and dependent share one submission — confirming one should confirm both).
-    // Match by pdfData (identical PDF) within a 5-minute window of signedAt.
-    const relationships = await prisma.memberRelationship.findMany({
-      where: {
-        OR: [
-          { fromMemberId: waiver.memberId },
-          { toMemberId: waiver.memberId },
-        ],
-      },
-      select: { fromMemberId: true, toMemberId: true },
-    });
-    const relatedIds = new Set<string>();
-    for (const rel of relationships) {
-      if (rel.fromMemberId !== waiver.memberId) relatedIds.add(rel.fromMemberId);
-      if (rel.toMemberId !== waiver.memberId) relatedIds.add(rel.toMemberId);
-    }
-
-    if (relatedIds.size > 0 && waiver.pdfData) {
-      const windowStart = new Date(waiver.signedAt.getTime() - 5 * 60 * 1000);
-      const windowEnd = new Date(waiver.signedAt.getTime() + 5 * 60 * 1000);
-      const paired = await prisma.signedWaiver.findMany({
+    // Match by signedAt within a 30-second window of this waiver. We avoid
+    // putting pdfData (which is a multi-MB base64 blob) in a WHERE clause —
+    // Postgres can choke on the parameter binding when the value is huge.
+    // Wrapped in try/catch so an unexpected failure here can never break
+    // the primary confirmation the admin actually clicked.
+    try {
+      const relationships = await prisma.memberRelationship.findMany({
         where: {
-          id: { not: id },
-          memberId: { in: Array.from(relatedIds) },
-          pdfData: waiver.pdfData,
-          confirmed: false,
-          signedAt: { gte: windowStart, lte: windowEnd },
+          OR: [
+            { fromMemberId: waiver.memberId },
+            { toMemberId: waiver.memberId },
+          ],
         },
-        include: { member: { select: { id: true, firstName: true, lastName: true } } },
+        select: { fromMemberId: true, toMemberId: true },
       });
-      for (const p of paired) {
-        await prisma.signedWaiver.update({
-          where: { id: p.id },
-          data: { confirmed: true, confirmedAt: now },
-        });
-        await prisma.member.update({
-          where: { id: p.memberId },
-          data: { waiverSigned: true, waiverSignedAt: now },
-        });
+      const relatedIds = new Set<string>();
+      for (const rel of relationships) {
+        if (rel.fromMemberId !== waiver.memberId) relatedIds.add(rel.fromMemberId);
+        if (rel.toMemberId !== waiver.memberId) relatedIds.add(rel.toMemberId);
       }
+
+      if (relatedIds.size > 0) {
+        const windowStart = new Date(waiver.signedAt.getTime() - 30 * 1000);
+        const windowEnd = new Date(waiver.signedAt.getTime() + 30 * 1000);
+        const paired = await prisma.signedWaiver.findMany({
+          where: {
+            id: { not: id },
+            memberId: { in: Array.from(relatedIds) },
+            confirmed: false,
+            signedAt: { gte: windowStart, lte: windowEnd },
+          },
+          select: { id: true, memberId: true },
+        });
+        for (const p of paired) {
+          await prisma.signedWaiver.update({
+            where: { id: p.id },
+            data: { confirmed: true, confirmedAt: now },
+          });
+          await prisma.member.update({
+            where: { id: p.memberId },
+            data: { waiverSigned: true, waiverSignedAt: now },
+          });
+        }
+      }
+    } catch (cascadeErr) {
+      console.error("Cascade-confirm of paired waiver failed:", cascadeErr);
+      // Swallow — primary confirm above already succeeded.
     }
 
     // 4. Send waiver confirmation email
@@ -111,6 +119,7 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error confirming waiver:", error);
-    return NextResponse.json({ error: "Failed to confirm" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: `Failed to confirm: ${msg}` }, { status: 500 });
   }
 }
