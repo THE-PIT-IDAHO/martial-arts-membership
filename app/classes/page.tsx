@@ -950,12 +950,14 @@ export default function ClassesPage() {
         return updated;
       }));
 
-      // If the renamed type was in the custom-types list, update + persist.
-      if (customClassTypes.includes(editingClassType)) {
-        const updated = customClassTypes.map(t => t === editingClassType ? editedClassTypeName.trim() : t);
-        setCustomClassTypes(updated);
-        saveCustomClassTypes(updated);
-      }
+      // If the renamed type was in the custom-types list, update + persist
+      // via the functional updater so we don't race other modal actions.
+      setCustomClassTypes((prev) => {
+        if (!prev.includes(editingClassType)) return prev;
+        const next = prev.map(t => t === editingClassType ? editedClassTypeName.trim() : t);
+        saveCustomClassTypes(next);
+        return next;
+      });
 
       setEditingClassType(null);
       setEditedClassTypeName("");
@@ -1007,10 +1009,14 @@ export default function ClassesPage() {
         });
       }
 
-      // Remove from custom class types and current form selection
-      const remaining = customClassTypes.filter(t => t !== typeToDelete);
-      setCustomClassTypes(remaining);
-      saveCustomClassTypes(remaining);
+      // Remove from custom class types and current form selection.
+      // Functional updater + save based on the updated value so concurrent
+      // edits can't stomp each other.
+      setCustomClassTypes((prev) => {
+        const next = prev.filter(t => t !== typeToDelete);
+        saveCustomClassTypes(next);
+        return next;
+      });
       setSelectedClassTypes(prev => prev.filter(t => t !== typeToDelete));
 
       // Update local state (both classType and classTypes)
@@ -2656,10 +2662,14 @@ export default function ClassesPage() {
                       e.preventDefault();
                       const trimmed = newClassTypeName.trim();
                       if (trimmed && !uniqueClassTypes.includes(trimmed)) {
-                        const updated = [...customClassTypes, trimmed];
-                        setCustomClassTypes(updated);
-                        saveCustomClassTypes(updated);
-                        setSelectedClassTypes(prev => [...prev, trimmed]);
+                        // Use functional updater + save based on the updated
+                        // value so rapid successive adds can't stomp each other.
+                        setCustomClassTypes((prev) => {
+                          const next = prev.includes(trimmed) ? prev : [...prev, trimmed];
+                          saveCustomClassTypes(next);
+                          return next;
+                        });
+                        setSelectedClassTypes(prev => prev.includes(trimmed) ? prev : [...prev, trimmed]);
                         setNewClassTypeName("");
                       }
                     }
@@ -2672,10 +2682,12 @@ export default function ClassesPage() {
                   onClick={() => {
                     const trimmed = newClassTypeName.trim();
                     if (trimmed && !uniqueClassTypes.includes(trimmed)) {
-                      const updated = [...customClassTypes, trimmed];
-                      setCustomClassTypes(updated);
-                      saveCustomClassTypes(updated);
-                      setSelectedClassTypes(prev => [...prev, trimmed]);
+                      setCustomClassTypes((prev) => {
+                        const next = prev.includes(trimmed) ? prev : [...prev, trimmed];
+                        saveCustomClassTypes(next);
+                        return next;
+                      });
+                      setSelectedClassTypes(prev => prev.includes(trimmed) ? prev : [...prev, trimmed]);
                       setNewClassTypeName("");
                     } else if (uniqueClassTypes.includes(trimmed)) {
                       setError("This class type already exists");
