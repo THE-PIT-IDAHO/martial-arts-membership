@@ -353,6 +353,7 @@ export async function sendWaiverReceivedEmail(params: {
   email: string;
   firstName: string;
   clientId?: string;
+  memberId?: string;
 }) {
   const brand = await getGymBranding(params.clientId);
   const resolved = await resolveTemplate("enrollment_confirmation", {
@@ -363,7 +364,14 @@ export async function sendWaiverReceivedEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [params.email], subject, html, clientId: params.clientId });
+  await sendEmail({
+    to: [params.email],
+    subject,
+    html,
+    clientId: params.clientId,
+    memberId: params.memberId,
+    eventType: "WAIVER_CONFIRMED",
+  });
 }
 
 // Keep old name as alias for backwards compatibility

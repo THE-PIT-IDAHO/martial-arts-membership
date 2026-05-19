@@ -158,20 +158,33 @@ export async function resolveRecipientEmails(memberId: string): Promise<string[]
 // Client gym email is used as reply-to so member replies go to the gym.
 const PLATFORM_SENDER = "notifications@dojostormsoftware.com";
 
-// Core send function — never throws, returns true on success
+// Core send function — never throws, returns true on success.
+// If memberId + eventType are passed, the attempt is recorded in EmailLog
+// so admins can see what was sent to a member on the profile activity feed.
 export async function sendEmail(params: {
   to: string | string[];
   subject: string;
   html: string;
   attachments?: Array<{ filename: string; content: string }>;
   clientId?: string;
+  memberId?: string;
+  eventType?: string;
 }): Promise<boolean> {
+  let success = false;
+  let errorText: string | undefined;
+
   try {
     const resend = getResendClient();
-    if (!resend) return false;
+    if (!resend) {
+      errorText = "Resend client not configured (RESEND_API_KEY missing)";
+      return false;
+    }
 
     const globalEnabled = await getSetting("notify_email_enabled", params.clientId);
-    if (globalEnabled === "false") return false;
+    if (globalEnabled === "false") {
+      errorText = "Email notifications globally disabled";
+      return false;
+    }
 
     const settings = await getSettings(["gymName", "gymEmail"], params.clientId);
     const gymName = settings.gymName || "Our Gym";
@@ -180,7 +193,10 @@ export async function sendEmail(params: {
     // Gym email is used as reply-to; platform sender handles "from"
     const fromAddress = `${gymName} <${PLATFORM_SENDER}>`;
     const recipients = Array.isArray(params.to) ? params.to : [params.to];
-    if (recipients.length === 0) return false;
+    if (recipients.length === 0) {
+      errorText = "No recipients";
+      return false;
+    }
 
     const emailPayload: Parameters<typeof resend.emails.send>[0] = {
       from: fromAddress,
@@ -198,10 +214,31 @@ export async function sendEmail(params: {
     }
 
     await resend.emails.send(emailPayload);
-
+    success = true;
     return true;
   } catch (error) {
+    errorText = error instanceof Error ? error.message : "Unknown send error";
     console.error("[Email] Failed to send:", error);
     return false;
+  } finally {
+    // Best-effort logging — never block or surface failures from email send.
+    if (params.eventType && params.clientId) {
+      const recipients = Array.isArray(params.to) ? params.to : [params.to];
+      prisma.emailLog
+        .create({
+          data: {
+            clientId: params.clientId,
+            memberId: params.memberId || null,
+            eventType: params.eventType,
+            subject: params.subject,
+            recipients: JSON.stringify(recipients),
+            success,
+            errorText: errorText || null,
+          },
+        })
+        .catch((err) => {
+          console.error("[Email] Failed to log:", err);
+        });
+    }
   }
 }

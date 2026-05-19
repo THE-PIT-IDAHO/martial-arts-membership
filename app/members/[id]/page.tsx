@@ -219,6 +219,16 @@ type ActivityItem = {
   createdAt: string;
 };
 
+type EmailLogEntry = {
+  id: string;
+  eventType: string;
+  subject: string;
+  recipients: string;
+  success: boolean;
+  errorText: string | null;
+  createdAt: string;
+};
+
 type TestResult = {
   id: string;
   testingForRank: string | null;
@@ -668,11 +678,12 @@ export default function MemberProfilePage() {
       const m: Member = data.member;
       const testResultsData: TestResult[] = data.testResults || [];
       const transactions: Transaction[] = data.transactions || [];
+      const emails: EmailLogEntry[] = data.emails || [];
       setInvoices(data.invoices || []);
       setMember(m);
       setTestResults(testResultsData);
       hydrateFormFromMember(m);
-      seedActivityFromMember(m, testResultsData, transactions);
+      seedActivityFromMember(m, testResultsData, transactions, emails);
 
       // Fetch appointment credits
       fetch(`/api/members/${memberId}/service-credits`)
@@ -1012,7 +1023,7 @@ export default function MemberProfilePage() {
     }
   }
 
-  function seedActivityFromMember(m: Member, testResults: TestResult[] = [], transactions: Transaction[] = []) {
+  function seedActivityFromMember(m: Member, testResults: TestResult[] = [], transactions: Transaction[] = [], emails: EmailLogEntry[] = []) {
     // Base activities from member data (these are always generated fresh)
     const base: ActivityItem[] = [
       {
@@ -1128,6 +1139,26 @@ export default function MemberProfilePage() {
           type: "PAYMENT",
           message: `Payment: $${amount} via ${method}${tx.notes ? ` - ${tx.notes}` : ""}`,
           createdAt: tx.createdAt
+        });
+      });
+    }
+
+    // Add email events to activity feed (shows what was sent to the member)
+    if (emails && emails.length > 0) {
+      emails.forEach((em) => {
+        let recipients: string[] = [];
+        try {
+          recipients = JSON.parse(em.recipients);
+        } catch { /* ignore */ }
+        const to = recipients[0] || "(unknown)";
+        const label = em.success
+          ? `Email sent: "${em.subject}" → ${to}`
+          : `Email failed: "${em.subject}" → ${to}${em.errorText ? ` (${em.errorText})` : ""}`;
+        base.push({
+          id: `email-${em.id}`,
+          type: em.success ? "EMAIL" : "EMAIL-FAIL",
+          message: label,
+          createdAt: em.createdAt,
         });
       });
     }

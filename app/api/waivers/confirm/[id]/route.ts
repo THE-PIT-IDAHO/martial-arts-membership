@@ -51,6 +51,7 @@ export async function PATCH(req: Request, { params }: Params) {
         email: waiver.member.email,
         firstName: waiver.member.firstName,
         clientId,
+        memberId: waiver.member.id,
       }).catch(() => {});
     }
 

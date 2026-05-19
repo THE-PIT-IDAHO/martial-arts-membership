@@ -209,6 +209,7 @@ model Member {
   signedContracts       SignedContract[]
   trialPasses           TrialPass[]
   serviceCredits        MemberServiceCredit[]
+  emailLogs             EmailLog[]
 
   @@unique([memberNumber, clientId])
 }
@@ -945,6 +946,22 @@ model AuditLog {
   changes    String?
   clientId   String   @default("default-client")
   createdAt  DateTime @default(now())
+}
+
+model EmailLog {
+  id         String   @id @default(cuid())
+  clientId   String
+  memberId   String?
+  eventType  String
+  subject    String
+  recipients String
+  success    Boolean
+  errorText  String?
+  createdAt  DateTime @default(now())
+  member     Member?  @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@index([memberId, createdAt])
+  @@index([clientId, createdAt])
 }
 
 model EmailTemplate {

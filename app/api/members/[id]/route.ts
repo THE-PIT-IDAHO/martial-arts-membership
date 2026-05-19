@@ -158,7 +158,23 @@ export async function GET(_req: Request, { params }: Params) {
       take: 50,
     });
 
-    return NextResponse.json({ member, testResults, transactions, invoices });
+    // Fetch email log for this member (most recent 50)
+    const emails = await prisma.emailLog.findMany({
+      where: { memberId: id },
+      select: {
+        id: true,
+        eventType: true,
+        subject: true,
+        recipients: true,
+        success: true,
+        errorText: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    return NextResponse.json({ member, testResults, transactions, invoices, emails });
   } catch (err) {
     console.error(`GET /api/members/${id} error:`, err);
     return NextResponse.json(
