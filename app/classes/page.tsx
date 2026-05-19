@@ -584,61 +584,13 @@ export default function ClassesPage() {
       const minRankName = selectedRank ? selectedRank.name : null;
 
       if (editingClasses.length > 0) {
-        // If classType changed, update all styles' belt configs that reference the old class type
-        const newClassType = selectedClassTypes[0]?.trim() || null;
-        if (originalClassType && newClassType && originalClassType !== newClassType) {
-          try {
-            await fetch("/api/classes/rename-type", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                oldClassType: originalClassType,
-                newClassType: newClassType,
-              }),
-            });
-
-            // Also update reports localStorage config
-            const reportsKey = "reports.config";
-            const storedReports = localStorage.getItem(reportsKey);
-            if (storedReports) {
-              try {
-                const reports = JSON.parse(storedReports);
-                let hasChanges = false;
-                const updatedReports = reports.map((report: any) => {
-                  if (report.selectedClassTypes && Array.isArray(report.selectedClassTypes)) {
-                    const idx = report.selectedClassTypes.indexOf(originalClassType);
-                    if (idx !== -1) {
-                      hasChanges = true;
-                      const newClassTypes = [...report.selectedClassTypes];
-                      newClassTypes[idx] = newClassType;
-                      return { ...report, selectedClassTypes: newClassTypes };
-                    }
-                  }
-                  // Also update columnOrder if it references the old class type
-                  if (report.columnOrder && Array.isArray(report.columnOrder)) {
-                    const oldColId = `classType:${originalClassType}`;
-                    const newColId = `classType:${newClassType}`;
-                    const colIdx = report.columnOrder.indexOf(oldColId);
-                    if (colIdx !== -1) {
-                      hasChanges = true;
-                      const newColumnOrder = [...report.columnOrder];
-                      newColumnOrder[colIdx] = newColId;
-                      return { ...report, columnOrder: newColumnOrder };
-                    }
-                  }
-                  return report;
-                });
-                if (hasChanges) {
-                  localStorage.setItem(reportsKey, JSON.stringify(updatedReports));
-                }
-              } catch (e) {
-                console.error("Error updating reports localStorage:", e);
-              }
-            }
-          } catch (e) {
-            console.error("Error renaming class type:", e);
-          }
-        }
+        // Note: we used to call /api/classes/rename-type here whenever the
+        // class's primary type (selectedClassTypes[0]) differed from the
+        // originally-loaded value. That was wrong — it confused "user
+        // deselected this type on this class" with "user renamed this
+        // type globally", and globally renamed the original type across
+        // every other class + belt config. Rename is now only available
+        // via the explicit Rename action in the Manage Class Types modal.
 
         // Delete all old instances of the class
         for (const oldClass of editingClasses) {
