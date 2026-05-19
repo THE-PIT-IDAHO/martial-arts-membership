@@ -33,10 +33,11 @@ function hashToken(token: string): string {
 
 export async function generateMagicLinkToken(
   memberId: string,
-  email: string
+  email: string,
+  expiresInMinutes: number = TOKEN_EXPIRY_MINUTES,
 ): Promise<string> {
   const token = randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_MINUTES * 60 * 1000);
+  const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
   // Only the hash is persisted — the raw token leaves over the email URL.
   await prisma.memberAuthToken.create({
