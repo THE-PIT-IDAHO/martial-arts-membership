@@ -125,13 +125,15 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
     return NextResponse.json({ error: "Dependent first and last name are required" }, { status: 400 });
   }
 
-  // Create dependent (minor) member
+  // Create dependent (minor) member — inherits the shared household info
+  // (phone, address, emergency contact) so admins don't have to re-enter it.
   const depNumber = await getNextMemberNumber();
   const dependent = await prisma.member.create({
     data: {
       firstName: dependentFirstName.trim(),
       lastName: dependentLastName.trim(),
       email: dependentEmail || null,
+      phone: phone || null,
       dateOfBirth: dependentDateOfBirth ? new Date(dependentDateOfBirth) : null,
       address: address || null,
       city: city || null,
@@ -163,7 +165,9 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
 
   if (pdfBase64) await savePdfToMember(dependent.id, pdfBase64);
 
-  // Create guardian member
+  // Create guardian member — inherits the same household info and a copy
+  // of the medical / emergency-contact details so it shows up on both
+  // profiles.
   if (guardianFirstName && guardianLastName) {
     const guardianNumber = await getNextMemberNumber();
     const guardian = await prisma.member.create({
@@ -176,6 +180,9 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
         city: city || null,
         state: state || null,
         zipCode: zipCode || null,
+        emergencyContactName: emergencyContactName || null,
+        emergencyContactPhone: emergencyContactPhone || null,
+        medicalNotes: medicalNotes || null,
         status: "PARENT",
         memberNumber: guardianNumber,
         clientId,
@@ -191,6 +198,23 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
         relationship: relationshipType,
       },
     });
+
+    // Also record this waiver on the guardian's profile so it counts for
+    // both accounts. Same signature/PDF — confirm endpoint pairs them up
+    // by matching pdfData+signedAt across related members, so confirming
+    // one auto-confirms the other.
+    await prisma.signedWaiver.create({
+      data: {
+        memberId: guardian.id,
+        templateName: "Public Waiver (Guardian)",
+        waiverContent: "Submitted via public guardian waiver form (as guardian)",
+        signatureData: body.signatureData || "submitted",
+        pdfData: pdfBase64 || null,
+        confirmed: false,
+        clientId,
+      },
+    });
+    if (pdfBase64) await savePdfToMember(guardian.id, pdfBase64);
   }
 
   return NextResponse.json({ member: { id: dependent.id } }, { status: 201 });
