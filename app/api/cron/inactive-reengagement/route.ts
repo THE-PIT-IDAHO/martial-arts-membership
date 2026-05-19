@@ -25,6 +25,7 @@ async function handle() {
   const members = await prisma.member.findMany({
     where: {
       status: { contains: "ACTIVE" },
+      NOT: { status: { contains: "INACTIVE" } },
       email: { not: null },
       emailOptIn: true,
     },

@@ -20,12 +20,19 @@ export async function GET(req: Request) {
     const dayOfWeek = getDayOfWeekInTimezone(now, tz); // 0=Sun, 1=Mon, ...
 
     // --- Members ---
+    // Status is a comma-separated string (e.g. "ACTIVE,COACH"), so we have to
+    // use contains-based filters. For "ACTIVE" specifically, exclude rows that
+    // also contain "INACTIVE" since the substring would match both.
     const totalMembers = await prisma.member.count({ where: { clientId } });
     const activeMembers = await prisma.member.count({
-      where: { status: "ACTIVE", clientId },
+      where: {
+        clientId,
+        status: { contains: "ACTIVE" },
+        NOT: { status: { contains: "INACTIVE" } },
+      },
     });
     const prospectMembers = await prisma.member.count({
-      where: { status: "PROSPECT", clientId },
+      where: { clientId, status: { contains: "PROSPECT" } },
     });
 
     // Recently added members (last 7 days)

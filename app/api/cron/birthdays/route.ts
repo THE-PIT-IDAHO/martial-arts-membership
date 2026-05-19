@@ -26,6 +26,7 @@ async function handle() {
     where: {
       dateOfBirth: { not: null },
       status: { contains: "ACTIVE" },
+      NOT: { status: { contains: "INACTIVE" } },
       emailOptIn: true,
       email: { not: null },
     },
