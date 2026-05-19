@@ -301,11 +301,27 @@ export default function ClassesPage() {
     loadData();
   }, []);
 
+  // Persist the user-added class types to a single Settings row so they
+  // survive page reloads and are visible across the gym. Without this they
+  // only lived in React state and disappeared whenever the page remounted,
+  // making it look like adding a new type "removed" earlier ones.
+  async function saveCustomClassTypes(types: string[]) {
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "custom_class_types", value: JSON.stringify(types) }),
+      });
+    } catch (err) {
+      console.error("Failed to persist custom class types:", err);
+    }
+  }
+
   async function loadData() {
     try {
       setLoading(true);
 
-      const [classesRes, stylesRes, coachesRes, appointmentsRes, membersRes, locationsRes, spacesRes, eventsRes] = await Promise.all([
+      const [classesRes, stylesRes, coachesRes, appointmentsRes, membersRes, locationsRes, spacesRes, eventsRes, customTypesRes] = await Promise.all([
         fetch("/api/classes"),
         fetch("/api/styles"),
         fetch("/api/members?status=COACH"),
@@ -314,6 +330,7 @@ export default function ClassesPage() {
         fetch("/api/locations"),
         fetch("/api/spaces"),
         fetch("/api/calendar-events"),
+        fetch("/api/settings?key=custom_class_types"),
       ]);
 
       if (!classesRes.ok || !stylesRes.ok) {
@@ -345,6 +362,19 @@ export default function ClassesPage() {
       setAllSpaces((spacesData.spaces || []).filter((s: any) => s.isActive).map((s: any) => ({ id: s.id, name: s.name })));
       const eventsData = eventsRes.ok ? await eventsRes.json() : { events: [] };
       setEvents(eventsData.events || []);
+
+      // Load persisted custom class types (used by the Manage Class Types modal)
+      if (customTypesRes.ok) {
+        const { setting } = await customTypesRes.json();
+        if (setting?.value) {
+          try {
+            const parsed = JSON.parse(setting.value);
+            if (Array.isArray(parsed)) {
+              setCustomClassTypes(parsed.filter((t: unknown): t is string => typeof t === "string" && !!t.trim()));
+            }
+          } catch { /* ignore malformed setting */ }
+        }
+      }
     } catch (err: any) {
       console.error("Error loading data:", err);
       setError(err.message || "Failed to load data");
@@ -908,6 +938,13 @@ export default function ClassesPage() {
         return updated;
       }));
 
+      // If the renamed type was in the custom-types list, update + persist.
+      if (customClassTypes.includes(editingClassType)) {
+        const updated = customClassTypes.map(t => t === editingClassType ? editedClassTypeName.trim() : t);
+        setCustomClassTypes(updated);
+        saveCustomClassTypes(updated);
+      }
+
       setEditingClassType(null);
       setEditedClassTypeName("");
     } catch (err: any) {
@@ -959,7 +996,9 @@ export default function ClassesPage() {
       }
 
       // Remove from custom class types and current form selection
-      setCustomClassTypes(prev => prev.filter(t => t !== typeToDelete));
+      const remaining = customClassTypes.filter(t => t !== typeToDelete);
+      setCustomClassTypes(remaining);
+      saveCustomClassTypes(remaining);
       setSelectedClassTypes(prev => prev.filter(t => t !== typeToDelete));
 
       // Update local state (both classType and classTypes)
@@ -2586,7 +2625,9 @@ export default function ClassesPage() {
                       e.preventDefault();
                       const trimmed = newClassTypeName.trim();
                       if (trimmed && !uniqueClassTypes.includes(trimmed)) {
-                        setCustomClassTypes(prev => [...prev, trimmed]);
+                        const updated = [...customClassTypes, trimmed];
+                        setCustomClassTypes(updated);
+                        saveCustomClassTypes(updated);
                         setSelectedClassTypes(prev => [...prev, trimmed]);
                         setNewClassTypeName("");
                       }
@@ -2600,7 +2641,9 @@ export default function ClassesPage() {
                   onClick={() => {
                     const trimmed = newClassTypeName.trim();
                     if (trimmed && !uniqueClassTypes.includes(trimmed)) {
-                      setCustomClassTypes(prev => [...prev, trimmed]);
+                      const updated = [...customClassTypes, trimmed];
+                      setCustomClassTypes(updated);
+                      saveCustomClassTypes(updated);
                       setSelectedClassTypes(prev => [...prev, trimmed]);
                       setNewClassTypeName("");
                     } else if (uniqueClassTypes.includes(trimmed)) {
