@@ -199,15 +199,32 @@ export function generateCurriculumPdf(
   const disclaimerY = footerY - disclaimerH;
   const rowH = 5.5;
 
-  // Gather all categories sorted, deduplicated by name
+  // Gather all categories sorted, MERGED by name. When the same category
+  // name appears in multiple tests, union their items into one block —
+  // otherwise the first occurrence's items would win and any items added
+  // to the same-named category in a later test would silently vanish from
+  // the PDF (which is what was happening on republish).
   const allCatsRaw = tests.flatMap(t => t.categories).sort((a, b) => a.sortOrder - b.sortOrder);
-  const seenCatNames = new Set<string>();
-  const allCategories = allCatsRaw.filter(c => {
+  const mergedByName = new Map<string, typeof allCatsRaw[number]>();
+  for (const c of allCatsRaw) {
     const key = c.name.trim().toLowerCase();
-    if (seenCatNames.has(key)) return false;
-    seenCatNames.add(key);
-    return true;
-  });
+    const existing = mergedByName.get(key);
+    if (!existing) {
+      mergedByName.set(key, { ...c, items: [...c.items] });
+    } else {
+      // Append items from this duplicate, skipping ones already added
+      // (same id when present; otherwise same display text).
+      const seenIds = new Set(existing.items.map(i => i.id).filter(Boolean));
+      const seenLabels = new Set(existing.items.map(i => (i.name || "").trim().toLowerCase()));
+      for (const item of c.items) {
+        if (item.id && seenIds.has(item.id)) continue;
+        const label = (item.name || "").trim().toLowerCase();
+        if (label && seenLabels.has(label)) continue;
+        existing.items.push(item);
+      }
+    }
+  }
+  const allCategories = Array.from(mergedByName.values());
 
   console.log("PDF categories:", allCategories.map(c => `${c.sortOrder}: ${c.name} (${c.items.length} items, types: ${[...new Set(c.items.map(i => i.type))].join(",")})`));
 
