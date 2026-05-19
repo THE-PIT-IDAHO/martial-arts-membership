@@ -300,6 +300,11 @@ export default function PortalClassesPage() {
                   </div>
 
                   <div className="text-right flex flex-col items-end gap-1.5">
+                    {/* Always show enrolled count so members can see how full
+                        a class is. \"0 members\" when nobody's booked yet. */}
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                      {cls.confirmedCount === 1 ? "1 member" : `${cls.confirmedCount} members`}
+                    </span>
                     {cls.maxCapacity && (
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                         cls.isFull ? "bg-red-100 text-red-600" : "bg-green-100 text-green-700"

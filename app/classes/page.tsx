@@ -1524,7 +1524,7 @@ export default function ClassesPage() {
                 <div>
                   {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").length > 0 && (
                     <div className="space-y-1.5">
-                      <label className="block text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+                      <label className="mb-1 block text-xs font-medium text-gray-700">
                         Minimum Rank Required
                       </label>
                       {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").map((styleId) => {
@@ -1533,7 +1533,7 @@ export default function ClassesPage() {
                         const idx = selectedStyleIds.indexOf(styleId);
                         return (
                           <div key={styleId} className="flex items-center gap-2">
-                            <span className="text-xs text-gray-600 w-24 truncate">{style.name}</span>
+                            <span className="text-xs text-gray-700 w-24 truncate">{style.name}</span>
                             <select
                               value={minRankIds[idx] || ""}
                               onChange={(e) => {

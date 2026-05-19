@@ -1478,17 +1478,28 @@ export default function AccountPage() {
                             .sort((a, b) => (roleOrder[a] ?? 99) - (roleOrder[b] ?? 99))
                             .map((roleKey) => {
                               const def = ROLES.find((r) => r.key === roleKey);
+                              // Per-role palette using the same shade pattern
+                              // (bg-X-100 / text-X-800 / border-X-300) as the
+                              // member-list status badges, so the colors feel
+                              // consistent across the app.
+                              const palette: Record<string, { bg: string; text: string; border: string; x: string; xHover: string }> = {
+                                OWNER:      { bg: "bg-amber-100",   text: "text-amber-800",   border: "border-amber-300",   x: "text-amber-600",   xHover: "hover:text-amber-900" },
+                                ADMIN:      { bg: "bg-blue-100",    text: "text-blue-800",    border: "border-blue-300",    x: "text-blue-600",    xHover: "hover:text-blue-900" },
+                                COACH:      { bg: "bg-purple-100",  text: "text-purple-800",  border: "border-purple-300",  x: "text-purple-600",  xHover: "hover:text-purple-900" },
+                                FRONT_DESK: { bg: "bg-emerald-100", text: "text-emerald-800", border: "border-emerald-300", x: "text-emerald-600", xHover: "hover:text-emerald-900" },
+                              };
+                              const c = palette[roleKey] || { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-300", x: "text-gray-500", xHover: "hover:text-gray-900" };
                               return (
                                 <span
                                   key={roleKey}
-                                  className="inline-flex items-center gap-1 rounded-full bg-purple-100 text-purple-700 px-2 py-0.5 text-[10px] font-semibold"
+                                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${c.bg} ${c.text} ${c.border}`}
                                 >
                                   {def?.label || roleKey}
                                   <button
                                     type="button"
                                     onClick={() => removeRoleFromMember(m.id, roleKey)}
                                     title="Remove this role"
-                                    className="text-purple-500 hover:text-purple-900"
+                                    className={`${c.x} ${c.xHover}`}
                                   >
                                     ✕
                                   </button>
