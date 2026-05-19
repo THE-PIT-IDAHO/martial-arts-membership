@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { memberCanAttendClass } from "@/lib/class-eligibility";
+import { getGymTimezone, localMidnightUtc } from "@/lib/dates";
 
 // GET /api/attendance?classSessionId=xxx&date=yyyy-mm-dd
 export async function GET(req: Request) {
@@ -15,10 +16,11 @@ export async function GET(req: Request) {
       return new NextResponse("classSessionId and date are required", { status: 400 });
     }
 
-    // Parse date components to avoid timezone shifting
-    const [year, month, day] = dateStr.split("-").map(Number);
-    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+    // Anchor at gym-local midnight so reads match how the POST + dashboard write.
+    const tz = await getGymTimezone(clientId);
+    const dayStartMs = localMidnightUtc(dateStr, tz);
+    const startOfDay = new Date(dayStartMs);
+    const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
     const attendances = await prisma.attendance.findMany({
       where: {
@@ -75,17 +77,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Class not found" }, { status: 404 });
     }
 
-    // Parse the date string to extract year/month/day components
-    // Use string splitting to avoid timezone shifting issues
+    // Anchor the attendance date at the gym's local midnight (UTC) so every
+    // TZ-aware reader (dashboard, portal classes, reports) sees it in the
+    // correct day bucket. Server-local midnight would land in the wrong UTC
+    // day on Vercel.
     const dateStr = typeof attendanceDate === "string" && attendanceDate.includes("T")
       ? attendanceDate.split("T")[0]
       : String(attendanceDate);
-    const [year, month, day] = dateStr.split("-").map(Number);
-    const date = new Date(year, month - 1, day, 0, 0, 0, 0); // Local midnight
-
-    // Check if attendance already exists using a date range to handle timezone variations
-    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+    const tz = await getGymTimezone(clientId);
+    const dayStartMs = localMidnightUtc(dateStr, tz);
+    const date = new Date(dayStartMs);
+    const startOfDay = new Date(dayStartMs);
+    const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
     const existing = await prisma.attendance.findFirst({
       where: {
@@ -168,6 +171,7 @@ export async function POST(req: Request) {
 // DELETE /api/attendance?id=xxx OR ?memberId=xxx&classSessionId=xxx&date=yyyy-mm-dd
 export async function DELETE(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     const memberId = searchParams.get("memberId");
@@ -203,10 +207,12 @@ export async function DELETE(req: Request) {
         }
       }
     } else if (memberId && classSessionId && dateStr) {
-      // Delete by member, class, and date using range to handle timezone variations
-      const [year, month, day] = dateStr.split("-").map(Number);
-      const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-      const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+      // Delete by member, class, and date — anchor at gym-local midnight to
+      // match how writes were created.
+      const tz = await getGymTimezone(clientId);
+      const dayStartMs = localMidnightUtc(dateStr, tz);
+      const startOfDay = new Date(dayStartMs);
+      const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
       await prisma.attendance.deleteMany({
         where: {

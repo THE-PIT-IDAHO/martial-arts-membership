@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { getGymTimezone, localMidnightUtc } from "@/lib/dates";
 
 // POST /api/attendance/confirm - Confirm attendance for members
 // Body: { memberIds: string[], classSessionId: string, date: string }
@@ -24,10 +25,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Class not found" }, { status: 404 });
     }
 
-    // Parse date components to avoid timezone shifting
-    const [year, month, day] = date.split("-").map(Number);
-    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+    // Anchor at gym-local midnight to match how attendance rows were written.
+    const tz = await getGymTimezone(clientId);
+    const dayStartMs = localMidnightUtc(date, tz);
+    const startOfDay = new Date(dayStartMs);
+    const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
     // Update all matching attendance records to confirmed (only for members in this gym)
     const result = await prisma.attendance.updateMany({
@@ -77,10 +79,11 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "Class not found" }, { status: 404 });
     }
 
-    // Parse date components to avoid timezone shifting
-    const [year, month, day] = date.split("-").map(Number);
-    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+    // Anchor at gym-local midnight to match how attendance rows were written.
+    const tz = await getGymTimezone(clientId);
+    const dayStartMs = localMidnightUtc(date, tz);
+    const startOfDay = new Date(dayStartMs);
+    const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
     // Update all matching attendance records to unconfirmed (only for members in this gym)
     const result = await prisma.attendance.updateMany({
