@@ -523,24 +523,44 @@ export default function AccountPage() {
     return filtered.length > 0 ? filtered.join(", ") : "ACTIVE";
   }
 
+  // Status tag → role key (inverse of ROLE_STATUS_MAP). e.g. "FRONT DESK" → "FRONT_DESK".
+  const STATUS_TAG_TO_ROLE: Record<string, string> = Object.entries(ROLE_STATUS_MAP)
+    .reduce((acc, [roleKey, tag]) => { acc[tag.toUpperCase()] = roleKey; return acc; }, {} as Record<string, string>);
+
+  // Extract the set of role keys a member currently has, based on their status tags.
+  function getRolesForMember(member: { status: string; accessRole: string | null }): string[] {
+    const tags = (member.status || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
+    const roles = new Set<string>();
+    for (const tag of tags) {
+      const roleKey = STATUS_TAG_TO_ROLE[tag];
+      if (roleKey) roles.add(roleKey);
+    }
+    // Fall back to legacy accessRole if the status tag isn't there yet.
+    if (member.accessRole && !roles.has(member.accessRole)) roles.add(member.accessRole);
+    return Array.from(roles);
+  }
+
   async function assignRoleToMember() {
     if (!assignMemberId) return;
     const member = allMembers.find((m) => m.id === assignMemberId);
     if (!member) return;
     const roleTag = ROLE_STATUS_MAP[assignRole] || assignRole;
     const updatedStatus = addStatusTag(member.status, roleTag);
+    // accessRole stays as the "primary" role — pick the new one only if member
+    // has none yet, so future role-based UI sorting/badge color still works.
+    const newAccessRole = member.accessRole || assignRole;
     try {
       const res = await fetch(`/api/members/${assignMemberId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessRole: assignRole, status: updatedStatus }),
+        body: JSON.stringify({ accessRole: newAccessRole, status: updatedStatus }),
       });
       if (res.ok) {
         setAllMembers((prev) =>
-          prev.map((m) => (m.id === assignMemberId ? { ...m, accessRole: assignRole, status: updatedStatus } : m))
+          prev.map((m) => (m.id === assignMemberId ? { ...m, accessRole: newAccessRole, status: updatedStatus } : m))
         );
         setAssignMemberId("");
-        setSuccessMessage("Role assigned and status updated!");
+        setSuccessMessage("Role assigned!");
         setTimeout(() => setSuccessMessage(""), 3000);
       }
     } catch {
@@ -548,20 +568,31 @@ export default function AccountPage() {
     }
   }
 
-  async function removeRoleFromMember(memberId: string) {
+  async function removeRoleFromMember(memberId: string, roleToRemove?: string) {
     const member = allMembers.find((m) => m.id === memberId);
     if (!member) return;
-    const roleTag = member.accessRole ? (ROLE_STATUS_MAP[member.accessRole] || member.accessRole) : "";
-    const updatedStatus = roleTag ? removeStatusTag(member.status, roleTag) : member.status;
+    // If no specific role given, fall back to legacy behaviour (remove the
+    // accessRole). Otherwise remove just that single role tag.
+    const targetRole = roleToRemove || member.accessRole;
+    if (!targetRole) return;
+    const roleTag = ROLE_STATUS_MAP[targetRole] || targetRole;
+    const updatedStatus = removeStatusTag(member.status, roleTag);
+    // If we removed the primary role, pick another from what's left, or clear.
+    let newAccessRole: string | null = member.accessRole;
+    if (member.accessRole === targetRole) {
+      const tempMember = { ...member, status: updatedStatus, accessRole: null };
+      const remaining = getRolesForMember(tempMember);
+      newAccessRole = remaining[0] || null;
+    }
     try {
       const res = await fetch(`/api/members/${memberId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessRole: null, status: updatedStatus }),
+        body: JSON.stringify({ accessRole: newAccessRole, status: updatedStatus }),
       });
       if (res.ok) {
         setAllMembers((prev) =>
-          prev.map((m) => (m.id === memberId ? { ...m, accessRole: null, status: updatedStatus } : m))
+          prev.map((m) => (m.id === memberId ? { ...m, accessRole: newAccessRole, status: updatedStatus } : m))
         );
         setSuccessMessage("Role removed.");
         setTimeout(() => setSuccessMessage(""), 3000);
@@ -1390,41 +1421,59 @@ export default function AccountPage() {
               </div>
 
               {/* Current assignments */}
-              {allMembers.filter((m) => m.accessRole).length === 0 ? (
-                <div className="text-sm text-gray-500 text-center py-4">
-                  No members have been assigned a role yet.
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
-                  {allMembers
-                    .filter((m) => m.accessRole)
-                    .sort((a, b) => {
-                      const roleOrder: Record<string, number> = { OWNER: 0, ADMIN: 1, COACH: 2, FRONT_DESK: 3 };
-                      return (roleOrder[a.accessRole!] ?? 99) - (roleOrder[b.accessRole!] ?? 99);
-                    })
-                    .map((m) => {
-                      const roleDef = ROLES.find((r) => r.key === m.accessRole);
-                      return (
-                        <div key={m.id} className="flex items-center justify-between px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-medium text-gray-900">
-                              {m.firstName} {m.lastName}
-                            </span>
-                            <span className="inline-block rounded-full bg-purple-100 text-purple-700 px-2 py-0.5 text-[10px] font-semibold">
-                              {roleDef?.label || m.accessRole}
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => removeRoleFromMember(m.id)}
-                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                          >
-                            Remove
-                          </button>
+              {(() => {
+                const membersWithRoles = allMembers
+                  .map((m) => ({ member: m, roles: getRolesForMember(m) }))
+                  .filter((mr) => mr.roles.length > 0);
+                if (membersWithRoles.length === 0) {
+                  return (
+                    <div className="text-sm text-gray-500 text-center py-4">
+                      No members have been assigned a role yet.
+                    </div>
+                  );
+                }
+                const roleOrder: Record<string, number> = { OWNER: 0, ADMIN: 1, COACH: 2, FRONT_DESK: 3 };
+                membersWithRoles.sort((a, b) => {
+                  const ap = Math.min(...a.roles.map((r) => roleOrder[r] ?? 99));
+                  const bp = Math.min(...b.roles.map((r) => roleOrder[r] ?? 99));
+                  return ap - bp;
+                });
+                return (
+                  <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
+                    {membersWithRoles.map(({ member: m, roles }) => (
+                      <div key={m.id} className="flex items-center justify-between px-4 py-3 flex-wrap gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-gray-900">
+                            {m.firstName} {m.lastName}
+                          </span>
+                          {roles
+                            .slice()
+                            .sort((a, b) => (roleOrder[a] ?? 99) - (roleOrder[b] ?? 99))
+                            .map((roleKey) => {
+                              const def = ROLES.find((r) => r.key === roleKey);
+                              return (
+                                <span
+                                  key={roleKey}
+                                  className="inline-flex items-center gap-1 rounded-full bg-purple-100 text-purple-700 px-2 py-0.5 text-[10px] font-semibold"
+                                >
+                                  {def?.label || roleKey}
+                                  <button
+                                    type="button"
+                                    onClick={() => removeRoleFromMember(m.id, roleKey)}
+                                    title="Remove this role"
+                                    className="text-purple-500 hover:text-purple-900"
+                                  >
+                                    ✕
+                                  </button>
+                                </span>
+                              );
+                            })}
                         </div>
-                      );
-                    })}
-                </div>
-              )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
