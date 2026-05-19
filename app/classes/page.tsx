@@ -1495,13 +1495,12 @@ export default function ClassesPage() {
                 </div>
               </div>
 
-              {/* Styles + per-class extras (color/coach/location/space) on the right */}
-              <div className="grid gap-4 md:grid-cols-2">
-                {/* Left column — Allowed Styles + Min Rank Required */}
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Allowed Styles
-                  </label>
+              {/* Allowed Styles spans full width (or half if you prefer) */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">
+                  Allowed Styles
+                </label>
+                <div className="md:w-1/2">
                   <MultiSelectCheckbox
                     options={styles.map(s => ({ value: s.id, label: s.name }))}
                     selected={selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE")}
@@ -1517,12 +1516,14 @@ export default function ClassesPage() {
                     }}
                     placeholder="All Styles"
                   />
+                </div>
+              </div>
 
-                  {/* Minimum Rank per selected style. minRankIds is stored as a
-                      JSON array aligned to styleIds; minRankId mirrors index 0
-                      for backward compat. */}
+              {/* Min Rank Required (left) + Calendar Color/Default Coach/Location/Space (right) */}
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
                   {selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE").length > 0 && (
-                    <div className="mt-2 space-y-1.5">
+                    <div className="space-y-1.5">
                       <label className="block text-[10px] font-medium text-gray-500 uppercase tracking-wider">
                         Minimum Rank Required
                       </label>
@@ -1774,27 +1775,32 @@ export default function ClassesPage() {
                                 </button>
                               )}
                             </div>
+
+                            {/* Per-day coach override — inline, only on the
+                                first time slot of each day (coach is per-day,
+                                not per-time-slot). Blank → inherits Default. */}
+                            {timeIndex === 0 ? (
+                              <>
+                                <label className="text-[11px] text-gray-500 ml-2">Coach:</label>
+                                <select
+                                  value={schedule.coachId || ""}
+                                  onChange={(e) => {
+                                    const newSchedules = [...daySchedules];
+                                    newSchedules[scheduleIndex].coachId = e.target.value || undefined;
+                                    setDaySchedules(newSchedules);
+                                  }}
+                                  style={{ minWidth: '140px' }}
+                                  className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                                >
+                                  <option value="">Default coach</option>
+                                  {coaches.map(c => (
+                                    <option key={c.id} value={c.id}>{c.firstName} {c.lastName}</option>
+                                  ))}
+                                </select>
+                              </>
+                            ) : null}
                           </div>
                         ))}
-                        {/* Per-day coach override. Leave on "Default coach" to
-                            inherit the class's default coach selected below. */}
-                        <div className="flex items-center gap-2 pl-[100px]">
-                          <label className="text-[11px] text-gray-500">Coach:</label>
-                          <select
-                            value={schedule.coachId || ""}
-                            onChange={(e) => {
-                              const newSchedules = [...daySchedules];
-                              newSchedules[scheduleIndex].coachId = e.target.value || undefined;
-                              setDaySchedules(newSchedules);
-                            }}
-                            className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                          >
-                            <option value="">Default coach</option>
-                            {coaches.map(c => (
-                              <option key={c.id} value={c.id}>{c.firstName} {c.lastName}</option>
-                            ))}
-                          </select>
-                        </div>
                       </div>
                     ))}
                   </div>
