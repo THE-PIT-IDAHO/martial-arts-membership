@@ -25,10 +25,14 @@ export async function GET(req: NextRequest) {
 
   // Default to today — use "T00:00:00" to force local time parsing (not UTC)
   const targetDate = dateStr ? new Date(dateStr + "T00:00:00") : new Date();
-  const dayStart = new Date(targetDate);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(targetDate);
-  dayEnd.setHours(23, 59, 59, 999);
+  // The day bounds for SQL filtering need to be in the CLIENT's local day, not
+  // the server's. On Vercel the server runs in UTC, so a class at 7pm Mountain
+  // (stored as next-day 01:00 UTC) would be excluded from a UTC-day SQL range.
+  // We compute client-local-midnight as a UTC timestamp by offsetting from
+  // server-local-midnight by tzOffsetMin.
+  const targetDateLocalMidnightMs = targetDate.getTime() + tzOffsetMin * 60 * 1000;
+  const dayStart = new Date(targetDateLocalMidnightMs);
+  const dayEnd = new Date(targetDateLocalMidnightMs + 24 * 60 * 60 * 1000 - 1);
 
   // Get all classes (show schedule regardless of bookingEnabled)
   const classes = await prisma.classSession.findMany({
@@ -136,17 +140,27 @@ export async function GET(req: NextRequest) {
     return false;
   });
 
-  // Hide classes whose start time has already passed (today only)
+  // Hide classes whose start time has already passed (today only).
+  // "Today" is determined in the client's local timezone, not the server's.
   const now = new Date();
-  const isToday = toLocalDateStr(now) === targetDateStr;
+  // Client's local YYYY-MM-DD for "now":
+  const nowLocalMs = now.getTime() - tzOffsetMin * 60 * 1000;
+  const nowLocal = new Date(nowLocalMs);
+  const nowLocalDateStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, "0")}-${String(nowLocal.getUTCDate()).padStart(2, "0")}`;
+  const isToday = nowLocalDateStr === targetDateStr;
 
   const visibleClasses = isToday
     ? filteredClasses.filter((cls) => {
-        // Extract hours/minutes from the class start time and build today's occurrence time
-        const classTime = new Date(cls.startsAt);
-        const todayStart = new Date(now);
-        todayStart.setHours(classTime.getHours(), classTime.getMinutes(), 0, 0);
-        return now < todayStart;
+        // Class's time-of-day in the CLIENT's local timezone (extract from
+        // the stored UTC startsAt by applying tzOffset).
+        const classLocalMs = new Date(cls.startsAt).getTime() - tzOffsetMin * 60 * 1000;
+        const classLocal = new Date(classLocalMs);
+        const localHour = classLocal.getUTCHours();
+        const localMinute = classLocal.getUTCMinutes();
+        // Build "today at that local hour:minute" as a UTC timestamp:
+        //   client-local midnight (in UTC) + the local time-of-day
+        const occurrenceUtcMs = targetDateLocalMidnightMs + (localHour * 60 + localMinute) * 60 * 1000;
+        return now.getTime() < occurrenceUtcMs;
       })
     : filteredClasses;
 
