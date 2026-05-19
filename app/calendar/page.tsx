@@ -1463,9 +1463,10 @@ export default function CalendarPage() {
         const nextRank = beltConfig.ranks.find((r: { order: number }) => r.order === currentRank.order + 1);
         if (!nextRank || !nextRank.classRequirements) continue;
 
-        // Check if next rank has a requirement for this class type
+        // Check if next rank has a requirement for this class type.
+        // "*" is the "Any Class (counts all)" sentinel and matches every class type.
         const requirement = nextRank.classRequirements.find((req: ClassRequirement) =>
-          req.label?.toLowerCase() === classType.toLowerCase() && req.minCount && req.minCount > 0
+          (req.label === "*" || req.label?.toLowerCase() === classType.toLowerCase()) && req.minCount && req.minCount > 0
         );
 
         if (requirement) {

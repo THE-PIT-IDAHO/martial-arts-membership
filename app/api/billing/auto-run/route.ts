@@ -460,10 +460,13 @@ export async function POST(req: Request) {
                 const bc = typeof sc.beltConfig === "string" ? JSON.parse(sc.beltConfig) : sc.beltConfig;
                 const brk = bc.ranks?.find((r: any) => r.name === nr.name);
                 if (brk?.classRequirements?.length) {
-                  reqs = brk.classRequirements.filter((r: any) => r.label && r.minCount > 0).map((r: any) => ({
-                    count: sa.filter((a) => a.classSession?.classType?.toLowerCase() === r.label.toLowerCase()).length,
-                    required: r.minCount,
-                  }));
+                  reqs = brk.classRequirements.filter((r: any) => r.label && r.minCount > 0).map((r: any) => {
+                    const isAny = r.label === "*";
+                    return {
+                      count: sa.filter((a) => isAny || a.classSession?.classType?.toLowerCase() === r.label.toLowerCase()).length,
+                      required: r.minCount,
+                    };
+                  });
                 }
               } catch {}
             }

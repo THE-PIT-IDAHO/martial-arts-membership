@@ -329,11 +329,12 @@ export default function PromotionsPage() {
                 classRequirements = nextBeltRank.classRequirements
                   .filter((req: any) => req.label && req.minCount != null && req.minCount > 0)
                   .map((req: any) => {
+                    const isAny = req.label === "*";
                     const attended = styleAttendances.filter(
-                      (att) => att.classSession?.classType?.toLowerCase() === req.label.toLowerCase()
+                      (att) => isAny || att.classSession?.classType?.toLowerCase() === req.label.toLowerCase()
                     ).length;
                     return {
-                      label: req.label,
+                      label: isAny ? "Any Class" : req.label,
                       attended,
                       required: req.minCount,
                       met: attended >= req.minCount,

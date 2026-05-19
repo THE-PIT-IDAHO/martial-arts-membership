@@ -1538,10 +1538,11 @@ export default function BeltDesignerPage() {
                               e.target.value
                             )
                           }
-                          title={req.label}
+                          title={req.label === "*" ? "Any Class (counts all)" : req.label}
                           className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                         >
                           <option value="">Select class type</option>
+                          <option value="*">Any Class (counts all)</option>
                           {classTypes.map((type) => (
                             <option key={type} value={type}>
                               {type}
@@ -1908,6 +1909,7 @@ export default function BeltDesignerPage() {
                                       className="w-full min-w-[5rem] max-w-[14rem] rounded border border-gray-300 px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary"
                                     >
                                       <option value="">Select class type</option>
+                                      <option value="*">Any Class (counts all)</option>
                                       {classTypes.map((type) => (
                                         <option key={type} value={type}>
                                           {type}

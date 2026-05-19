@@ -172,8 +172,10 @@ export async function GET(req: NextRequest) {
               classRequirements = nextRank.classRequirements
                 .filter((req) => req.label && req.minCount != null && req.minCount > 0)
                 .map((req) => {
+                  const isAny = req.label === "*";
                   const attended = styleAttendances.filter((att) => {
                     if (!att.classSession) return false;
+                    if (isAny) return true;
                     // Check classType
                     if (att.classSession.classType?.toLowerCase() === req.label.toLowerCase()) return true;
                     // Check classTypes (JSON array)
@@ -186,7 +188,7 @@ export async function GET(req: NextRequest) {
                     return false;
                   }).length;
                   return {
-                    label: req.label,
+                    label: isAny ? "Any Class" : req.label,
                     attended,
                     required: req.minCount,
                     met: attended >= req.minCount,

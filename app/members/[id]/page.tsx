@@ -3853,10 +3853,12 @@ export default function MemberProfilePage() {
                               <div className="space-y-1.5 pt-1">
                                 <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Progress</span>
                                 {classRequirements.map((req, idx) => {
+                                  // "*" is the "Any Class (counts all)" sentinel
+                                  const isAnyClass = req.label === "*";
                                   const attended = (member?.attendances || []).filter(
                                     (att) => {
-                                      let typesMatch = false;
-                                      if (att.classSession?.classTypes) {
+                                      let typesMatch = isAnyClass;
+                                      if (!typesMatch && att.classSession?.classTypes) {
                                         try {
                                           const types: string[] = JSON.parse(att.classSession.classTypes);
                                           typesMatch = types.some(t => t.toLowerCase() === req.label.toLowerCase());
@@ -3875,7 +3877,7 @@ export default function MemberProfilePage() {
                                   return (
                                     <div key={idx} className="space-y-0.5">
                                       <div className="flex items-center justify-between text-xs">
-                                        <span className="font-medium text-gray-600">{req.label}</span>
+                                        <span className="font-medium text-gray-600">{isAnyClass ? "Any Class" : req.label}</span>
                                         <span className={`font-bold ${isComplete ? 'text-green-600' : 'text-gray-800'}`}>{attended}/{req.minCount}</span>
                                       </div>
                                       <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">

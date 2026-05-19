@@ -548,10 +548,12 @@ export async function GET(req: Request) {
                     classRequirements = nextBeltRank.classRequirements
                       .filter((req: any) => req.label && req.minCount > 0)
                       .map((req: any) => {
+                        // "*" is the "Any Class (counts all)" sentinel — match every class within the style.
+                        const isAny = req.label === "*";
                         const count = styleAttendances.filter(
-                          (a) => a.classSession?.classType?.toLowerCase() === req.label.toLowerCase()
+                          (a) => isAny || a.classSession?.classType?.toLowerCase() === req.label.toLowerCase()
                         ).length;
-                        return { label: req.label, count, required: req.minCount };
+                        return { label: isAny ? "Any Class" : req.label, count, required: req.minCount };
                       });
                   }
                 }
