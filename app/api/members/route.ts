@@ -54,7 +54,15 @@ export async function GET(req: Request) {
 
     const whereClause: any = { clientId };
     if (status) {
-      whereClause.status = status;
+      // Member.status is a comma-separated string (e.g. "ACTIVE,COACH"), so
+      // we use contains-based matching. Special-case ACTIVE to exclude
+      // "INACTIVE" substring matches.
+      if (status === "ACTIVE") {
+        whereClause.status = { contains: "ACTIVE" };
+        whereClause.NOT = { status: { contains: "INACTIVE" } };
+      } else {
+        whereClause.status = { contains: status };
+      }
     }
 
     // Filter by style name (checks primaryStyle or stylesNotes JSON)

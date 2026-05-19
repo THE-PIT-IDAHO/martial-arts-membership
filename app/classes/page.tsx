@@ -230,6 +230,9 @@ export default function ClassesPage() {
   const [daySchedules, setDaySchedules] = useState<{
     day: DayOfWeek;
     times: { startTime: string; endTime: string }[];
+    // Optional per-day coach override. When unset, falls back to the
+    // top-level `selectedCoachId` (the default coach for this class).
+    coachId?: string;
   }[]>([
     { day: "Monday", times: [{ startTime: "09:00", endTime: "10:00" }] }
   ]);
@@ -503,7 +506,7 @@ export default function ClassesPage() {
 
     // Build day schedules from all related classes
     const dayMap = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const schedulesByDay = new Map<DayOfWeek, { startTime: string; endTime: string }[]>();
+    const schedulesByDay = new Map<DayOfWeek, { times: { startTime: string; endTime: string }[]; coachIds: Set<string> }>();
 
     relatedClasses.forEach(c => {
       const startDate = new Date(c.startsAt);
@@ -516,15 +519,20 @@ export default function ClassesPage() {
       };
 
       if (!schedulesByDay.has(day)) {
-        schedulesByDay.set(day, []);
+        schedulesByDay.set(day, { times: [], coachIds: new Set() });
       }
-      schedulesByDay.get(day)!.push(timeSlot);
+      const entry = schedulesByDay.get(day)!;
+      entry.times.push(timeSlot);
+      if (c.coachId) entry.coachIds.add(c.coachId);
     });
 
-    // Convert to array format
-    const daySchedules = Array.from(schedulesByDay.entries()).map(([day, times]) => ({
+    // Convert to array format. Per-day coach is set when all class rows for
+    // that day share the same coachId AND it differs from the top-level
+    // selected coach; otherwise we leave it unset to fall back to the default.
+    const daySchedules = Array.from(schedulesByDay.entries()).map(([day, { times, coachIds }]) => ({
       day,
-      times
+      times,
+      coachId: coachIds.size === 1 ? Array.from(coachIds)[0] : undefined,
     }));
 
     setDaySchedules(daySchedules.length > 0 ? daySchedules : [{ day: "Monday", times: [{ startTime: "09:00", endTime: "10:00" }] }]);
@@ -655,7 +663,9 @@ export default function ClassesPage() {
             const endsAt = new Date(classDate);
             endsAt.setHours(endHour, endMin, 0, 0);
 
-            const selectedCoach = coaches.find(c => c.id === selectedCoachId);
+            // Per-day coach takes precedence over the form's default coach.
+            const dayCoachId = schedule.coachId || selectedCoachId;
+            const selectedCoach = coaches.find(c => c.id === dayCoachId);
             const res = await fetch("/api/classes", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -687,7 +697,7 @@ export default function ClassesPage() {
                 scheduleEndDate: isOngoing || !scheduleEndDate ? null : new Date(scheduleEndDate).toISOString(),
                 isOngoing: isOngoing,
                 color: color,
-                coachId: selectedCoachId || null,
+                coachId: dayCoachId || null,
                 coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
                 bookingEnabled,
                 kioskEnabled,
@@ -737,7 +747,9 @@ export default function ClassesPage() {
             const endsAt = new Date(classDate);
             endsAt.setHours(endHour, endMin, 0, 0);
 
-            const selectedCoach = coaches.find(c => c.id === selectedCoachId);
+            // Per-day coach takes precedence over the form's default coach.
+            const dayCoachId = schedule.coachId || selectedCoachId;
+            const selectedCoach = coaches.find(c => c.id === dayCoachId);
             const res = await fetch("/api/classes", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -769,7 +781,7 @@ export default function ClassesPage() {
                 scheduleEndDate: isOngoing || !scheduleEndDate ? null : new Date(scheduleEndDate).toISOString(),
                 isOngoing: isOngoing,
                 color: color,
-                coachId: selectedCoachId || null,
+                coachId: dayCoachId || null,
                 coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
                 bookingEnabled,
                 kioskEnabled,
@@ -1652,6 +1664,25 @@ export default function ClassesPage() {
                             </div>
                           </div>
                         ))}
+                        {/* Per-day coach override. Leave on "Default coach" to
+                            inherit the class's default coach selected below. */}
+                        <div className="flex items-center gap-2 pl-[100px]">
+                          <label className="text-[11px] text-gray-500">Coach:</label>
+                          <select
+                            value={schedule.coachId || ""}
+                            onChange={(e) => {
+                              const newSchedules = [...daySchedules];
+                              newSchedules[scheduleIndex].coachId = e.target.value || undefined;
+                              setDaySchedules(newSchedules);
+                            }}
+                            className="rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                          >
+                            <option value="">Default coach</option>
+                            {coaches.map(c => (
+                              <option key={c.id} value={c.id}>{c.firstName} {c.lastName}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     ))}
                   </div>
