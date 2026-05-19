@@ -525,7 +525,10 @@ export default function CalendarPage() {
   }, [currentDate, allClasses, scheduledAppts, availabilityBlocks, calendarEvents]);
 
   function getClassesForDate(date: Date): ClassSession[] {
-    const dateStr = date.toISOString().split("T")[0];
+    // Use LOCAL date (not toISOString which returns UTC). Otherwise an
+    // evening class saved as e.g. "May 19 7pm Mountain" — stored UTC as
+    // May 20 02:00 — would render on the wrong calendar day.
+    const dateStr = toLocalDateStr(date);
 
     return allClasses.filter((classSession) => {
       // Skip "Imported" class types - they're only for rank progress tracking
@@ -534,7 +537,7 @@ export default function CalendarPage() {
       }
 
       const classStartsAt = new Date(classSession.startsAt);
-      const classDate = classStartsAt.toISOString().split("T")[0];
+      const classDate = toLocalDateStr(classStartsAt);
 
       // Check if this date is excluded for this class
       if (classSession.excludedDates) {
@@ -614,11 +617,11 @@ export default function CalendarPage() {
   }
 
   function getAvailabilityForDate(date: Date): CoachAvailabilityBlock[] {
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = toLocalDateStr(date);
 
     return availabilityBlocks.filter((block) => {
       const blockStartsAt = new Date(block.startsAt);
-      const blockDate = blockStartsAt.toISOString().split("T")[0];
+      const blockDate = toLocalDateStr(blockStartsAt);
 
       // Check excluded dates
       if (block.excludedDates) {
@@ -675,11 +678,11 @@ export default function CalendarPage() {
   }
 
   function getEventsForDate(date: Date): CalendarEventItem[] {
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = toLocalDateStr(date);
 
     return calendarEvents.filter((event) => {
       const eventStartsAt = new Date(event.startsAt);
-      const eventDate = eventStartsAt.toISOString().split("T")[0];
+      const eventDate = toLocalDateStr(eventStartsAt);
 
       if (event.excludedDates) {
         try {
