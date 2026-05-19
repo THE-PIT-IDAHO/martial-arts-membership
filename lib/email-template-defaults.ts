@@ -365,6 +365,38 @@ export function getDefaultTemplate(eventKey: string): DefaultEmailTemplate | und
   return DEFAULT_EMAIL_TEMPLATES.find((t) => t.eventKey === eventKey);
 }
 
+// What triggers each template — shown on the templates list so admins can see
+// at a glance when an email actually fires. `wired: false` means the helper
+// exists but nothing in the code calls it yet (toggle is dormant).
+export const TEMPLATE_TRIGGERS: Record<string, { description: string; wired: boolean }> = {
+  welcome: { description: "When a new member is created (POST /api/members or signup flow)", wired: true },
+  enrollment_confirmation: { description: "When admin clicks Confirm on a pending waiver", wired: true },
+  waiver_welcome: { description: "Helper exists — not yet called from any route", wired: false },
+  waiver_confirmed: { description: "Helper exists — not yet called from any route", wired: false },
+  birthday: { description: "Helper exists — no scheduled cron sweeps members' birthdays yet", wired: false },
+  inactive_reengagement: { description: "Helper exists — no scheduled cron sweeps inactive members yet", wired: false },
+  promotion_congrats: { description: "When admin executes a PromotionEvent (promotes a member to a new rank)", wired: true },
+  invoice_created: { description: "Auto-billing run creates a new invoice (daily 6am UTC cron)", wired: true },
+  payment_received: { description: "An invoice flips to PAID (Stripe webhook, POS, or admin Mark Paid)", wired: true },
+  past_due: { description: "Auto-billing past-due sweep flips an unpaid invoice to PAST_DUE", wired: true },
+  dunning_friendly: { description: "3 days after a failed charge (dunning retry schedule)", wired: true },
+  dunning_urgent: { description: "7 days after a failed charge", wired: true },
+  dunning_final: { description: "14 days after a failed charge — final warning", wired: true },
+  dunning_suspension: { description: "30 days after a failed charge — membership suspension", wired: true },
+  membership_expiry: { description: "Auto-billing detects a membership about to expire", wired: true },
+  renewal_reminder: { description: "Auto-billing detects a recurring membership coming up for renewal", wired: true },
+  cancellation_confirmation: { description: "Member or admin cancels a membership via the cancel modal", wired: true },
+  trial_expiring: { description: "A TrialPass nears its expiry date or class-use limit", wired: true },
+  class_reminder: { description: "Helper exists — no scheduled cron sends class reminders yet", wired: false },
+  booking_confirmed: { description: "Member books a class via portal (status = CONFIRMED)", wired: true },
+  booking_waitlisted: { description: "Member books a full class via portal (status = WAITLISTED)", wired: true },
+  waitlist_promotion: { description: "Waitlisted member is auto-promoted when someone cancels", wired: true },
+  magic_link: { description: "Member requests a one-click portal login (no password set)", wired: true },
+  custom_message: { description: 'Calendar → "Message Attendees" feature (manual admin send)', wired: true },
+  low_stock_alert: { description: "POS inventory drops at/below reorderThreshold — sent to gymEmail", wired: true },
+  promotion_eligibility: { description: "Weekly auto-billing sweep detects members at next-rank threshold — sent to gymEmail", wired: true },
+};
+
 // Template category groupings for the UI
 export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
   {

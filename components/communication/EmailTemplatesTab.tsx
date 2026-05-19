@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { TEMPLATE_CATEGORIES } from "@/lib/email-template-defaults";
+import { TEMPLATE_CATEGORIES, TEMPLATE_TRIGGERS } from "@/lib/email-template-defaults";
 
 interface EmailTemplate {
   id: string;
@@ -272,6 +272,24 @@ export default function EmailTemplatesTab() {
           <div className="flex-1">
             <h2 className="text-lg font-semibold text-gray-900">{selectedTemplate.name}</h2>
             <p className="text-xs text-gray-500">Event key: {selectedKey}</p>
+            {(() => {
+              const trigger = TEMPLATE_TRIGGERS[selectedTemplate.eventKey];
+              if (!trigger) return null;
+              return (
+                <p className={`text-xs mt-1 flex items-center gap-1 ${trigger.wired ? "text-gray-700" : "text-amber-700"}`}>
+                  {trigger.wired ? (
+                    <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                  <span>{trigger.description}</span>
+                </p>
+              );
+            })()}
           </div>
           {selectedTemplate.isCustom && (
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
@@ -493,10 +511,39 @@ export default function EmailTemplatesTab() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{tpl.name}</p>
                       <p className="text-xs text-gray-500 truncate">{tpl.subject}</p>
+                      {(() => {
+                        const trigger = TEMPLATE_TRIGGERS[tpl.eventKey];
+                        if (!trigger) return null;
+                        return (
+                          <p className={`text-[11px] mt-1 flex items-center gap-1 ${trigger.wired ? "text-gray-600" : "text-amber-700"}`}>
+                            {trigger.wired ? (
+                              <svg className="w-3 h-3 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3 h-3 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                            <span className="truncate">{trigger.description}</span>
+                          </p>
+                        );
+                      })()}
                     </div>
                   </button>
 
                   <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                    {(() => {
+                      const trigger = TEMPLATE_TRIGGERS[tpl.eventKey];
+                      if (trigger && !trigger.wired) {
+                        return (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700" title="No trigger wired up yet — toggling auto won't fire anything">
+                            Not wired
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                     {tpl.isCustom ? (
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
                         Customized
