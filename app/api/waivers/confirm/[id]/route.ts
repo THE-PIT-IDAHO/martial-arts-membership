@@ -29,8 +29,12 @@ export async function PATCH(req: Request, { params }: Params) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Already confirmed → idempotent success. This happens routinely when
+    // the admin confirms one half of a parent/child pair — the cascade
+    // auto-confirms the other — and then clicks Confirm on the second one
+    // before the page has refreshed. No reason to error out the admin.
     if (waiver.confirmed) {
-      return NextResponse.json({ error: "Already confirmed" }, { status: 400 });
+      return NextResponse.json({ success: true, alreadyConfirmed: true });
     }
 
     const now = new Date();
