@@ -1466,9 +1466,32 @@ export default function CalendarPage() {
   function getNextRankRequirements(member: MemberWithStyles, classType: string | null): { styleName: string; requirement: ClassRequirement; fulfilled: number } | null {
     if (!classType || !member.styles || member.styles.length === 0) return null;
 
+    // Only credit attendance under a style the CLASS actually allows. Without
+    // this, a member enrolled in HK + Kore BJJ on a Kore-only class would get
+    // credited to whichever style happened to match first in the member's
+    // styles list — typically HK if it sorts earlier.
+    let classStyleNames: string[] = [];
+    if (selectedClass?.styleNames) {
+      try {
+        const parsed = JSON.parse(selectedClass.styleNames);
+        if (Array.isArray(parsed)) classStyleNames = parsed.filter((s): s is string => typeof s === "string");
+      } catch { /* ignore */ }
+    }
+    if (classStyleNames.length === 0 && selectedClass?.styleName) {
+      classStyleNames = [selectedClass.styleName];
+    }
+    const allowedStyleSet = new Set(classStyleNames.map((s) => s.toLowerCase()));
+
     for (const memberStyle of member.styles) {
       const style = styles.find(s => s.id === memberStyle.styleId || s.name === memberStyle.styleName);
       if (!style?.beltConfig) continue;
+      // Skip styles the class doesn't allow — but only if the class restricts
+      // styles at all. An open class (no styleNames) credits any of the
+      // member's styles.
+      if (allowedStyleSet.size > 0) {
+        const candidate = (memberStyle.styleName || style.name || "").toLowerCase();
+        if (!allowedStyleSet.has(candidate)) continue;
+      }
 
       try {
         const beltConfig = JSON.parse(style.beltConfig);
