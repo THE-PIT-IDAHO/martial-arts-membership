@@ -221,18 +221,20 @@ export async function GET(
     } catch { /* ignore */ }
   }
 
-  // If the resolved document is a Blob URL (post-migration), redirect the
-  // browser straight to the CDN so the PDF is served from the edge instead
-  // of round-tripping through us.
-  if (dataUri && dataUri.startsWith("http")) {
-    return NextResponse.redirect(dataUri, 302);
-  }
-
   let buffer: Buffer;
   let mime = "application/pdf";
 
   if (generatedPdf) {
     buffer = generatedPdf;
+  } else if (dataUri && dataUri.startsWith("http")) {
+    // Post-migration path: PDF lives on Blob. Proxy the fetch through us so
+    // we can set Content-Disposition with the friendly displayName (rank
+    // name, etc.) — otherwise the browser tab/download show the Blob cuid.
+    const res = await fetch(dataUri);
+    if (!res.ok) return new NextResponse("Failed to load PDF", { status: 502 });
+    const ct = res.headers.get("content-type");
+    if (ct) mime = ct;
+    buffer = Buffer.from(await res.arrayBuffer());
   } else if (dataUri && dataUri.startsWith("data:")) {
     const commaIdx = dataUri.indexOf(",");
     const header = dataUri.slice(0, commaIdx);

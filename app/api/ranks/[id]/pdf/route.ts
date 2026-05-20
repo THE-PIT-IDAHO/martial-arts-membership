@@ -29,27 +29,31 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       return new NextResponse("No PDF for this rank", { status: 404 });
     }
 
-    // New path: PDF lives on Vercel Blob. Redirect the browser there so it
-    // streams from the CDN edge instead of round-tripping through us +
-    // Postgres on every fetch.
+    // Get the bytes from wherever the PDF lives. Stored as a base64 data URI
+    // is the legacy format; an http(s) URL means it's been migrated to Blob.
+    let buffer: Buffer;
+    let mime = "application/pdf";
+
     if (rank.pdfDocument.startsWith("http")) {
-      return NextResponse.redirect(rank.pdfDocument, 302);
+      const res = await fetch(rank.pdfDocument);
+      if (!res.ok) return new NextResponse("Failed to load PDF", { status: 502 });
+      const ct = res.headers.get("content-type");
+      if (ct) mime = ct;
+      buffer = Buffer.from(await res.arrayBuffer());
+    } else if (rank.pdfDocument.startsWith("data:")) {
+      const commaIdx = rank.pdfDocument.indexOf(",");
+      const header = rank.pdfDocument.slice(0, commaIdx);
+      const b64 = rank.pdfDocument.slice(commaIdx + 1);
+      const mimeMatch = header.match(/data:(.*?);/);
+      if (mimeMatch) mime = mimeMatch[1];
+      buffer = Buffer.from(b64, "base64");
+    } else {
+      return new NextResponse("Stored PDF format not recognized", { status: 500 });
     }
 
-    // Legacy path: PDF is still stored as a base64 data URI in the DB.
-    // Decode + stream until the migration script moves it to Blob.
-    const dataUri = rank.pdfDocument;
-    if (!dataUri.startsWith("data:")) {
-      return new NextResponse("Stored data is not a data URI", { status: 500 });
-    }
-
-    const commaIdx = dataUri.indexOf(",");
-    const header = dataUri.slice(0, commaIdx);
-    const b64 = dataUri.slice(commaIdx + 1);
-    const mimeMatch = header.match(/data:(.*?);/);
-    const mime = mimeMatch ? mimeMatch[1] : "application/pdf";
-    const buffer = Buffer.from(b64, "base64");
-
+    // Filename is what shows up in the browser tab and the download dialog.
+    // Use "<Style> - <Rank>.pdf" so members see a meaningful title instead
+    // of the Blob cuid.
     const safeName = `${rank.style.name} - ${rank.name}`.replace(/[\r\n"\\]/g, "").trim() || "rank";
     const asciiFallback = safeName.replace(/[^\x20-\x7e]/g, "_");
     const encoded = encodeURIComponent(safeName);
