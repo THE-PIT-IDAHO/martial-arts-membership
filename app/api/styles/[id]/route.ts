@@ -174,7 +174,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   try {
     await getClientId(req); // validate tenant
     const body = await req.json();
-    const { name, shortName, description, beltSystemEnabled, beltConfig, gradingDates, testNamingConvention, curriculumDisclaimer } = body;
+    const { name, shortName, description, beltSystemEnabled, beltConfig, gradingDates, testNamingConvention, curriculumDisclaimer, promotionFeeCents } = body;
 
     if (name !== undefined && typeof name !== "string") {
       return new NextResponse("Name must be a string", { status: 400 });
@@ -205,6 +205,13 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     }
     if (curriculumDisclaimer !== undefined) {
       data.curriculumDisclaimer = curriculumDisclaimer || null;
+    }
+    if (promotionFeeCents !== undefined) {
+      // Null / empty string clears the override (falls back to global default).
+      data.promotionFeeCents =
+        promotionFeeCents === null || promotionFeeCents === ""
+          ? null
+          : Number(promotionFeeCents);
     }
 
     const style = await prisma.style.update({

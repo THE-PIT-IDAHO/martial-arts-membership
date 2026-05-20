@@ -239,6 +239,7 @@ export async function PATCH(req: Request, { params }: Params) {
       emailOptIn,
       leadSource,
       referredByMemberId,
+      promotionFeeOverrideCents,
     } = body || {};
 
     const updateData: any = {};
@@ -285,6 +286,12 @@ export async function PATCH(req: Request, { params }: Params) {
     if (accessRole !== undefined) updateData.accessRole = accessRole;
     if (leadSource !== undefined) updateData.leadSource = leadSource || null;
     if (referredByMemberId !== undefined) updateData.referredByMemberId = referredByMemberId || null;
+    if (promotionFeeOverrideCents !== undefined) {
+      updateData.promotionFeeOverrideCents =
+        promotionFeeOverrideCents === null || promotionFeeOverrideCents === ""
+          ? null
+          : Number(promotionFeeOverrideCents);
+    }
 
     // Handle stylesNotes updates - check for rank changes and add PDFs
     if (stylesNotes !== undefined) {

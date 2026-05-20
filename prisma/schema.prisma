@@ -194,6 +194,10 @@ model Member {
   portalPasswordHash    String?
   leadSource            String?
   referredByMemberId    String?
+  // Per-member override for the promotion fee. Takes precedence over the
+  // style's promotionFeeCents and the global default. Null = use the
+  // style or global fallback.
+  promotionFeeOverrideCents Int?
   referredBy            Member?   @relation("Referrals", fields: [referredByMemberId], references: [id])
   referrals             Member[]  @relation("Referrals")
   attendances           Attendance[]
@@ -210,6 +214,7 @@ model Member {
   trialPasses           TrialPass[]
   serviceCredits        MemberServiceCredit[]
   emailLogs             EmailLog[]
+  promotions            Promotion[]
 
   @@unique([memberNumber, clientId])
 }
@@ -276,6 +281,10 @@ model MembershipPlan {
   clientId                     String
   purchaseLimit                Int?
   rankPromotionDiscountPercent Int?
+  // Flat dollar discount (in cents) applied to promotion fees on top of (or
+  // instead of) the percentage discount. Percent is applied first, then the
+  // flat amount is subtracted. Final fee floors at $0.
+  rankPromotionDiscountFlatCents Int?
   otherDiscountPercent         Int?
   contractClauses              String?
   memberships                  Membership[]
@@ -391,8 +400,12 @@ model Style {
   gradingDates         String?
   testNamingConvention String   @default("INTO_RANK") // "INTO_RANK" = test named for target rank, "FROM_RANK" = test named for current rank
   curriculumDisclaimer String?  @default("Coach has final say for promotion and not everyone will promote every ceremony. Promotion depends on the following:\nattendance, skill recollection, good behavior, effort and fitness")
+  // Per-style promotion fee in cents. Takes precedence over the global
+  // default in Settings (promotion_fee_cents). Null = use the global fallback.
+  promotionFeeCents    Int?
   clientId             String   @default("default-client")
   ranks                Rank[]
+  promotions           Promotion[]
 }
 
 model Rank {
@@ -742,6 +755,47 @@ model PromotionEvent {
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
   participants PromotionParticipant[]
+}
+
+// Promotion: a single recorded rank promotion. Replaces the old
+// PromotionEvent/Participant scheduled-ceremony flow with a flat "promote now"
+// (or "promote with a backdated date") record. One row per member per
+// promotion. The POS transaction holds the financial side; this row holds
+// the rank/test/audit side.
+model Promotion {
+  id                    String   @id @default(cuid())
+  memberId              String
+  styleId               String
+  styleName             String
+  fromRank              String?
+  toRank                String
+  promotedAt            DateTime @default(now())
+  // Test outcome. Manual today (admin toggles in modal); future testing UI
+  // will auto-populate this. PASSED / FAILED / null (not tested / N/A).
+  testResult            String?
+  testParticipantId     String?  // optional link to TestingParticipant
+  // Money side. baseCostCents is the fee BEFORE discount; costCents is
+  // what was actually charged. discountCents = base - cost.
+  baseCostCents         Int      @default(0)
+  discountCents         Int      @default(0)
+  costCents             Int      @default(0)
+  discountSourcePlanId  String?  // which membership plan supplied the discount
+  // PAID = charged successfully (cash/card/account); UNPAID = recorded but
+  // not yet collected; CARD_FAILED = card on file declined, member owes.
+  paymentStatus         String   @default("PAID")
+  paymentMethod         String?  // CASH, CARD, ACCOUNT, etc.
+  posTransactionId      String?  // POSTransaction.id if a sale was created
+  promotedById          String?  // staff member id who recorded the promotion
+  notes                 String?
+  clientId              String   @default("default-client")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  style  Style  @relation(fields: [styleId], references: [id])
+
+  @@index([memberId])
+  @@index([clientId, promotedAt])
 }
 
 model PromotionParticipant {

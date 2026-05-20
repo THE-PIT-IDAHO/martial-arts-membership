@@ -11,6 +11,7 @@ type Style = {
   shortName?: string | null;
   description?: string | null;
   beltSystemEnabled?: boolean;
+  promotionFeeCents?: number | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -36,6 +37,7 @@ export default function StyleEditPage(props: PageProps) {
   const [shortName, setShortName] = useState("");
   const [description, setDescription] = useState("");
   const [beltSystemEnabled, setBeltSystemEnabled] = useState(false);
+  const [promotionFeeDollars, setPromotionFeeDollars] = useState("");
 
   useEffect(() => {
     async function fetchStyle() {
@@ -56,6 +58,9 @@ export default function StyleEditPage(props: PageProps) {
         setShortName(s.shortName || "");
         setDescription(s.description || "");
         setBeltSystemEnabled(!!s.beltSystemEnabled);
+        setPromotionFeeDollars(
+          s.promotionFeeCents != null ? (s.promotionFeeCents / 100).toFixed(2) : "",
+        );
       } catch (err: any) {
         console.error(err);
         setError(err.message || "Failed to load style");
@@ -83,6 +88,12 @@ export default function StyleEditPage(props: PageProps) {
           shortName: shortName.trim() || null,
           description: description.trim() || null,
           beltSystemEnabled,
+          // Empty string clears the per-style override (falls back to
+          // gym-wide default in Settings → Promotions).
+          promotionFeeCents:
+            promotionFeeDollars.trim() === ""
+              ? null
+              : Math.round(Number(promotionFeeDollars) * 100),
         }),
       });
 
@@ -232,6 +243,29 @@ export default function StyleEditPage(props: PageProps) {
               >
                 This style uses a belt/rank system
               </label>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Promotion fee
+              </label>
+              <p className="text-[11px] text-gray-500 mb-1">
+                Overrides the gym-wide default for promotions in this style. Leave blank to
+                inherit. Membership-plan discounts still apply.
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500 text-sm">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  value={promotionFeeDollars}
+                  onChange={(e) => setPromotionFeeDollars(e.target.value)}
+                  placeholder="—"
+                  className="w-32 px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
             </div>
 
             <div className="flex items-center justify-between pt-2">
