@@ -4728,17 +4728,19 @@ export default function MemberProfilePage() {
                         </div>
                       ))}
 
-                      {memberContracts.length > 0 && (
+                      {(styleDocuments.length > 0 || memberContracts.length > 0) && (
                         <div>
                           <div className="flex items-center gap-2 mb-2">
                             <div className="h-px flex-1 bg-gray-200" />
-                            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 px-2 py-0.5 rounded-full bg-gray-100">Contracts</p>
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 px-2 py-0.5 rounded-full bg-gray-100">Uploaded Documents</p>
                             <div className="h-px flex-1 bg-gray-200" />
                           </div>
                           <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
+                            {/* Contracts first — they're the most important
+                                signed-by-the-member document on file. */}
                             {memberContracts.map((c) => (
                               <button
-                                key={c.id}
+                                key={`contract-${c.id}`}
                                 type="button"
                                 onClick={() => openPdf(`/api/contracts/${c.id}/pdf`)}
                                 className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
@@ -4749,21 +4751,10 @@ export default function MemberProfilePage() {
                                   <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
                                   <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
                                 </svg>
-                                <span className="text-[10px] text-gray-700 text-center leading-tight line-clamp-2 break-words">{c.planName}</span>
+                                <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{c.planName}</span>
                               </button>
                             ))}
-                          </div>
-                        </div>
-                      )}
 
-                      {styleDocuments.length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="h-px flex-1 bg-gray-200" />
-                            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 px-2 py-0.5 rounded-full bg-gray-100">Uploaded Documents</p>
-                            <div className="h-px flex-1 bg-gray-200" />
-                          </div>
-                          <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
                             {styleDocuments.map((doc) => (
                               <div key={doc.id} className="relative group">
                                 <button
@@ -4772,11 +4763,6 @@ export default function MemberProfilePage() {
                                   className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors w-full"
                                   title={doc.name}
                                 >
-                                  {/* Always use the unified PDF icon — the
-                                      doc.thumbnail field used to hold a
-                                      generic placeholder image for the
-                                      signed waiver path, which made it
-                                      look different from rank PDFs. */}
                                   <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
                                     <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
                                     <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
