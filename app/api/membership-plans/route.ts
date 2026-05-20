@@ -5,10 +5,12 @@ import { canAddMembershipPlan } from "@/lib/trial";
 
 const MIN_MEMBERSHIP_NUMBER = 20000000;
 
-// Find lowest free membershipId >= MIN_MEMBERSHIP_NUMBER
-async function getNextMembershipId(): Promise<string> {
+// Find lowest free membershipId >= MIN_MEMBERSHIP_NUMBER, scoped to one
+// tenant. Each gym gets its own membershipId sequence.
+async function getNextMembershipId(clientId: string): Promise<string> {
   const existing = await prisma.membershipPlan.findMany({
     where: {
+      clientId,
       membershipId: { not: null },
     },
     select: { membershipId: true },
@@ -106,7 +108,7 @@ export async function POST(req: Request) {
     }
 
     // Auto-generate membershipId if not provided
-    const finalMembershipId = membershipId?.trim() || await getNextMembershipId();
+    const finalMembershipId = membershipId?.trim() || await getNextMembershipId(clientId);
 
     const membershipPlan = await prisma.membershipPlan.create({
       data: {

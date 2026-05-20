@@ -17,10 +17,12 @@ function toDateOrNull(value: any): Date | null {
   return d;
 }
 
-// find lowest free memberNumber >= MIN_MEMBER_NUMBER
-async function getNextMemberNumber() {
+// Find lowest free memberNumber >= MIN_MEMBER_NUMBER, scoped to one tenant.
+// Each gym keeps its own member-number sequence — they don't share a pool.
+async function getNextMemberNumber(clientId: string) {
   const existing = await prisma.member.findMany({
     where: {
+      clientId,
       memberNumber: {
         gte: MIN_MEMBER_NUMBER,
       },
@@ -366,7 +368,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: memberCheck.reason }, { status: 403 });
     }
 
-    const memberNumber = await getNextMemberNumber();
+    const memberNumber = await getNextMemberNumber(clientId);
 
     const member = await prisma.member.create({
       data: {

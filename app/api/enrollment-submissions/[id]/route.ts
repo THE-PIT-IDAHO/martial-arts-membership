@@ -12,18 +12,18 @@ export async function PATCH(req: Request, { params }: Params) {
   try {
     const body = await req.json();
     const { action, notes } = body; // action: "approve" | "reject"
+    const clientId = await getClientId(req);
 
+    // Tenant verify — without this, any gym's admin could approve/reject
+    // another gym's pending enrollments.
     const submission = await prisma.enrollmentSubmission.findUnique({
       where: { id },
     });
-
-    if (!submission) {
+    if (!submission || submission.clientId !== clientId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     if (action === "approve") {
-      const clientId = await getClientId(req);
-
       // Create the member
       const member = await prisma.member.create({
         data: {
@@ -47,10 +47,11 @@ export async function PATCH(req: Request, { params }: Params) {
         },
       });
 
-      // Create membership if plan selected
+      // Create membership if plan selected (scoped to tenant so a stale
+      // selectedPlanId can't grab another gym's plan).
       if (submission.selectedPlanId) {
-        const plan = await prisma.membershipPlan.findUnique({
-          where: { id: submission.selectedPlanId },
+        const plan = await prisma.membershipPlan.findFirst({
+          where: { id: submission.selectedPlanId, clientId },
         });
 
         if (plan) {
