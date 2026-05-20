@@ -176,7 +176,10 @@ type AvailableStyle = {
   id: string;
   name: string;
   beltConfig?: string | null;
-  ranks: { id: string; name: string; order: number; classRequirement?: number | null; thumbnail?: string | null; pdfDocument?: string | null }[];
+  // pdfDocument is no longer shipped on the /api/styles list (too big);
+  // hasPdf is a boolean indicating whether the rank has a PDF available.
+  // Fetch the actual PDF on demand from /api/ranks/[id]/pdf.
+  ranks: { id: string; name: string; order: number; classRequirement?: number | null; thumbnail?: string | null; hasPdf?: boolean }[];
 };
 
 type CurriculumItem = {
@@ -1424,8 +1427,10 @@ export default function MemberProfilePage() {
       if (!currentRank) continue;
       for (const rank of styleData.ranks || []) {
         if (rank.order > currentRank.order) continue;
-        if (rank.pdfDocument) {
-          pdfs.push({ rankName: rank.name, styleName: style.name, url: rank.pdfDocument });
+        // hasPdf comes from /api/styles (boolean); the actual PDF is fetched
+        // on demand from /api/ranks/[id]/pdf when the user clicks/opens it.
+        if (rank.hasPdf) {
+          pdfs.push({ rankName: rank.name, styleName: style.name, url: `/api/ranks/${rank.id}/pdf` });
         }
       }
     }

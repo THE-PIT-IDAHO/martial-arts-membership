@@ -7,7 +7,13 @@ import { canAddStyle } from "@/lib/trial";
 export async function GET(req: Request) {
   try {
     const clientId = await getClientId(req);
-    const styles = await prisma.style.findMany({
+    // Note: we deliberately do NOT pull pdfDocument here — those are
+    // base64-encoded PDFs that can be 100KB–2MB each. Shipping every
+    // rank's PDF on every styles list call was making the app feel slow
+    // app-wide (this endpoint is hit by ~16 pages). We expose a boolean
+    // `hasPdf` instead; consumers that actually need the PDF data fetch
+    // it on demand from /api/ranks/[id]/pdf.
+    const stylesRaw = await prisma.style.findMany({
       where: { clientId },
       include: {
         ranks: {
@@ -17,12 +23,26 @@ export async function GET(req: Request) {
             name: true,
             order: true,
             styleId: true,
-            pdfDocument: true,
           },
         },
       },
       orderBy: { name: "asc" },
     });
+
+    // Lightweight second query to know which ranks have a PDF. Selects only
+    // the id (no large column transferred).
+    const ranksWithPdfRaw = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Rank"
+      WHERE "styleId" IN (
+        SELECT "id" FROM "Style" WHERE "clientId" = ${clientId}
+      ) AND "pdfDocument" IS NOT NULL
+    `;
+    const hasPdfSet = new Set(ranksWithPdfRaw.map((r) => r.id));
+
+    const styles = stylesRaw.map((s) => ({
+      ...s,
+      ranks: s.ranks.map((r) => ({ ...r, hasPdf: hasPdfSet.has(r.id) })),
+    }));
 
     return NextResponse.json({ styles });
   } catch (error) {
