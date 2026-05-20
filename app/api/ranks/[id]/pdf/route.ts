@@ -29,6 +29,15 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       return new NextResponse("No PDF for this rank", { status: 404 });
     }
 
+    // New path: PDF lives on Vercel Blob. Redirect the browser there so it
+    // streams from the CDN edge instead of round-tripping through us +
+    // Postgres on every fetch.
+    if (rank.pdfDocument.startsWith("http")) {
+      return NextResponse.redirect(rank.pdfDocument, 302);
+    }
+
+    // Legacy path: PDF is still stored as a base64 data URI in the DB.
+    // Decode + stream until the migration script moves it to Blob.
     const dataUri = rank.pdfDocument;
     if (!dataUri.startsWith("data:")) {
       return new NextResponse("Stored data is not a data URI", { status: 500 });

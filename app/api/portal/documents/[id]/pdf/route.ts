@@ -221,6 +221,13 @@ export async function GET(
     } catch { /* ignore */ }
   }
 
+  // If the resolved document is a Blob URL (post-migration), redirect the
+  // browser straight to the CDN so the PDF is served from the edge instead
+  // of round-tripping through us.
+  if (dataUri && dataUri.startsWith("http")) {
+    return NextResponse.redirect(dataUri, 302);
+  }
+
   let buffer: Buffer;
   let mime = "application/pdf";
 
