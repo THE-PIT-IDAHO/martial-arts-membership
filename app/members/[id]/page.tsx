@@ -4734,10 +4734,12 @@ export default function MemberProfilePage() {
                                   title={doc.name}
                                 >
                                   {doc.thumbnail ? (
-                                    <img src={doc.thumbnail} alt="PDF" className="w-10 h-10" />
+                                    <img src={doc.thumbnail} alt="PDF" className="w-8 h-10" />
                                   ) : (
-                                    <svg className="w-10 h-10 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
+                                      <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
+                                      <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
+                                      <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
                                     </svg>
                                   )}
                                   <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{doc.name}</span>
