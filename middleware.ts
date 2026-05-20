@@ -157,7 +157,11 @@ export const config = {
     // Portal routes
     "/portal/:path*",
     "/api/portal/:path*",
-    // Admin routes — everything except static assets, uploads, and public pages
-    "/((?!_next|favicon|icons|belts|manifest|uploads|sw\\.js|signup|forgot-password|reset-password|.*\\.png|.*\\.svg|.*\\.ico|.*\\.pdf).*)",
+    // Admin routes — everything except static assets, uploads, and public
+    // pages. NOTE: do NOT exclude .pdf here. Rank curriculum PDF URLs now
+    // end in a friendly filename like ".../Yellow Belt.pdf" so the middleware
+    // needs to run on them to set the x-tenant-slug header — otherwise
+    // getClientId() throws and the route 500s with "Failed to load PDF".
+    "/((?!_next|favicon|icons|belts|manifest|uploads|sw\\.js|signup|forgot-password|reset-password|.*\\.png|.*\\.svg|.*\\.ico).*)",
   ],
 };
