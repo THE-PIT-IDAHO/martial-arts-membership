@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
 import { formatPaymentMethod } from "@/lib/payment-utils";
-import { getTodayString } from "@/lib/dates";
+import { getTodayString, parseLocalDate } from "@/lib/dates";
 
 // Belt rendering helpers (mirrored from portal/styles)
 function TintedLayer({ src, color }: { src: string; color: string }) {
@@ -3960,7 +3960,7 @@ export default function MemberProfilePage() {
                             {s.lastPromotionDate && (
                               <div className="flex items-center gap-2">
                                 <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Last Promotion</span>
-                                <span className="text-xs font-medium text-gray-700">{new Date(s.lastPromotionDate).toLocaleDateString()}</span>
+                                <span className="text-xs font-medium text-gray-700">{parseLocalDate(s.lastPromotionDate).toLocaleDateString()}</span>
                               </div>
                             )}
                             {/* Progress bars for class requirements */}
