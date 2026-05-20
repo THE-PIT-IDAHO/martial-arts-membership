@@ -302,7 +302,7 @@ export default function PromotionsPage() {
             <h1 className="text-2xl font-bold">Promotions</h1>
             <p className="text-xs text-gray-500">Promote students individually, in bulk, or via a scheduled event.</p>
           </div>
-          <Link href="/settings/promotions" className={BTN_SECONDARY}>
+          <Link href="/settings/promotions" className={BTN_PRIMARY}>
             Promotion Settings
           </Link>
         </div>

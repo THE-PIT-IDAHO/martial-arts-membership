@@ -15,8 +15,19 @@ export async function POST(req: Request) {
   if (!memberId) {
     return NextResponse.json({ error: "memberId is required" }, { status: 400 });
   }
-  if (!amountCents || amountCents <= 0) {
+  if (amountCents == null || amountCents < 0) {
     return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+  }
+
+  // $0 totals skip the Stripe charge entirely (100%-off first month, etc.).
+  // Return the same success shape the frontend expects so the transaction
+  // is still recorded with no paymentIntentId.
+  if (amountCents === 0) {
+    return NextResponse.json({
+      success: true,
+      paymentIntentId: null,
+      skipped: true,
+    });
   }
 
   const member = await prisma.member.findUnique({

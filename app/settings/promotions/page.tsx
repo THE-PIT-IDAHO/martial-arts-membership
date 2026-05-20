@@ -75,7 +75,7 @@ export default function PromotionsSettingsPage() {
         <div className="mb-4">
           <Link
             href="/promotions"
-            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark"
           >
             Back to Promotions
           </Link>

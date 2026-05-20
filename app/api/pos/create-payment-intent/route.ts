@@ -12,8 +12,22 @@ export async function POST(req: Request) {
   const body = await req.json();
   const { amountCents, memberId, memberName, metadata } = body;
 
-  if (!amountCents || amountCents <= 0) {
+  if (amountCents == null || amountCents < 0) {
     return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+  }
+
+  // $0 totals (e.g. 100%-off first month, fully redeemed gift cert) skip
+  // Stripe entirely — there's no payment to capture. We return a shape the
+  // frontend already handles (clientSecret null → falls through to the
+  // standard non-card transaction-create path).
+  if (amountCents === 0) {
+    return NextResponse.json({
+      clientSecret: null,
+      publishableKey: null,
+      paymentIntentId: null,
+      memberName: memberName || "",
+      noPaymentNeeded: true,
+    });
   }
 
   const stripeClient = await getStripeClient();
