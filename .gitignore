@@ -5,3 +5,6 @@ node_modules/
 dist/
 nul
 public/uploads/
+.vercel
+.env*.local
+.claude/settings.local.json

@@ -854,18 +854,26 @@ export default function ReportsPage() {
         setLoading(true);
         setError(null);
 
-        // Fetch styles for dropdown
-        try {
-          const stylesRes = await fetch("/api/styles");
-          const stylesJson = await stylesRes.json();
-          const styles = stylesJson.styles || [];
+        // Fire the five independent "page setup" fetches in parallel.
+        // Previously these were awaited one after the other, costing about
+        // a full second of cold-Neon latency for no reason. Using
+        // Promise.allSettled so one failing endpoint can't block the others.
+        const [stylesSettled, classTypesSettled, mTypesSettled, mPlansSettled, membersSettled] =
+          await Promise.allSettled([
+            fetch("/api/styles").then((r) => r.json()),
+            fetch("/api/classes?types=true").then((r) => r.json()),
+            fetch("/api/membership-types").then((r) => r.json()),
+            fetch("/api/membership-plans").then((r) => r.json()),
+            fetch("/api/members").then((r) => r.json()),
+          ]);
+
+        if (stylesSettled.status === "fulfilled") {
+          const styles = stylesSettled.value.styles || [];
           setAvailableStyles(styles);
 
-          // Extract all ranks from styles (sorted by order within each style)
           const allRanks: { id: string; name: string; styleId: string; styleName: string; order: number }[] = [];
           styles.forEach((style: any) => {
             if (style.ranks && Array.isArray(style.ranks)) {
-              // Sort ranks by order before adding
               const sortedRanks = [...style.ranks].sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
               sortedRanks.forEach((rank: any) => {
                 allRanks.push({
@@ -879,50 +887,41 @@ export default function ReportsPage() {
             }
           });
           setAvailableRanks(allRanks);
-        } catch {
+        } else {
           setAvailableStyles([]);
           setAvailableRanks([]);
         }
 
-        // Fetch class types for dropdown
-        try {
-          const classTypesRes = await fetch("/api/classes?types=true");
-          const classTypesJson = await classTypesRes.json();
-          const classTypes = (classTypesJson.classTypes || []).filter((ct: string) => ct && ct !== "Imported");
+        if (classTypesSettled.status === "fulfilled") {
+          const classTypes = (classTypesSettled.value.classTypes || []).filter((ct: string) => ct && ct !== "Imported");
           setAvailableClassTypes(classTypes);
-        } catch {
+        } else {
           setAvailableClassTypes([]);
         }
 
-        // Fetch membership types for filter checkboxes
-        try {
-          const membershipTypesRes = await fetch("/api/membership-types");
-          const membershipTypesJson = await membershipTypesRes.json();
-          const membershipTypes = (membershipTypesJson.membershipTypes || []).map((mt: any) => ({
+        if (mTypesSettled.status === "fulfilled") {
+          const membershipTypes = (mTypesSettled.value.membershipTypes || []).map((mt: any) => ({
             id: mt.id,
             name: mt.name,
           }));
           setAvailableMembershipTypes(membershipTypes);
-        } catch {
+        } else {
           setAvailableMembershipTypes([]);
         }
 
-        // Fetch membership plans for filter checkboxes
-        try {
-          const membershipPlansRes = await fetch("/api/membership-plans");
-          const membershipPlansJson = await membershipPlansRes.json();
-          const membershipPlans = (membershipPlansJson.membershipPlans || []).map((mp: any) => ({
+        if (mPlansSettled.status === "fulfilled") {
+          const membershipPlans = (mPlansSettled.value.membershipPlans || []).map((mp: any) => ({
             id: mp.id,
             name: mp.name,
           }));
           setAvailableMembershipPlans(membershipPlans);
-        } catch {
+        } else {
           setAvailableMembershipPlans([]);
         }
 
-        const membersRes = await fetch("/api/members");
-        const membersJson = await membersRes.json();
-        const members = membersJson.members || [];
+        const members = membersSettled.status === "fulfilled"
+          ? (membersSettled.value.members || [])
+          : [];
 
         const membershipConfig = reportConfigs.find((r) => r.type === "membership");
         const dateRange = getDateRange(membershipConfig?.dateRange || "month", membershipConfig?.customStartDate, membershipConfig?.customEndDate);

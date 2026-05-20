@@ -1,16 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // GET /api/reports/attendance - Get attendance data for reports
 export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const startDateStr = searchParams.get("startDate");
     const endDateStr = searchParams.get("endDate");
     const allTime = searchParams.get("allTime") === "true";
 
-    // Build where clause
-    const whereClause: any = {};
+    // Tenant scope — without this, the route returns attendance for every
+    // gym in the system. Filter to attendances whose member belongs to the
+    // current tenant.
+    const whereClause: any = { member: { clientId } };
 
     if (!allTime) {
       // Default to last 30 days if no dates provided

@@ -8,6 +8,28 @@
 //   APPLY:    node scripts/migrate-photos-to-blob.js --apply
 //   With a remote DB:
 //             node scripts/migrate-photos-to-blob.js --apply "postgres://..."
+// Load env vars from .env.local (where `vercel env pull` writes) and .env.
+// Scripts don't go through Next.js's auto-loader, so we do it manually.
+const fs = require("fs");
+const path = require("path");
+function loadEnvFile(filename) {
+  const fp = path.join(process.cwd(), filename);
+  if (!fs.existsSync(fp)) return;
+  const content = fs.readFileSync(fp, "utf-8");
+  for (const line of content.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (m && process.env[m[1]] === undefined) {
+      let v = m[2];
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+        v = v.slice(1, -1);
+      }
+      process.env[m[1]] = v;
+    }
+  }
+}
+loadEnvFile(".env.local");
+loadEnvFile(".env");
+
 const { PrismaClient } = require("@prisma/client");
 const { put } = require("@vercel/blob");
 const sharp = require("sharp");

@@ -198,17 +198,26 @@ export default function WaiversPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        // Load members
-        const membersRes = await fetch("/api/members");
+        // Fetch all five endpoints in parallel — previously these were
+        // awaited sequentially, which on a cold Neon connection cost
+        // ~1.5–2s of pure waiting. Promise.all collapses that into a
+        // single round-trip's worth of latency.
+        const [membersRes, contentRes, appRes, optionsRes, pendingRes] =
+          await Promise.all([
+            fetch("/api/members"),
+            fetch("/api/settings?key=waiver_content"),
+            fetch("/api/settings"),
+            fetch("/api/settings?key=waiver_options"),
+            fetch("/api/waivers/pending"),
+          ]);
+
         if (membersRes.ok) {
           const data = await membersRes.json();
           setMembers(data.members || []);
         }
 
-        // Load waiver content
-        const settingsRes = await fetch("/api/settings?key=waiver_content");
-        if (settingsRes.ok) {
-          const data = await settingsRes.json();
+        if (contentRes.ok) {
+          const data = await contentRes.json();
           if (data.setting?.value) {
             try {
               const parsed = JSON.parse(data.setting.value);
@@ -219,8 +228,6 @@ export default function WaiversPage() {
           }
         }
 
-        // Load gym settings: use main app settings as base, overlay waiver-specific overrides
-        const appRes = await fetch("/api/settings");
         if (appRes.ok) {
           const appData = await appRes.json();
           const allSettings: { key: string; value: string }[] = appData.settings || [];
@@ -252,8 +259,6 @@ export default function WaiversPage() {
           setGymSettings(fromApp);
         }
 
-        // Load waiver options
-        const optionsRes = await fetch("/api/settings?key=waiver_options");
         if (optionsRes.ok) {
           const data = await optionsRes.json();
           if (data.setting?.value) {
@@ -265,8 +270,7 @@ export default function WaiversPage() {
             }
           }
         }
-        // Load pending waivers
-        const pendingRes = await fetch("/api/waivers/pending");
+
         if (pendingRes.ok) {
           const data = await pendingRes.json();
           setPendingWaivers(data.pendingWaivers || []);
