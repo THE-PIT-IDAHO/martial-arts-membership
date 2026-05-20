@@ -59,8 +59,9 @@ export async function GET(
     }
 
     // Filename for the Content-Disposition header (powers the download
-    // filename and many browsers' tab title fallback).
-    const safeName = `${rank.style.name} - ${rank.name}`.replace(/[\r\n"\\]/g, "").trim() || "rank";
+    // filename and many browsers' tab title fallback). Just the rank
+    // name — no style prefix.
+    const safeName = rank.name.replace(/[\r\n"\\]/g, "").trim() || "rank";
     const asciiFallback = safeName.replace(/[^\x20-\x7e]/g, "_");
     const encoded = encodeURIComponent(safeName);
 

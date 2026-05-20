@@ -98,7 +98,7 @@ async function syncRankDocumentsToMembers(
         // hidden from members and the filename shows up cleanly.
         const dbRank = dbRanks.find(dr => dr.name === rank.name);
         if (dbRank?.pdfDocument) {
-          const fname = encodeURIComponent(`${styleName} - ${rank.name}.pdf`);
+          const fname = encodeURIComponent(`${rank.name}.pdf`);
           rankDocuments.push({
             id: `rank-${rank.name}-curriculum-db`,
             name: `${rank.name} Curriculum`,

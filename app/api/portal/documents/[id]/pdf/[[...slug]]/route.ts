@@ -148,7 +148,7 @@ export async function GET(
         es.name && es.active !== false && es.name.toLowerCase() === ownerStyle.name.toLowerCase()
       )) {
         dataUri = rankById.pdfDocument;
-        displayName = `${ownerStyle.name} - ${rankById.name}`;
+        displayName = rankById.name;
       }
     }
 
@@ -180,7 +180,7 @@ export async function GET(
         );
         if (target?.pdfDocument) {
           dataUri = target.pdfDocument;
-          displayName = `${style.name} - ${rankName}`;
+          displayName = rankName;
           break;
         }
       }

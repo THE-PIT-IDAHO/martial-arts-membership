@@ -291,7 +291,7 @@ export default function BeltDesignerPage() {
                     // our domain. Old base64 PDFs work the same way.
                     if (dbRank?.pdfDocument) {
                       pdfDocs = pdfDocs.filter(d => d.id !== "curriculum-db");
-                      const fname = encodeURIComponent(`${s.name} - ${r.name}.pdf`);
+                      const fname = encodeURIComponent(`${r.name}.pdf`);
                       const proxyUrl = `/api/ranks/${dbRank.id}/pdf/${fname}`;
                       pdfDocs.push({ id: "curriculum-db", name: `${r.name} Curriculum`, url: proxyUrl });
                     }

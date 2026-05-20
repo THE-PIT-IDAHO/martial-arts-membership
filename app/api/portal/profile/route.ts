@@ -158,7 +158,7 @@ export async function GET(req: NextRequest) {
               // styles with same-named ranks (e.g. White Belt) resolve to the
               // correct PDF.
               const docId = `rank-pdf-${rankRow.id}`;
-              const fname = encodeURIComponent(`${enrolled.name} - ${r.name}.pdf`);
+              const fname = encodeURIComponent(`${r.name}.pdf`);
               documents.push({
                 id: docId,
                 name: `${r.name} Curriculum`,
@@ -251,7 +251,7 @@ export async function GET(req: NextRequest) {
             if (r.pdfDocument && !seen.has(r.id)) {
               seen.add(r.id);
               const docId = `rank-pdf-${r.id}`;
-              const fname = encodeURIComponent(`${enrolled.name} - ${r.name}.pdf`);
+              const fname = encodeURIComponent(`${r.name}.pdf`);
               documents.push({
                 id: docId,
                 name: `${r.name} Curriculum`,

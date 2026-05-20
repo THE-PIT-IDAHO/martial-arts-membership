@@ -1442,9 +1442,9 @@ export default function MemberProfilePage() {
         // on demand from /api/ranks/[id]/pdf when the user clicks/opens it.
         if (rank.hasPdf) {
           // Include a friendly filename as the URL's last segment so the
-          // browser tab title reads e.g. "Hawaiian Kempo - Yellow Belt.pdf"
-          // instead of "pdf". The route's [[...slug]] catch-all ignores it.
-          const fname = encodeURIComponent(`${style.name} - ${rank.name}.pdf`);
+          // browser tab title reads e.g. "Yellow Belt.pdf" instead of
+          // "pdf". The route's [[...slug]] catch-all ignores it.
+          const fname = encodeURIComponent(`${rank.name}.pdf`);
           pdfs.push({ rankName: rank.name, styleName: style.name, url: `/api/ranks/${rank.id}/pdf/${fname}` });
         }
       }
