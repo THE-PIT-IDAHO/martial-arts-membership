@@ -1918,19 +1918,31 @@ export default function MemberProfilePage() {
   const ageFromState = calculateAgeFromDateString(dateOfBirth);
   const ageFromMember = calculateAgeFromDateString(member?.dateOfBirth);
 
-  function handlePhotoFileChange(
+  async function handlePhotoFileChange(
     e: React.ChangeEvent<HTMLInputElement>
   ) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result;
-      if (typeof result === "string") {
-        setPhotoUrl(result);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(
+        `/api/upload/photo?memberId=${encodeURIComponent(memberId || "new")}`,
+        { method: "POST", body: form },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        setError(err.error || "Upload failed");
+        return;
       }
-    };
-    reader.readAsDataURL(file);
+      const { url } = await res.json();
+      setPhotoUrl(url);
+    } catch {
+      setError("Photo upload failed");
+    } finally {
+      // Reset the input so re-selecting the same file fires onChange again.
+      e.target.value = "";
+    }
   }
 
   async function handleDocumentUpload(e: React.ChangeEvent<HTMLInputElement>) {

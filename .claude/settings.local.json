@@ -93,7 +93,10 @@
       "Bash(\"$FNM\" use 20)",
       "Bash(\"$FNM\" current)",
       "Bash(sed -n '2000,2200p' /g/martial-arts-membership/app/members/[id]/page.tsx)",
-      "Bash(git rm -r --cached public/uploads/)"
+      "Bash(git rm -r --cached public/uploads/)",
+      "Bash(DATABASE_URL=\"postgresql://neondb_owner:npg_thyFMT9cNRW1@ep-old-cloud-aihywhri-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require\" npx prisma db push)",
+      "Bash(DATABASE_URL=\"postgresql://neondb_owner:npg_thyFMT9cNRW1@ep-old-cloud-aihywhri-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require\" npx ts-node --compiler-options '{\"\"module\"\":\"\"CommonJS\"\"}' -e \":*)",
+      "Bash(DATABASE_URL=\"postgresql://neondb_owner:npg_thyFMT9cNRW1@ep-old-cloud-aihywhri-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require\" node -e \":*)"
     ],
     "deny": [],
     "ask": [],

@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx sqlite3:*)"
+      "Bash(npx sqlite3:*)",
+      "Bash(xxd)"
+    ],
+    "additionalDirectories": [
+      "g:\\martial-arts-membership\\app\\api\\ranks"
     ]
   }
 }
