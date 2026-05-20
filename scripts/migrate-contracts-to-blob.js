@@ -5,7 +5,7 @@
 // Run AFTER:
 //   1. The new code is deployed (so reads can handle both formats)
 //   2. The private Blob store is created on Vercel
-//   3. CONTRACTS_BLOB_READ_WRITE_TOKEN is in .env.local (vercel env pull)
+//   3. CONTRACTS_READ_WRITE_TOKEN is in .env.local (vercel env pull)
 //
 // Usage:
 //   DRY RUN:  node scripts/migrate-contracts-to-blob.js
@@ -58,10 +58,10 @@ async function main() {
   console.log(apply ? "APPLY — uploading contracts to private Blob + updating DB" : "DRY RUN — no uploads, no DB writes");
   console.log("=".repeat(64));
 
-  const token = process.env.CONTRACTS_BLOB_READ_WRITE_TOKEN;
+  const token = process.env.CONTRACTS_READ_WRITE_TOKEN;
   if (apply && !token) {
-    console.error("\nERROR: CONTRACTS_BLOB_READ_WRITE_TOKEN env var not set.");
-    console.error("Create a private Blob store on Vercel, connect it with that env var name,");
+    console.error("\nERROR: CONTRACTS_READ_WRITE_TOKEN env var not set.");
+    console.error("Create a private Blob store on Vercel with CONTRACTS as the env var prefix,");
     console.error("then run `vercel env pull .env.local` to bring it down.\n");
     process.exit(1);
   }
@@ -146,7 +146,7 @@ async function main() {
   console.log(`Total PDF bytes:      ${fmt(totalBefore)} → ${fmt(totalAfter)}  (saves ${fmt(totalBefore - totalAfter)} from DB)`);
 
   if (!apply) {
-    console.log("\n(Re-run with --apply to commit. Requires CONTRACTS_BLOB_READ_WRITE_TOKEN.)");
+    console.log("\n(Re-run with --apply to commit. Requires CONTRACTS_READ_WRITE_TOKEN.)");
   }
 
   await p.$disconnect();

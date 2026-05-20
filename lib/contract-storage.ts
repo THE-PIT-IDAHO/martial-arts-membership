@@ -15,11 +15,13 @@ import { put } from "@vercel/blob";
 // explicitly opt in (this file). Leaking the photos token wouldn't grant
 // access to contracts and vice versa.
 function getContractToken(): string {
-  const token = process.env.CONTRACTS_BLOB_READ_WRITE_TOKEN;
+  // Vercel names the token <PREFIX>_READ_WRITE_TOKEN when you set a custom
+  // prefix on the Blob store (replacing "BLOB" rather than prepending).
+  const token = process.env.CONTRACTS_READ_WRITE_TOKEN;
   if (!token) {
     throw new Error(
-      "CONTRACTS_BLOB_READ_WRITE_TOKEN env var not set. " +
-      "Create a private Blob store on Vercel and connect it with that env var name.",
+      "CONTRACTS_READ_WRITE_TOKEN env var not set. " +
+      "Create a private Blob store on Vercel and connect it with CONTRACTS as the env var prefix.",
     );
   }
   return token;
