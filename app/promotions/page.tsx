@@ -92,11 +92,13 @@ function parseEventStyleIds(e: EventRow): string[] {
   return e.styleId ? [e.styleId] : [];
 }
 
-/** Standard button styling used across the app. */
+/** Standard button styling used across the app — solid red for primary
+ * actions, outlined red for secondary. Both use the gym's "primary" (red)
+ * Tailwind token. */
 const BTN_PRIMARY =
   "rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50";
 const BTN_SECONDARY =
-  "rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50";
+  "rounded-md border border-primary bg-white px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5 disabled:opacity-50";
 
 export default function PromotionsPage() {
   const [tab, setTab] = useState<"eligible" | "events" | "history">("eligible");
@@ -110,6 +112,15 @@ export default function PromotionsPage() {
   const [search, setSearch] = useState("");
   const [showOnlyEligible, setShowOnlyEligible] = useState(false);
   const [styleFilter, setStyleFilter] = useState<Set<string>>(new Set());
+
+  // Per-row fee overrides edited inline in the Ready-to-Promote table.
+  // Keyed by rowKey(memberId|styleId). When the user opens the modal,
+  // any pending override is passed into the draft so the modal opens with
+  // the same number they just typed.
+  const [feeOverrides, setFeeOverrides] = useState<Record<string, string>>({});
+  function setFeeOverride(key: string, value: string) {
+    setFeeOverrides((prev) => ({ ...prev, [key]: value }));
+  }
 
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -197,13 +208,19 @@ export default function PromotionsPage() {
   }
 
   function makeDraft(row: EligibleRow): DraftItem {
+    // Honor the inline override if the admin already edited the fee in
+    // the table, otherwise default to the computed cost.
+    const override = feeOverrides[rowKey(row)];
     return {
       row,
       date: getTodayString(),
       paymentMethod: "CASH",
       testResult: row.allRequirementsMet ? "PASSED" : "NA",
       notes: "",
-      costDollars: (row.fee.costCents / 100).toFixed(2),
+      costDollars:
+        override !== undefined && override !== ""
+          ? override
+          : (row.fee.costCents / 100).toFixed(2),
     };
   }
 
@@ -323,6 +340,8 @@ export default function PromotionsPage() {
             selectAllVisible={selectAllVisible}
             openQuickPromote={openQuickPromote}
             openBulkPromote={openBulkPromote}
+            feeOverrides={feeOverrides}
+            setFeeOverride={setFeeOverride}
           />
         )}
 
@@ -373,10 +392,12 @@ function EligibleTab(props: {
   selectAllVisible: () => void;
   openQuickPromote: (r: EligibleRow) => void;
   openBulkPromote: () => void;
+  feeOverrides: Record<string, string>;
+  setFeeOverride: (key: string, value: string) => void;
 }) {
   const { loading, eligible, filtered, search, setSearch, showOnlyEligible, setShowOnlyEligible,
     stylesInList, styleFilter, toggleStyleFilter, selected, toggleSelected, clearSelection,
-    selectAllVisible, openQuickPromote, openBulkPromote } = props;
+    selectAllVisible, openQuickPromote, openBulkPromote, feeOverrides, setFeeOverride } = props;
 
   return (
     <>
@@ -515,7 +536,7 @@ function EligibleTab(props: {
                             <span
                               key={i}
                               className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                req.met ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                                req.met ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
                               }`}
                               title={req.label}
                             >
@@ -526,16 +547,27 @@ function EligibleTab(props: {
                       )}
                     </td>
                     <td className="px-3 py-2 text-right align-middle">
-                      {r.fee.costCents === 0 && r.fee.baseCostCents === 0 ? (
-                        <span className="text-[11px] text-gray-400">—</span>
-                      ) : (
-                        <div className="text-xs">
-                          <div className="font-semibold text-gray-900">{dollars(r.fee.costCents)}</div>
-                          {showDiscountLine && (
-                            <div className="text-[10px] text-gray-500">was {dollars(r.fee.baseCostCents)}</div>
-                          )}
+                      <div className="flex flex-col items-end gap-0.5">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={
+                              feeOverrides[key] !== undefined
+                                ? feeOverrides[key]
+                                : (r.fee.costCents / 100).toFixed(2)
+                            }
+                            onChange={(e) => setFeeOverride(key, e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-20 px-1.5 py-0.5 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
                         </div>
-                      )}
+                        {showDiscountLine && (
+                          <div className="text-[10px] text-gray-500">was {dollars(r.fee.baseCostCents)}</div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-right align-middle">
                       <button type="button" onClick={() => openQuickPromote(r)} className={BTN_PRIMARY}>
