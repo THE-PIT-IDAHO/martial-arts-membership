@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { computePromotionFee } from "@/lib/promotion-fee";
+import { effectiveAttendanceStart, type AttendanceWindow } from "@/lib/attendance-window";
 
 type StyleEntry = {
   name: string;
@@ -25,6 +26,7 @@ type BeltConfigRank = {
   name: string;
   order: number;
   classRequirements?: Array<{ label: string; minCount: number }>;
+  attendanceWindow?: AttendanceWindow;
 };
 
 type EligibleEntry = {
@@ -53,9 +55,48 @@ type EligibleEntry = {
 export async function GET(req: Request) {
   try {
     const clientId = await getClientId(req);
+    const { searchParams } = new URL(req.url);
+    const eventId = searchParams.get("eventId");
+
+    // If an event is given, the window's END is the event date (so progress
+    // is measured "will they be ready BY THAT DATE"); roster filters limit
+    // which members + styles to evaluate against the event.
+    let event: {
+      id: string;
+      date: Date;
+      styleIds: string[];
+      memberIds: string[];
+    } | null = null;
+    if (eventId) {
+      const evRow = await prisma.promotionEvent.findUnique({
+        where: { id: eventId },
+        select: {
+          id: true, date: true, clientId: true, styleId: true, styleIds: true,
+          participants: { select: { memberId: true } },
+        },
+      });
+      if (!evRow || evRow.clientId !== clientId) {
+        return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      }
+      let evStyleIds: string[] = [];
+      if (evRow.styleIds) {
+        try { evStyleIds = JSON.parse(evRow.styleIds); } catch { /* ignore */ }
+      }
+      if (evStyleIds.length === 0 && evRow.styleId) evStyleIds = [evRow.styleId];
+      event = {
+        id: evRow.id,
+        date: evRow.date,
+        styleIds: evStyleIds,
+        memberIds: evRow.participants.map((p) => p.memberId),
+      };
+    }
 
     const styles = await prisma.style.findMany({
-      where: { clientId, beltSystemEnabled: true },
+      where: {
+        clientId,
+        beltSystemEnabled: true,
+        ...(event && event.styleIds.length > 0 ? { id: { in: event.styleIds } } : {}),
+      },
       select: { id: true, name: true, beltConfig: true, promotionFeeCents: true },
     });
     const styleByName = new Map<string, typeof styles[number]>();
@@ -64,10 +105,14 @@ export async function GET(req: Request) {
     const members = await prisma.member.findMany({
       where: {
         clientId,
-        // Reasonable filter: skip inactive/prospect members from the eligible
-        // list since you wouldn't normally promote them.
-        status: { contains: "ACTIVE" },
-        NOT: { status: { contains: "INACTIVE" } },
+        ...(event && event.memberIds.length > 0
+          ? { id: { in: event.memberIds } }
+          : {
+              // Default: only active members. When event is set, the roster
+              // is the filter — we don't double-restrict by status.
+              status: { contains: "ACTIVE" },
+              NOT: { status: { contains: "INACTIVE" } },
+            }),
       },
       select: {
         id: true,
@@ -77,6 +122,9 @@ export async function GET(req: Request) {
         stylesNotes: true,
       },
     });
+
+    // Window end date: event.date if provided, else now.
+    const windowEnd = event ? event.date : new Date();
 
     // Cache attendance per member (we filter in-memory by style).
     const attendanceByMember = new Map<
@@ -134,13 +182,23 @@ export async function GET(req: Request) {
           (r) => r.label && r.minCount > 0,
         );
 
-        // Filter member's attendance to this style + after attendanceResetDate.
+        // Filter member's attendance to this style. The window has two
+        // bounds: lastReset (member's last promotion) and the rank's
+        // attendanceWindow (e.g. "6 months back from event date") —
+        // whichever is more recent wins, since both are floors.
         const memberAtts = attendanceByMember.get(member.id) || [];
         const resetCutoff = es.attendanceResetDate
           ? new Date(es.attendanceResetDate + "T00:00:00")
           : null;
+        const startCutoff = effectiveAttendanceStart({
+          endDate: windowEnd,
+          resetDate: resetCutoff,
+          window: nextRank.attendanceWindow,
+        });
         const styleAtts = memberAtts.filter((a) => {
-          if (resetCutoff && a.attendanceDate && a.attendanceDate < resetCutoff) return false;
+          if (!a.attendanceDate) return false;
+          if (startCutoff && a.attendanceDate < startCutoff) return false;
+          if (a.attendanceDate > windowEnd) return false;
           if (a.source === "IMPORTED") return true;
           if (!a.classSession) return false;
           if (a.classSession.styleNames) {

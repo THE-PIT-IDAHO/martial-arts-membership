@@ -73,8 +73,11 @@ export default function PromotionsSettingsPage() {
     <AppLayout>
       <div className="max-w-3xl mx-auto px-4 py-6">
         <div className="mb-4">
-          <Link href="/promotions" className="text-xs text-primary hover:text-primaryDark">
-            ← Back to Promotions
+          <Link
+            href="/promotions"
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            Back to Promotions
           </Link>
         </div>
         <h1 className="text-2xl font-bold mb-1">Promotion Settings</h1>

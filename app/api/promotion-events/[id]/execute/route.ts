@@ -34,6 +34,18 @@ export async function POST(
       return new NextResponse("Promotion event not found", { status: 404 });
     }
 
+    // This legacy execute endpoint only handles single-style events
+    // (eventStyleName is set). Multi-style events go through the new
+    // POST /api/promotions flow (one promotion per row, target style
+    // chosen per row). Reject here rather than guess.
+    if (!event.styleName) {
+      return new NextResponse(
+        "Multi-style events must be promoted via /api/promotions, not this legacy endpoint.",
+        { status: 400 },
+      );
+    }
+    const eventStyleName: string = event.styleName;
+
     // Filter to only specified participants if provided, otherwise promote all REGISTERED
     let participantsToPromote = event.participants.filter(p => p.status === "REGISTERED");
     if (participantIds && Array.isArray(participantIds) && participantIds.length > 0) {
@@ -89,7 +101,7 @@ export async function POST(
 
         // Find and update the style
         const styleIndex = memberStyles.findIndex(
-          s => s.name.toLowerCase() === event.styleName.toLowerCase()
+          s => s.name.toLowerCase() === eventStyleName.toLowerCase()
         );
 
         let styleWasAdded = false;
@@ -103,7 +115,7 @@ export async function POST(
         } else {
           // Add the style if not found
           memberStyles.push({
-            name: event.styleName,
+            name: eventStyleName,
             rank: participant.promotingToRank,
             lastPromotionDate: promotedDate,
             attendanceResetDate: promotedDate,
@@ -113,14 +125,14 @@ export async function POST(
         }
 
         // Check if the promoted style is the member's primary style
-        const isPrimaryStyle = member.primaryStyle?.toLowerCase() === event.styleName.toLowerCase();
+        const isPrimaryStyle = member.primaryStyle?.toLowerCase() === eventStyleName.toLowerCase();
         // If member has no primary style and we added a new style, set it as primary
         const shouldSetAsPrimary = !member.primaryStyle && styleWasAdded;
 
         // Add rank PDFs to member's style documents
         const updatedStyleDocuments = await addRankPdfsToMember(
           participant.memberId,
-          event.styleName,
+          eventStyleName,
           participant.promotingToRank,
           member.styleDocuments
         );
@@ -132,7 +144,7 @@ export async function POST(
             stylesNotes: JSON.stringify(memberStyles),
             styleDocuments: updatedStyleDocuments,
             ...((isPrimaryStyle || shouldSetAsPrimary) && { rank: participant.promotingToRank }),
-            ...(shouldSetAsPrimary && { primaryStyle: event.styleName }),
+            ...(shouldSetAsPrimary && { primaryStyle: eventStyleName }),
           },
         });
 
@@ -156,7 +168,7 @@ export async function POST(
           memberId: participant.memberId,
           memberName: participant.memberName,
           newRank: participant.promotingToRank,
-          styleName: event.styleName,
+          styleName: eventStyleName,
         }).catch(() => {});
       } catch (err) {
         console.error(`Error promoting ${participant.memberName}:`, err);

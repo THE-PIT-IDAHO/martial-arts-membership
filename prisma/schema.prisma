@@ -745,8 +745,15 @@ model PromotionEvent {
   name         String
   date         DateTime
   time         String?
-  styleId      String
-  styleName    String
+  // Legacy single-style fields (kept so old records still display
+  // correctly). New events use styleIds (JSON array) instead and may
+  // leave these null.
+  styleId      String?
+  styleName    String?
+  // JSON array of Style.id values attached to this event. Multi-style
+  // events use this; the eligible-promotions API filters by it when
+  // computing the attendance-window cutoff per rank.
+  styleIds     String?
   location     String?
   notes        String?
   costCents    Int?                   // Optional fee to charge for the promotion

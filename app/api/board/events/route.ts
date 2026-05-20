@@ -114,7 +114,7 @@ export async function POST(req: Request) {
       title = event.name;
       date = event.date;
       time = event.time;
-      styleName = event.styleName;
+      styleName = event.styleName || "";
     }
 
     const label = sourceType === "testing" ? "Belt Testing" : "Rank Promotion";
