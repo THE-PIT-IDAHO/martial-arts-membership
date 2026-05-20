@@ -21,6 +21,7 @@ type MemberRow = {
   membershipType?: string | null;
   primaryStyle?: string | null;
   waiverSigned?: boolean | null;
+  photoUrl?: string | null;
 };
 
 type SortKey =
@@ -35,7 +36,8 @@ type SortKey =
   | "dateOfBirth"
   | "age"
   | "membershipType"
-  | "waiverSigned";
+  | "waiverSigned"
+  | "hasPhoto";
 
 type SortDirection = "asc" | "desc";
 
@@ -50,7 +52,8 @@ type ColumnId =
   | "dateOfBirth"
   | "age"
   | "membershipType"
-  | "waiverSigned";
+  | "waiverSigned"
+  | "hasPhoto";
 
 type ColumnDef = {
   id: ColumnId;
@@ -71,6 +74,7 @@ const ALL_COLUMNS: ColumnDef[] = [
   { id: "age", label: "Age", sortable: true },
   { id: "membershipType", label: "Membership Type", sortable: true },
   { id: "waiverSigned", label: "Waiver Signed", sortable: true },
+  { id: "hasPhoto", label: "Has Photo", sortable: true },
 ];
 
 const COLUMNS_BY_ID: Record<ColumnId, ColumnDef> = ALL_COLUMNS.reduce(
@@ -202,6 +206,7 @@ export default function MembersPage() {
           membershipType: m.membershipType ?? null,
           primaryStyle: m.primaryStyle ?? null,
           waiverSigned: m.waiverSigned ?? null,
+          photoUrl: m.photoUrl ?? null,
         }));
 
         setMembers(rows);
@@ -388,6 +393,8 @@ export default function MembersPage() {
         return "membershipType";
       case "waiverSigned":
         return "waiverSigned";
+      case "hasPhoto":
+        return "hasPhoto";
       default:
         return null;
     }
@@ -733,6 +740,7 @@ export default function MembersPage() {
         membershipType: m.membershipType ?? null,
         primaryStyle: m.primaryStyle ?? null,
         waiverSigned: m.waiverSigned ?? null,
+        photoUrl: m.photoUrl ?? null,
       }));
       setMembers(rows);
 
@@ -965,6 +973,13 @@ export default function MembersPage() {
         return aVal > bVal ? dir : -dir;
       }
 
+      if (sortKey === "hasPhoto") {
+        const aVal = a.photoUrl ? 1 : 0;
+        const bVal = b.photoUrl ? 1 : 0;
+        if (aVal === bVal) return 0;
+        return aVal > bVal ? dir : -dir;
+      }
+
       return 0;
     });
 
@@ -1124,6 +1139,13 @@ export default function MembersPage() {
         return (
           <span className="text-xs">
             {m.waiverSigned ? "Signed" : "Not signed"}
+          </span>
+        );
+
+      case "hasPhoto":
+        return (
+          <span className={`text-xs ${m.photoUrl ? "text-green-700 font-medium" : "text-gray-500"}`}>
+            {m.photoUrl ? "Yes" : "No"}
           </span>
         );
 
