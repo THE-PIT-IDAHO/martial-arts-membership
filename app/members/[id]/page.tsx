@@ -4733,15 +4733,16 @@ export default function MemberProfilePage() {
                                   className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors w-full"
                                   title={doc.name}
                                 >
-                                  {doc.thumbnail ? (
-                                    <img src={doc.thumbnail} alt="PDF" className="w-8 h-10" />
-                                  ) : (
-                                    <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
-                                      <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
-                                      <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
-                                      <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
-                                    </svg>
-                                  )}
+                                  {/* Always use the unified PDF icon — the
+                                      doc.thumbnail field used to hold a
+                                      generic placeholder image for the
+                                      signed waiver path, which made it
+                                      look different from rank PDFs. */}
+                                  <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
+                                    <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
+                                    <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
+                                    <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
+                                  </svg>
                                   <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{doc.name}</span>
                                 </button>
                                 <button
