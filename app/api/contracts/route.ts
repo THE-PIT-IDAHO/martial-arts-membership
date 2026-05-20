@@ -8,10 +8,12 @@ export async function GET(req: Request) {
     const clientId = await getClientId(req);
     const url = new URL(req.url);
     const search = url.searchParams.get("search");
+    const memberId = url.searchParams.get("memberId");
 
     const contracts = await prisma.signedContract.findMany({
       where: {
         clientId,
+        ...(memberId ? { memberId } : {}),
         ...(search ? {
           member: {
             OR: [

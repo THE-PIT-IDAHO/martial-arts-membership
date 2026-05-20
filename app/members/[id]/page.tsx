@@ -570,6 +570,10 @@ export default function MemberProfilePage() {
   const [rankPdfs, setRankPdfs] = useState<Array<{ rankName: string; styleName: string; url: string }>>([]);
   const [uploadingDocument, setUploadingDocument] = useState(false);
 
+  // signed contracts (fetched separately so we don't ship pdfData with the
+  // member payload — contracts are loaded on demand from the secure proxy).
+  const [memberContracts, setMemberContracts] = useState<Array<{ id: string; planName: string; fileName: string | null; signedAt: string }>>([]);
+
   // curriculum
   const [memberCurricula, setMemberCurricula] = useState<Record<string, CurriculumRankTest[]>>({});
   const [loadingCurriculum, setLoadingCurriculum] = useState(false);
@@ -698,6 +702,13 @@ export default function MemberProfilePage() {
       fetch(`/api/waivers/signed/${memberId}`)
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d?.waivers) setSignedWaivers(d.waivers); })
+        .catch(() => {});
+
+      // Fetch signed contracts (metadata only — PDF is loaded on demand
+      // from the secure /api/contracts/[id]/pdf proxy)
+      fetch(`/api/contracts?memberId=${memberId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.contracts) setMemberContracts(d.contracts); })
         .catch(() => {});
     } catch (err: any) {
       console.error(err);
@@ -4677,7 +4688,7 @@ export default function MemberProfilePage() {
                     }
                   }
 
-                  if (styleDocuments.length === 0 && rankPdfs.length === 0) {
+                  if (styleDocuments.length === 0 && rankPdfs.length === 0 && memberContracts.length === 0) {
                     return (
                       <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                         <p className="text-xs text-gray-400">
@@ -4716,6 +4727,34 @@ export default function MemberProfilePage() {
                           </div>
                         </div>
                       ))}
+
+                      {memberContracts.length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="h-px flex-1 bg-gray-200" />
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-600 px-2 py-0.5 rounded-full bg-gray-100">Contracts</p>
+                            <div className="h-px flex-1 bg-gray-200" />
+                          </div>
+                          <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
+                            {memberContracts.map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => openPdf(`/api/contracts/${c.id}/pdf`)}
+                                className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
+                                title={`${c.planName} — signed ${new Date(c.signedAt).toLocaleDateString()}`}
+                              >
+                                <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
+                                  <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
+                                  <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
+                                  <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
+                                </svg>
+                                <span className="text-[10px] text-gray-700 text-center leading-tight line-clamp-2 break-words">{c.planName}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {styleDocuments.length > 0 && (
                         <div>

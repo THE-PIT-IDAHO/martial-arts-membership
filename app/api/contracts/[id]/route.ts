@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { sendEmail, resolveRecipientEmails } from "@/lib/email";
+import { fetchContractPdf } from "@/lib/contract-storage";
 
 // GET /api/contracts/:id — get a single contract with PDF data
 export async function GET(
@@ -65,6 +66,18 @@ export async function POST(
     });
     const gymName = settings.find(s => s.key === "gymName")?.value || "Our Gym";
 
+    // Resend wants the attachment as base64. pdfData is either a Blob URL
+    // (new contracts) or raw base64 (legacy contracts not yet migrated).
+    let attachmentBase64: string;
+    if (contract.pdfData.startsWith("http")) {
+      const buffer = await fetchContractPdf(contract.pdfData);
+      attachmentBase64 = buffer.toString("base64");
+    } else {
+      attachmentBase64 = contract.pdfData.startsWith("data:")
+        ? contract.pdfData.split(",")[1]
+        : contract.pdfData;
+    }
+
     await sendEmail({
       to: emails,
       subject: `Your Contract - ${contract.planName || "Membership Agreement"}`,
@@ -79,7 +92,7 @@ export async function POST(
       `,
       attachments: [{
         filename: contract.fileName || `${memberName} - ${contract.planName}.pdf`,
-        content: contract.pdfData,
+        content: attachmentBase64,
       }],
       clientId,
     });
