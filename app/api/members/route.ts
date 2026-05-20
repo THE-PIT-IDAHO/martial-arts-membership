@@ -123,7 +123,58 @@ export async function GET(req: Request) {
       ],
       // Take more than needed to account for potential duplicates from OR clause, then slice
       ...(limit ? { take: parseInt(limit, 10) * 3 } : {}),
-      include: {
+      // Explicit select — the default include returns every column on Member,
+      // which includes styleDocuments (legacy field with base64-encoded PDFs,
+      // ~3-4 MB per member). On a 15-member gym that's a 60+ MB list payload
+      // and one of the main reasons Members / Memberships / Reports etc. were
+      // each taking 10+ seconds to load. List endpoints never display these
+      // fields, so we omit them entirely.
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        photoUrl: true,
+        primaryStyle: true,
+        // stylesNotes is small (a few KB at most) and the list uses it for
+        // per-style rank/filter display.
+        stylesNotes: true,
+        status: true,
+        dateOfBirth: true,
+        address: true,
+        city: true,
+        state: true,
+        zipCode: true,
+        emergencyContactName: true,
+        emergencyContactPhone: true,
+        parentGuardianName: true,
+        minorCommsMode: true,
+        startDate: true,
+        rank: true,
+        uniformSize: true,
+        waiverSigned: true,
+        waiverSignedAt: true,
+        emailOptIn: true,
+        membershipType: true,
+        clientId: true,
+        createdAt: true,
+        updatedAt: true,
+        memberNumber: true,
+        accountCreditCents: true,
+        accessRole: true,
+        stripeCustomerId: true,
+        defaultPaymentMethodId: true,
+        paypalPayerId: true,
+        squareCustomerId: true,
+        leadSource: true,
+        referredByMemberId: true,
+        // EXCLUDED from list (heavy or sensitive — fetch on the profile page):
+        //   - styleDocuments  (multi-MB base64 PDFs)
+        //   - medicalNotes    (sensitive)
+        //   - notes           (free-form, can grow)
+        //   - paymentNotes    (sensitive)
+        //   - portalPasswordHash
         memberships: {
           where: {
             // Include both ACTIVE and CANCELED memberships so we can show membership info

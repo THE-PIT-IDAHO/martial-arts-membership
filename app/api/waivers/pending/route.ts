@@ -6,10 +6,21 @@ export async function GET(req: Request) {
   try {
     const clientId = await getClientId(req);
 
+    // Lean select — pdfData and signatureData can each be multi-MB base64.
+    // List page only needs to show the row + a link/button to view; the PDF
+    // itself loads on demand from /api/portal/documents/[id]/pdf.
     const pendingWaivers = await prisma.signedWaiver.findMany({
       where: { confirmed: false, clientId },
       orderBy: { signedAt: "desc" },
-      include: {
+      select: {
+        id: true,
+        memberId: true,
+        templateName: true,
+        signedAt: true,
+        ipAddress: true,
+        confirmed: true,
+        confirmedAt: true,
+        clientId: true,
         member: {
           select: {
             id: true,
