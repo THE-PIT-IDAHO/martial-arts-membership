@@ -3,6 +3,7 @@ import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import jsPDF from "jspdf";
 import { fetchContractPdf } from "@/lib/contract-storage";
+import { isMinor, isMinorChildOf } from "@/lib/minor";
 
 function generateWaiverPdf(opts: {
   gymName: string;
@@ -186,6 +187,11 @@ export async function GET(
       }
     }
   } else if (id === "waiver-legacy") {
+    // Minor's own legacy waiver is surfaced on the parent's tab as
+    // child-<id>-waiver-legacy, not here.
+    if (await isMinor(auth.memberId)) {
+      return new NextResponse("Not found", { status: 404 });
+    }
     if (member.waiverSigned) {
       generatedPdf = generateWaiverPdf({
         gymName,
@@ -195,9 +201,87 @@ export async function GET(
       });
       displayName = "Signed Waiver";
     }
+  } else if (id.startsWith("child-")) {
+    // Parent/guardian fetching a minor child's document. ID format:
+    //   child-<childId>-contract-<contractId>
+    //   child-<childId>-waiver-<waiverId>
+    //   child-<childId>-waiver-legacy
+    const rest = id.slice("child-".length);
+    // Split on first '-' after the cuid (cuids don't contain dashes). The
+    // child id is a cuid, so we can find the next "-contract-" or "-waiver-"
+    // marker to split safely.
+    const contractIdx = rest.indexOf("-contract-");
+    const waiverIdx = rest.indexOf("-waiver-");
+    if (contractIdx > 0) {
+      const childId = rest.slice(0, contractIdx);
+      const contractId = rest.slice(contractIdx + "-contract-".length);
+      const allowed = await isMinorChildOf(auth.memberId, childId);
+      if (allowed) {
+        const contract = await prisma.signedContract.findFirst({
+          where: { id: contractId, memberId: childId },
+          select: { planName: true, fileName: true, pdfData: true, member: { select: { firstName: true } } },
+        });
+        if (contract?.pdfData) {
+          if (contract.pdfData.startsWith("http")) {
+            try {
+              generatedPdf = await fetchContractPdf(contract.pdfData);
+            } catch (err) {
+              console.error("Failed to fetch contract PDF from Blob:", err);
+            }
+          } else {
+            dataUri = contract.pdfData.startsWith("data:")
+              ? contract.pdfData
+              : `data:application/pdf;base64,${contract.pdfData}`;
+          }
+          const baseName = contract.fileName?.replace(/\.pdf$/i, "") || contract.planName || "Contract";
+          displayName = `${contract.member.firstName} - ${baseName}`;
+        }
+      }
+    } else if (waiverIdx > 0) {
+      const childId = rest.slice(0, waiverIdx);
+      const waiverTail = rest.slice(waiverIdx + "-waiver-".length);
+      const allowed = await isMinorChildOf(auth.memberId, childId);
+      if (allowed) {
+        const childInfo = await prisma.member.findUnique({
+          where: { id: childId },
+          select: { firstName: true, lastName: true, waiverSigned: true, waiverSignedAt: true },
+        });
+        if (waiverTail === "legacy" && childInfo?.waiverSigned) {
+          generatedPdf = generateWaiverPdf({
+            gymName,
+            memberName: `${childInfo.firstName} ${childInfo.lastName}`.trim(),
+            templateName: "Signed Waiver",
+            signedAt: childInfo.waiverSignedAt,
+          });
+          displayName = `${childInfo.firstName} - Signed Waiver`;
+        } else if (waiverTail !== "legacy") {
+          const waiver = await prisma.signedWaiver.findFirst({
+            where: { id: waiverTail, memberId: childId },
+            select: { templateName: true, pdfData: true, waiverContent: true, signatureData: true, signedAt: true },
+          });
+          if (waiver?.pdfData) {
+            dataUri = waiver.pdfData;
+            displayName = `${childInfo?.firstName || "Child"} - ${waiver.templateName || "Signed Waiver"}`;
+          } else if (waiver) {
+            generatedPdf = generateWaiverPdf({
+              gymName,
+              memberName: `${childInfo?.firstName || ""} ${childInfo?.lastName || ""}`.trim() || "Member",
+              templateName: waiver.templateName || "Signed Waiver",
+              signedAt: waiver.signedAt,
+              waiverContent: waiver.waiverContent,
+              signatureData: waiver.signatureData,
+            });
+            displayName = `${childInfo?.firstName || "Child"} - ${waiver.templateName || "Signed Waiver"}`;
+          }
+        }
+      }
+    }
   } else if (id.startsWith("contract-")) {
-    // Member's own signed contracts. Verify ownership before fetching from
-    // the private contracts Blob — we never just trust the id from the URL.
+    // Member's own signed contracts. Minors cannot view their own contracts
+    // through the portal — those move to the parent's account.
+    if (await isMinor(auth.memberId)) {
+      return new NextResponse("Not found", { status: 404 });
+    }
     const contractId = id.slice("contract-".length);
     const contract = await prisma.signedContract.findFirst({
       where: { id: contractId, memberId: auth.memberId },
@@ -218,6 +302,10 @@ export async function GET(
       displayName = contract.fileName?.replace(/\.pdf$/i, "") || contract.planName || "Contract";
     }
   } else if (id.startsWith("waiver-")) {
+    // Same minor block — kids cannot view their own waivers through portal.
+    if (await isMinor(auth.memberId)) {
+      return new NextResponse("Not found", { status: 404 });
+    }
     const waiverId = id.slice("waiver-".length);
     const waiver = await prisma.signedWaiver.findFirst({
       where: { id: waiverId, memberId: auth.memberId },
