@@ -9,19 +9,19 @@
 //     on every request and fetches the bytes server-side using the token.
 //   - Result: even if a DB dump leaked, the Blob URLs in it cannot be
 //     used to download the PDFs without the private token.
-import { put } from "@vercel/blob";
+import { put, get } from "@vercel/blob";
 
 // Token is on a separate env var so it's only available in places that
 // explicitly opt in (this file). Leaking the photos token wouldn't grant
-// access to contracts and vice versa.
+// access to contracts and vice versa. Vercel names the token
+// <PREFIX>_READ_WRITE_TOKEN when you set a custom prefix on the store
+// (the prefix REPLACES "BLOB", it doesn't prepend to it).
 function getContractToken(): string {
-  // Vercel names the token <PREFIX>_READ_WRITE_TOKEN when you set a custom
-  // prefix on the Blob store (replacing "BLOB" rather than prepending).
   const token = process.env.CONTRACTS_READ_WRITE_TOKEN;
   if (!token) {
     throw new Error(
       "CONTRACTS_READ_WRITE_TOKEN env var not set. " +
-      "Create a private Blob store on Vercel and connect it with CONTRACTS as the env var prefix.",
+      "Create a private Blob store on Vercel with CONTRACTS as the env var prefix.",
     );
   }
   return token;
@@ -51,7 +51,7 @@ export async function uploadContractPdf(
   const pathname = `contracts/${opts.clientId}/${opts.contractId}-${Date.now()}.pdf`;
 
   const blob = await put(pathname, buffer, {
-    access: "public",
+    access: "private",
     contentType: "application/pdf",
     addRandomSuffix: false,
     token: getContractToken(),
@@ -66,11 +66,23 @@ export async function uploadContractPdf(
  * Returns a Buffer the route can stream back to the browser.
  */
 export async function fetchContractPdf(url: string): Promise<Buffer> {
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${getContractToken()}` },
+  const result = await get(url, {
+    access: "private",
+    token: getContractToken(),
   });
-  if (!res.ok) {
-    throw new Error(`Contract Blob fetch failed: ${res.status} ${res.statusText}`);
+  if (!result || result.statusCode !== 200) {
+    throw new Error(`Contract Blob fetch returned status ${result?.statusCode ?? "null"}`);
   }
-  return Buffer.from(await res.arrayBuffer());
+
+  // Drain the stream into a Buffer. We cast to Uint8Array[] for Buffer.concat
+  // because Node 22's stricter typings distinguish ArrayBufferView<...> from
+  // plain Uint8Array — Buffer.concat accepts both at runtime.
+  const chunks: Uint8Array[] = [];
+  const reader = result.stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) chunks.push(value);
+  }
+  return Buffer.concat(chunks as unknown as readonly Uint8Array[]);
 }

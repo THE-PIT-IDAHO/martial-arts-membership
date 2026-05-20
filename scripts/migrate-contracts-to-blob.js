@@ -121,7 +121,7 @@ async function main() {
     try {
       const pathname = `contracts/${c.clientId}/${c.id}-${Date.now()}.pdf`;
       const blob = await put(pathname, buffer, {
-        access: "public",
+        access: "private",
         contentType: "application/pdf",
         addRandomSuffix: false,
         token,
