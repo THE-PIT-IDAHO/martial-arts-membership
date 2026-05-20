@@ -12,12 +12,16 @@ export async function GET(
 
   const { childId } = await params;
 
-  // Verify parent-child relationship
+  // Verify parent-child relationship. Use sessionMemberId (the real signed-in
+  // member) — auth.memberId can be the child's id if the parent has already
+  // switched into that account via the portal switcher.
+  // Relationship string filter dropped: stored values vary historically
+  // ("PARENT", "Parent of", "GUARDIAN", "Guardian of") so we accept any
+  // outgoing link from parent → this child.
   const relationship = await prisma.memberRelationship.findFirst({
     where: {
-      fromMemberId: auth.memberId,
+      fromMemberId: auth.sessionMemberId,
       toMemberId: childId,
-      relationship: { in: ["PARENT", "GUARDIAN"] },
     },
   });
 

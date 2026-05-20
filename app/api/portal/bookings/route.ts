@@ -42,20 +42,24 @@ async function handleBookingPost(req: NextRequest) {
 
   const { classSessionId, bookingDate, forMemberId } = await req.json();
 
-  // If booking for a child, verify parent relationship
+  // If booking for a child, verify parent relationship. Check against the
+  // real signed-in member (sessionMemberId) — relationship strings can be
+  // "PARENT"/"Parent of"/"GUARDIAN"/"Guardian of" historically, so accept
+  // any outgoing link.
   let bookingMemberId = auth.memberId;
-  if (forMemberId && forMemberId !== auth.memberId) {
+  if (forMemberId && forMemberId !== auth.memberId && forMemberId !== auth.sessionMemberId) {
     const relationship = await prisma.memberRelationship.findFirst({
       where: {
-        fromMemberId: auth.memberId,
+        fromMemberId: auth.sessionMemberId,
         toMemberId: forMemberId,
-        relationship: { in: ["PARENT", "GUARDIAN"] },
       },
     });
     if (!relationship) {
       return NextResponse.json({ error: "Not authorized to book for this member" }, { status: 403 });
     }
     bookingMemberId = forMemberId;
+  } else if (forMemberId === auth.sessionMemberId) {
+    bookingMemberId = auth.sessionMemberId;
   }
 
   if (!classSessionId || !bookingDate) {
