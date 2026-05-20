@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/rank-tests/[id]/categories - Get all categories for a rank test
@@ -40,12 +41,16 @@ export async function POST(
       return new NextResponse("Name is required", { status: 400 });
     }
 
-    // Check for duplicate — skip if category with same name already exists on this test
+    // Check for duplicate — skip if category with same name already exists on this test.
+    // This check is best-effort: under concurrent requests, two callers can both
+    // pass it before either inserts. The DB-level @@unique([rankTestId, name])
+    // is the real safety net; the catch below handles that case.
+    const trimmedName = name.trim();
     const allCats = await prisma.rankTestCategory.findMany({
       where: { rankTestId: id },
       include: { items: { orderBy: { sortOrder: "asc" } } },
     });
-    const existing = allCats.find(c => c.name.trim().toLowerCase() === name.trim().toLowerCase());
+    const existing = allCats.find(c => c.name.trim().toLowerCase() === trimmedName.toLowerCase());
     if (existing) {
       return NextResponse.json({ category: existing }, { status: 200 });
     }
@@ -53,21 +58,34 @@ export async function POST(
     // Use provided sortOrder or default to count
     const order = sortOrder !== undefined ? sortOrder : await prisma.rankTestCategory.count({ where: { rankTestId: id } });
 
-    const category = await prisma.rankTestCategory.create({
-      data: {
-        name: name.trim(),
-        description: description?.trim() || null,
-        rankTestId: id,
-        sortOrder: order,
-      },
-      include: {
-        items: {
-          orderBy: { sortOrder: "asc" },
+    try {
+      const category = await prisma.rankTestCategory.create({
+        data: {
+          name: trimmedName,
+          description: description?.trim() || null,
+          rankTestId: id,
+          sortOrder: order,
         },
-      },
-    });
-
-    return NextResponse.json({ category }, { status: 201 });
+        include: {
+          items: {
+            orderBy: { sortOrder: "asc" },
+          },
+        },
+      });
+      return NextResponse.json({ category }, { status: 201 });
+    } catch (err) {
+      // P2002 = unique constraint violation. Another request inserted the
+      // same (rankTestId, name) between our check and our create. Return
+      // whatever is there instead of erroring.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const winner = await prisma.rankTestCategory.findFirst({
+          where: { rankTestId: id, name: trimmedName },
+          include: { items: { orderBy: { sortOrder: "asc" } } },
+        });
+        if (winner) return NextResponse.json({ category: winner }, { status: 200 });
+      }
+      throw err;
+    }
   } catch (error) {
     console.error("Error creating category:", error);
     return new NextResponse("Failed to create category", { status: 500 });

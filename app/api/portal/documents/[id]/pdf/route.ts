@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import jsPDF from "jspdf";
+import { fetchContractPdf } from "@/lib/contract-storage";
 
 function generateWaiverPdf(opts: {
   gymName: string;
@@ -188,6 +189,30 @@ export async function GET(
         signedAt: member.waiverSignedAt,
       });
       displayName = "Signed Waiver";
+    }
+  } else if (id.startsWith("contract-")) {
+    // Member's own signed contracts. Verify ownership before fetching from
+    // the private contracts Blob — we never just trust the id from the URL.
+    const contractId = id.slice("contract-".length);
+    const contract = await prisma.signedContract.findFirst({
+      where: { id: contractId, memberId: auth.memberId },
+      select: { planName: true, fileName: true, pdfData: true },
+    });
+    if (contract?.pdfData) {
+      if (contract.pdfData.startsWith("http")) {
+        // Blob-stored: fetch with the private token and stream the bytes.
+        try {
+          generatedPdf = await fetchContractPdf(contract.pdfData);
+        } catch (err) {
+          console.error("Failed to fetch contract PDF from Blob:", err);
+        }
+      } else {
+        // Legacy base64 path (pre-migration contracts).
+        dataUri = contract.pdfData.startsWith("data:")
+          ? contract.pdfData
+          : `data:application/pdf;base64,${contract.pdfData}`;
+      }
+      displayName = contract.fileName?.replace(/\.pdf$/i, "") || contract.planName || "Contract";
     }
   } else if (id.startsWith("waiver-")) {
     const waiverId = id.slice("waiver-".length);

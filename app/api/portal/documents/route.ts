@@ -20,6 +20,10 @@ export async function GET(req: NextRequest) {
         select: { id: true, templateName: true, signedAt: true, pdfData: true },
         orderBy: { signedAt: "desc" },
       },
+      signedContracts: {
+        select: { id: true, planName: true, fileName: true, signedAt: true, pdfData: true },
+        orderBy: { signedAt: "desc" },
+      },
     },
   });
 
@@ -93,6 +97,20 @@ export async function GET(req: NextRequest) {
       url: "/api/portal/documents/waiver-legacy/pdf",
       type: "waiver",
       date: member.waiverSignedAt ? new Date(member.waiverSignedAt).toISOString() : "",
+    });
+  }
+
+  // Signed membership contracts. PDF served through the portal streamer,
+  // which calls fetchContractPdf() under the hood using the contracts
+  // store's private token.
+  for (const c of member.signedContracts) {
+    const docId = `contract-${c.id}`;
+    documents.push({
+      id: docId,
+      name: c.fileName?.replace(/\.pdf$/i, "") || c.planName || "Contract",
+      url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf`,
+      type: "contract",
+      date: new Date(c.signedAt).toISOString(),
     });
   }
 

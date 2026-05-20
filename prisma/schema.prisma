@@ -433,6 +433,12 @@ model RankTestCategory {
   updatedAt   DateTime       @updatedAt
   rankTest    RankTest       @relation(fields: [rankTestId], references: [id], onDelete: Cascade)
   items       RankTestItem[]
+
+  // Prevents the race condition where two concurrent POSTs to
+  // /api/rank-tests/[id]/categories both pass the client-side dedupe check
+  // and create duplicate category rows. The POST handler catches the
+  // resulting P2002 and returns the existing row instead.
+  @@unique([rankTestId, name])
 }
 
 model RankTestItem {
