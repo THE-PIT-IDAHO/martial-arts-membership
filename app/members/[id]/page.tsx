@@ -3942,10 +3942,10 @@ export default function MemberProfilePage() {
                                 <span className="text-xs font-medium text-gray-700">{s.rank}</span>
                               </div>
                             )}
-                            {s.startDate && (
+                            {s.lastPromotionDate && (
                               <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Started</span>
-                                <span className="text-xs font-medium text-gray-700">{new Date(s.startDate).toLocaleDateString()}</span>
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Last Promotion</span>
+                                <span className="text-xs font-medium text-gray-700">{new Date(s.lastPromotionDate).toLocaleDateString()}</span>
                               </div>
                             )}
                             {/* Progress bars for class requirements */}
