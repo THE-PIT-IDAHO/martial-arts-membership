@@ -14,21 +14,6 @@ async function getNextMemberNumber(): Promise<number> {
     : 10000001;
 }
 
-const PDF_ICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNjNDExMTEiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTQgMkg2YTIgMiAwIDAgMC0yIDJ2MTZhMiAyIDAgMCAwIDIgMmgxMmEyIDIgMCAwIDAgMi0yVjhsLTYtNnoiLz48cGF0aCBkPSJNMTQgMnY2aDYiLz48cGF0aCBkPSJNMTAgOWgtNiIvPjxwYXRoIGQ9Ik0xMCAxM2gtNiIvPjxwYXRoIGQ9Ik0xMCAxN2gtNiIvPjwvc3ZnPg==";
-
-async function savePdfToMember(memberId: string, pdfBase64: string) {
-  const docEntry = {
-    id: `waiver-${Date.now()}`,
-    name: "Signed Waiver",
-    url: pdfBase64,
-    thumbnail: PDF_ICON,
-    uploadedAt: new Date().toISOString(),
-  };
-  await prisma.member.update({
-    where: { id: memberId },
-    data: { styleDocuments: JSON.stringify([docEntry]) },
-  });
-}
 
 // POST /api/public/waiver-submit
 // Handles both adult and guardian waiver submissions
@@ -94,20 +79,20 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
     },
   });
 
-  // Create SignedWaiver in pending (unconfirmed) state
+  // Create SignedWaiver in pending (unconfirmed) state. SignedWaiver is
+  // the source of truth — we no longer also write to member.styleDocuments
+  // (that double-listed the same waiver on the portal Documents tab).
   await prisma.signedWaiver.create({
     data: {
       memberId: member.id,
-      templateName: "Public Waiver",
-      waiverContent: "Submitted via public waiver form",
+      templateName: "Waiver",
+      waiverContent: "Submitted via waiver form",
       signatureData: body.signatureData || "submitted",
       pdfData: pdfBase64 || null,
       confirmed: false,
       clientId,
     },
   });
-
-  if (pdfBase64) await savePdfToMember(member.id, pdfBase64);
 
   return NextResponse.json({ member: { id: member.id } }, { status: 201 });
 }
@@ -150,20 +135,22 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
     },
   });
 
-  // Create SignedWaiver in pending (unconfirmed) state
+  // Create SignedWaiver on the CHILD only. We used to also write a copy
+  // to the guardian and to both members' styleDocuments — that ended up
+  // double-listing the same waiver three times on the parent's portal.
+  // Parents now see the child's waiver via the portal's minor-child
+  // aggregation (labeled "Nico's Waiver" on the parent's Documents tab).
   await prisma.signedWaiver.create({
     data: {
       memberId: dependent.id,
-      templateName: "Public Waiver (Guardian)",
-      waiverContent: "Submitted via public guardian waiver form",
+      templateName: "Waiver",
+      waiverContent: "Submitted via guardian waiver form",
       signatureData: body.signatureData || "submitted",
       pdfData: pdfBase64 || null,
       confirmed: false,
       clientId,
     },
   });
-
-  if (pdfBase64) await savePdfToMember(dependent.id, pdfBase64);
 
   // Create guardian member — inherits the same household info and a copy
   // of the medical / emergency-contact details so it shows up on both
@@ -198,23 +185,6 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
         relationship: relationshipType,
       },
     });
-
-    // Also record this waiver on the guardian's profile so it counts for
-    // both accounts. Same signature/PDF — confirm endpoint pairs them up
-    // by matching pdfData+signedAt across related members, so confirming
-    // one auto-confirms the other.
-    await prisma.signedWaiver.create({
-      data: {
-        memberId: guardian.id,
-        templateName: "Public Waiver (Guardian)",
-        waiverContent: "Submitted via public guardian waiver form (as guardian)",
-        signatureData: body.signatureData || "submitted",
-        pdfData: pdfBase64 || null,
-        confirmed: false,
-        clientId,
-      },
-    });
-    if (pdfBase64) await savePdfToMember(guardian.id, pdfBase64);
   }
 
   return NextResponse.json({ member: { id: dependent.id } }, { status: 201 });

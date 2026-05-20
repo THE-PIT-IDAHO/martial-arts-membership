@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
   const member = await prisma.member.findUnique({
     where: { id: auth.memberId },
     select: {
+      firstName: true,
       styleDocuments: true,
       stylesNotes: true,
       waiverSigned: true,
@@ -95,13 +96,17 @@ export async function GET(req: NextRequest) {
   // OWN waivers + contracts — but only if the viewer is NOT a minor.
   // Minors' legal documents are surfaced on the parent's tab instead.
   if (!viewerIsMinor) {
+    // Use "{FirstName}'s Waiver" so the doc tab clearly says whose this is
+    // (matters mostly for the parent view that also shows their kids'
+    // waivers — both end up consistent: "Cruz's Waiver", "Nico's Waiver").
+    const ownWaiverLabel = `${member.firstName}'s Waiver`;
+
     for (const w of member.signedWaivers) {
       const docId = `waiver-${w.id}`;
-      const friendly = w.templateName || "Signed Waiver";
       documents.push({
         id: docId,
-        name: friendly,
-        url: portalPdfUrl(docId, friendly),
+        name: ownWaiverLabel,
+        url: portalPdfUrl(docId, ownWaiverLabel),
         type: "waiver",
         date: new Date(w.signedAt).toISOString(),
       });
@@ -111,8 +116,8 @@ export async function GET(req: NextRequest) {
     if (member.waiverSigned && member.signedWaivers.length === 0) {
       documents.push({
         id: "waiver-legacy",
-        name: "Signed Waiver",
-        url: portalPdfUrl("waiver-legacy", "Signed Waiver"),
+        name: ownWaiverLabel,
+        url: portalPdfUrl("waiver-legacy", ownWaiverLabel),
         type: "waiver",
         date: member.waiverSignedAt ? new Date(member.waiverSignedAt).toISOString() : "",
       });
@@ -152,13 +157,14 @@ export async function GET(req: NextRequest) {
     });
     if (!childDocs) continue;
 
+    const childWaiverLabel = `${child.firstName}'s Waiver`;
+
     for (const w of childDocs.signedWaivers) {
       const docId = `child-${child.id}-waiver-${w.id}`;
-      const friendly = `${child.firstName} — ${w.templateName || "Signed Waiver"}`;
       documents.push({
         id: docId,
-        name: friendly,
-        url: portalPdfUrl(docId, friendly),
+        name: childWaiverLabel,
+        url: portalPdfUrl(docId, childWaiverLabel),
         type: "waiver",
         date: new Date(w.signedAt).toISOString(),
       });
@@ -166,11 +172,10 @@ export async function GET(req: NextRequest) {
 
     if (childDocs.waiverSigned && childDocs.signedWaivers.length === 0) {
       const docId = `child-${child.id}-waiver-legacy`;
-      const friendly = `${child.firstName} — Signed Waiver`;
       documents.push({
         id: docId,
-        name: friendly,
-        url: portalPdfUrl(docId, friendly),
+        name: childWaiverLabel,
+        url: portalPdfUrl(docId, childWaiverLabel),
         type: "waiver",
         date: childDocs.waiverSignedAt ? new Date(childDocs.waiverSignedAt).toISOString() : "",
       });
