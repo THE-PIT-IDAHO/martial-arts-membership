@@ -285,10 +285,15 @@ export default function BeltDesignerPage() {
                     const dbRank = dbRanks.find(dr => dr.id === r.id)
                       || dbRanks.find(dr => dr.name.toLowerCase() === (r.name || "").toLowerCase());
                     let pdfDocs = r.pdfDocuments ? [...r.pdfDocuments] : [];
-                    // Add or replace curriculum PDF from DB Rank.pdfDocument
+                    // Add or replace curriculum PDF from DB Rank.pdfDocument.
+                    // Use the proxy URL (not the raw Blob URL) so the tab
+                    // title reflects the rank name and the URL stays on
+                    // our domain. Old base64 PDFs work the same way.
                     if (dbRank?.pdfDocument) {
                       pdfDocs = pdfDocs.filter(d => d.id !== "curriculum-db");
-                      pdfDocs.push({ id: "curriculum-db", name: `${r.name} Curriculum`, url: dbRank.pdfDocument });
+                      const fname = encodeURIComponent(`${s.name} - ${r.name}.pdf`);
+                      const proxyUrl = `/api/ranks/${dbRank.id}/pdf/${fname}`;
+                      pdfDocs.push({ id: "curriculum-db", name: `${r.name} Curriculum`, url: proxyUrl });
                     }
                     return {
                       ...r,

@@ -158,10 +158,11 @@ export async function GET(req: NextRequest) {
               // styles with same-named ranks (e.g. White Belt) resolve to the
               // correct PDF.
               const docId = `rank-pdf-${rankRow.id}`;
+              const fname = encodeURIComponent(`${enrolled.name} - ${r.name}.pdf`);
               documents.push({
                 id: docId,
                 name: `${r.name} Curriculum`,
-                url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf`,
+                url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf/${fname}`,
               });
             }
           }
@@ -250,10 +251,11 @@ export async function GET(req: NextRequest) {
             if (r.pdfDocument && !seen.has(r.id)) {
               seen.add(r.id);
               const docId = `rank-pdf-${r.id}`;
+              const fname = encodeURIComponent(`${enrolled.name} - ${r.name}.pdf`);
               documents.push({
                 id: docId,
                 name: `${r.name} Curriculum`,
-                url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf`,
+                url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf/${fname}`,
               });
             }
           }

@@ -81,14 +81,20 @@ function generateWaiverPdf(opts: {
   return Buffer.from(pdf.output("arraybuffer"));
 }
 
-// GET /api/portal/documents/[id]/pdf
+// GET /api/portal/documents/[id]/pdf  OR  /api/portal/documents/[id]/pdf/<anything>.pdf
+//
 // Streams a PDF for the authenticated member. Handles ID formats:
 //   rank-pdf-<rankName>   → Rank.pdfDocument for one of the member's enrolled styles
 //   waiver-<id>           → SignedWaiver.pdfData
+//   contract-<id>         → SignedContract.pdfData (member-owned, private Blob)
 //   <uuid>                → entry in member.styleDocuments by id
+//
+// The optional [[...slug]] trailing segment lets callers append a friendly
+// filename to the URL (e.g. ".../pdf/Hawaiian-Kempo-Yellow-Belt.pdf").
+// Browsers use that as the tab title. The route itself ignores it.
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string; slug?: string[] }> },
 ) {
   const auth = await getAuthenticatedMember(req);
   if (!auth) return new NextResponse("Unauthorized", { status: 401 });
@@ -134,7 +140,6 @@ export async function GET(
       if (member.stylesNotes) {
         try { enrolledStyles = JSON.parse(member.stylesNotes); } catch { /* ignore */ }
       }
-      // Find which style this rank belongs to, then make sure the member is enrolled.
       const ownerStyle = await prisma.style.findUnique({
         where: { id: rankById.styleId },
         select: { name: true, clientId: true },
@@ -143,12 +148,11 @@ export async function GET(
         es.name && es.active !== false && es.name.toLowerCase() === ownerStyle.name.toLowerCase()
       )) {
         dataUri = rankById.pdfDocument;
-        displayName = rankById.name;
+        displayName = `${ownerStyle.name} - ${rankById.name}`;
       }
     }
 
-    // Legacy fallback: tail is a rank name. Walk the member's enrolled styles
-    // (in tenant scope) and pick the first matching rank that has a PDF.
+    // Legacy fallback: tail is a rank name.
     if (!dataUri) {
       const rankName = tail;
       let enrolledStyles: Array<{ name?: string; rank?: string; active?: boolean }> = [];
@@ -161,6 +165,7 @@ export async function GET(
         const style = await prisma.style.findFirst({
           where: { name: { equals: es.name, mode: "insensitive" } },
           select: {
+            name: true,
             ranks: {
               orderBy: { order: "asc" },
               select: { name: true, order: true, pdfDocument: true },
@@ -175,7 +180,7 @@ export async function GET(
         );
         if (target?.pdfDocument) {
           dataUri = target.pdfDocument;
-          displayName = rankName;
+          displayName = `${style.name} - ${rankName}`;
           break;
         }
       }
@@ -200,14 +205,12 @@ export async function GET(
     });
     if (contract?.pdfData) {
       if (contract.pdfData.startsWith("http")) {
-        // Blob-stored: fetch with the private token and stream the bytes.
         try {
           generatedPdf = await fetchContractPdf(contract.pdfData);
         } catch (err) {
           console.error("Failed to fetch contract PDF from Blob:", err);
         }
       } else {
-        // Legacy base64 path (pre-migration contracts).
         dataUri = contract.pdfData.startsWith("data:")
           ? contract.pdfData
           : `data:application/pdf;base64,${contract.pdfData}`;
@@ -224,7 +227,6 @@ export async function GET(
       dataUri = waiver.pdfData;
       displayName = waiver.templateName || "Signed Waiver";
     } else if (waiver) {
-      // No stored PDF — render one on the fly from the saved content + signature
       generatedPdf = generateWaiverPdf({
         gymName,
         memberName,
@@ -252,9 +254,6 @@ export async function GET(
   if (generatedPdf) {
     buffer = generatedPdf;
   } else if (dataUri && dataUri.startsWith("http")) {
-    // Post-migration path: PDF lives on Blob. Proxy the fetch through us so
-    // we can set Content-Disposition with the friendly displayName (rank
-    // name, etc.) — otherwise the browser tab/download show the Blob cuid.
     const res = await fetch(dataUri);
     if (!res.ok) return new NextResponse("Failed to load PDF", { status: 502 });
     const ct = res.headers.get("content-type");

@@ -2,13 +2,21 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 
-// GET /api/ranks/[id]/pdf — stream the rank's curriculum PDF.
+// GET /api/ranks/[id]/pdf  OR  /api/ranks/[id]/pdf/<anything>.pdf
 //
-// Exists so /api/styles can stop shipping every rank's base64 PDF on
-// every page load. Admin pages that need to display/download a rank PDF
-// fetch it from here on demand, and only for the specific rank the user
-// is looking at.
-export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+// The optional trailing segment is purely cosmetic — browsers use the
+// URL's last path segment as the tab/window title when the PDF has no
+// embedded Title metadata. By letting callers append a friendly filename
+// like "Hawaiian Kempo - Yellow Belt.pdf", we get a readable tab title
+// without changing how the route resolves.
+//
+// This route always proxies the bytes through us (vs. redirecting to the
+// underlying Blob URL) so we can set Content-Disposition with the same
+// friendly filename and the user never sees the Blob URL.
+export async function GET(
+  request: Request,
+  props: { params: Promise<{ id: string; slug?: string[] }> },
+) {
   const { id } = await props.params;
   try {
     const clientId = await getClientId(request);
@@ -29,8 +37,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       return new NextResponse("No PDF for this rank", { status: 404 });
     }
 
-    // Get the bytes from wherever the PDF lives. Stored as a base64 data URI
-    // is the legacy format; an http(s) URL means it's been migrated to Blob.
+    // Get the bytes from wherever the PDF lives.
     let buffer: Buffer;
     let mime = "application/pdf";
 
@@ -51,9 +58,8 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       return new NextResponse("Stored PDF format not recognized", { status: 500 });
     }
 
-    // Filename is what shows up in the browser tab and the download dialog.
-    // Use "<Style> - <Rank>.pdf" so members see a meaningful title instead
-    // of the Blob cuid.
+    // Filename for the Content-Disposition header (powers the download
+    // filename and many browsers' tab title fallback).
     const safeName = `${rank.style.name} - ${rank.name}`.replace(/[\r\n"\\]/g, "").trim() || "rank";
     const asciiFallback = safeName.replace(/[^\x20-\x7e]/g, "_");
     const encoded = encodeURIComponent(safeName);

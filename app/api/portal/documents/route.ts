@@ -58,6 +58,13 @@ export async function GET(req: NextRequest) {
 
   const documents: Array<{ id: string; name: string; url: string; type: string; date: string }> = [];
 
+  // Build a portal-PDF URL with the friendly filename as the final path
+  // segment — that's what most browsers show in the tab title.
+  function portalPdfUrl(docId: string, friendlyName: string) {
+    const fname = encodeURIComponent(`${friendlyName}.pdf`);
+    return `/api/portal/documents/${encodeURIComponent(docId)}/pdf/${fname}`;
+  }
+
   // Manually uploaded docs in member.styleDocuments (excluding anything tagged as a rank/curriculum doc)
   if (member.styleDocuments) {
     try {
@@ -69,7 +76,7 @@ export async function GET(req: NextRequest) {
         documents.push({
           id: doc.id,
           name: doc.name,
-          url: `/api/portal/documents/${encodeURIComponent(doc.id)}/pdf`,
+          url: portalPdfUrl(doc.id, doc.name),
           type: "document",
           date: doc.uploadedAt || "",
         });
@@ -80,10 +87,11 @@ export async function GET(req: NextRequest) {
   // Signed waivers — endpoint renders the PDF on the fly when pdfData is missing
   for (const w of member.signedWaivers) {
     const docId = `waiver-${w.id}`;
+    const friendly = w.templateName || "Signed Waiver";
     documents.push({
       id: docId,
-      name: w.templateName || "Signed Waiver",
-      url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf`,
+      name: friendly,
+      url: portalPdfUrl(docId, friendly),
       type: "waiver",
       date: new Date(w.signedAt).toISOString(),
     });
@@ -94,7 +102,7 @@ export async function GET(req: NextRequest) {
     documents.push({
       id: "waiver-legacy",
       name: "Signed Waiver",
-      url: "/api/portal/documents/waiver-legacy/pdf",
+      url: portalPdfUrl("waiver-legacy", "Signed Waiver"),
       type: "waiver",
       date: member.waiverSignedAt ? new Date(member.waiverSignedAt).toISOString() : "",
     });
@@ -105,10 +113,11 @@ export async function GET(req: NextRequest) {
   // store's private token.
   for (const c of member.signedContracts) {
     const docId = `contract-${c.id}`;
+    const friendly = c.fileName?.replace(/\.pdf$/i, "") || c.planName || "Contract";
     documents.push({
       id: docId,
-      name: c.fileName?.replace(/\.pdf$/i, "") || c.planName || "Contract",
-      url: `/api/portal/documents/${encodeURIComponent(docId)}/pdf`,
+      name: friendly,
+      url: portalPdfUrl(docId, friendly),
       type: "contract",
       date: new Date(c.signedAt).toISOString(),
     });
