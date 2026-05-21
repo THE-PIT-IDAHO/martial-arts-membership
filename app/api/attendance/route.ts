@@ -22,22 +22,28 @@ export async function GET(req: Request) {
     const startOfDay = new Date(dayStartMs);
     const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
-    // If the class is configured to count the coach as an attendee and has a
-    // coach assigned, lazy-create their Attendance row on first roster load
-    // for this date. Cheap (single findUnique + create) and means the coach
-    // appears alongside students automatically — no separate cron needed.
+    // Coach-attends-as-student: lazy-create the coach's Attendance row on
+    // roster load. Once the class's start time has passed (in gym TZ) the
+    // row is auto-confirmed — coach gets credit for teaching without
+    // anyone manually checking them in.
     const cls = await prisma.classSession.findUnique({
       where: { id: classSessionId },
-      select: { coachId: true, coachAttendsAsStudent: true, clientId: true },
+      select: { coachId: true, coachAttendsAsStudent: true, clientId: true, startsAt: true },
     });
     if (cls?.coachAttendsAsStudent && cls.coachId && cls.clientId === clientId) {
-      // Coach must be a real Member to attend (some coaches are Users without
-      // a matching Member row).
       const coachMember = await prisma.member.findUnique({
         where: { id: cls.coachId },
         select: { id: true },
       });
       if (coachMember) {
+        // Has the class started for THIS date? startsAt is the template's
+        // start time; we project it onto the requested date and compare to
+        // "now". Auto-confirm if the start time has already passed.
+        const tpl = cls.startsAt;
+        const projected = new Date(dayStartMs);
+        projected.setUTCHours(tpl.getUTCHours(), tpl.getUTCMinutes(), 0, 0);
+        const classHasStarted = Date.now() >= projected.getTime();
+
         const existing = await prisma.attendance.findFirst({
           where: {
             memberId: cls.coachId,
@@ -52,10 +58,16 @@ export async function GET(req: Request) {
               classSessionId,
               attendanceDate: startOfDay,
               source: "MANUAL",
-              confirmed: false,
+              confirmed: classHasStarted,
               requirementOverride: true,
             },
           }).catch(() => { /* ignore unique-race */ });
+        } else if (classHasStarted && !existing.confirmed) {
+          // Existing row but class has since started — bump to confirmed.
+          await prisma.attendance.update({
+            where: { id: existing.id },
+            data: { confirmed: true },
+          }).catch(() => { /* ignore */ });
         }
       }
     }

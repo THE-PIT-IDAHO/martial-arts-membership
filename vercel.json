@@ -19,6 +19,10 @@
     {
       "path": "/api/cron/inactive-reengagement",
       "schedule": "0 14 * * 0"
+    },
+    {
+      "path": "/api/cron/coach-auto-attendance",
+      "schedule": "0 * * * *"
     }
   ]
 }
