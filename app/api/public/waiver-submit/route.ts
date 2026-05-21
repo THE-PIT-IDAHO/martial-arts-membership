@@ -45,7 +45,8 @@ export async function POST(req: Request) {
 }
 
 async function handleAdultSubmit(body: Record<string, string>, clientId: string) {
-  const { firstName, lastName, email, phone, dateOfBirth, address, city, state, zipCode, emergencyContactName, emergencyContactPhone, medicalNotes, pdfBase64 } = body;
+  const { firstName, lastName, email, phone, dateOfBirth, address, city, state, zipCode, emergencyContactName, emergencyContactPhone, medicalNotes, pdfBase64, templateSlug, templateId } = body;
+  const resolvedTemplate = await resolveTemplate(clientId, templateId, templateSlug);
 
   if (!firstName || !lastName) {
     return NextResponse.json({ error: "First and last name are required" }, { status: 400 });
@@ -85,7 +86,8 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
   await prisma.signedWaiver.create({
     data: {
       memberId: member.id,
-      templateName: "Waiver",
+      templateId: resolvedTemplate?.id || null,
+      templateName: resolvedTemplate?.name || "Waiver",
       waiverContent: "Submitted via waiver form",
       signatureData: body.signatureData || "submitted",
       pdfData: pdfBase64 || null,
@@ -97,6 +99,32 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
   return NextResponse.json({ member: { id: member.id } }, { status: 201 });
 }
 
+// Resolve which WaiverTemplate this submission came from. Prefer the id
+// the client sent (cheap, exact match); fall back to slug lookup. Returns
+// null when neither is present or matches — that's fine, the waiver is
+// stored without a template link.
+async function resolveTemplate(
+  clientId: string,
+  templateId?: string,
+  templateSlug?: string,
+): Promise<{ id: string; name: string } | null> {
+  if (templateId) {
+    const t = await prisma.waiverTemplate.findFirst({
+      where: { id: templateId, clientId },
+      select: { id: true, name: true },
+    });
+    if (t) return t;
+  }
+  if (templateSlug) {
+    const t = await prisma.waiverTemplate.findFirst({
+      where: { clientId, slug: templateSlug },
+      select: { id: true, name: true },
+    });
+    if (t) return t;
+  }
+  return null;
+}
+
 async function handleGuardianSubmit(body: Record<string, string>, clientId: string) {
   const {
     dependentFirstName, dependentLastName, dependentEmail, dependentDateOfBirth,
@@ -104,8 +132,9 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
     email, phone, address, city, state, zipCode,
     emergencyContactName, emergencyContactPhone, emergencyContactRelationship,
     dependentEmergencyContactName, dependentEmergencyContactPhone, dependentEmergencyContactRelationship,
-    medicalNotes, pdfBase64, parentPdfBase64,
+    medicalNotes, pdfBase64, parentPdfBase64, templateSlug, templateId,
   } = body;
+  const resolvedTemplate = await resolveTemplate(clientId, templateId, templateSlug);
 
   if (!dependentFirstName || !dependentLastName) {
     return NextResponse.json({ error: "Dependent first and last name are required" }, { status: 400 });
@@ -153,7 +182,8 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
   await prisma.signedWaiver.create({
     data: {
       memberId: dependent.id,
-      templateName: "Waiver",
+      templateId: resolvedTemplate?.id || null,
+      templateName: resolvedTemplate?.name || "Waiver",
       waiverContent: "Submitted via guardian waiver form",
       signatureData: body.signatureData || "submitted",
       pdfData: pdfBase64 || null,
@@ -208,7 +238,8 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
     await prisma.signedWaiver.create({
       data: {
         memberId: guardian.id,
-        templateName: "Waiver",
+        templateId: resolvedTemplate?.id || null,
+        templateName: resolvedTemplate?.name || "Waiver",
         waiverContent: "Submitted via guardian waiver form (parent copy)",
         signatureData: body.signatureData || "submitted",
         pdfData: parentPdfBase64 || pdfBase64 || null,

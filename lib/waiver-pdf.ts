@@ -50,9 +50,17 @@ const HEADER_BAND = 38;
 const FOOTER_BAND = 12;
 
 export function generateWaiverPdf(opts: WaiverPdfOptions): string {
-  const pdf = new jsPDF();
+  // compress: true cuts output ~40-60% by deflating internal streams; that
+  // matters because the parent + child PDFs are both POSTed in one JSON
+  // body and Vercel's function payload limit is 4.5MB.
+  const pdf = new jsPDF({ compress: true });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
+
+  // Pre-rasterize the logo to a small JPEG so a high-res upload (gyms often
+  // upload a 1–5MB PNG) doesn't blow up the PDF. We only render it ~13mm
+  // tall, so anything over ~200px is wasted bytes.
+  const logoDataUrl = downsampleLogo(opts.logoImage);
   const margin = 18;
   const maxWidth = pageWidth - margin * 2;
 
@@ -145,7 +153,7 @@ export function generateWaiverPdf(opts: WaiverPdfOptions): string {
   const totalPages = pdf.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     pdf.setPage(i);
-    drawHeader(pdf, opts, pageWidth, margin);
+    drawHeader(pdf, opts, pageWidth, margin, logoDataUrl);
     if (totalPages > 1) {
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(8);
@@ -168,14 +176,15 @@ function drawHeader(
   opts: WaiverPdfOptions,
   pageWidth: number,
   margin: number,
+  logoDataUrl: { dataUrl: string; width: number; height: number } | null,
 ) {
   let y = 10;
-  if (opts.logoImage) {
+  if (logoDataUrl) {
     const targetH = 13;
-    const aspect = opts.logoImage.naturalWidth / opts.logoImage.naturalHeight;
+    const aspect = logoDataUrl.width / logoDataUrl.height;
     const targetW = targetH * aspect;
     const x = (pageWidth - targetW) / 2;
-    pdf.addImage(opts.logoImage, x, y, targetW, targetH);
+    pdf.addImage(logoDataUrl.dataUrl, "JPEG", x, y, targetW, targetH);
     y += targetH + 3;
   } else {
     y += 4;
@@ -193,4 +202,38 @@ function drawHeader(
   pdf.setDrawColor(180);
   pdf.line(margin, y, pageWidth - margin, y);
   pdf.setDrawColor(0);
+}
+
+// Re-render the gym logo at ~200px wide as a JPEG so the PDF doesn't embed
+// a multi-megabyte source PNG. Returns null when no logo is provided or
+// when the canvas API isn't available (e.g. during SSR).
+function downsampleLogo(
+  img?: HTMLImageElement | null,
+): { dataUrl: string; width: number; height: number } | null {
+  if (!img) return null;
+  if (typeof document === "undefined") return null;
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  if (!srcW || !srcH) return null;
+
+  const maxDim = 220;
+  const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+  const dstW = Math.max(1, Math.round(srcW * scale));
+  const dstH = Math.max(1, Math.round(srcH * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = dstW;
+  canvas.height = dstH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  // White background so JPEG doesn't turn transparency black.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, dstW, dstH);
+  ctx.drawImage(img, 0, 0, dstW, dstH);
+  try {
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+    return { dataUrl, width: dstW, height: dstH };
+  } catch {
+    return null;
+  }
 }

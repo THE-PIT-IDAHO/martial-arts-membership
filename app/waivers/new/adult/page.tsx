@@ -139,26 +139,59 @@ export default function AdultWaiverPage() {
   // Container ref for scrolling
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Track the template slug so the submit handler can tag the SignedWaiver
+  // row with the source template. Empty string => default (no specific
+  // template was requested).
+  const [templateSlug, setTemplateSlug] = useState<string>("");
+  const [templateId, setTemplateId] = useState<string>("");
+
   useEffect(() => {
     async function loadData() {
       try {
-        const res = await fetch("/api/public/waiver-data");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.waiverContent) {
-            try {
-              setWaiverSections(JSON.parse(data.waiverContent));
-            } catch { /* Use defaults */ }
+        // If the URL has ?template=<slug>, prefer the template's content +
+        // options + audience over the global defaults. Falls back to the
+        // legacy /api/public/waiver-data when no template is requested so
+        // existing public links keep working.
+        const params = new URLSearchParams(window.location.search);
+        const slug = params.get("template") || "";
+        let usedTemplate = false;
+
+        if (slug) {
+          const tRes = await fetch(`/api/public/waiver-template/${encodeURIComponent(slug)}`);
+          if (tRes.ok) {
+            const tData = await tRes.json();
+            if (tData.template?.content) {
+              try { setWaiverSections(JSON.parse(tData.template.content)); } catch { /* keep defaults */ }
+            }
+            if (tData.gymSettings) {
+              try { setGymSettings(JSON.parse(tData.gymSettings)); } catch { /* keep defaults */ }
+            }
+            if (tData.gymLogo) {
+              const img = new Image();
+              img.onload = () => setGymLogoImg(img);
+              img.src = tData.gymLogo;
+            }
+            setTemplateSlug(tData.template.slug || slug);
+            setTemplateId(tData.template.id || "");
+            usedTemplate = true;
           }
-          if (data.gymSettings) {
-            try {
-              setGymSettings(JSON.parse(data.gymSettings));
-            } catch { /* Use defaults */ }
-          }
-          if (data.gymLogo) {
-            const img = new Image();
-            img.onload = () => setGymLogoImg(img);
-            img.src = data.gymLogo;
+        }
+
+        if (!usedTemplate) {
+          const res = await fetch("/api/public/waiver-data");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.waiverContent) {
+              try { setWaiverSections(JSON.parse(data.waiverContent)); } catch { /* defaults */ }
+            }
+            if (data.gymSettings) {
+              try { setGymSettings(JSON.parse(data.gymSettings)); } catch { /* defaults */ }
+            }
+            if (data.gymLogo) {
+              const img = new Image();
+              img.onload = () => setGymLogoImg(img);
+              img.src = data.gymLogo;
+            }
           }
         }
       } catch (err) {
@@ -332,6 +365,8 @@ export default function AdultWaiverPage() {
           medicalNotes: medicalNotes || undefined,
           pdfBase64,
           signatureData: signatureDataUrl || undefined,
+          templateSlug: templateSlug || undefined,
+          templateId: templateId || undefined,
         }),
       });
 

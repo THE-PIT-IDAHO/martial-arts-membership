@@ -1072,14 +1072,25 @@ model Location {
 model WaiverTemplate {
   id            String        @id @default(cuid())
   name          String
-  content       String        // Rich text / JSON sections
+  // slug: URL-safe identifier, unique per tenant. Used as the share link
+  // (/waivers/sign/<slug>) so each template has a stable public address
+  // independent of its display name.
+  slug          String?
+  // audience: "adult" or "guardian" — picks which form layout (single
+  // participant vs dependent + guardian) the public sign page renders.
+  audience      String        @default("adult")
+  content       String        // JSON sections [{title, content}]
+  options       String?       // JSON: {includeMinorSignature, includeMinorEmail}
   version       Int           @default(1)
   isActive      Boolean       @default(true)
   isDefault     Boolean       @default(false)
+  archivedAt    DateTime?
   clientId      String        @default("default-client")
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   signedWaivers SignedWaiver[]
+
+  @@unique([clientId, slug])
 }
 
 model SignedWaiver {

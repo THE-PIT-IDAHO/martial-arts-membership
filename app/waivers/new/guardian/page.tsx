@@ -191,32 +191,67 @@ export default function GuardianWaiverPage() {
   const minorAge = calculateAge(dependentDateOfBirth);
   const isMinor14to17 = minorAge >= 14 && minorAge <= 17;
 
+  // Optional template slug from ?template=<slug>. Used to tag the
+  // SignedWaiver row on the server and to load template-specific content +
+  // options instead of the tenant's global defaults.
+  const [templateSlug, setTemplateSlug] = useState<string>("");
+  const [templateId, setTemplateId] = useState<string>("");
+
   useEffect(() => {
     async function loadData() {
       try {
-        const res = await fetch("/api/public/waiver-data");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.waiverContent) {
-            try {
-              setWaiverSections(JSON.parse(data.waiverContent));
-            } catch { /* Use defaults */ }
+        const params = new URLSearchParams(window.location.search);
+        const slug = params.get("template") || "";
+        let usedTemplate = false;
+
+        if (slug) {
+          const tRes = await fetch(`/api/public/waiver-template/${encodeURIComponent(slug)}`);
+          if (tRes.ok) {
+            const tData = await tRes.json();
+            if (tData.template?.content) {
+              try { setWaiverSections(JSON.parse(tData.template.content)); } catch { /* defaults */ }
+            }
+            if (tData.template?.options) {
+              try {
+                const parsed = JSON.parse(tData.template.options);
+                setWaiverOptions({ ...DEFAULT_WAIVER_OPTIONS, ...parsed });
+              } catch { /* defaults */ }
+            }
+            if (tData.gymSettings) {
+              try { setGymSettings(JSON.parse(tData.gymSettings)); } catch { /* defaults */ }
+            }
+            if (tData.gymLogo) {
+              const img = new Image();
+              img.onload = () => setGymLogoImg(img);
+              img.src = tData.gymLogo;
+            }
+            setTemplateSlug(tData.template.slug || slug);
+            setTemplateId(tData.template.id || "");
+            usedTemplate = true;
           }
-          if (data.gymSettings) {
-            try {
-              setGymSettings(JSON.parse(data.gymSettings));
-            } catch { /* Use defaults */ }
-          }
-          if (data.gymLogo) {
-            const img = new Image();
-            img.onload = () => setGymLogoImg(img);
-            img.src = data.gymLogo;
-          }
-          if (data.waiverOptions) {
-            try {
-              const parsed = JSON.parse(data.waiverOptions);
-              setWaiverOptions({ ...DEFAULT_WAIVER_OPTIONS, ...parsed });
-            } catch { /* Use defaults */ }
+        }
+
+        if (!usedTemplate) {
+          const res = await fetch("/api/public/waiver-data");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.waiverContent) {
+              try { setWaiverSections(JSON.parse(data.waiverContent)); } catch { /* defaults */ }
+            }
+            if (data.gymSettings) {
+              try { setGymSettings(JSON.parse(data.gymSettings)); } catch { /* defaults */ }
+            }
+            if (data.gymLogo) {
+              const img = new Image();
+              img.onload = () => setGymLogoImg(img);
+              img.src = data.gymLogo;
+            }
+            if (data.waiverOptions) {
+              try {
+                const parsed = JSON.parse(data.waiverOptions);
+                setWaiverOptions({ ...DEFAULT_WAIVER_OPTIONS, ...parsed });
+              } catch { /* defaults */ }
+            }
           }
         }
       } catch (err) {
@@ -594,6 +629,8 @@ export default function GuardianWaiverPage() {
           pdfBase64,
           parentPdfBase64,
           signatureData: signatureDataUrl || undefined,
+          templateSlug: templateSlug || undefined,
+          templateId: templateId || undefined,
         }),
       });
 
