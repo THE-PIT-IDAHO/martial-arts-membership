@@ -159,20 +159,25 @@ type DayOfWeek = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "S
 
 const DAYS_OF_WEEK: DayOfWeek[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-// Group items that share the EXACT same start timestamp into sub-arrays.
+// Group items that occur at the same hour:minute of day into sub-arrays.
 // The calendar renders each group as a single flex row so concurrent
-// classes appear side-by-side instead of stacked vertically. Returned
-// groups are sorted earliest-first.
+// classes appear side-by-side instead of stacked vertically. We key on
+// HH:MM (local) rather than the raw timestamp because recurring classes
+// each carry their own template startsAt — two Monday-5pm classes have
+// different startsAt timestamps but should still share a row on each
+// displayed Monday. Callers already filter to one day, so HH:MM within
+// that day is the correct bucket.
 function groupByStartTime<T extends { startsAt: string }>(items: T[]): T[][] {
-  const map = new Map<number, T[]>();
+  const map = new Map<string, T[]>();
   for (const item of items) {
-    const key = new Date(item.startsAt).getTime();
+    const d = new Date(item.startsAt);
+    const key = `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(item);
   }
-  return Array.from(map.values()).sort(
-    (a, b) => new Date(a[0].startsAt).getTime() - new Date(b[0].startsAt).getTime(),
-  );
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, group]) => group);
 }
 
 // Helper function to create a tint (lighter version) of a color
