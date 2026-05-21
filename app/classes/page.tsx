@@ -536,14 +536,21 @@ export default function ClassesPage() {
       if (c.coachId) entry.coachIds.add(c.coachId);
     });
 
-    // Convert to array format. Per-day coach is set when all class rows for
-    // that day share the same coachId AND it differs from the top-level
-    // selected coach; otherwise we leave it unset to fall back to the default.
-    const daySchedules = Array.from(schedulesByDay.entries()).map(([day, { times, coachIds }]) => ({
-      day,
-      times,
-      coachId: coachIds.size === 1 ? Array.from(coachIds)[0] : undefined,
-    }));
+    // Convert to array format. Per-day coach is set ONLY when all class rows
+    // for that day share a coachId AND it differs from the top-level default.
+    // Without the "differs from" check, the per-day field stays pinned to the
+    // current coach — so when the admin changes the top-level default, the
+    // per-day value silently overrides it on save and the change reverts.
+    const topLevelCoachId = classSession.coachId || undefined;
+    const daySchedules = Array.from(schedulesByDay.entries()).map(([day, { times, coachIds }]) => {
+      const singleCoachId = coachIds.size === 1 ? Array.from(coachIds)[0] : undefined;
+      const isPerDayOverride = singleCoachId && singleCoachId !== topLevelCoachId;
+      return {
+        day,
+        times,
+        coachId: isPerDayOverride ? singleCoachId : undefined,
+      };
+    });
 
     setDaySchedules(daySchedules.length > 0 ? daySchedules : [{ day: "Monday", times: [{ startTime: "09:00", endTime: "10:00" }] }]);
     setShowForm(true);

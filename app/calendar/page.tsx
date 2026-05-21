@@ -289,7 +289,11 @@ export default function CalendarPage() {
   const [modalStep, setModalStep] = useState<"view" | "select" | "edit">("view");
   const [selectedClass, setSelectedClass] = useState<ClassSession | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [editOption, setEditOption] = useState<"single" | "day" | "range" | "future">("single");
+  // Default to "future" so coach/type/style edits update the recurring
+  // parent (the common case). "single" still available — but it forks a new
+  // one-off class per save, which used to silently duplicate classes when
+  // the admin re-saved a few times.
+  const [editOption, setEditOption] = useState<"single" | "day" | "range" | "future">("future");
   const [rangeStartDate, setRangeStartDate] = useState(getTodayString());
   const [rangeEndDate, setRangeEndDate] = useState("");
   const [classAttendees, setClassAttendees] = useState<MemberWithStyles[]>([]);
@@ -813,7 +817,7 @@ export default function CalendarPage() {
   async function handleClassClick(classSession: ClassSession, clickedDate: Date) {
     setSelectedClass(classSession);
     setSelectedDate(clickedDate);
-    setEditOption("single");
+    setEditOption("future");
     setRangeStartDate(clickedDate.toISOString().split("T")[0]);
     setRangeEndDate(clickedDate.toISOString().split("T")[0]);
     setModalStep("view");
@@ -1764,7 +1768,7 @@ export default function CalendarPage() {
     setModalStep("select");
     setSelectedClass(null);
     setSelectedDate(null);
-    setEditOption("single");
+    setEditOption("future");
     setRangeStartDate("");
     setRangeEndDate("");
     setShowDeleteConfirm(false);
