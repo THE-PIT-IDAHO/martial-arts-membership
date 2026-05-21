@@ -566,7 +566,7 @@ export default function MemberProfilePage() {
   const [waiverSigned, setWaiverSigned] = useState(false);
   const [waiverSignedAt, setWaiverSignedAt] = useState("");
 
-  const [signedWaivers, setSignedWaivers] = useState<Array<{ id: string; templateName: string; signedAt: string; confirmed: boolean }>>([]);
+  const [signedWaivers, setSignedWaivers] = useState<Array<{ id: string; templateName: string; signedAt: string; confirmed: boolean; hasPdf?: boolean }>>([]);
   const [waiverActionMsg, setWaiverActionMsg] = useState<string | null>(null);
   const [sendingWaiverLink, setSendingWaiverLink] = useState(false);
 
@@ -4767,7 +4767,7 @@ export default function MemberProfilePage() {
                         </div>
                       ))}
 
-                      {(styleDocuments.length > 0 || memberContracts.length > 0) && (
+                      {(styleDocuments.length > 0 || memberContracts.length > 0 || signedWaivers.some(w => w.hasPdf)) && (
                         <div>
                           <div className="flex items-center gap-2 mb-2">
                             <div className="h-px flex-1 bg-gray-200" />
@@ -4775,8 +4775,25 @@ export default function MemberProfilePage() {
                             <div className="h-px flex-1 bg-gray-200" />
                           </div>
                           <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
-                            {/* Contracts first — they're the most important
+                            {/* Signed waivers (with PDF) — the most important
                                 signed-by-the-member document on file. */}
+                            {signedWaivers.filter(w => w.hasPdf).map((w) => (
+                              <button
+                                key={`waiver-${w.id}`}
+                                type="button"
+                                onClick={() => openPdf(`/api/waivers/${w.id}/pdf`)}
+                                className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
+                                title={`${w.templateName} — signed ${new Date(w.signedAt).toLocaleDateString()}`}
+                              >
+                                <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
+                                  <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
+                                  <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
+                                  <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
+                                </svg>
+                                <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{w.templateName}</span>
+                              </button>
+                            ))}
+                            {/* Then contracts. */}
                             {memberContracts.map((c) => (
                               <button
                                 key={`contract-${c.id}`}
