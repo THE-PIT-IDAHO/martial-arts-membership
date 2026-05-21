@@ -2721,7 +2721,14 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saveCard, setSaveCard] = useState(false);
-  const cardRef = useRef<HTMLDivElement>(null);
+  // Three separate refs (number / expiry / cvc) instead of the all-in-one
+  // CardElement. Mobile OSes (iOS, Android) attach the native "Scan Card"
+  // button to the card-number field when it's a dedicated element with the
+  // right autocomplete hints — the all-in-one element doesn't trigger it
+  // reliably. Member can still tap and type if they prefer.
+  const cardNumberRef = useRef<HTMLDivElement>(null);
+  const cardExpiryRef = useRef<HTMLDivElement>(null);
+  const cardCvcRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -2731,13 +2738,16 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
         setStripe(s);
         const el = s.elements({ clientSecret: data.clientSecret });
         setElements(el);
-        const card = el.create("card", {
-          style: {
-            base: { fontSize: "14px", color: "#1f2937", "::placeholder": { color: "#9ca3af" } },
-            invalid: { color: "#ef4444" },
-          },
-        });
-        if (cardRef.current) card.mount(cardRef.current);
+        const baseStyle = {
+          base: { fontSize: "14px", color: "#1f2937", "::placeholder": { color: "#9ca3af" } },
+          invalid: { color: "#ef4444" },
+        };
+        const num = el.create("cardNumber", { style: baseStyle, showIcon: true });
+        const exp = el.create("cardExpiry", { style: baseStyle });
+        const cvc = el.create("cardCvc", { style: baseStyle });
+        if (cardNumberRef.current) num.mount(cardNumberRef.current);
+        if (cardExpiryRef.current) exp.mount(cardExpiryRef.current);
+        if (cardCvcRef.current) cvc.mount(cardCvcRef.current);
       });
     });
     return () => { mounted = false; };
@@ -2754,7 +2764,7 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
     if (data.isSetupIntent) {
       const { error: setupError, setupIntent } = await stripe.confirmCardSetup(data.clientSecret, {
         payment_method: {
-          card: elements.getElement("card")!,
+          card: elements.getElement("cardNumber")!,
           billing_details: { name: data.memberName || undefined },
         },
       });
@@ -2833,8 +2843,23 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
             </div>
           )}
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Card Details</label>
-            <div ref={cardRef} className="rounded-md border border-gray-300 px-3 py-2.5" />
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Card Number
+              <span className="ml-2 text-[10px] font-normal text-gray-400">
+                (tap to scan with camera on mobile)
+              </span>
+            </label>
+            <div ref={cardNumberRef} className="rounded-md border border-gray-300 px-3 py-2.5" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Expiry</label>
+              <div ref={cardExpiryRef} className="rounded-md border border-gray-300 px-3 py-2.5" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">CVC</label>
+              <div ref={cardCvcRef} className="rounded-md border border-gray-300 px-3 py-2.5" />
+            </div>
           </div>
           {/* Save-as-default is implicit in the SetupIntent flow — no checkbox needed. */}
           {memberId && !data.isSetupIntent && (
