@@ -168,7 +168,7 @@ export default function WaiverTemplatesPage() {
           <div className="flex items-center gap-2">
             <Link
               href="/waivers"
-              className="rounded-md bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-300 transition-colors"
+              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark transition-colors"
             >
               Back to Waivers
             </Link>
@@ -251,13 +251,13 @@ export default function WaiverTemplatesPage() {
                   </Link>
                   <button
                     onClick={() => handleDuplicate(t.id)}
-                    className="rounded-md bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-300 transition-colors"
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark transition-colors"
                   >
                     Duplicate
                   </button>
                   <button
                     onClick={() => handleDelete(t.id, t.name)}
-                    className="rounded-md bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
+                    className="rounded-md bg-white border border-primary px-3 py-1 text-xs font-semibold text-primary hover:bg-red-50 transition-colors"
                   >
                     Delete
                   </button>

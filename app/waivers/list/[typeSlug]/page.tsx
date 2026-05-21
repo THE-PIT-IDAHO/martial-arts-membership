@@ -122,10 +122,7 @@ export default function WaiverListByTypePage() {
       <div className="px-4 py-6 max-w-5xl mx-auto space-y-4">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div>
-            <Link href="/waivers" className="text-xs text-primary hover:underline">
-              ← Back to Waivers
-            </Link>
-            <h1 className="text-2xl font-bold mt-1">{label}</h1>
+            <h1 className="text-2xl font-bold">{label}</h1>
             <p className="text-sm text-gray-500">
               {typeSlug === "all"
                 ? "Every member and their overall waiver status."
@@ -134,6 +131,12 @@ export default function WaiverListByTypePage() {
                 : `Members with waivers grouped under "${label}".`}
             </p>
           </div>
+          <Link
+            href="/waivers"
+            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark transition-colors"
+          >
+            Back to Waivers
+          </Link>
         </div>
 
         {error && (
