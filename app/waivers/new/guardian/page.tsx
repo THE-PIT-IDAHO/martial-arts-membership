@@ -1142,7 +1142,14 @@ export default function GuardianWaiverPage() {
               >
                 {waiverSections.map((section) => (
                   <p key={section.id}>
-                    {section.title && <strong>{section.title}:</strong>} {replacePlaceholders(
+                    {section.title && <strong>{replacePlaceholders(
+                      section.title,
+                      gymSettings,
+                      dependentFirstName && dependentLastName ? `${dependentFirstName} ${dependentLastName}` : "my minor child",
+                      dependentFirstName,
+                      dependentLastName,
+                      `${guardianFirstName || ""} ${guardianLastName || ""}`.trim(),
+                    )}:</strong>} {replacePlaceholders(
                       section.content,
                       gymSettings,
                       dependentFirstName && dependentLastName ? `${dependentFirstName} ${dependentLastName}` : "my minor child",

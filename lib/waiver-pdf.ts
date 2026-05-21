@@ -102,7 +102,10 @@ export function generateWaiverPdf(opts: WaiverPdfOptions): string {
       ensureSpace(8);
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(11);
-      pdf.text(section.title, margin, yPos);
+      const titleText = opts.replacePlaceholders
+        ? opts.replacePlaceholders(section.title)
+        : section.title;
+      pdf.text(titleText, margin, yPos);
       yPos += 6;
     }
     pdf.setFont("helvetica", "normal");

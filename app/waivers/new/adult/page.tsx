@@ -694,7 +694,13 @@ export default function AdultWaiverPage() {
               >
                 {waiverSections.map((section) => (
                   <p key={section.id}>
-                    {section.title && <strong>{section.title}:</strong>} {replacePlaceholders(
+                    {section.title && <strong>{replacePlaceholders(
+                      section.title,
+                      gymSettings,
+                      firstName && lastName ? `${firstName} ${lastName}` : "",
+                      firstName,
+                      lastName,
+                    )}:</strong>} {replacePlaceholders(
                       section.content,
                       gymSettings,
                       firstName && lastName ? `${firstName} ${lastName}` : "",
