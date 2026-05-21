@@ -4771,7 +4771,17 @@ export default function MemberProfilePage() {
                     }
                   }
 
-                  if (styleDocuments.length === 0 && rankPdfs.length === 0 && memberContracts.length === 0) {
+                  // Empty-state guard: only show the placeholder if there's
+                  // NOTHING to render. Previously this ignored waivers, which
+                  // meant prospect members (no rankPdfs, no contracts) got
+                  // short-circuited even when their waiver row + PDF existed.
+                  const hasAnyDoc =
+                    styleDocuments.length > 0
+                    || rankPdfs.length > 0
+                    || memberContracts.length > 0
+                    || signedWaivers.some(w => w.hasPdf)
+                    || childWaivers.some(w => w.hasPdf);
+                  if (!hasAnyDoc) {
                     return (
                       <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                         <p className="text-xs text-gray-400">
