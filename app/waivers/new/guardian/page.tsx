@@ -600,10 +600,13 @@ export default function GuardianWaiverPage() {
       if (res.ok) {
         setSuccess(true);
       } else {
-        setError("Failed to submit waiver");
+        const text = await res.text().catch(() => "");
+        console.error("waiver submit failed", res.status, text);
+        setError(`Failed to submit waiver (${res.status}): ${text.slice(0, 200) || "no response body"}`);
       }
     } catch (err) {
-      setError("Failed to submit waiver");
+      console.error("waiver submit threw", err);
+      setError(`Failed to submit waiver: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSubmitting(false);
     }
