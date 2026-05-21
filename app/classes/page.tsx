@@ -2005,7 +2005,7 @@ export default function ClassesPage() {
                   disabled={saving}
                   className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:cursor-not-allowed disabled:bg-gray-300"
                 >
-                  {saving ? "Saving..." : editingClasses.length > 0 ? "Update Class" : "Save Class"}
+                  {saving ? "Saving..." : "Save Class"}
                 </button>
                 <button
                   type="button"
