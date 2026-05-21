@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 import Link from "next/link";
 import { serializePaymentMethod } from "@/lib/payment-utils";
-import { getTodayString } from "@/lib/dates";
+import { getTodayString, parseLocalDate } from "@/lib/dates";
 import jsPDF from "jspdf";
 
 type POSItemVariant = {
@@ -196,6 +196,22 @@ export default function POSPage() {
   const [lastTransaction, setLastTransaction] = useState<{ id: string; transactionNumber: string } | null>(null);
 
   // Helper: set last transaction and auto-email receipt
+  // Holds the signed-contract payload between "member signed in the modal"
+  // and "transaction actually saved". We POST to /api/contracts/sign only
+  // after the transaction completes successfully, so if the admin backs
+  // out mid-checkout no orphan SignedContract row is created.
+  // Using a ref (not state) so set + read are synchronous across the async
+  // checkout flow.
+  const pendingContractRef = useRef<{
+    memberId: string;
+    memberName: string;
+    planName: string;
+    itemsSummary: string;
+    contractContent: string;
+    signatureData: string;
+    pdfBase64: string;
+  } | null>(null);
+
   function completeTransaction(txn: { id: string; transactionNumber: string }) {
     setLastTransaction(txn);
     // Fire and forget receipt email
@@ -204,6 +220,22 @@ export default function POSPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ transactionId: txn.id }),
     }).catch(() => {}); // silent fail — receipt is optional
+
+    // If the cart included a contract that the member signed earlier in
+    // this flow, save it now — only at this confirmed-success point. We
+    // also attach the transactionId so the contract record links to the
+    // sale that triggered it.
+    const pending = pendingContractRef.current;
+    if (pending) {
+      pendingContractRef.current = null;
+      fetch("/api/contracts/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...pending, transactionId: txn.id }),
+      }).catch((err) => {
+        console.error("Failed to save signed contract:", err);
+      });
+    }
   }
 
   // Payment processor integration
@@ -810,7 +842,7 @@ export default function POSPage() {
           else if (days >= 30 && days % 30 === 0) lines.push(`Contract: ${days / 30} month(s)`);
           else lines.push(`Contract: ${days} days`);
         }
-        if (item.membershipStartDate) lines.push(`Start Date: ${new Date(item.membershipStartDate).toLocaleDateString()}`);
+        if (item.membershipStartDate) lines.push(`Start Date: ${parseLocalDate(item.membershipStartDate).toLocaleDateString()}`);
         if (plan?.cancellationNoticeDays) lines.push(`Cancellation Notice: ${plan.cancellationNoticeDays} days`);
         if (plan?.cancellationFeeCents) lines.push(`Early Termination Fee: ${formatCents(plan.cancellationFeeCents)}`);
         lines.push("");
@@ -882,7 +914,7 @@ export default function POSPage() {
             const contractStr = days >= 365 && days % 365 === 0 ? `${days / 365} year(s)` : days >= 30 && days % 30 === 0 ? `${days / 30} month(s)` : `${days} days`;
             pdf.text(`Contract Length: ${contractStr}`, margin, yPos); yPos += 5;
           }
-          if (item.membershipStartDate) { pdf.text(`Start Date: ${new Date(item.membershipStartDate).toLocaleDateString()}`, margin, yPos); yPos += 5; }
+          if (item.membershipStartDate) { pdf.text(`Start Date: ${parseLocalDate(item.membershipStartDate).toLocaleDateString()}`, margin, yPos); yPos += 5; }
           if (plan?.cancellationNoticeDays) { pdf.text(`Cancellation Notice: ${plan.cancellationNoticeDays} days`, margin, yPos); yPos += 5; }
           if (plan?.cancellationFeeCents) { pdf.text(`Early Termination Fee: ${formatCents(plan.cancellationFeeCents)}`, margin, yPos); yPos += 5; }
 
@@ -960,26 +992,24 @@ export default function POSPage() {
 
       const pdfBase64 = pdf.output("datauristring");
 
-      // 2. Save SignedContract record (includes PDF, auto-emails to member)
+      // 2. Stash the signed contract — DON'T save yet. We hold it in
+      // pendingContractRef and only POST after the transaction actually
+      // completes. This way, if the admin backs out mid-checkout (e.g.
+      // changes the cart and re-signs), no duplicate SignedContract row
+      // is created. completeTransaction reads the ref and saves it once.
       const itemsSummary = cart
         .filter(c => c.type === "membership" || c.type === "service")
         .map(c => ({ name: c.itemName, type: c.type, priceCents: c.unitPriceCents }));
       const memberName = `${selectedMember.firstName} ${selectedMember.lastName}`;
-      try {
-        await fetch("/api/contracts/sign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            memberId: selectedMember.id,
-            memberName,
-            planName: itemsSummary.map(i => i.name).join(", "),
-            itemsSummary: JSON.stringify(itemsSummary),
-            contractContent: contractText,
-            signatureData: signatureDataUrl,
-            pdfBase64,
-          }),
-        });
-      } catch (err) { console.error("Failed to save signed contract:", err); }
+      pendingContractRef.current = {
+        memberId: selectedMember.id,
+        memberName,
+        planName: itemsSummary.map(i => i.name).join(", "),
+        itemsSummary: JSON.stringify(itemsSummary),
+        contractContent: contractText,
+        signatureData: signatureDataUrl,
+        pdfBase64,
+      };
 
       // 5. Continue with checkout. If we're in kiosk lock mode, keep the modal
       // and lock active and show a Sale Completed screen until staff unlocks.
@@ -2452,7 +2482,7 @@ export default function POSPage() {
                               : `${plan.contractLengthMonths} days`
                         }</div>
                       )}
-                      {item.membershipStartDate && <div><span className="font-medium text-gray-700">Start Date:</span> {new Date(item.membershipStartDate).toLocaleDateString()}</div>}
+                      {item.membershipStartDate && <div><span className="font-medium text-gray-700">Start Date:</span> {parseLocalDate(item.membershipStartDate).toLocaleDateString()}</div>}
                       {plan?.cancellationNoticeDays && <div><span className="font-medium text-gray-700">Cancellation Notice:</span> {plan.cancellationNoticeDays} days</div>}
                       {plan?.cancellationFeeCents && <div><span className="font-medium text-gray-700">Early Termination Fee:</span> {formatCents(plan.cancellationFeeCents)}</div>}
                       {pkg?.sessionsIncluded && <div><span className="font-medium text-gray-700">Sessions:</span> {pkg.sessionsIncluded}</div>}
@@ -2663,7 +2693,13 @@ export default function POSPage() {
         <PosCardPaymentModal
           data={cardPaymentData}
           memberId={selectedMember?.id}
-          onClose={() => setCardPaymentData(null)}
+          onClose={() => {
+            // Member backed out of card entry — discard the pending
+            // contract too so we don't save it on a future attempt with
+            // possibly different cart contents.
+            pendingContractRef.current = null;
+            setCardPaymentData(null);
+          }}
           onSuccess={async (paymentIntentId) => {
             // Create transaction record
             const d = cardPaymentData;
