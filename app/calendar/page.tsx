@@ -3492,7 +3492,15 @@ export default function CalendarPage() {
                                       {(() => {
                                         const rankReq = getNextRankRequirements(member, selectedClass?.classType || null);
                                         if (rankReq) {
-                                          return `${rankReq.styleName} - ${rankReq.fulfilled}/${rankReq.requirement.minCount}`;
+                                          // Show the class type (the actual requirement label)
+                                          // instead of the style name — the requirement is per
+                                          // class type within the rank, so showing the type is
+                                          // more meaningful for the person checking the roster.
+                                          // "*" is the any-class sentinel, render as "Any Class".
+                                          const label = rankReq.requirement.label === "*"
+                                            ? "Any Class"
+                                            : rankReq.requirement.label;
+                                          return `${label} - ${rankReq.fulfilled}/${rankReq.requirement.minCount}`;
                                         }
                                         return memberCount > 0 ? memberCount : "-";
                                       })()}
