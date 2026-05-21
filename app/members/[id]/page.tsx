@@ -567,6 +567,16 @@ export default function MemberProfilePage() {
   const [waiverSignedAt, setWaiverSignedAt] = useState("");
 
   const [signedWaivers, setSignedWaivers] = useState<Array<{ id: string; templateName: string; signedAt: string; confirmed: boolean; hasPdf?: boolean }>>([]);
+  // Waivers pulled in from this member's parent/guardian children so the
+  // parent's profile shows both their own + each child's waiver as PDF
+  // cards labeled with the person's first name.
+  const [childWaivers, setChildWaivers] = useState<Array<{
+    id: string;
+    childMemberId: string;
+    childFirstName: string;
+    signedAt: string;
+    hasPdf: boolean;
+  }>>([]);
   const [waiverActionMsg, setWaiverActionMsg] = useState<string | null>(null);
   const [sendingWaiverLink, setSendingWaiverLink] = useState(false);
 
@@ -719,6 +729,40 @@ export default function MemberProfilePage() {
       fetch(`/api/waivers/signed/${memberId}`)
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d?.waivers) setSignedWaivers(d.waivers); })
+        .catch(() => {});
+
+      // Aggregate children's waivers onto this profile so guardian/parent
+      // sees both their own AND their child's waivers labeled per-person.
+      // Driven by relationships rather than DOB so legal guardianship
+      // ("Guardian of"/"Parent of") always pulls them in.
+      fetch(`/api/members/${memberId}/relationships`)
+        .then(r => r.ok ? r.json() : null)
+        .then(async (relData) => {
+          const rels: Array<{ relationship: string; fromMemberId: string; toMember: { id: string; firstName: string } }> = relData?.relationships || [];
+          const childRels = rels.filter((r) => {
+            if (r.fromMemberId !== memberId) return false;
+            const lower = (r.relationship || "").toLowerCase();
+            return lower.includes("parent") || lower.includes("guardian");
+          });
+          if (childRels.length === 0) { setChildWaivers([]); return; }
+          const collected: Array<{ id: string; childMemberId: string; childFirstName: string; signedAt: string; hasPdf: boolean }> = [];
+          await Promise.all(childRels.map(async (r) => {
+            const wRes = await fetch(`/api/waivers/signed/${r.toMember.id}`).catch(() => null);
+            if (!wRes || !wRes.ok) return;
+            const d = await wRes.json().catch(() => null);
+            const waivers: Array<{ id: string; signedAt: string; hasPdf?: boolean }> = d?.waivers || [];
+            for (const w of waivers) {
+              collected.push({
+                id: w.id,
+                childMemberId: r.toMember.id,
+                childFirstName: r.toMember.firstName,
+                signedAt: w.signedAt,
+                hasPdf: !!w.hasPdf,
+              });
+            }
+          }));
+          setChildWaivers(collected);
+        })
         .catch(() => {});
 
       // Fetch signed contracts (metadata only — PDF is loaded on demand
@@ -4767,7 +4811,7 @@ export default function MemberProfilePage() {
                         </div>
                       ))}
 
-                      {(styleDocuments.length > 0 || memberContracts.length > 0 || signedWaivers.some(w => w.hasPdf)) && (
+                      {(styleDocuments.length > 0 || memberContracts.length > 0 || signedWaivers.some(w => w.hasPdf) || childWaivers.some(w => w.hasPdf)) && (
                         <div>
                           <div className="flex items-center gap-2 mb-2">
                             <div className="h-px flex-1 bg-gray-200" />
@@ -4775,24 +4819,49 @@ export default function MemberProfilePage() {
                             <div className="h-px flex-1 bg-gray-200" />
                           </div>
                           <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
-                            {/* Signed waivers (with PDF) — the most important
-                                signed-by-the-member document on file. */}
-                            {signedWaivers.filter(w => w.hasPdf).map((w) => (
-                              <button
-                                key={`waiver-${w.id}`}
-                                type="button"
-                                onClick={() => openPdf(`/api/waivers/${w.id}/pdf`)}
-                                className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
-                                title={`${w.templateName} — signed ${new Date(w.signedAt).toLocaleDateString()}`}
-                              >
-                                <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
-                                  <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
-                                  <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
-                                  <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
-                                </svg>
-                                <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{w.templateName}</span>
-                              </button>
-                            ))}
+                            {/* This member's own waiver(s), labeled with
+                                their first name. */}
+                            {signedWaivers.filter(w => w.hasPdf).map((w) => {
+                              const label = `${member.firstName}'s Waiver`;
+                              return (
+                                <button
+                                  key={`waiver-${w.id}`}
+                                  type="button"
+                                  onClick={() => openPdf(`/api/waivers/${w.id}/pdf`)}
+                                  className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
+                                  title={`${label} — signed ${new Date(w.signedAt).toLocaleDateString()}`}
+                                >
+                                  <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
+                                    <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
+                                    <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
+                                    <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
+                                  </svg>
+                                  <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{label}</span>
+                                </button>
+                              );
+                            })}
+                            {/* Children's waivers (this member is a parent/
+                                guardian) — labeled with each child's name so
+                                the parent can see both rows side by side. */}
+                            {childWaivers.filter(w => w.hasPdf).map((w) => {
+                              const label = `${w.childFirstName}'s Waiver`;
+                              return (
+                                <button
+                                  key={`childwaiver-${w.id}`}
+                                  type="button"
+                                  onClick={() => openPdf(`/api/waivers/${w.id}/pdf`)}
+                                  className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
+                                  title={`${label} — signed ${new Date(w.signedAt).toLocaleDateString()}`}
+                                >
+                                  <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
+                                    <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
+                                    <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
+                                    <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
+                                  </svg>
+                                  <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{label}</span>
+                                </button>
+                              );
+                            })}
                             {/* Then contracts. */}
                             {memberContracts.map((c) => (
                               <button
