@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { jsPDF } from "jspdf";
 import { getTodayString } from "@/lib/dates";
 import { DateOfBirthPicker } from "@/components/date-of-birth-picker";
+import { generateWaiverPdf } from "@/lib/waiver-pdf";
 
 function formatPhoneNumber(value: string): string {
   const digits = value.replace(/\D/g, "");
@@ -413,154 +413,147 @@ export default function GuardianWaiverPage() {
     setError("");
 
     try {
-      // Generate PDF of the waiver
-      const pdf = new jsPDF();
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const margin = 20;
-      const maxWidth = pageWidth - margin * 2;
-      let yPos = 20;
-
-      // Header - Logo + Gym Name
-      if (gymLogoImg) {
-        const logoH = 12;
-        const aspect = gymLogoImg.naturalWidth / gymLogoImg.naturalHeight;
-        const logoW = logoH * aspect;
-        pdf.addImage(gymLogoImg, margin, yPos - 4, logoW, logoH);
-      }
-      pdf.setFontSize(18);
-      pdf.setFont("helvetica", "bold");
-      pdf.text(gymSettings.name || "Martial Arts School", pageWidth / 2, yPos, { align: "center" });
-      yPos += 10;
-      pdf.setFontSize(14);
-      pdf.text("Guardian and Dependent Liability Waiver", pageWidth / 2, yPos, { align: "center" });
-      yPos += 15;
-
-      // Dependent Info
-      pdf.setFontSize(12);
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Dependent (Minor) Information", margin, yPos);
-      yPos += 7;
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.text(`Name: ${dependentFirstName} ${dependentLastName}`, margin, yPos);
-      yPos += 5;
-      if (dependentDateOfBirth) {
-        pdf.text(`Date of Birth: ${new Date(dependentDateOfBirth).toLocaleDateString()} (Age: ${minorAge})`, margin, yPos);
-        yPos += 5;
-      }
-      if (dependentEmail) pdf.text(`Email: ${dependentEmail}`, margin, yPos);
-      yPos += 10;
-
-      // Guardian Info
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(12);
-      pdf.text("Parent/Guardian Information", margin, yPos);
-      yPos += 7;
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.text(`Name: ${guardianFirstName} ${guardianLastName}`, margin, yPos);
-      yPos += 5;
-      pdf.text(`Relationship: ${relationship}`, margin, yPos);
-      yPos += 5;
-      if (email) pdf.text(`Email: ${email}`, margin, yPos);
-      yPos += 5;
-      if (phone) pdf.text(`Phone: ${phone}`, margin, yPos);
-      yPos += 5;
-      if (address) pdf.text(`Address: ${address}, ${city}, ${state} ${zipCode}`, margin, yPos);
-      yPos += 10;
-
-      // Emergency Contact
-      if (emergencyContactName) {
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(12);
-        pdf.text("Emergency Contact", margin, yPos);
-        yPos += 7;
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(10);
-        pdf.text(`Name: ${emergencyContactName}`, margin, yPos);
-        yPos += 5;
-        if (emergencyContactPhone) pdf.text(`Phone: ${emergencyContactPhone}`, margin, yPos);
-        yPos += 10;
-      }
-
-      // Waiver Sections
-      for (const section of waiverSections) {
-        if (yPos > 260) {
-          pdf.addPage();
-          yPos = 20;
-        }
-        if (section.title) {
-          pdf.setFont("helvetica", "bold");
-          pdf.setFontSize(11);
-          pdf.text(section.title, margin, yPos);
-          yPos += 6;
-        }
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(9);
-        const lines = pdf.splitTextToSize(replacePlaceholders(section.content, gymSettings, `${dependentFirstName} ${dependentLastName}`), maxWidth);
-        for (const line of lines) {
-          if (yPos > 270) {
-            pdf.addPage();
-            yPos = 20;
-          }
-          pdf.text(line, margin, yPos);
-          yPos += 4;
-        }
-        yPos += 5;
-      }
-
-      // Guardian Signature section
-      if (yPos > 200) {
-        pdf.addPage();
-        yPos = 20;
-      }
-      yPos += 10;
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(11);
-      pdf.text("Guardian Signature", margin, yPos);
-      yPos += 8;
-
-      // Add guardian signature image from canvas
+      // Capture signatures from canvases once — both PDFs reuse the same
+      // image so the parent's copy and the child's copy show the same
+      // handwriting from the legal signer.
       const guardianCanvas = canvasRef.current;
-      let signatureDataUrl = "";
-      if (guardianCanvas && hasSignature) {
-        signatureDataUrl = guardianCanvas.toDataURL("image/png");
-        pdf.addImage(signatureDataUrl, "PNG", margin, yPos, 60, 20);
-        yPos += 25;
-      }
+      const signatureDataUrl =
+        guardianCanvas && hasSignature
+          ? guardianCanvas.toDataURL("image/png")
+          : "";
+      const minorCanvas = minorCanvasRef.current;
+      const minorSignatureDataUrl =
+        isMinor14to17 &&
+        waiverOptions.includeMinorSignature &&
+        hasMinorSignature &&
+        minorCanvas
+          ? minorCanvas.toDataURL("image/png")
+          : "";
 
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.text(`${guardianFirstName} ${guardianLastName} (${relationship})`, margin, yPos);
-      yPos += 5;
-      pdf.text(`Date: ${new Date(signatureDate).toLocaleDateString()}`, margin, yPos);
-      yPos += 10;
+      const isGuardianFlavor =
+        relationship === "Legal Guardian" || /guardian/i.test(relationship);
+      const adultTitleForParent = isGuardianFlavor
+        ? "Guardian Liability Waiver"
+        : "Adult Liability Waiver";
+      const dependentLabel = isGuardianFlavor ? "Dependent" : "Child";
 
-      // Minor Signature (if 14-17 and option is enabled)
-      if (isMinor14to17 && waiverOptions.includeMinorSignature && hasMinorSignature) {
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(11);
-        pdf.text("Minor Signature (Ages 14-17)", margin, yPos);
-        yPos += 8;
+      // Child PDF — the existing layout with dependent + guardian + emergency
+      // sections, signed by the guardian (and the minor if 14–17).
+      const childPdfBase64 = generateWaiverPdf({
+        gym: gymSettings,
+        logoImage: gymLogoImg,
+        waiverTitle: isGuardianFlavor
+          ? "Guardian and Dependent Liability Waiver"
+          : "Parent and Child Liability Waiver",
+        infoBlocks: [
+          {
+            title: `${dependentLabel} (Minor) Information`,
+            rows: [
+              { label: "Name", value: `${dependentFirstName} ${dependentLastName}` },
+              {
+                label: "Date of Birth",
+                value: dependentDateOfBirth
+                  ? `${new Date(dependentDateOfBirth).toLocaleDateString()} (Age: ${minorAge})`
+                  : "",
+              },
+              { label: "Email", value: dependentEmail },
+            ],
+          },
+          {
+            title: "Parent/Guardian Information",
+            rows: [
+              { label: "Name", value: `${guardianFirstName} ${guardianLastName}` },
+              { label: "Date of Birth", value: guardianDateOfBirth ? new Date(guardianDateOfBirth).toLocaleDateString() : "" },
+              { label: "Relationship", value: relationship },
+              { label: "Email", value: email },
+              { label: "Phone", value: phone },
+              { label: "Address", value: address ? `${address}, ${city}, ${state} ${zipCode}` : "" },
+            ],
+          },
+          {
+            title: `${dependentLabel}'s Emergency Contact`,
+            rows: [
+              {
+                label: "Name",
+                value: depEmergencyContactSameAsGuardian
+                  ? emergencyContactName
+                  : depEmergencyContactName,
+              },
+              {
+                label: "Phone",
+                value: depEmergencyContactSameAsGuardian
+                  ? emergencyContactPhone
+                  : depEmergencyContactPhone,
+              },
+              { label: "Relationship", value: depEmergencyContactRelationship },
+            ],
+          },
+        ],
+        sections: waiverSections,
+        replacePlaceholders: (t) =>
+          replacePlaceholders(t, gymSettings, `${dependentFirstName} ${dependentLastName}`),
+        signatures: [
+          {
+            title: `${isGuardianFlavor ? "Guardian" : "Parent"} Signature`,
+            signaturePng: signatureDataUrl || undefined,
+            name: `${guardianFirstName} ${guardianLastName} (${relationship})`,
+            date: new Date(signatureDate).toLocaleDateString(),
+          },
+          ...(minorSignatureDataUrl
+            ? [
+                {
+                  title: "Minor Signature (Ages 14-17)",
+                  signaturePng: minorSignatureDataUrl,
+                  name: `${dependentFirstName} ${dependentLastName}`,
+                  date: new Date(signatureDate).toLocaleDateString(),
+                },
+              ]
+            : []),
+        ],
+        electronicallySignedAt: new Date().toLocaleString(),
+      });
 
-        const minorCanvas = minorCanvasRef.current;
-        if (minorCanvas) {
-          const minorSignatureDataUrl = minorCanvas.toDataURL("image/png");
-          pdf.addImage(minorSignatureDataUrl, "PNG", margin, yPos, 60, 20);
-          yPos += 25;
-        }
+      // Parent's own PDF — looks like the standard adult waiver. No dependent
+      // info, no "Parent/Guardian" block. The parent is the participant.
+      const parentPdfBase64 = generateWaiverPdf({
+        gym: gymSettings,
+        logoImage: gymLogoImg,
+        waiverTitle: adultTitleForParent,
+        infoBlocks: [
+          {
+            title: "Participant Information",
+            rows: [
+              { label: "Name", value: `${guardianFirstName} ${guardianLastName}` },
+              { label: "Date of Birth", value: guardianDateOfBirth ? new Date(guardianDateOfBirth).toLocaleDateString() : "" },
+              { label: "Email", value: email },
+              { label: "Phone", value: phone },
+              { label: "Address", value: address ? `${address}, ${city}, ${state} ${zipCode}` : "" },
+            ],
+          },
+          {
+            title: "Emergency Contact",
+            rows: [
+              { label: "Name", value: emergencyContactName },
+              { label: "Phone", value: emergencyContactPhone },
+              { label: "Relationship", value: emergencyContactRelationship },
+            ],
+          },
+        ],
+        sections: waiverSections,
+        replacePlaceholders: (t) =>
+          replacePlaceholders(t, gymSettings, `${guardianFirstName} ${guardianLastName}`),
+        signatures: [
+          {
+            title: "Signature",
+            signaturePng: signatureDataUrl || undefined,
+            name: `${guardianFirstName} ${guardianLastName}`,
+            date: new Date(signatureDate).toLocaleDateString(),
+          },
+        ],
+        electronicallySignedAt: new Date().toLocaleString(),
+      });
 
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(10);
-        pdf.text(`${dependentFirstName} ${dependentLastName}`, margin, yPos);
-        yPos += 10;
-      }
-
-      pdf.setFontSize(8);
-      pdf.text(`Signed electronically on ${new Date().toLocaleString()}`, margin, yPos);
-
-      // Convert PDF to base64
-      const pdfBase64 = pdf.output("datauristring");
+      const pdfBase64 = childPdfBase64;
 
       // Submit via public endpoint (creates dependent + guardian + relationship + saves PDF)
       const res = await fetch("/api/public/waiver-submit", {
@@ -599,6 +592,7 @@ export default function GuardianWaiverPage() {
           dependentEmergencyContactRelationship: depEmergencyContactRelationship || undefined,
           medicalNotes: medicalNotes || undefined,
           pdfBase64,
+          parentPdfBase64,
           signatureData: signatureDataUrl || undefined,
         }),
       });

@@ -104,7 +104,7 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
     email, phone, address, city, state, zipCode,
     emergencyContactName, emergencyContactPhone, emergencyContactRelationship,
     dependentEmergencyContactName, dependentEmergencyContactPhone, dependentEmergencyContactRelationship,
-    medicalNotes, pdfBase64,
+    medicalNotes, pdfBase64, parentPdfBase64,
   } = body;
 
   if (!dependentFirstName || !dependentLastName) {
@@ -199,15 +199,19 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
       },
     });
 
-    // Parent's own SignedWaiver — same PDF as the child's. The two are
-    // paired by (relationship + signedAt within 30s) on confirmation.
+    // Parent's own SignedWaiver — its own PDF formatted like the standard
+    // adult waiver (no dependent info), so the parent's account shows a
+    // proper personal waiver instead of a copy of the child's PDF. Falls
+    // back to the child's PDF for older clients that don't send a
+    // parentPdfBase64 yet. Paired with the child's row by (relationship +
+    // signedAt within 30s) on confirmation.
     await prisma.signedWaiver.create({
       data: {
         memberId: guardian.id,
         templateName: "Waiver",
         waiverContent: "Submitted via guardian waiver form (parent copy)",
         signatureData: body.signatureData || "submitted",
-        pdfData: pdfBase64 || null,
+        pdfData: parentPdfBase64 || pdfBase64 || null,
         confirmed: false,
         clientId,
       },

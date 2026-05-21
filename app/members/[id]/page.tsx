@@ -577,6 +577,10 @@ export default function MemberProfilePage() {
     signedAt: string;
     hasPdf: boolean;
   }>>([]);
+  // True when this member is the dependent side of a parent/guardian
+  // relationship. We hide their own waiver PDFs from the documents grid
+  // because the legal copy lives on the parent's profile.
+  const [isDependent, setIsDependent] = useState(false);
   const [waiverActionMsg, setWaiverActionMsg] = useState<string | null>(null);
   const [sendingWaiverLink, setSendingWaiverLink] = useState(false);
 
@@ -735,10 +739,22 @@ export default function MemberProfilePage() {
       // sees both their own AND their child's waivers labeled per-person.
       // Driven by relationships rather than DOB so legal guardianship
       // ("Guardian of"/"Parent of") always pulls them in.
+      //
+      // Also flag isDependent if someone has us as the TO side of a parent/
+      // guardian rel — that hides our own waiver card (the legal copy
+      // belongs on the parent's profile).
       fetch(`/api/members/${memberId}/relationships`)
         .then(r => r.ok ? r.json() : null)
         .then(async (relData) => {
-          const rels: Array<{ relationship: string; fromMemberId: string; toMember: { id: string; firstName: string } }> = relData?.relationships || [];
+          const rels: Array<{ relationship: string; fromMemberId: string; toMemberId: string; toMember: { id: string; firstName: string } }> = relData?.relationships || [];
+
+          const dependentSide = rels.some((r) => {
+            if (r.toMemberId !== memberId) return false;
+            const lower = (r.relationship || "").toLowerCase();
+            return lower.includes("parent") || lower.includes("guardian");
+          });
+          setIsDependent(dependentSide);
+
           const childRels = rels.filter((r) => {
             if (r.fromMemberId !== memberId) return false;
             const lower = (r.relationship || "").toLowerCase();
@@ -4775,11 +4791,16 @@ export default function MemberProfilePage() {
                   // NOTHING to render. Previously this ignored waivers, which
                   // meant prospect members (no rankPdfs, no contracts) got
                   // short-circuited even when their waiver row + PDF existed.
+                  //
+                  // Dependents (children of a parent/guardian on file) never
+                  // show their own waiver card here — the legal copy is on
+                  // the parent's profile — so don't count it for the guard.
+                  const showOwnWaivers = !isDependent;
                   const hasAnyDoc =
                     styleDocuments.length > 0
                     || rankPdfs.length > 0
                     || memberContracts.length > 0
-                    || signedWaivers.some(w => w.hasPdf)
+                    || (showOwnWaivers && signedWaivers.some(w => w.hasPdf))
                     || childWaivers.some(w => w.hasPdf);
                   if (!hasAnyDoc) {
                     return (
@@ -4821,7 +4842,7 @@ export default function MemberProfilePage() {
                         </div>
                       ))}
 
-                      {(styleDocuments.length > 0 || memberContracts.length > 0 || signedWaivers.some(w => w.hasPdf) || childWaivers.some(w => w.hasPdf)) && (
+                      {(styleDocuments.length > 0 || memberContracts.length > 0 || (showOwnWaivers && signedWaivers.some(w => w.hasPdf)) || childWaivers.some(w => w.hasPdf)) && (
                         <div>
                           <div className="flex items-center gap-2 mb-2">
                             <div className="h-px flex-1 bg-gray-200" />
@@ -4830,8 +4851,10 @@ export default function MemberProfilePage() {
                           </div>
                           <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
                             {/* This member's own waiver(s), labeled with
-                                their first name. */}
-                            {signedWaivers.filter(w => w.hasPdf).map((w) => {
+                                their first name. Hidden when this member is
+                                a dependent — their waiver shows up on the
+                                parent's profile only. */}
+                            {showOwnWaivers && signedWaivers.filter(w => w.hasPdf).map((w) => {
                               const label = `${member.firstName}'s Waiver`;
                               return (
                                 <button

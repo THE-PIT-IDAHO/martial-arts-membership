@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { jsPDF } from "jspdf";
 import { getTodayString } from "@/lib/dates";
 import { DateOfBirthPicker } from "@/components/date-of-birth-picker";
+import { generateWaiverPdf } from "@/lib/waiver-pdf";
 
 function formatPhoneNumber(value: string): string {
   const digits = value.replace(/\D/g, "");
@@ -272,101 +272,46 @@ export default function AdultWaiverPage() {
     setError("");
 
     try {
-      // Generate PDF of the waiver
-      const pdf = new jsPDF();
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const margin = 20;
-      const maxWidth = pageWidth - margin * 2;
-      let yPos = 20;
-
-      // Header - Logo + Gym Name
-      if (gymLogoImg) {
-        const logoH = 12;
-        const aspect = gymLogoImg.naturalWidth / gymLogoImg.naturalHeight;
-        const logoW = logoH * aspect;
-        pdf.addImage(gymLogoImg, margin, yPos - 4, logoW, logoH);
-      }
-      pdf.setFontSize(18);
-      pdf.setFont("helvetica", "bold");
-      pdf.text(gymSettings.name || "Martial Arts School", pageWidth / 2, yPos, { align: "center" });
-      yPos += 10;
-      pdf.setFontSize(14);
-      pdf.text("Adult Liability Waiver", pageWidth / 2, yPos, { align: "center" });
-      yPos += 15;
-
-      // Participant Info
-      pdf.setFontSize(12);
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Participant Information", margin, yPos);
-      yPos += 7;
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.text(`Name: ${firstName} ${lastName}`, margin, yPos);
-      yPos += 5;
-      if (dateOfBirth) pdf.text(`Date of Birth: ${new Date(dateOfBirth).toLocaleDateString()}`, margin, yPos);
-      yPos += 5;
-      if (email) pdf.text(`Email: ${email}`, margin, yPos);
-      yPos += 5;
-      if (phone) pdf.text(`Phone: ${phone}`, margin, yPos);
-      yPos += 5;
-      if (address) pdf.text(`Address: ${address}, ${city}, ${state} ${zipCode}`, margin, yPos);
-      yPos += 10;
-
-      // Waiver Sections
-      for (const section of waiverSections) {
-        if (yPos > 260) {
-          pdf.addPage();
-          yPos = 20;
-        }
-        if (section.title) {
-          pdf.setFont("helvetica", "bold");
-          pdf.setFontSize(11);
-          pdf.text(section.title, margin, yPos);
-          yPos += 6;
-        }
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(9);
-        const lines = pdf.splitTextToSize(replacePlaceholders(section.content, gymSettings, `${firstName} ${lastName}`), maxWidth);
-        for (const line of lines) {
-          if (yPos > 270) {
-            pdf.addPage();
-            yPos = 20;
-          }
-          pdf.text(line, margin, yPos);
-          yPos += 4;
-        }
-        yPos += 5;
-      }
-
-      // Signature section
-      if (yPos > 230) {
-        pdf.addPage();
-        yPos = 20;
-      }
-      yPos += 10;
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(11);
-      pdf.text("Signature", margin, yPos);
-      yPos += 8;
-
-      // Add signature image from canvas
       const canvas = canvasRef.current;
-      let signatureDataUrl = "";
-      if (canvas && hasSignature) {
-        signatureDataUrl = canvas.toDataURL("image/png");
-        pdf.addImage(signatureDataUrl, "PNG", margin, yPos, 60, 20);
-        yPos += 25;
-      }
+      const signatureDataUrl =
+        canvas && hasSignature ? canvas.toDataURL("image/png") : "";
 
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.text(`Date: ${new Date(signatureDate).toLocaleDateString()}`, margin, yPos);
-      yPos += 10;
-      pdf.setFontSize(8);
-      pdf.text(`Signed electronically on ${new Date().toLocaleString()}`, margin, yPos);
-
-      // Convert PDF to base64
-      const pdfBase64 = pdf.output("datauristring");
+      const pdfBase64 = generateWaiverPdf({
+        gym: gymSettings,
+        logoImage: gymLogoImg,
+        waiverTitle: "Adult Liability Waiver",
+        infoBlocks: [
+          {
+            title: "Participant Information",
+            rows: [
+              { label: "Name", value: `${firstName} ${lastName}` },
+              { label: "Date of Birth", value: dateOfBirth ? new Date(dateOfBirth).toLocaleDateString() : "" },
+              { label: "Email", value: email },
+              { label: "Phone", value: phone },
+              { label: "Address", value: address ? `${address}, ${city}, ${state} ${zipCode}` : "" },
+            ],
+          },
+          {
+            title: "Emergency Contact",
+            rows: [
+              { label: "Name", value: emergencyContactName },
+              { label: "Phone", value: emergencyContactPhone },
+            ],
+          },
+        ],
+        sections: waiverSections,
+        replacePlaceholders: (t) =>
+          replacePlaceholders(t, gymSettings, `${firstName} ${lastName}`),
+        signatures: [
+          {
+            title: "Signature",
+            signaturePng: signatureDataUrl || undefined,
+            name: `${firstName} ${lastName}`,
+            date: new Date(signatureDate).toLocaleDateString(),
+          },
+        ],
+        electronicallySignedAt: new Date().toLocaleString(),
+      });
 
       // Submit waiver via public endpoint (creates member + saves PDF)
       const res = await fetch("/api/public/waiver-submit", {
