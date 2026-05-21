@@ -4,6 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 
+// Same reason as waivers/signed: opt out of Next's GET cache so newly
+// linked parent/child rows surface on the admin profile right away.
+export const dynamic = "force-dynamic";
+
 type RouteParams = {
   params: Promise<{ id: string }>;
 };
