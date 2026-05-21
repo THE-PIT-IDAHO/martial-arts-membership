@@ -135,11 +135,16 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
     },
   });
 
-  // Create SignedWaiver on the CHILD only. We used to also write a copy
-  // to the guardian and to both members' styleDocuments — that ended up
-  // double-listing the same waiver three times on the parent's portal.
-  // Parents now see the child's waiver via the portal's minor-child
-  // aggregation (labeled "Nico's Waiver" on the parent's Documents tab).
+  // Create SignedWaiver on the CHILD. Same PDF (signature) gets attached
+  // separately to the parent below so each account has its own row — that
+  // way each profile renders its waiver. We used to skip the parent copy
+  // and rely on the portal's minor-child aggregation alone, but that
+  // missed the parent's admin profile + the portal's "own waivers" tab,
+  // so the waiver appeared nowhere on the parent's account.
+  //
+  // Single confirmation: the /api/waivers/confirm/[id] route already
+  // cascade-confirms paired rows within a 30s signedAt window, so admin
+  // only ever clicks once.
   await prisma.signedWaiver.create({
     data: {
       memberId: dependent.id,
@@ -183,6 +188,20 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
         fromMemberId: guardian.id,
         toMemberId: dependent.id,
         relationship: relationshipType,
+      },
+    });
+
+    // Parent's own SignedWaiver — same PDF as the child's. The two are
+    // paired by (relationship + signedAt within 30s) on confirmation.
+    await prisma.signedWaiver.create({
+      data: {
+        memberId: guardian.id,
+        templateName: "Waiver",
+        waiverContent: "Submitted via guardian waiver form (parent copy)",
+        signatureData: body.signatureData || "submitted",
+        pdfData: pdfBase64 || null,
+        confirmed: false,
+        clientId,
       },
     });
   }
