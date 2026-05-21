@@ -1079,6 +1079,11 @@ model WaiverTemplate {
   // audience: "adult" or "guardian" — picks which form layout (single
   // participant vs dependent + guardian) the public sign page renders.
   audience      String        @default("adult")
+  // type: free-text bucket that groups templates regardless of audience
+  // (e.g. an "Gym" type can contain both the adult and guardian versions).
+  // The admin /waivers page renders one button per distinct type so each
+  // group has its own signed-member list.
+  type          String?
   content       String        // JSON sections [{title, content}]
   options       String?       // JSON: {includeMinorSignature, includeMinorEmail}
   version       Int           @default(1)

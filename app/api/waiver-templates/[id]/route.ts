@@ -45,6 +45,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (typeof body.content === "string") data.content = body.content;
     if (typeof body.options === "string") data.options = body.options;
     if (typeof body.isActive === "boolean") data.isActive = body.isActive;
+    // type: empty/whitespace strings normalise to null so "Untyped"
+    // grouping on the admin page stays consistent.
+    if (typeof body.type === "string") data.type = body.type.trim() || null;
 
     if (typeof body.slug === "string" && body.slug.trim() && body.slug !== existing.slug) {
       data.slug = await uniqueSlug(clientId, slugify(body.slug), existing.id);
@@ -71,24 +74,20 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       where: { id, clientId },
     });
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (existing.isDefault) {
-      return NextResponse.json(
-        { error: "Cannot delete the default template — duplicate it and edit instead." },
-        { status: 400 },
-      );
-    }
 
-    // Soft delete: archive so SignedWaiver rows that reference this template
-    // keep resolving. Existing signed waivers reference templateId as a
-    // foreign key; deleting the row would break those references.
-    await prisma.waiverTemplate.update({
-      where: { id: existing.id },
-      data: { archivedAt: new Date(), isActive: false },
+    // Hard delete: null out templateId on any SignedWaiver rows that
+    // reference this template so the FK doesn't block the delete. The
+    // signed waivers themselves stay (members keep their PDFs); they just
+    // lose the back-link to the template.
+    await prisma.signedWaiver.updateMany({
+      where: { templateId: existing.id },
+      data: { templateId: null },
     });
+    await prisma.waiverTemplate.delete({ where: { id: existing.id } });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("Error archiving waiver template:", err);
+    console.error("Error deleting waiver template:", err);
     return new NextResponse("Failed to delete template", { status: 500 });
   }
 }

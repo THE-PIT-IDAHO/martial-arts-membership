@@ -175,6 +175,67 @@ const DEFAULT_WAIVER_SECTIONS: WaiverSection[] = [
   }
 ];
 
+// Per-type buttons replacing the old single member list. Each tile links
+// into /waivers/list/<slug> where the member list lives, scoped to that
+// type bucket. Talks to /api/waivers/type-counts for the live counts.
+function WaiverBuckets() {
+  const [loading, setLoading] = useState(true);
+  const [buckets, setBuckets] = useState<Array<{ type: string; slug: string; signedCount: number; templateCount: number }>>([]);
+  const [allCounts, setAllCounts] = useState<{ totalMembers: number; signedMembers: number }>({ totalMembers: 0, signedMembers: 0 });
+
+  useEffect(() => {
+    fetch("/api/waivers/type-counts")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) {
+          setBuckets(data.buckets || []);
+          setAllCounts(data.all || { totalMembers: 0, signedMembers: 0 });
+        }
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-bold text-gray-800">Waiver Lists</h2>
+        <p className="text-xs text-gray-500">Pick a bucket to see the members in it.</p>
+      </div>
+      {loading ? (
+        <div className="py-6 text-center text-sm text-gray-500">Loading…</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <Link
+            href="/waivers/list/all"
+            className="block rounded-lg border border-gray-200 hover:border-primary hover:shadow-sm transition-all p-3"
+          >
+            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">All Members</div>
+            <div className="mt-1 text-lg font-bold text-gray-900">
+              {allCounts.signedMembers}
+              <span className="text-sm text-gray-400 font-medium"> / {allCounts.totalMembers} signed</span>
+            </div>
+          </Link>
+          {buckets.map((b) => (
+            <Link
+              key={b.slug}
+              href={`/waivers/list/${b.slug}`}
+              className="block rounded-lg border border-gray-200 hover:border-primary hover:shadow-sm transition-all p-3"
+            >
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">{b.type}</div>
+              <div className="mt-1 text-lg font-bold text-gray-900">
+                {b.signedCount} <span className="text-sm text-gray-400 font-medium">signed</span>
+              </div>
+              <div className="text-[11px] text-gray-400">
+                {b.templateCount} template{b.templateCount === 1 ? "" : "s"}
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function WaiversPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -663,163 +724,10 @@ export default function WaiversPage() {
           </div>
         )}
 
-        {/* Filters */}
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <div className="flex flex-col md:flex-row md:items-center gap-4">
-            <div className="flex-1">
-              <input
-                type="text"
-                placeholder="Search by name..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setFilter("all")}
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                  filter === "all"
-                    ? "bg-primary text-white hover:bg-primaryDark"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                }`}
-              >
-                All ({totalMembers})
-              </button>
-              <button
-                onClick={() => setFilter("signed")}
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                  filter === "signed"
-                    ? "bg-primary text-white hover:bg-primaryDark"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                }`}
-              >
-                Signed ({signedCount})
-              </button>
-              <button
-                onClick={() => setFilter("unsigned")}
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                  filter === "unsigned"
-                    ? "bg-primary text-white hover:bg-primaryDark"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                }`}
-              >
-                Pending ({unsignedCount})
-              </button>
-            </div>
-          </div>
-        </div>
+        {/* Waiver Buckets — one button per template type. Members live on
+            the per-type list page so they're grouped by what they signed. */}
+        <WaiverBuckets />
 
-        {/* Members List */}
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          {filteredMembers.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
-              No members found matching your criteria.
-            </div>
-          ) : (
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase">
-                    Member
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase">
-                    Contact
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase">
-                    Waiver Status
-                  </th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-600 uppercase">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredMembers.map((member) => (
-                  <tr key={member.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/members/${member.id}`}
-                        className="font-medium text-gray-900 hover:text-primary"
-                      >
-                        {member.firstName} {member.lastName}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
-                      {member.email || member.phone || "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {member.waiverSigned ? (
-                        <div>
-                          <span className="inline-flex items-center gap-1 text-green-600 text-sm font-medium">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                            Signed
-                          </span>
-                          {member.waiverSignedAt && (
-                            <div className="text-xs text-gray-400">
-                              {new Date(member.waiverSignedAt).toLocaleDateString()}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-orange-600 text-sm font-medium">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          Pending
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => copyWaiverLink(member.id)}
-                          className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
-                        >
-                          {copiedId === member.id ? "Copied!" : "Copy Link"}
-                        </button>
-                        <button
-                          onClick={() => openWaiverModal(member.id)}
-                          className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
-                        >
-                          Open Form
-                        </button>
-                        {member.waiverSigned && (
-                          <button
-                            onClick={() => resetWaiver(member.id)}
-                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
-                          >
-                            Reset
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* Info Box */}
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-          <h3 className="text-sm font-semibold text-blue-800 mb-2">
-            How to Use Waivers
-          </h3>
-          <ul className="text-xs text-blue-700 space-y-1">
-            <li>
-              <strong>Copy Link:</strong> Get a unique waiver link for the member to fill out online.
-            </li>
-            <li>
-              <strong>Open Form:</strong> Opens the waiver form in a popup (useful for in-person signing or printing).
-            </li>
-            <li>
-              <strong>Reset:</strong> Clears the waiver status so the member can sign again (e.g., for annual renewals).
-            </li>
-          </ul>
-        </div>
       </div>
 
       {/* Waiver Modal */}

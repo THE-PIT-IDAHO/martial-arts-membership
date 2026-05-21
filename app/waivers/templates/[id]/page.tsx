@@ -23,6 +23,7 @@ type Template = {
   name: string;
   slug: string | null;
   audience: Audience;
+  type: string | null;
   isDefault: boolean;
   isActive: boolean;
   archivedAt: string | null;
@@ -56,11 +57,14 @@ export default function WaiverTemplateEditorPage() {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [audience, setAudience] = useState<Audience>("adult");
+  const [type, setType] = useState("");
+  const [isActive, setIsActive] = useState(true);
   const [sections, setSections] = useState<WaiverSection[]>([]);
   const [options, setOptions] = useState<WaiverOptions>({
     includeMinorSignature: true,
     includeMinorEmail: true,
   });
+  const [knownTypes, setKnownTypes] = useState<string[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -77,11 +81,27 @@ export default function WaiverTemplateEditorPage() {
         setName(t.name);
         setSlug(t.slug || "");
         setAudience(t.audience);
+        setType(t.type || "");
+        setIsActive(t.isActive !== false);
         try {
           setSections(JSON.parse(t.content || "[]"));
         } catch {
           setSections([]);
         }
+
+        // Suggest existing types from other templates as a datalist so the
+        // user doesn't have to remember the exact spelling of "Gym" etc.
+        try {
+          const listRes = await fetch("/api/waiver-templates");
+          if (listRes.ok) {
+            const listData = await listRes.json();
+            const types = new Set<string>();
+            for (const row of listData.templates || []) {
+              if (row.type) types.add(row.type);
+            }
+            setKnownTypes(Array.from(types).sort());
+          }
+        } catch { /* not critical */ }
         if (t.options) {
           try {
             const parsed = JSON.parse(t.options);
@@ -145,6 +165,8 @@ export default function WaiverTemplateEditorPage() {
           name: name.trim(),
           slug: slug.trim() || undefined,
           audience,
+          type: type,
+          isActive,
           content: JSON.stringify(sections),
           options: JSON.stringify(options),
         }),
@@ -206,7 +228,7 @@ export default function WaiverTemplateEditorPage() {
             <button
               onClick={save}
               disabled={saving || !name.trim() || sections.length === 0}
-              className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark transition-colors disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
             </button>
@@ -242,6 +264,38 @@ export default function WaiverTemplateEditorPage() {
                 <option value="adult">Adult (single participant)</option>
                 <option value="guardian">Guardian / Dependent (parent + minor)</option>
               </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Type <span className="font-normal text-gray-400">(groups templates on the Waivers page)</span>
+              </label>
+              <input
+                type="text"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                placeholder="Gym, Event, Tournament…"
+                list="known-waiver-types"
+                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+              />
+              <datalist id="known-waiver-types">
+                {knownTypes.map((t) => (
+                  <option key={t} value={t} />
+                ))}
+              </datalist>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Live</label>
+              <label className="flex items-center gap-2 text-sm pt-1">
+                <input
+                  type="checkbox"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.target.checked)}
+                />
+                <span>Show on the public Blank Waivers page</span>
+              </label>
             </div>
           </div>
 
@@ -290,9 +344,9 @@ export default function WaiverTemplateEditorPage() {
             <h2 className="text-sm font-bold text-gray-800">Content Sections</h2>
             <button
               onClick={addSection}
-              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              className="rounded-md bg-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-300 transition-colors"
             >
-              + Add Section
+              Add Section
             </button>
           </div>
 

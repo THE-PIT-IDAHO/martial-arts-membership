@@ -30,6 +30,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         name,
         slug,
         audience: source.audience,
+        type: source.type,
         content: source.content,
         options: source.options,
         isActive: true,
