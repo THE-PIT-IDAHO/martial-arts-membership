@@ -57,7 +57,10 @@ export async function GET(req: Request) {
               memberId: cls.coachId,
               classSessionId,
               attendanceDate: startOfDay,
-              source: "MANUAL",
+              // COACH_AUTO is the dedicated source for "auto coach-as-student"
+              // rows so the coach-swap logic on class edit can target them
+              // exclusively without ever touching manual check-ins.
+              source: "COACH_AUTO",
               confirmed: classHasStarted,
               requirementOverride: true,
             },

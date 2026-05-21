@@ -143,23 +143,21 @@ export async function PATCH(req: Request, { params }: Params) {
       },
     });
 
-    // If the coach changed, transfer existing coach-credited attendance rows
-    // (past + future) to the new coach. The marker is requirementOverride=true,
-    // which the lazy-create + cron set for the auto coach row. We only touch
-    // rows that match the OLD coach — manual attendance from another member
-    // who happens to have shared the slot stays intact.
+    // If the coach changed, transfer auto-generated coach attendance rows
+    // (past + future) to the new coach. The marker is source="COACH_AUTO",
+    // a distinct value that ONLY the lazy-create + cron set. We used to
+    // match on requirementOverride=true here, but that flag is also used
+    // for manual check-ins where the student didn't meet rank requirements
+    // — which meant swapping a coach could destroy real student attendance.
+    // The new marker makes that impossible.
     const newCoachId: string | null = coachId !== undefined ? (coachId || null) : oldCoachId;
     if (coachId !== undefined && oldCoachId !== newCoachId) {
       if (oldCoachId && newCoachId) {
-        // Move the rows. Use updateMany so the unique constraint
-        // (memberId, classSessionId, attendanceDate) is enforced per row.
-        // If the new coach already has a row on the same date, the unique
-        // hit will throw — we swallow per-row by chunking with try/catch.
         const oldRows = await prisma.attendance.findMany({
           where: {
             classSessionId: id,
             memberId: oldCoachId,
-            requirementOverride: true,
+            source: "COACH_AUTO",
           },
           select: { id: true, attendanceDate: true },
         });
@@ -170,18 +168,18 @@ export async function PATCH(req: Request, { params }: Params) {
               data: { memberId: newCoachId },
             });
           } catch {
-            // New coach already had a row on this date — drop the old one
-            // so we don't have duplicates.
+            // Unique-constraint hit (new coach already has a row on this date)
+            // — drop the old one so we don't have duplicates.
             await prisma.attendance.delete({ where: { id: row.id } }).catch(() => {});
           }
         }
       } else if (oldCoachId && !newCoachId) {
-        // Coach was removed entirely — clear out the auto rows.
+        // Coach removed entirely — clear out the auto rows.
         await prisma.attendance.deleteMany({
           where: {
             classSessionId: id,
             memberId: oldCoachId,
-            requirementOverride: true,
+            source: "COACH_AUTO",
           },
         });
       }

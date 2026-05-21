@@ -116,7 +116,9 @@ async function handle() {
             memberId: s.coachId,
             classSessionId: s.id,
             attendanceDate: dayStart,
-            source: "MANUAL",
+            // Dedicated source so the coach-swap-on-edit logic can target
+            // these rows precisely; manual check-ins use "MANUAL".
+            source: "COACH_AUTO",
             confirmed: true,
             requirementOverride: true,
           },
