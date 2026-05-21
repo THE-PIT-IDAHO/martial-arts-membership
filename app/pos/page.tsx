@@ -211,9 +211,13 @@ export default function POSPage() {
   const [stripePolling, setStripePolling] = useState(false);
   const [savedCard, setSavedCard] = useState<{ brand: string; last4: string } | null>(null);
   const [cardPaymentData, setCardPaymentData] = useState<{
-    clientSecret: string; publishableKey: string; paymentIntentId: string;
+    clientSecret: string; publishableKey: string; paymentIntentId: string | null;
     amountCents: number; memberName: string; lineItems: unknown[];
     existingTransactionId: string | null | undefined; existingTransactionNumber: string | null | undefined;
+    // When true, the clientSecret is for a Stripe SetupIntent (no money
+    // moves — used for $0 first-month flows that still need to save the
+    // card for future recurring charges).
+    isSetupIntent?: boolean;
   } | null>(null);
 
   // Track if we've applied URL params
@@ -1131,7 +1135,8 @@ export default function POSPage() {
         const checkoutData = await checkoutRes.json();
 
         if (checkoutData.clientSecret) {
-          // Show embedded card modal
+          // Show embedded card modal. isSetupIntent is true for $0 flows
+          // where we're collecting + saving the card without charging it.
           setCardPaymentData({
             clientSecret: checkoutData.clientSecret,
             publishableKey: checkoutData.publishableKey,
@@ -1141,6 +1146,7 @@ export default function POSPage() {
             lineItems,
             existingTransactionId,
             existingTransactionNumber,
+            isSetupIntent: !!checkoutData.isSetupIntent,
           });
           setProcessing(false);
           return;
@@ -2696,7 +2702,16 @@ export default function POSPage() {
 }
 
 function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
-  data: { clientSecret: string; publishableKey: string; paymentIntentId: string; amountCents: number; memberName: string };
+  data: {
+    clientSecret: string;
+    publishableKey: string;
+    paymentIntentId: string | null;
+    amountCents: number;
+    memberName: string;
+    // True when clientSecret is for a Stripe SetupIntent (no charge, just
+    // collect + save the card for future use).
+    isSetupIntent?: boolean;
+  };
   memberId?: string | null;
   onClose: () => void;
   onSuccess: (paymentIntentId: string) => void;
@@ -2734,6 +2749,38 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
     setSaving(true);
     setError("");
 
+    // SetupIntent path: $0 total. We collect + save the card without
+    // charging it; recurring billing will hit the saved card later.
+    if (data.isSetupIntent) {
+      const { error: setupError, setupIntent } = await stripe.confirmCardSetup(data.clientSecret, {
+        payment_method: {
+          card: elements.getElement("card")!,
+          billing_details: { name: data.memberName || undefined },
+        },
+      });
+      if (setupError) {
+        setError(setupError.message || "Card save failed");
+        setSaving(false);
+        return;
+      }
+      if (setupIntent?.status === "succeeded") {
+        if (memberId && setupIntent.payment_method) {
+          const pmId = typeof setupIntent.payment_method === "string"
+            ? setupIntent.payment_method
+            : setupIntent.payment_method.id;
+          // Always default-save in the $0 flow — that's the whole point.
+          await fetch(`/api/members/${memberId}/payment-methods/${pmId}/default`, { method: "PUT" }).catch(() => {});
+        }
+        // No PaymentIntent ID exists; transaction record gets a null id.
+        onSuccess("");
+      } else {
+        setError("Card was not saved");
+        setSaving(false);
+      }
+      return;
+    }
+
+    // Standard PaymentIntent path: actually charges the card.
     const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(data.clientSecret, {
       payment_method: {
         card: elements.getElement("card")!,
@@ -2748,7 +2795,6 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
     }
 
     if (paymentIntent?.status === "succeeded") {
-      // Save card to member profile if checkbox is checked
       if (saveCard && memberId && paymentIntent.payment_method) {
         const pmId = typeof paymentIntent.payment_method === "string" ? paymentIntent.payment_method : paymentIntent.payment_method.id;
         fetch(`/api/members/${memberId}/payment-methods/${pmId}/default`, { method: "PUT" }).catch(() => {});
@@ -2764,7 +2810,11 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div className="w-full max-w-sm rounded-lg bg-white shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-          <h2 className="text-sm font-bold text-gray-900">Card Payment — ${(data.amountCents / 100).toFixed(2)}</h2>
+          <h2 className="text-sm font-bold text-gray-900">
+            {data.isSetupIntent
+              ? "Save Card — $0.00 today"
+              : `Card Payment — $${(data.amountCents / 100).toFixed(2)}`}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
@@ -2776,11 +2826,18 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
               <input type="text" defaultValue={data.memberName} readOnly className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-gray-50 text-gray-600" />
             </div>
           )}
+          {data.isSetupIntent && (
+            <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+              No charge today. Your card will be saved on file and used for any
+              recurring membership payments.
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Card Details</label>
             <div ref={cardRef} className="rounded-md border border-gray-300 px-3 py-2.5" />
           </div>
-          {memberId && (
+          {/* Save-as-default is implicit in the SetupIntent flow — no checkbox needed. */}
+          {memberId && !data.isSetupIntent && (
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -2795,7 +2852,11 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
             <button type="submit" disabled={saving || !stripe} className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
-              {saving ? "Processing..." : `Pay $${(data.amountCents / 100).toFixed(2)}`}
+              {saving
+                ? "Processing..."
+                : data.isSetupIntent
+                  ? "Save Card"
+                  : `Pay $${(data.amountCents / 100).toFixed(2)}`}
             </button>
           </div>
         </form>

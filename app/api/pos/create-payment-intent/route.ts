@@ -16,20 +16,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
   }
 
-  // $0 totals (e.g. 100%-off first month, fully redeemed gift cert) skip
-  // Stripe entirely — there's no payment to capture. We return a shape the
-  // frontend already handles (clientSecret null → falls through to the
-  // standard non-card transaction-create path).
-  if (amountCents === 0) {
-    return NextResponse.json({
-      clientSecret: null,
-      publishableKey: null,
-      paymentIntentId: null,
-      memberName: memberName || "",
-      noPaymentNeeded: true,
-    });
-  }
-
   const stripeClient = await getStripeClient();
   if (!stripeClient) {
     return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
@@ -81,6 +67,41 @@ export async function POST(req: Request) {
   }
 
   try {
+    // $0 totals (e.g. 100%-off first month) can't go through PaymentIntent
+    // — Stripe rejects amount=0. If there's a Stripe customer, fall back
+    // to a SetupIntent so the card-entry form still appears, the card
+    // gets collected and saved on the customer, and future recurring
+    // charges can hit it normally. Without a customer there's nowhere to
+    // save the card, so we just return a no-payment signal.
+    if (amountCents === 0) {
+      if (!stripeCustomerId) {
+        return NextResponse.json({
+          clientSecret: null,
+          publishableKey: null,
+          paymentIntentId: null,
+          memberName: memberName || "",
+          noPaymentNeeded: true,
+        });
+      }
+      const setupIntent = await stripeClient.setupIntents.create({
+        customer: stripeCustomerId,
+        payment_method_types: ["card"],
+        usage: "off_session",
+        metadata: {
+          source: "admin_pos",
+          ...(metadata || {}),
+        },
+      });
+      return NextResponse.json({
+        clientSecret: setupIntent.client_secret,
+        publishableKey,
+        paymentIntentId: null,
+        setupIntentId: setupIntent.id,
+        isSetupIntent: true,
+        memberName: memberName || "",
+      });
+    }
+
     const paymentIntent = await stripeClient.paymentIntents.create({
       amount: amountCents,
       currency: currency.toLowerCase(),
