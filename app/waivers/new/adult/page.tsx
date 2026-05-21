@@ -33,20 +33,23 @@ const DEFAULT_GYM_SETTINGS: GymSettings = {
   email: "",
 };
 
-// Function to replace placeholders with actual values
+// Function to replace placeholders with actual values.
+// {{PARENT_GUARDIAN}} is blank on the adult form — there's no guardian on
+// this flow. The guardian form has its own replacer that fills it in.
 function replacePlaceholders(
   text: string,
   gym: GymSettings,
-  participantName?: string
+  participantName?: string,
+  participantFirst?: string,
+  participantLast?: string,
 ): string {
   if (!text) return text;
 
   let result = text;
 
-  // Member placeholders
   result = result.replace(/\{\{MEMBER_NAME\}\}/g, participantName || "");
-  result = result.replace(/\{\{MEMBER_FIRST_NAME\}\}/g, "");
-  result = result.replace(/\{\{MEMBER_LAST_NAME\}\}/g, "");
+  result = result.replace(/\{\{MEMBER_FIRST_NAME\}\}/g, participantFirst || "");
+  result = result.replace(/\{\{MEMBER_LAST_NAME\}\}/g, participantLast || "");
   result = result.replace(/\{\{PARENT_GUARDIAN\}\}/g, "");
 
   // Gym placeholders
@@ -334,7 +337,7 @@ export default function AdultWaiverPage() {
         ],
         sections: waiverSections,
         replacePlaceholders: (t) =>
-          replacePlaceholders(t, gymSettings, `${firstName} ${lastName}`),
+          replacePlaceholders(t, gymSettings, `${firstName} ${lastName}`, firstName, lastName),
         signatures: [
           {
             title: "Signature",
@@ -691,7 +694,13 @@ export default function AdultWaiverPage() {
               >
                 {waiverSections.map((section) => (
                   <p key={section.id}>
-                    {section.title && <strong>{section.title}:</strong>} {replacePlaceholders(section.content, gymSettings, firstName && lastName ? `${firstName} ${lastName}` : "")}
+                    {section.title && <strong>{section.title}:</strong>} {replacePlaceholders(
+                      section.content,
+                      gymSettings,
+                      firstName && lastName ? `${firstName} ${lastName}` : "",
+                      firstName,
+                      lastName,
+                    )}
                   </p>
                 ))}
               </div>

@@ -43,21 +43,27 @@ const DEFAULT_WAIVER_OPTIONS: WaiverOptions = {
   includeMinorEmail: true,
 };
 
-// Function to replace placeholders with actual values
+// Function to replace placeholders with actual values.
+// memberFirst/memberLast feed the {{MEMBER_FIRST_NAME}} / {{MEMBER_LAST_NAME}}
+// tags. parentGuardian feeds {{PARENT_GUARDIAN}} — callers pass the
+// guardian's name on the child's copy and an empty string on the parent's
+// own copy (where the parent IS the member).
 function replacePlaceholders(
   text: string,
   gym: GymSettings,
-  dependentName?: string
+  memberName?: string,
+  memberFirst?: string,
+  memberLast?: string,
+  parentGuardian?: string,
 ): string {
   if (!text) return text;
 
   let result = text;
 
-  // Member placeholders - use dependent name
-  result = result.replace(/\{\{MEMBER_NAME\}\}/g, dependentName || "my minor child");
-  result = result.replace(/\{\{MEMBER_FIRST_NAME\}\}/g, "");
-  result = result.replace(/\{\{MEMBER_LAST_NAME\}\}/g, "");
-  result = result.replace(/\{\{PARENT_GUARDIAN\}\}/g, "");
+  result = result.replace(/\{\{MEMBER_NAME\}\}/g, memberName || "my minor child");
+  result = result.replace(/\{\{MEMBER_FIRST_NAME\}\}/g, memberFirst || "");
+  result = result.replace(/\{\{MEMBER_LAST_NAME\}\}/g, memberLast || "");
+  result = result.replace(/\{\{PARENT_GUARDIAN\}\}/g, parentGuardian || "");
 
   // Gym placeholders
   result = result.replace(/\{\{GYM_NAME\}\}/g, gym.name || "[Gym Name]");
@@ -526,7 +532,14 @@ export default function GuardianWaiverPage() {
         ],
         sections: waiverSections,
         replacePlaceholders: (t) =>
-          replacePlaceholders(t, gymSettings, `${dependentFirstName} ${dependentLastName}`),
+          replacePlaceholders(
+            t,
+            gymSettings,
+            `${dependentFirstName} ${dependentLastName}`,
+            dependentFirstName,
+            dependentLastName,
+            `${guardianFirstName} ${guardianLastName}`.trim(),
+          ),
         signatures: [
           {
             title: `${isGuardianFlavor ? "Guardian" : "Parent"} Signature`,
@@ -576,7 +589,14 @@ export default function GuardianWaiverPage() {
         ],
         sections: waiverSections,
         replacePlaceholders: (t) =>
-          replacePlaceholders(t, gymSettings, `${guardianFirstName} ${guardianLastName}`),
+          replacePlaceholders(
+            t,
+            gymSettings,
+            `${guardianFirstName} ${guardianLastName}`,
+            guardianFirstName,
+            guardianLastName,
+            "",
+          ),
         signatures: [
           {
             title: "Signature",
@@ -1122,7 +1142,14 @@ export default function GuardianWaiverPage() {
               >
                 {waiverSections.map((section) => (
                   <p key={section.id}>
-                    {section.title && <strong>{section.title}:</strong>} {replacePlaceholders(section.content, gymSettings, dependentFirstName && dependentLastName ? `${dependentFirstName} ${dependentLastName}` : "my minor child")}
+                    {section.title && <strong>{section.title}:</strong>} {replacePlaceholders(
+                      section.content,
+                      gymSettings,
+                      dependentFirstName && dependentLastName ? `${dependentFirstName} ${dependentLastName}` : "my minor child",
+                      dependentFirstName,
+                      dependentLastName,
+                      `${guardianFirstName || ""} ${guardianLastName || ""}`.trim(),
+                    )}
                   </p>
                 ))}
               </div>
