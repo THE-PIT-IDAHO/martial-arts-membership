@@ -610,17 +610,26 @@ export default function ClassesPage() {
           }
         }
 
-        // Create new instances with updated data
+        // Create new instances with updated data. The first occurrence's
+        // date comes from scheduleStartDate when set (so admin can put the
+        // class in the past or a future window), else from "today". Without
+        // honoring scheduleStartDate, the form would always jump forward to
+        // the next future occurrence regardless of what date you typed.
         const newClasses: ClassSession[] = [];
-        const now = new Date();
-        const currentDayIndex = now.getDay();
+        const explicitBase = !!scheduleStartDate;
+        const baseDate = explicitBase ? new Date(scheduleStartDate) : new Date();
+        const baseDayIndex = baseDate.getDay();
 
         for (const schedule of daySchedules) {
           const dayIndex = DAYS_OF_WEEK.indexOf(schedule.day);
-          let daysUntilClass = (dayIndex + 1 - currentDayIndex + 7) % 7;
-          if (daysUntilClass === 0) daysUntilClass = 7;
+          const targetGetDay = (dayIndex + 1) % 7; // DAYS_OF_WEEK starts Mon (0); getDay() starts Sun (0).
+          let daysUntilClass = (targetGetDay - baseDayIndex + 7) % 7;
+          // For implicit base (today), skip same-day to avoid creating a
+          // class "today" unintentionally. For explicit base, same-day is
+          // the intended first occurrence.
+          if (!explicitBase && daysUntilClass === 0) daysUntilClass = 7;
 
-          const classDate = new Date(now);
+          const classDate = new Date(baseDate);
           classDate.setDate(classDate.getDate() + daysUntilClass);
 
           for (const time of schedule.times) {
@@ -695,17 +704,20 @@ export default function ClassesPage() {
         const oldClassIds = new Set(editingClasses.map(c => c.id));
         setClasses([...classes.filter(c => !oldClassIds.has(c.id)), ...newClasses]);
       } else {
-        // Create new class(es) - one for each day/time combination
+        // Create new class(es) - one for each day/time combination.
+        // Same scheduleStartDate-aware logic as the edit branch above.
         const newClasses: ClassSession[] = [];
-        const now = new Date();
-        const currentDayIndex = now.getDay();
+        const explicitBase = !!scheduleStartDate;
+        const baseDate = explicitBase ? new Date(scheduleStartDate) : new Date();
+        const baseDayIndex = baseDate.getDay();
 
         for (const schedule of daySchedules) {
           const dayIndex = DAYS_OF_WEEK.indexOf(schedule.day);
-          let daysUntilClass = (dayIndex + 1 - currentDayIndex + 7) % 7;
-          if (daysUntilClass === 0) daysUntilClass = 7;
+          const targetGetDay = (dayIndex + 1) % 7;
+          let daysUntilClass = (targetGetDay - baseDayIndex + 7) % 7;
+          if (!explicitBase && daysUntilClass === 0) daysUntilClass = 7;
 
-          const classDate = new Date(now);
+          const classDate = new Date(baseDate);
           classDate.setDate(classDate.getDate() + daysUntilClass);
 
           for (const time of schedule.times) {
