@@ -159,6 +159,22 @@ type DayOfWeek = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "S
 
 const DAYS_OF_WEEK: DayOfWeek[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
+// Group items that share the EXACT same start timestamp into sub-arrays.
+// The calendar renders each group as a single flex row so concurrent
+// classes appear side-by-side instead of stacked vertically. Returned
+// groups are sorted earliest-first.
+function groupByStartTime<T extends { startsAt: string }>(items: T[]): T[][] {
+  const map = new Map<number, T[]>();
+  for (const item of items) {
+    const key = new Date(item.startsAt).getTime();
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(item);
+  }
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a[0].startsAt).getTime() - new Date(b[0].startsAt).getTime(),
+  );
+}
+
 // Helper function to create a tint (lighter version) of a color
 function getTintedColor(hexColor: string, tintAmount: number = 0.7): string {
   // Convert hex to RGB
@@ -2489,50 +2505,53 @@ export default function CalendarPage() {
                   </div>
                 ) : (
                   <>
-                    {getClassesForDate(currentDate).map((classSession) => {
-                      const startTime = new Date(classSession.startsAt).toLocaleTimeString("en-US", {
-                        hour: "numeric",
-                        minute: "2-digit",
-                        hour12: true,
-                      });
-                      const endTime = new Date(classSession.endsAt).toLocaleTimeString("en-US", {
-                        hour: "numeric",
-                        minute: "2-digit",
-                        hour12: true,
-                      });
-
-                      const originalColor = classSession.color || "#a3a3a3";
-                      const bgColor = getTintedColor(originalColor, 0.7);
-                      const textColor = getTextColorForTint(originalColor);
-                      const borderColor = originalColor;
-
-                      return (
-                        <button
-                          key={classSession.id}
-                          onClick={() => handleClassClick(classSession, currentDate)}
-                          className="w-full rounded-lg border-l-4 border p-4 text-left transition-opacity hover:opacity-90"
-                          style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: borderColor, borderColor: bgColor }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="text-sm font-semibold">
-                                {classSession.name}
+                    {/* Same-start-time classes share a row, each at 1/N width. */}
+                    {groupByStartTime(getClassesForDate(currentDate)).map((group, gi) => (
+                      <div key={`day-cls-row-${gi}`} className="flex gap-2">
+                        {group.map((classSession) => {
+                          const startTime = new Date(classSession.startsAt).toLocaleTimeString("en-US", {
+                            hour: "numeric",
+                            minute: "2-digit",
+                            hour12: true,
+                          });
+                          const endTime = new Date(classSession.endsAt).toLocaleTimeString("en-US", {
+                            hour: "numeric",
+                            minute: "2-digit",
+                            hour12: true,
+                          });
+                          const originalColor = classSession.color || "#a3a3a3";
+                          const bgColor = getTintedColor(originalColor, 0.7);
+                          const textColor = getTextColorForTint(originalColor);
+                          const borderColor = originalColor;
+                          return (
+                            <button
+                              key={classSession.id}
+                              onClick={() => handleClassClick(classSession, currentDate)}
+                              className="flex-1 min-w-0 rounded-lg border-l-4 border p-4 text-left transition-opacity hover:opacity-90"
+                              style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: borderColor, borderColor: bgColor }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold truncate">
+                                    {classSession.name}
+                                  </div>
+                                  <div className="text-xs opacity-80 truncate">{classSession.classType}</div>
+                                  {getSpaceName(classSession.spaceId) && (
+                                    <div className="text-xs opacity-70 truncate">{getSpaceName(classSession.spaceId)}</div>
+                                  )}
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <div className="text-sm font-medium">{startTime} - {endTime}</div>
+                                  {classSession.styleNames && (
+                                    <div className="text-xs opacity-80 truncate">{classSession.styleNames}</div>
+                                  )}
+                                </div>
                               </div>
-                              <div className="text-xs opacity-80">{classSession.classType}</div>
-                              {getSpaceName(classSession.spaceId) && (
-                                <div className="text-xs opacity-70">{getSpaceName(classSession.spaceId)}</div>
-                              )}
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-medium">{startTime} - {endTime}</div>
-                              {classSession.styleNames && (
-                                <div className="text-xs opacity-80">{classSession.styleNames}</div>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
                     {getApptsForDate(currentDate).map((appt) => (
                       <div
                         key={appt.id}
@@ -2621,31 +2640,37 @@ export default function CalendarPage() {
                     } bg-white`}
                   >
                     <div className="space-y-1">
-                      {classes.map((classSession) => {
-                        const startTime = new Date(classSession.startsAt).toLocaleTimeString("en-US", {
-                          hour: "numeric",
-                          minute: "2-digit",
-                          hour12: true,
-                        });
-
-                        const originalColor = classSession.color || "#a3a3a3";
-                        const bgColor = getTintedColor(originalColor, 0.7);
-                        const textColor = getTextColorForTint(originalColor);
-                        const borderColor = originalColor;
-
-                        return (
-                          <button
-                            key={classSession.id}
-                            onClick={() => handleClassClick(classSession, date)}
-                            className="w-full rounded border-l-2 px-2 py-1 text-left text-xs transition-opacity hover:opacity-90"
-                            style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: borderColor }}
-                          >
-                            <div className="font-medium">{startTime}</div>
-                            <div className="truncate">{classSession.name}</div>
-                            {getSpaceName(classSession.spaceId) && <div className="truncate text-[10px] opacity-70">{getSpaceName(classSession.spaceId)}</div>}
-                          </button>
-                        );
-                      })}
+                      {/* Classes at the same start time share a row, each
+                          taking 1/N of the row width. Solo classes still
+                          fill the row. flex-1 + min-w-0 makes the cells
+                          shrink and the inner text truncate cleanly. */}
+                      {groupByStartTime(classes).map((group, gi) => (
+                        <div key={`cls-row-${gi}`} className="flex gap-1">
+                          {group.map((classSession) => {
+                            const startTime = new Date(classSession.startsAt).toLocaleTimeString("en-US", {
+                              hour: "numeric",
+                              minute: "2-digit",
+                              hour12: true,
+                            });
+                            const originalColor = classSession.color || "#a3a3a3";
+                            const bgColor = getTintedColor(originalColor, 0.7);
+                            const textColor = getTextColorForTint(originalColor);
+                            const borderColor = originalColor;
+                            return (
+                              <button
+                                key={classSession.id}
+                                onClick={() => handleClassClick(classSession, date)}
+                                className="flex-1 min-w-0 rounded border-l-2 px-2 py-1 text-left text-xs transition-opacity hover:opacity-90"
+                                style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: borderColor }}
+                              >
+                                <div className="font-medium truncate">{startTime}</div>
+                                <div className="truncate">{classSession.name}</div>
+                                {getSpaceName(classSession.spaceId) && <div className="truncate text-[10px] opacity-70">{getSpaceName(classSession.spaceId)}</div>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
                       {appts.map((appt) => (
                         <div
                           key={appt.id}
@@ -2714,29 +2739,47 @@ export default function CalendarPage() {
                     </div>
 
                     <div className="space-y-0.5">
-                      {day.classes.map((classSession) => {
-                        const startTime = new Date(classSession.startsAt).toLocaleTimeString("en-US", {
-                          hour: "numeric",
-                          minute: "2-digit",
-                          hour12: true,
-                        });
-
-                        const originalColor = classSession.color || "#a3a3a3";
-                        const bgColor = getTintedColor(originalColor, 0.7);
-                        const textColor = getTextColorForTint(originalColor);
-                        const borderColor = originalColor;
-
+                      {/* Same-time classes share a row. Month view is the
+                          smallest cell, so cap at 5 visible per row and
+                          render a "+N" tag if there are more. */}
+                      {groupByStartTime(day.classes).map((group, gi) => {
+                        const MAX_PER_ROW = 5;
+                        const visible = group.slice(0, MAX_PER_ROW);
+                        const overflow = group.length - visible.length;
                         return (
-                          <button
-                            key={classSession.id}
-                            onClick={() => handleClassClick(classSession, day.date)}
-                            className="w-full rounded border-l-2 px-1 py-0.5 text-left text-[10px] transition-opacity hover:opacity-90"
-                            style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: borderColor }}
-                            title={`${classSession.name}\n${startTime}${getSpaceName(classSession.spaceId) ? `\n${getSpaceName(classSession.spaceId)}` : ""}${classSession.isRecurring ? "\n(Recurring)" : ""}`}
-                          >
-                            <div className="truncate font-medium">{startTime}</div>
-                            <div className="truncate">{classSession.name}</div>
-                          </button>
+                          <div key={`m-cls-row-${gi}`} className="flex gap-0.5">
+                            {visible.map((classSession) => {
+                              const startTime = new Date(classSession.startsAt).toLocaleTimeString("en-US", {
+                                hour: "numeric",
+                                minute: "2-digit",
+                                hour12: true,
+                              });
+                              const originalColor = classSession.color || "#a3a3a3";
+                              const bgColor = getTintedColor(originalColor, 0.7);
+                              const textColor = getTextColorForTint(originalColor);
+                              const borderColor = originalColor;
+                              return (
+                                <button
+                                  key={classSession.id}
+                                  onClick={() => handleClassClick(classSession, day.date)}
+                                  className="flex-1 min-w-0 rounded border-l-2 px-1 py-0.5 text-left text-[10px] transition-opacity hover:opacity-90"
+                                  style={{ backgroundColor: bgColor, color: textColor, borderLeftColor: borderColor }}
+                                  title={`${classSession.name}\n${startTime}${getSpaceName(classSession.spaceId) ? `\n${getSpaceName(classSession.spaceId)}` : ""}${classSession.isRecurring ? "\n(Recurring)" : ""}`}
+                                >
+                                  <div className="truncate font-medium">{startTime}</div>
+                                  <div className="truncate">{classSession.name}</div>
+                                </button>
+                              );
+                            })}
+                            {overflow > 0 && (
+                              <div
+                                className="shrink-0 self-stretch flex items-center px-1 rounded bg-gray-100 text-gray-700 text-[10px] font-semibold"
+                                title={`${overflow} more class${overflow === 1 ? "" : "es"} at ${new Date(group[0].startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`}
+                              >
+                                +{overflow}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                       {day.appointments.map((appt) => (
