@@ -108,19 +108,23 @@ export default function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 pb-safe">
-      <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
+      {/* flex-1 + min-w-0 lets every tab share the available width evenly
+          and shrink as small as needed on narrow phones (e.g. iPhone SE,
+          older Androids). The old min-w-[64px] forced ~384px total for 6
+          tabs, which overflowed and cut off the Profile button. */}
+      <div className="flex items-stretch h-16 max-w-lg mx-auto px-1">
         {visibleTabs.map((tab) => {
           const active = isActive(tab);
           return (
             <Link
               key={tab.label}
               href={tab.href}
-              className={`flex flex-col items-center justify-center gap-0.5 min-w-[64px] py-1 select-none ${
+              className={`flex flex-1 min-w-0 flex-col items-center justify-center gap-0.5 py-1 select-none ${
                 active ? "text-primary" : "text-gray-400"
               }`}
             >
               {tab.icon(active)}
-              <span className={`text-[10px] font-medium ${active ? "text-primary" : "text-gray-400"}`}>
+              <span className={`text-[10px] font-medium leading-tight truncate w-full text-center px-0.5 ${active ? "text-primary" : "text-gray-400"}`}>
                 {tab.label}
               </span>
             </Link>
