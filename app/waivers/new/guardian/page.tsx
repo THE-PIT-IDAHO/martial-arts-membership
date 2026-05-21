@@ -129,6 +129,7 @@ export default function GuardianWaiverPage() {
   // Guardian fields
   const [guardianFirstName, setGuardianFirstName] = useState("");
   const [guardianLastName, setGuardianLastName] = useState("");
+  const [guardianDateOfBirth, setGuardianDateOfBirth] = useState("");
   const [relationship, setRelationship] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -137,10 +138,17 @@ export default function GuardianWaiverPage() {
   const [state, setState] = useState("");
   const [zipCode, setZipCode] = useState("");
 
-  // Emergency Contact
-  const [emergencyContactName, setEmergencyContactName] = useState("");
+  // Emergency contact — captured per member so the same person can be saved
+  // with different relationships ("Aunt" to the kid, "Sister" to the parent).
+  // The dependent's contact defaults to "same as guardian's" since it's the
+  // common case; the toggle reveals separate fields when needed.
+  const [emergencyContactName, setEmergencyContactName] = useState(""); // guardian's
   const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
-  const [emergencyContactRelationship, setEmergencyContactRelationship] = useState("");
+  const [emergencyContactRelationship, setEmergencyContactRelationship] = useState(""); // to guardian
+  const [depEmergencyContactSameAsGuardian, setDepEmergencyContactSameAsGuardian] = useState(true);
+  const [depEmergencyContactName, setDepEmergencyContactName] = useState("");
+  const [depEmergencyContactPhone, setDepEmergencyContactPhone] = useState("");
+  const [depEmergencyContactRelationship, setDepEmergencyContactRelationship] = useState(""); // to dependent
 
   // Medical and agreement
   const [medicalNotes, setMedicalNotes] = useState("");
@@ -566,6 +574,7 @@ export default function GuardianWaiverPage() {
           dependentDateOfBirth: dependentDateOfBirth || undefined,
           guardianFirstName: guardianFirstName.trim(),
           guardianLastName: guardianLastName.trim(),
+          guardianDateOfBirth: guardianDateOfBirth || undefined,
           relationship: relationship || undefined,
           email: email || undefined,
           phone: phone || undefined,
@@ -573,8 +582,21 @@ export default function GuardianWaiverPage() {
           city: city || undefined,
           state: state || undefined,
           zipCode: zipCode || undefined,
+          // Guardian's emergency contact
           emergencyContactName: emergencyContactName || undefined,
           emergencyContactPhone: emergencyContactPhone || undefined,
+          emergencyContactRelationship: emergencyContactRelationship || undefined,
+          // Dependent's emergency contact — same name/phone as guardian's
+          // when toggle is on; relationship label always per-member.
+          dependentEmergencyContactName:
+            depEmergencyContactSameAsGuardian
+              ? (emergencyContactName || undefined)
+              : (depEmergencyContactName || undefined),
+          dependentEmergencyContactPhone:
+            depEmergencyContactSameAsGuardian
+              ? (emergencyContactPhone || undefined)
+              : (depEmergencyContactPhone || undefined),
+          dependentEmergencyContactRelationship: depEmergencyContactRelationship || undefined,
           medicalNotes: medicalNotes || undefined,
           pdfBase64,
           signatureData: signatureDataUrl || undefined,
@@ -600,6 +622,7 @@ export default function GuardianWaiverPage() {
     setDependentEmail("");
     setGuardianFirstName("");
     setGuardianLastName("");
+    setGuardianDateOfBirth("");
     setRelationship("");
     setPhone("");
     setEmail("");
@@ -610,6 +633,10 @@ export default function GuardianWaiverPage() {
     setEmergencyContactName("");
     setEmergencyContactPhone("");
     setEmergencyContactRelationship("");
+    setDepEmergencyContactSameAsGuardian(true);
+    setDepEmergencyContactName("");
+    setDepEmergencyContactPhone("");
+    setDepEmergencyContactRelationship("");
     setMedicalNotes("");
     setAgreedToTerms(false);
     setAgreedToGuardian(false);
@@ -823,6 +850,16 @@ export default function GuardianWaiverPage() {
                     className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
+                <div className="sm:col-span-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date of Birth *
+                  </label>
+                  <DateOfBirthPicker
+                    value={guardianDateOfBirth}
+                    onChange={setGuardianDateOfBirth}
+                    required
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Relationship to Minor *
@@ -912,10 +949,10 @@ export default function GuardianWaiverPage() {
               </div>
             </section>
 
-            {/* Emergency Contact */}
+            {/* Guardian's Emergency Contact */}
             <section>
               <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
-                Emergency Contact
+                Guardian&apos;s Emergency Contact
                 <span className="block sm:inline text-xs sm:text-sm font-normal text-gray-500 sm:ml-2 mt-1 sm:mt-0">(other than guardian)</span>
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
@@ -947,16 +984,76 @@ export default function GuardianWaiverPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Relationship
+                    Relationship to Guardian *
                   </label>
                   <input
                     type="text"
                     value={emergencyContactRelationship}
                     onChange={(e) => setEmergencyContactRelationship(autoCapitalize(e.target.value))}
-                    placeholder="e.g., Aunt, Uncle, etc."
+                    placeholder="e.g., Sister, Spouse"
+                    required
                     className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
+              </div>
+            </section>
+
+            {/* Dependent's Emergency Contact */}
+            <section>
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
+                Dependent&apos;s Emergency Contact
+              </h2>
+              <label className="flex items-center gap-2 mb-3 cursor-pointer text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={depEmergencyContactSameAsGuardian}
+                  onChange={(e) => setDepEmergencyContactSameAsGuardian(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 accent-primary"
+                />
+                Same person as guardian&apos;s emergency contact
+              </label>
+              {!depEmergencyContactSameAsGuardian && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Contact Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={depEmergencyContactName}
+                      onChange={(e) => setDepEmergencyContactName(autoCapitalize(e.target.value))}
+                      required={!depEmergencyContactSameAsGuardian}
+                      className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Contact Phone *
+                    </label>
+                    <input
+                      type="tel"
+                      value={depEmergencyContactPhone}
+                      onChange={(e) => setDepEmergencyContactPhone(formatPhoneNumber(e.target.value))}
+                      placeholder="(123) 456-7890"
+                      maxLength={14}
+                      required={!depEmergencyContactSameAsGuardian}
+                      className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Relationship to Dependent *
+                </label>
+                <input
+                  type="text"
+                  value={depEmergencyContactRelationship}
+                  onChange={(e) => setDepEmergencyContactRelationship(autoCapitalize(e.target.value))}
+                  placeholder="e.g., Aunt, Uncle, Grandparent"
+                  required
+                  className="w-full sm:max-w-xs rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
               </div>
             </section>
 

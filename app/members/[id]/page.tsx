@@ -107,6 +107,7 @@ type Member = {
   zipCode?: string | null;
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
+  emergencyContactRelationship?: string | null;
   parentGuardianName?: string | null;
   minorCommsMode?: string | null;
   notes?: string | null;
@@ -412,7 +413,13 @@ function RelationshipLabel({
     </Link>
   );
 
-  if (type === "PARENT") {
+  // Normalize the various stored forms — the public guardian-waiver flow
+  // stores "Parent of" / "Guardian of" (long form, with space), older code
+  // used the enum tokens "PARENT" / "CHILD" / "GUARDIAN". All of them need
+  // to invert correctly when viewed from the other side.
+  const norm = type.trim().toLowerCase();
+
+  if (norm === "parent" || norm === "parent of") {
     return (
       <>
         {isFrom ? "Parent of " : "Child of "}
@@ -420,7 +427,7 @@ function RelationshipLabel({
       </>
     );
   }
-  if (type === "CHILD") {
+  if (norm === "child" || norm === "child of") {
     return (
       <>
         {isFrom ? "Child of " : "Parent of "}
@@ -428,10 +435,18 @@ function RelationshipLabel({
       </>
     );
   }
-  if (type === "GUARDIAN") {
+  if (norm === "guardian" || norm === "guardian of") {
     return (
       <>
-        {isFrom ? "Guardian of " : "Guarded by "}
+        {isFrom ? "Guardian of " : "Dependent of "}
+        {linkedName}
+      </>
+    );
+  }
+  if (norm === "dependent" || norm === "dependent of") {
+    return (
+      <>
+        {isFrom ? "Dependent of " : "Guardian of "}
         {linkedName}
       </>
     );
@@ -537,6 +552,8 @@ export default function MemberProfilePage() {
   const [emergencyContactNameState, setEmergencyContactNameState] =
     useState("");
   const [emergencyContactPhoneState, setEmergencyContactPhoneState] =
+    useState("");
+  const [emergencyContactRelationshipState, setEmergencyContactRelationshipState] =
     useState("");
   const [parentGuardianName, setParentGuardianName] = useState("");
   const [minorCommsMode, setMinorCommsMode] = useState("both");
@@ -1290,6 +1307,7 @@ export default function MemberProfilePage() {
     setZipCode(m.zipCode || "");
     setEmergencyContactNameState(m.emergencyContactName || "");
     setEmergencyContactPhoneState(formatPhoneNumber(m.emergencyContactPhone || ""));
+    setEmergencyContactRelationshipState(m.emergencyContactRelationship || "");
     setParentGuardianName(m.parentGuardianName || "");
     setMinorCommsMode(m.minorCommsMode || "both");
     setEmailOptIn(m.emailOptIn !== false);
@@ -1501,6 +1519,7 @@ export default function MemberProfilePage() {
       zipCode: zipCode.trim() || null,
       emergencyContactName: emergencyContactNameState.trim() || null,
       emergencyContactPhone: emergencyContactPhoneState.trim() || null,
+      emergencyContactRelationship: emergencyContactRelationshipState.trim() || null,
       parentGuardianName: parentGuardianName.trim() || null,
       minorCommsMode,
       emailOptIn,
@@ -2401,6 +2420,11 @@ export default function MemberProfilePage() {
                         {member.emergencyContactName ? (
                           <>
                             {member.emergencyContactName}
+                            {member.emergencyContactRelationship && (
+                              <span className="text-gray-500 text-xs">
+                                {" "}({member.emergencyContactRelationship})
+                              </span>
+                            )}
                             {member.emergencyContactPhone &&
                               ` ${member.emergencyContactPhone}`}
                           </>
@@ -3067,6 +3091,17 @@ export default function MemberProfilePage() {
                         }
                         placeholder="(123) 456-7890"
                         maxLength={14}
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-medium text-gray-700">
+                        Emergency Contact Relationship
+                      </label>
+                      <input
+                        value={emergencyContactRelationshipState}
+                        onChange={(e) => setEmergencyContactRelationshipState(e.target.value)}
+                        placeholder="e.g., Aunt, Sister"
                         className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
                     </div>

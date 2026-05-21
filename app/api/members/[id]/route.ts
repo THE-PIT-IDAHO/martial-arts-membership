@@ -216,6 +216,7 @@ export async function PATCH(req: Request, { params }: Params) {
       zipCode,
       emergencyContactName,
       emergencyContactPhone,
+      emergencyContactRelationship,
       parentGuardianName,
       minorCommsMode,
       notes,
@@ -260,6 +261,8 @@ export async function PATCH(req: Request, { params }: Params) {
       updateData.emergencyContactName = emergencyContactName;
     if (emergencyContactPhone !== undefined)
       updateData.emergencyContactPhone = emergencyContactPhone;
+    if (emergencyContactRelationship !== undefined)
+      updateData.emergencyContactRelationship = emergencyContactRelationship || null;
     if (parentGuardianName !== undefined)
       updateData.parentGuardianName = parentGuardianName;
     if (minorCommsMode !== undefined)

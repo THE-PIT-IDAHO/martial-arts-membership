@@ -100,9 +100,10 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
 async function handleGuardianSubmit(body: Record<string, string>, clientId: string) {
   const {
     dependentFirstName, dependentLastName, dependentEmail, dependentDateOfBirth,
-    guardianFirstName, guardianLastName, relationship,
+    guardianFirstName, guardianLastName, guardianDateOfBirth, relationship,
     email, phone, address, city, state, zipCode,
-    emergencyContactName, emergencyContactPhone,
+    emergencyContactName, emergencyContactPhone, emergencyContactRelationship,
+    dependentEmergencyContactName, dependentEmergencyContactPhone, dependentEmergencyContactRelationship,
     medicalNotes, pdfBase64,
   } = body;
 
@@ -125,8 +126,12 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
       state: state || null,
       zipCode: zipCode || null,
       parentGuardianName: `${guardianFirstName || ""} ${guardianLastName || ""}`.trim() || null,
-      emergencyContactName: emergencyContactName || null,
-      emergencyContactPhone: emergencyContactPhone || null,
+      // Dependent's emergency contact — may be the same person as the
+      // guardian's contact (form sends the guardian's name/phone in that
+      // case) but the relationship is always the dependent's (e.g. "Aunt").
+      emergencyContactName: dependentEmergencyContactName || emergencyContactName || null,
+      emergencyContactPhone: dependentEmergencyContactPhone || emergencyContactPhone || null,
+      emergencyContactRelationship: dependentEmergencyContactRelationship || null,
       medicalNotes: medicalNotes || null,
       waiverSigned: false,
       status: "PROSPECT",
@@ -166,14 +171,17 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
       data: {
         firstName: guardianFirstName.trim(),
         lastName: guardianLastName.trim(),
+        dateOfBirth: guardianDateOfBirth ? new Date(guardianDateOfBirth) : null,
         email: email || null,
         phone: phone || null,
         address: address || null,
         city: city || null,
         state: state || null,
         zipCode: zipCode || null,
+        // Guardian's emergency contact + relationship label scoped to the guardian.
         emergencyContactName: emergencyContactName || null,
         emergencyContactPhone: emergencyContactPhone || null,
+        emergencyContactRelationship: emergencyContactRelationship || null,
         medicalNotes: medicalNotes || null,
         status: "PARENT",
         memberNumber: guardianNumber,

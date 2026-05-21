@@ -168,6 +168,10 @@ model Member {
   zipCode               String?
   emergencyContactName  String?
   emergencyContactPhone String?
+  // Free-text relationship to this member ("Aunt", "Sister", "Cousin").
+  // Per-member: one emergency contact name can be saved with different
+  // relationships across a household (Aunt to a kid, Sister to a parent).
+  emergencyContactRelationship String?
   parentGuardianName    String?
   minorCommsMode        String?               @default("both") // "both" or "parent_only"
   notes                 String?
