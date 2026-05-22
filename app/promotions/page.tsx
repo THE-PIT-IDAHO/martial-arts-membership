@@ -853,7 +853,6 @@ function EventDetailModal(props: {
   const [eligible, setEligible] = useState<EligibleRow[]>([]);
   const [loadingEligible, setLoadingEligible] = useState(true);
   const [adding, setAdding] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Inline edit panel state — toggled by the "Edit details" button at
   // the top of the modal. Snapshot the current event's values so Cancel
@@ -1053,21 +1052,6 @@ function EventDetailModal(props: {
     }
   }
 
-  async function addSelected() {
-    if (selected.size === 0) return;
-    setAdding(true);
-    try {
-      await fetch(`/api/promotion-events/${event.id}/participants`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memberIds: Array.from(selected) }),
-      });
-      setSelected(new Set());
-      await Promise.all([onChange(), loadEligible()]);
-    } finally {
-      setAdding(false);
-    }
-  }
 
   async function removeParticipant(participantId: string) {
     if (!confirm("Remove this member from the event?")) return;
@@ -1212,9 +1196,8 @@ function EventDetailModal(props: {
                 return a.memberName.localeCompare(b.memberName);
               });
             const rostered = rows.filter((r) => rosterMemberIdSet.has(r.memberId));
-            const addable = rows.filter((r) => !rosterMemberIdSet.has(r.memberId));
             for (const r of rostered) coveredRosterIds.add(r.memberId);
-            return { styleId, styleName, rostered, addable };
+            return { styleId, styleName, rostered };
           });
 
           // Participant rows not represented in any eligible row (e.g.
@@ -1224,21 +1207,13 @@ function EventDetailModal(props: {
 
           return (
             <>
-              {selected.size > 0 && (
-                <div className="sticky top-0 z-10 -mx-3 px-3 py-2 bg-white border-b border-gray-200 flex items-center justify-end">
-                  <button type="button" onClick={addSelected} disabled={adding} className={BTN_PRIMARY}>
-                    Add {selected.size} to roster
-                  </button>
-                </div>
-              )}
-
-              {styleSections.map(({ styleId, styleName, rostered, addable }) => (
+              {styleSections.map(({ styleId, styleName, rostered }) => (
                 <div key={styleId} className="border border-gray-200 rounded-md overflow-hidden">
                   <div className="flex items-center justify-between bg-gray-50 px-3 py-2 border-b border-gray-200">
                     <div className="text-sm font-semibold text-gray-800">
                       {styleName}
                       <span className="ml-2 text-[11px] font-normal text-gray-500">
-                        {rostered.length} on roster · {addable.length} eligible to add
+                        {rostered.length} on roster
                       </span>
                     </div>
                     <button
@@ -1286,43 +1261,6 @@ function EventDetailModal(props: {
                     )}
                   </div>
 
-                  {/* Eligible to add */}
-                  <div className="px-3 py-2 border-t border-gray-100">
-                    <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Eligible to Add</div>
-                    {addable.length === 0 ? (
-                      <div className="text-xs text-gray-400">No additional candidates.</div>
-                    ) : (
-                      <div className="divide-y divide-gray-100">
-                        {addable.map((r) => {
-                          const on = selected.has(r.memberId);
-                          return (
-                            <label key={`a-${r.memberId}-${r.styleId}`} className="flex items-center gap-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={on}
-                                onChange={() => setSelected((prev) => {
-                                  const n = new Set(prev);
-                                  if (n.has(r.memberId)) n.delete(r.memberId);
-                                  else n.add(r.memberId);
-                                  return n;
-                                })}
-                              />
-                              <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
-                                {r.fromRank || "—"}
-                              </span>
-                              <span className="flex-1">{r.memberName}</span>
-                              <span className="text-xs text-gray-500">→ {r.toRank}</span>
-                              {r.allRequirementsMet && (
-                                <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold uppercase">
-                                  Eligible
-                                </span>
-                              )}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
                 </div>
               ))}
 
