@@ -63,7 +63,13 @@ type EventRow = {
   participants: Array<{ id: string; memberId: string; status: string }>;
 };
 
-type StyleOption = { id: string; name: string };
+type StyleOption = {
+  id: string;
+  name: string;
+  // ranks ordered low → high (rank.order ascending) so the detail
+  // modal can sort browse / roster lists by belt position.
+  ranks?: Array<{ name: string; order: number }>;
+};
 
 type PaymentMethod = "CARD" | "CASH" | "ACCOUNT" | "CHECK";
 type TestResult = "PASSED" | "FAILED" | "NA";
@@ -157,7 +163,11 @@ export default function PromotionsPage() {
       }
       if (stRes.ok) {
         const d = await stRes.json();
-        setStyles((d.styles || []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name })));
+        setStyles((d.styles || []).map((s: { id: string; name: string; ranks?: Array<{ name: string; order: number }> }) => ({
+          id: s.id,
+          name: s.name,
+          ranks: (s.ranks || []).map((r) => ({ name: r.name, order: r.order })),
+        })));
       }
     } finally {
       setLoading(false);
@@ -1358,38 +1368,37 @@ function EventDetailModal(props: {
               placeholder="Type at least 2 letters of a name…"
               className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary"
             />
-            {manualQuery.trim().length >= 2 && (
-              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
-                {manualSearching ? (
-                  <div className="text-xs text-gray-500 px-3 py-2">Searching…</div>
-                ) : manualResults.length === 0 ? (
-                  <div className="text-xs text-gray-400 px-3 py-2">No matches.</div>
-                ) : (
-                  manualResults.map((m) => {
-                    const alreadyOn = event.participants.some((p) => p.memberId === m.id);
-                    return (
+            {manualQuery.trim().length >= 2 && (() => {
+              const rosterIdSet = new Set(event.participants.map((p) => p.memberId));
+              // Drop already-rostered members from the result list — same
+              // disappear-on-add behavior as the browse-by-style lists.
+              const visible = manualResults.filter((m) => !rosterIdSet.has(m.id));
+              return (
+                <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
+                  {manualSearching ? (
+                    <div className="text-xs text-gray-500 px-3 py-2">Searching…</div>
+                  ) : visible.length === 0 ? (
+                    <div className="text-xs text-gray-400 px-3 py-2">
+                      {manualResults.length === 0 ? "No matches." : "All matches are already on the roster."}
+                    </div>
+                  ) : (
+                    visible.map((m) => (
                       <div key={m.id} className="flex items-center justify-between px-3 py-1.5 text-sm">
                         <span>{m.firstName} {m.lastName}</span>
-                        {alreadyOn ? (
-                          <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-400">
-                            Already on roster
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => addManually(m.id)}
-                            disabled={adding}
-                            className={BTN_PRIMARY}
-                          >
-                            Add
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => addManually(m.id)}
+                          disabled={adding}
+                          className={BTN_PRIMARY}
+                        >
+                          Add
+                        </button>
                       </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
+                    ))
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -1399,53 +1408,60 @@ function EventDetailModal(props: {
         {eventStyleIds.length > 0 && (
           <div className="space-y-3">
             {eventStyleIds.map((styleId) => {
-              const styleName = styles.find((s) => s.id === styleId)?.name || "Style";
-              const list = (styleMembers[styleId] || []).slice().sort((a, b) =>
-                `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`),
-              );
+              const styleOption = styles.find((s) => s.id === styleId);
+              const styleName = styleOption?.name || "Style";
+              // Build rank-name → order map so members sort by belt
+              // position low → high inside this style's section. Unknown
+              // ranks (or members with no rank in stylesNotes) sort last.
+              const rankOrderByName = new Map<string, number>();
+              for (const r of styleOption?.ranks || []) {
+                rankOrderByName.set(r.name.toLowerCase(), r.order);
+              }
               const rosterIdSet = new Set(event.participants.map((p) => p.memberId));
+              const list = (styleMembers[styleId] || [])
+                // Once added, the member disappears from this browse
+                // list (no "Already on roster" placeholder).
+                .filter((m) => !rosterIdSet.has(m.id))
+                .slice()
+                .sort((a, b) => {
+                  const ra = rankOrderByName.get(rankForStyle(a, styleName).toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+                  const rb = rankOrderByName.get(rankForStyle(b, styleName).toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+                  if (ra !== rb) return ra - rb;
+                  return `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`);
+                });
               return (
                 <div key={`browse-${styleId}`} className="border border-gray-200 rounded-md overflow-hidden">
                   <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 text-sm font-semibold text-gray-800">
                     All members of {styleName}
                     <span className="ml-2 text-[11px] font-normal text-gray-500">
-                      {list.length} total
+                      {list.length} not yet on roster
                     </span>
                   </div>
                   <div className="px-3 py-2">
                     {loadingStyleMembers && list.length === 0 ? (
                       <div className="text-xs text-gray-500">Loading…</div>
                     ) : list.length === 0 ? (
-                      <div className="text-xs text-gray-400">No members enrolled in this style.</div>
+                      <div className="text-xs text-gray-400">Everyone in this style is already on the roster.</div>
                     ) : (
                       <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
-                        {list.map((m) => {
-                          const alreadyOn = rosterIdSet.has(m.id);
-                          return (
-                            <div key={`${styleId}-${m.id}`} className="flex items-center justify-between py-1.5 text-sm">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
-                                  {rankForStyle(m, styleName)}
-                                </span>
-                                <span>{m.firstName} {m.lastName}</span>
-                              </div>
-                              {alreadyOn ? (
-                                <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-400">
-                                  Already on roster
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => addManually(m.id)}
-                                  disabled={adding}
-                                  className={BTN_PRIMARY}
-                                >
-                                  Add
-                                </button>
-                              )}
+                        {list.map((m) => (
+                          <div key={`${styleId}-${m.id}`} className="flex items-center justify-between py-1.5 text-sm">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
+                                {rankForStyle(m, styleName)}
+                              </span>
+                              <span>{m.firstName} {m.lastName}</span>
                             </div>
-                          );
-                        })}
+                            <button
+                              type="button"
+                              onClick={() => addManually(m.id)}
+                              disabled={adding}
+                              className={BTN_PRIMARY}
+                            >
+                              Add
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
