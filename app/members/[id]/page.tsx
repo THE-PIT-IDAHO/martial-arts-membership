@@ -604,6 +604,15 @@ export default function MemberProfilePage() {
   // signed contracts (fetched separately so we don't ship pdfData with the
   // member payload — contracts are loaded on demand from the secure proxy).
   const [memberContracts, setMemberContracts] = useState<Array<{ id: string; planName: string; fileName: string | null; signedAt: string }>>([]);
+  // Aggregated contracts from dependents in a parent/guardian rel — mirrors
+  // childWaivers so the parent's profile owns the dependent's paperwork.
+  const [childContracts, setChildContracts] = useState<Array<{
+    id: string;
+    childMemberId: string;
+    childFirstName: string;
+    planName: string;
+    signedAt: string;
+  }>>([]);
 
   // curriculum
   const [memberCurricula, setMemberCurricula] = useState<Record<string, CurriculumRankTest[]>>({});
@@ -760,24 +769,47 @@ export default function MemberProfilePage() {
             const lower = (r.relationship || "").toLowerCase();
             return lower.includes("parent") || lower.includes("guardian");
           });
-          if (childRels.length === 0) { setChildWaivers([]); return; }
-          const collected: Array<{ id: string; childMemberId: string; childFirstName: string; signedAt: string; hasPdf: boolean }> = [];
+          if (childRels.length === 0) {
+            setChildWaivers([]);
+            setChildContracts([]);
+            return;
+          }
+          const collectedWaivers: Array<{ id: string; childMemberId: string; childFirstName: string; signedAt: string; hasPdf: boolean }> = [];
+          const collectedContracts: Array<{ id: string; childMemberId: string; childFirstName: string; planName: string; signedAt: string }> = [];
           await Promise.all(childRels.map(async (r) => {
+            // Waivers
             const wRes = await fetch(`/api/waivers/signed/${r.toMember.id}`).catch(() => null);
-            if (!wRes || !wRes.ok) return;
-            const d = await wRes.json().catch(() => null);
-            const waivers: Array<{ id: string; signedAt: string; hasPdf?: boolean }> = d?.waivers || [];
-            for (const w of waivers) {
-              collected.push({
-                id: w.id,
-                childMemberId: r.toMember.id,
-                childFirstName: r.toMember.firstName,
-                signedAt: w.signedAt,
-                hasPdf: !!w.hasPdf,
-              });
+            if (wRes && wRes.ok) {
+              const d = await wRes.json().catch(() => null);
+              const waivers: Array<{ id: string; signedAt: string; hasPdf?: boolean }> = d?.waivers || [];
+              for (const w of waivers) {
+                collectedWaivers.push({
+                  id: w.id,
+                  childMemberId: r.toMember.id,
+                  childFirstName: r.toMember.firstName,
+                  signedAt: w.signedAt,
+                  hasPdf: !!w.hasPdf,
+                });
+              }
+            }
+            // Contracts
+            const cRes = await fetch(`/api/contracts?memberId=${r.toMember.id}`).catch(() => null);
+            if (cRes && cRes.ok) {
+              const d = await cRes.json().catch(() => null);
+              const contracts: Array<{ id: string; planName: string; signedAt: string }> = d?.contracts || [];
+              for (const c of contracts) {
+                collectedContracts.push({
+                  id: c.id,
+                  childMemberId: r.toMember.id,
+                  childFirstName: r.toMember.firstName,
+                  planName: c.planName,
+                  signedAt: c.signedAt,
+                });
+              }
             }
           }));
-          setChildWaivers(collected);
+          setChildWaivers(collectedWaivers);
+          setChildContracts(collectedContracts);
         })
         .catch(() => {});
 
@@ -4793,13 +4825,16 @@ export default function MemberProfilePage() {
                   // short-circuited even when their waiver row + PDF existed.
                   //
                   // Dependents (children of a parent/guardian on file) never
-                  // show their own waiver card here — the legal copy is on
-                  // the parent's profile — so don't count it for the guard.
+                  // show their own waivers OR contracts here — the legal
+                  // copies live on the parent's profile, mirrored via
+                  // childWaivers + childContracts.
                   const showOwnWaivers = !isDependent;
+                  const showOwnContracts = !isDependent;
                   const hasAnyDoc =
                     styleDocuments.length > 0
                     || rankPdfs.length > 0
-                    || memberContracts.length > 0
+                    || (showOwnContracts && memberContracts.length > 0)
+                    || childContracts.length > 0
                     || (showOwnWaivers && signedWaivers.some(w => w.hasPdf))
                     || childWaivers.some(w => w.hasPdf);
                   if (!hasAnyDoc) {
@@ -4842,7 +4877,7 @@ export default function MemberProfilePage() {
                         </div>
                       ))}
 
-                      {(styleDocuments.length > 0 || memberContracts.length > 0 || (showOwnWaivers && signedWaivers.some(w => w.hasPdf)) || childWaivers.some(w => w.hasPdf)) && (
+                      {(styleDocuments.length > 0 || (showOwnContracts && memberContracts.length > 0) || childContracts.length > 0 || (showOwnWaivers && signedWaivers.some(w => w.hasPdf)) || childWaivers.some(w => w.hasPdf)) && (
                         <div>
                           <div className="flex items-center gap-2 mb-2">
                             <div className="h-px flex-1 bg-gray-200" />
@@ -4895,8 +4930,10 @@ export default function MemberProfilePage() {
                                 </button>
                               );
                             })}
-                            {/* Then contracts. */}
-                            {memberContracts.map((c) => (
+                            {/* Then contracts — own first (hidden for
+                                dependents), then aggregated children's
+                                contracts labeled with the kid's name. */}
+                            {showOwnContracts && memberContracts.map((c) => (
                               <button
                                 key={`contract-${c.id}`}
                                 type="button"
@@ -4912,6 +4949,25 @@ export default function MemberProfilePage() {
                                 <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{c.planName}</span>
                               </button>
                             ))}
+                            {childContracts.map((c) => {
+                              const label = `${c.childFirstName} — ${c.planName}`;
+                              return (
+                                <button
+                                  key={`childcontract-${c.id}`}
+                                  type="button"
+                                  onClick={() => openPdf(`/api/contracts/${c.id}/pdf`)}
+                                  className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
+                                  title={`${label} — signed ${new Date(c.signedAt).toLocaleDateString()}`}
+                                >
+                                  <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
+                                    <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
+                                    <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
+                                    <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
+                                  </svg>
+                                  <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{label}</span>
+                                </button>
+                              );
+                            })}
 
                             {styleDocuments.map((doc) => (
                               <div key={doc.id} className="relative group">
