@@ -218,13 +218,16 @@ export default function WaiverTemplateEditorPage() {
       <div className="px-4 py-6 max-w-4xl mx-auto space-y-4">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div>
-            <Link href="/waivers/templates" className="text-xs text-primary hover:underline">
-              ← Back to templates
-            </Link>
-            <h1 className="text-2xl font-bold mt-1">Edit Waiver Template</h1>
+            <h1 className="text-2xl font-bold">Edit Waiver Template</h1>
           </div>
           <div className="flex items-center gap-2">
             {savedAt && <span className="text-xs text-gray-500">Saved at {savedAt}</span>}
+            <Link
+              href="/waivers/templates"
+              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark transition-colors"
+            >
+              Back to Templates
+            </Link>
             <button
               onClick={save}
               disabled={saving || !name.trim() || sections.length === 0}
