@@ -44,6 +44,11 @@ type MembershipPlan = {
   contractLengthMonths: number | null; // Actually stores days
   cancellationNoticeDays: number | null;
   cancellationFeeCents: number | null;
+  // Editable per-plan cancellation procedure text. Renders inside the
+  // contract's Cancellation block (between the box title and the
+  // notice/fee rows) so admins can spell out exactly how a member is
+  // supposed to cancel.
+  cancellationProcedure: string | null;
   contractClauses: string | null;
   allowedStyles: string | null;
   // Access controls — surfaced on the contract only when the plan has
@@ -52,6 +57,14 @@ type MembershipPlan = {
   classesPerWeek: number | null;
   classesPerMonth: number | null;
   promoCode: string | null;
+  // Additional discount types attached at the plan level. None of these
+  // change the at-signup price (that's the cart-modal discount only) —
+  // they're surfaced on the contract as informational lines so the
+  // member sees every discount applicable to their plan.
+  familyDiscountPercent: number | null;
+  rankPromotionDiscountPercent: number | null;
+  rankPromotionDiscountFlatCents: number | null;
+  otherDiscountPercent: number | null;
   isActive: boolean;
 };
 
@@ -1016,28 +1029,49 @@ export default function POSPage() {
             } catch { /* ignore */ }
           }
 
-          // Build the rows. Empty values get filtered out by the lib, so
-          // unset access controls / promo code don't render — keeps the
-          // contract tight.
+          // Build a single "Discount Applied" line that lists every
+          // discount kind the plan + this signup carry — labeled inline
+          // ("(first payment only)", "(family)", etc.) so the member
+          // sees all applicable discounts together. The lib's value
+          // wrapper handles long strings.
+          const discountSegments: string[] = [];
+          if (showDiscount) {
+            discountSegments.push(`−${formatCents(discountAppliedCents)}${item.firstMonthDiscountOnly ? " (first payment only)" : " (manual)"}`);
+          }
+          if (plan?.familyDiscountPercent) {
+            discountSegments.push(`${plan.familyDiscountPercent}% (family)`);
+          }
+          if (plan?.rankPromotionDiscountPercent) {
+            discountSegments.push(`${plan.rankPromotionDiscountPercent}% (rank promotion fee)`);
+          }
+          if (plan?.rankPromotionDiscountFlatCents) {
+            discountSegments.push(`−${formatCents(plan.rankPromotionDiscountFlatCents)} (rank promotion fee)`);
+          }
+          if (plan?.otherDiscountPercent) {
+            discountSegments.push(`${plan.otherDiscountPercent}% (other)`);
+          }
+          const discountLine = discountSegments.join(", ");
+
+          // Build the rows in the order the admin requested. Empty
+          // values get filtered out by the lib, so unset access controls
+          // / promo code don't render — keeps the contract tight.
           const paymentMethodStr = describePaymentMethod();
           const planTermsRows: Array<{ label: string; value?: string | null }> = [
+            { label: "Start Date", value: item.membershipStartDate ? parseLocalDate(item.membershipStartDate).toLocaleDateString() : "" },
             ...(item.firstMonthDiscountOnly || showDiscount
               ? [{ label: "First Payment", value: formatCents(firstMonthCents) }]
               : []),
+            { label: "Contract Length", value: plan?.contractLengthMonths ? formatContractDuration(plan.contractLengthMonths) : "" },
             {
               label: item.firstMonthDiscountOnly ? "Recurring (after first payment)" : "Price",
               value: `${formatCents(recurringCents)}${suffix}`,
             },
-            ...(showDiscount
-              ? [{ label: "Discount Applied", value: `−${formatCents(discountAppliedCents)}${item.firstMonthDiscountOnly ? " (first payment only)" : ""}` }]
-              : []),
+            ...(discountLine ? [{ label: "Discount Applied", value: discountLine }] : []),
             ...(plan?.promoCode ? [{ label: "Promo Code", value: plan.promoCode }] : []),
             { label: "Billing Cycle", value: plan?.billingCycle ? plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase() : "Monthly" },
             { label: "Recurring Payments", value: "Yes — auto-charged each billing cycle until cancelled" },
             { label: "Payment Due", value: paymentDueLine(item.membershipStartDate, plan?.billingCycle) },
             ...(paymentMethodStr ? [{ label: "Payment Method", value: paymentMethodStr }] : []),
-            { label: "Start Date", value: item.membershipStartDate ? parseLocalDate(item.membershipStartDate).toLocaleDateString() : "" },
-            { label: "Contract Length", value: plan?.contractLengthMonths ? formatContractDuration(plan.contractLengthMonths) : "" },
             // Access controls — only render if the plan has values set.
             ...(plan?.classesPerDay ? [{ label: "Classes per Day", value: String(plan.classesPerDay) }] : []),
             ...(plan?.classesPerWeek ? [{ label: "Classes per Week", value: String(plan.classesPerWeek) }] : []),
@@ -1060,12 +1094,13 @@ export default function POSPage() {
           });
 
           // Cancellation block — only render if the plan has any
-          // cancellation policy. Cancellation procedure text is sourced
-          // from the global contract clauses (see Memberships page
-          // → Global Contract Clauses) so you can edit the wording.
-          if ((plan?.cancellationNoticeDays || plan?.cancellationFeeCents)) {
+          // cancellation policy OR a custom cancellation procedure set.
+          // The procedure text (editable per-plan on the memberships
+          // page) renders as the block's description.
+          if (plan?.cancellationNoticeDays || plan?.cancellationFeeCents || plan?.cancellationProcedure) {
             itemBlocks.push({
               title: `${item.itemName} — Cancellation`,
+              description: plan?.cancellationProcedure ? plan.cancellationProcedure.trim() : undefined,
               rows: [
                 { label: "Cancellation Notice", value: plan?.cancellationNoticeDays ? `${plan.cancellationNoticeDays} day(s) before next billing cycle` : "" },
                 { label: "Early Termination Fee", value: plan?.cancellationFeeCents ? formatCents(plan.cancellationFeeCents) : "" },
@@ -2684,7 +2719,28 @@ export default function POSPage() {
                 }
 
                 const description = item.type === "membership" ? plan?.description : pkg?.description;
-                const hasCancellationBlock = !!(plan?.cancellationNoticeDays || plan?.cancellationFeeCents);
+                const hasCancellationBlock = !!(plan?.cancellationNoticeDays || plan?.cancellationFeeCents || plan?.cancellationProcedure);
+
+                // Multi-discount: one row with each discount labeled
+                // individually so the member sees every discount that
+                // applies to this plan.
+                const discountSegments: string[] = [];
+                if (showDiscount) {
+                  discountSegments.push(`−${formatCents(discountAppliedCents)}${item.firstMonthDiscountOnly ? " (first payment only)" : " (manual)"}`);
+                }
+                if (plan?.familyDiscountPercent) {
+                  discountSegments.push(`${plan.familyDiscountPercent}% (family)`);
+                }
+                if (plan?.rankPromotionDiscountPercent) {
+                  discountSegments.push(`${plan.rankPromotionDiscountPercent}% (rank promotion fee)`);
+                }
+                if (plan?.rankPromotionDiscountFlatCents) {
+                  discountSegments.push(`−${formatCents(plan.rankPromotionDiscountFlatCents)} (rank promotion fee)`);
+                }
+                if (plan?.otherDiscountPercent) {
+                  discountSegments.push(`${plan.otherDiscountPercent}% (other)`);
+                }
+                const discountLine = discountSegments.join(", ");
 
                 return (
                   <div key={item.id} className="rounded-md border border-gray-200 p-3">
@@ -2700,14 +2756,20 @@ export default function POSPage() {
                         <div className="rounded bg-gray-50 border border-gray-200 px-2 py-2 mb-2">
                           <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 mb-1">Plan Terms</p>
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-700">
+                            {item.membershipStartDate && (
+                              <div><span className="font-medium">Start Date:</span> {parseLocalDate(item.membershipStartDate).toLocaleDateString()}</div>
+                            )}
                             {(item.firstMonthDiscountOnly || showDiscount) && (
                               <div><span className="font-medium">First Payment:</span> {formatCents(firstMonthCents)}</div>
+                            )}
+                            {plan?.contractLengthMonths && (
+                              <div><span className="font-medium">Contract Length:</span> {formatDuration(plan.contractLengthMonths)}</div>
                             )}
                             <div>
                               <span className="font-medium">{item.firstMonthDiscountOnly ? "Recurring (after first payment):" : "Price:"}</span> {formatCents(recurringCents)}{suffix}
                             </div>
-                            {showDiscount && (
-                              <div className="text-green-700"><span className="font-medium">Discount Applied:</span> −{formatCents(discountAppliedCents)}{item.firstMonthDiscountOnly ? " (first payment only)" : ""}</div>
+                            {discountLine && (
+                              <div className="text-green-700 col-span-2"><span className="font-medium">Discount Applied:</span> {discountLine}</div>
                             )}
                             {plan?.promoCode && (
                               <div><span className="font-medium">Promo Code:</span> {plan.promoCode}</div>
@@ -2719,12 +2781,6 @@ export default function POSPage() {
                             )}
                             {describePaymentMethodLocal() && (
                               <div className="col-span-2"><span className="font-medium">Payment Method:</span> {describePaymentMethodLocal()}</div>
-                            )}
-                            {item.membershipStartDate && (
-                              <div><span className="font-medium">Start Date:</span> {parseLocalDate(item.membershipStartDate).toLocaleDateString()}</div>
-                            )}
-                            {plan?.contractLengthMonths && (
-                              <div><span className="font-medium">Contract Length:</span> {formatDuration(plan.contractLengthMonths)}</div>
                             )}
                             {plan?.classesPerDay && (
                               <div><span className="font-medium">Classes per Day:</span> {plan.classesPerDay}</div>
@@ -2744,6 +2800,9 @@ export default function POSPage() {
                         {hasCancellationBlock && (
                           <div className="rounded bg-amber-50 border border-amber-200 px-2 py-2 mb-2">
                             <p className="text-[10px] uppercase tracking-wide font-semibold text-amber-700 mb-1">Cancellation</p>
+                            {plan?.cancellationProcedure && (
+                              <p className="text-xs text-gray-700 whitespace-pre-wrap mb-1.5">{plan.cancellationProcedure.trim()}</p>
+                            )}
                             <div className="space-y-0.5 text-xs text-gray-700">
                               {plan?.cancellationNoticeDays && (
                                 <div><span className="font-medium">Cancellation Notice:</span> {plan.cancellationNoticeDays} day(s) before next billing cycle</div>

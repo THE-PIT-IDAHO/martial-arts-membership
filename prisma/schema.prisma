@@ -278,6 +278,12 @@ model MembershipPlan {
   promoCode                    String?
   cancellationNoticeDays       Int?
   cancellationFeeCents         Int?
+  // Editable per-plan text rendered inside the contract's Cancellation
+  // block (above the Notice + Fee rows). Use it to spell out how the
+  // member should actually cancel — e.g. "Email cancel@thepit.com or
+  // visit the front desk in writing; confirmation will be provided
+  // within 3 business days."
+  cancellationProcedure        String?
   sortOrder                    Int             @default(0)
   color                        String?
   isActive                     Boolean         @default(true)

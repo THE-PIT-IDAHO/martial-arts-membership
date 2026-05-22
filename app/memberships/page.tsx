@@ -43,6 +43,7 @@ type MembershipPlan = {
   promoCode: string | null;
   cancellationNoticeDays: number | null;
   cancellationFeeCents: number | null;
+  cancellationProcedure: string | null;
   contractClauses: string | null;
   sortOrder: number;
   color: string | null;
@@ -106,6 +107,10 @@ export default function MembershipsPage() {
   const [planPromoCode, setPlanPromoCode] = useState("");
   const [planCancellationDays, setPlanCancellationDays] = useState("");
   const [planCancellationFee, setPlanCancellationFee] = useState("");
+  // Plain-text cancellation procedure rendered inside the contract's
+  // Cancellation block (per plan, so different plans can spell out
+  // different cancel instructions).
+  const [planCancellationProcedure, setPlanCancellationProcedure] = useState("");
   const [planSortOrder, setPlanSortOrder] = useState("0");
   const [planColor, setPlanColor] = useState("#c41111");
   const [planIsActive, setPlanIsActive] = useState(true);
@@ -325,6 +330,7 @@ export default function MembershipsPage() {
     setPlanPromoCode("");
     setPlanCancellationDays("");
     setPlanCancellationFee("");
+    setPlanCancellationProcedure("");
     setPlanSortOrder("0");
     setPlanColor("#c41111");
     setPlanIsActive(true);
@@ -537,6 +543,7 @@ export default function MembershipsPage() {
     setPlanPromoCode(plan.promoCode || "");
     setPlanCancellationDays(plan.cancellationNoticeDays ? String(plan.cancellationNoticeDays) : "");
     setPlanCancellationFee(plan.cancellationFeeCents ? String(plan.cancellationFeeCents / 100) : "");
+    setPlanCancellationProcedure(plan.cancellationProcedure || "");
     setPlanSortOrder(String(plan.sortOrder || 0));
     setPlanColor(plan.color || "#c41111");
     setPlanIsActive(plan.isActive);
@@ -596,6 +603,7 @@ export default function MembershipsPage() {
       promoCode: planPromoCode.trim() || null,
       cancellationNoticeDays: planCancellationDays ? Number(planCancellationDays) : null,
       cancellationFeeCents,
+      cancellationProcedure: planCancellationProcedure.trim() || null,
       sortOrder: planSortOrder ? Number(planSortOrder) : 0,
       color: planColor || null,
       isActive: planIsActive,
@@ -1408,6 +1416,19 @@ export default function MembershipsPage() {
                       onChange={(e) => setPlanCancellationFee(e.target.value)}
                       className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                       placeholder="0.00"
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      Cancellation Procedure
+                      <span className="ml-2 font-normal text-gray-400">(shown inside the contract&apos;s Cancellation box)</span>
+                    </label>
+                    <textarea
+                      value={planCancellationProcedure}
+                      onChange={(e) => setPlanCancellationProcedure(e.target.value)}
+                      rows={3}
+                      placeholder="e.g., Email cancel@thepit.com or visit the front desk with written notice. Confirmation will be provided within 3 business days."
+                      className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
                   <div className="flex items-center">

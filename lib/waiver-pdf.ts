@@ -86,33 +86,63 @@ export function generateWaiverPdf(opts: WaiverPdfOptions): string {
     const hasDescription = !!(block.description && block.description.trim());
     if (visibleRows.length === 0 && !hasDescription) continue;
 
-    ensureSpace(8);
+    ensureSpace(10);
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(12);
     pdf.text(block.title, margin, yPos);
-    yPos += 6;
+    yPos += 2;
+    // Thin red accent rule under the title — visually anchors the block
+    // and ties it back to the gym brand color in the header.
+    pdf.setDrawColor(196, 17, 17);
+    pdf.setLineWidth(0.6);
+    pdf.line(margin, yPos, margin + 40, yPos);
+    pdf.setDrawColor(0);
+    pdf.setLineWidth(0.2);
+    yPos += 4;
 
-    // Description paragraph sits between the title and the rows, in the
-    // same normal-weight body font as the rows so it reads cleanly.
+    // Description paragraph sits between the title and the rows, in
+    // italic so it differentiates from the bold-labeled rows beneath.
     if (hasDescription) {
-      pdf.setFont("helvetica", "normal");
+      pdf.setFont("helvetica", "italic");
       pdf.setFontSize(10);
+      pdf.setTextColor(70);
       const descLines: string[] = pdf.splitTextToSize(block.description!.trim(), maxWidth);
       for (const line of descLines) {
         ensureSpace(5);
         pdf.text(line, margin, yPos);
         yPos += 5;
       }
+      pdf.setTextColor(0);
       if (visibleRows.length > 0) yPos += 2;
     }
 
-    pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
     for (const row of visibleRows) {
-      // Wrap long row text (e.g. comma-separated style lists) so it
-      // never overflows the page width.
-      const rowLines: string[] = pdf.splitTextToSize(`${row.label}: ${row.value}`, maxWidth);
-      for (const line of rowLines) {
+      // Bold "Label:" + normal value on the same row. Render the label
+      // first to measure its width, then put the value after a small
+      // gap. Value gets wrapped to whatever width remains on line 1 and
+      // full maxWidth on continuation lines.
+      const labelText = `${row.label}: `;
+      pdf.setFont("helvetica", "bold");
+      const labelW = pdf.getTextWidth(labelText);
+      pdf.setFont("helvetica", "normal");
+      const valueText = String(row.value);
+      // First line: only as much as fits after the label.
+      const firstLineWidth = Math.max(20, maxWidth - labelW);
+      const firstLineFit: string[] = pdf.splitTextToSize(valueText, firstLineWidth);
+      const firstLine = firstLineFit[0] || "";
+      const restText = valueText.slice(firstLine.length).trim();
+      const restLines: string[] = restText
+        ? pdf.splitTextToSize(restText, maxWidth)
+        : [];
+
+      ensureSpace(5);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(labelText, margin, yPos);
+      pdf.setFont("helvetica", "normal");
+      pdf.text(firstLine, margin + labelW, yPos);
+      yPos += 5;
+      for (const line of restLines) {
         ensureSpace(5);
         pdf.text(line, margin, yPos);
         yPos += 5;
