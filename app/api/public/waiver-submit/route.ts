@@ -182,6 +182,7 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
     emergencyContactName, emergencyContactPhone, emergencyContactRelationship,
     dependentEmergencyContactName, dependentEmergencyContactPhone, dependentEmergencyContactRelationship,
     medicalNotes, pdfBase64, parentPdfBase64, templateSlug, templateId,
+    existingParentMemberId, existingChildMemberId,
   } = body;
   const resolvedTemplate = await resolveTemplate(clientId, templateId, templateSlug);
 
@@ -189,34 +190,70 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
     return NextResponse.json({ error: "Dependent first and last name are required" }, { status: 400 });
   }
 
-  // Create dependent (minor) member — inherits the shared household info
-  // (phone, address, emergency contact) so admins don't have to re-enter it.
-  const depNumber = await getNextMemberNumber();
-  const dependent = await prisma.member.create({
-    data: {
-      firstName: dependentFirstName.trim(),
-      lastName: dependentLastName.trim(),
-      email: dependentEmail || null,
-      phone: phone || null,
-      dateOfBirth: dependentDateOfBirth ? new Date(dependentDateOfBirth) : null,
-      address: address || null,
-      city: city || null,
-      state: state || null,
-      zipCode: zipCode || null,
-      parentGuardianName: `${guardianFirstName || ""} ${guardianLastName || ""}`.trim() || null,
-      // Dependent's emergency contact — may be the same person as the
-      // guardian's contact (form sends the guardian's name/phone in that
-      // case) but the relationship is always the dependent's (e.g. "Aunt").
-      emergencyContactName: dependentEmergencyContactName || emergencyContactName || null,
-      emergencyContactPhone: dependentEmergencyContactPhone || emergencyContactPhone || null,
-      emergencyContactRelationship: dependentEmergencyContactRelationship || null,
-      medicalNotes: medicalNotes || null,
-      waiverSigned: false,
-      status: "PROSPECT",
-      memberNumber: depNumber,
-      clientId,
-    },
-  });
+  // Dependent: either attach to an existing child member (admin re-sign /
+  // existing-child picker) or create a fresh member from the form fields.
+  let dependent: { id: string };
+  if (existingChildMemberId) {
+    const found = await prisma.member.findFirst({
+      where: { id: existingChildMemberId, clientId },
+    });
+    if (!found) {
+      return NextResponse.json({ error: "Existing child not found" }, { status: 404 });
+    }
+    // Patch with any field edits the signer made.
+    await prisma.member.update({
+      where: { id: found.id },
+      data: {
+        ...(dependentFirstName ? { firstName: dependentFirstName.trim() } : {}),
+        ...(dependentLastName ? { lastName: dependentLastName.trim() } : {}),
+        ...(dependentEmail !== undefined ? { email: dependentEmail || null } : {}),
+        ...(dependentDateOfBirth ? { dateOfBirth: new Date(dependentDateOfBirth) } : {}),
+        ...(dependentEmergencyContactName !== undefined || emergencyContactName !== undefined
+          ? { emergencyContactName: dependentEmergencyContactName || emergencyContactName || null }
+          : {}),
+        ...(dependentEmergencyContactPhone !== undefined || emergencyContactPhone !== undefined
+          ? { emergencyContactPhone: dependentEmergencyContactPhone || emergencyContactPhone || null }
+          : {}),
+        ...(dependentEmergencyContactRelationship !== undefined
+          ? { emergencyContactRelationship: dependentEmergencyContactRelationship || null }
+          : {}),
+        ...(medicalNotes !== undefined ? { medicalNotes: medicalNotes || null } : {}),
+        waiverSigned: true,
+        waiverSignedAt: new Date(),
+      },
+    });
+    dependent = { id: found.id };
+  } else {
+    // Create dependent (minor) member — inherits the shared household info
+    // (phone, address, emergency contact) so admins don't have to re-enter it.
+    const depNumber = await getNextMemberNumber();
+    const created = await prisma.member.create({
+      data: {
+        firstName: dependentFirstName.trim(),
+        lastName: dependentLastName.trim(),
+        email: dependentEmail || null,
+        phone: phone || null,
+        dateOfBirth: dependentDateOfBirth ? new Date(dependentDateOfBirth) : null,
+        address: address || null,
+        city: city || null,
+        state: state || null,
+        zipCode: zipCode || null,
+        parentGuardianName: `${guardianFirstName || ""} ${guardianLastName || ""}`.trim() || null,
+        // Dependent's emergency contact — may be the same person as the
+        // guardian's contact (form sends the guardian's name/phone in that
+        // case) but the relationship is always the dependent's (e.g. "Aunt").
+        emergencyContactName: dependentEmergencyContactName || emergencyContactName || null,
+        emergencyContactPhone: dependentEmergencyContactPhone || emergencyContactPhone || null,
+        emergencyContactRelationship: dependentEmergencyContactRelationship || null,
+        medicalNotes: medicalNotes || null,
+        waiverSigned: false,
+        status: "PROSPECT",
+        memberNumber: depNumber,
+        clientId,
+      },
+    });
+    dependent = { id: created.id };
+  }
 
   // Create SignedWaiver on the CHILD. Same PDF (signature) gets attached
   // separately to the parent below so each account has its own row — that
@@ -241,42 +278,81 @@ async function handleGuardianSubmit(body: Record<string, string>, clientId: stri
     },
   });
 
-  // Create guardian member — inherits the same household info and a copy
-  // of the medical / emergency-contact details so it shows up on both
-  // profiles.
-  if (guardianFirstName && guardianLastName) {
-    const guardianNumber = await getNextMemberNumber();
-    const guardian = await prisma.member.create({
-      data: {
-        firstName: guardianFirstName.trim(),
-        lastName: guardianLastName.trim(),
-        dateOfBirth: guardianDateOfBirth ? new Date(guardianDateOfBirth) : null,
-        email: email || null,
-        phone: phone || null,
-        address: address || null,
-        city: city || null,
-        state: state || null,
-        zipCode: zipCode || null,
-        // Guardian's emergency contact + relationship label scoped to the guardian.
-        emergencyContactName: emergencyContactName || null,
-        emergencyContactPhone: emergencyContactPhone || null,
-        emergencyContactRelationship: emergencyContactRelationship || null,
-        medicalNotes: medicalNotes || null,
-        status: "PARENT",
-        memberNumber: guardianNumber,
-        clientId,
-      },
-    });
+  // Guardian: same two-mode logic as the dependent. existingParentMemberId
+  // means "admin emailed an existing parent the Add Child link" — we just
+  // patch their record and add a new SignedWaiver row. Otherwise this is
+  // a public guardian sign and we create the parent fresh.
+  if (existingParentMemberId || (guardianFirstName && guardianLastName)) {
+    let guardian: { id: string };
+    if (existingParentMemberId) {
+      const found = await prisma.member.findFirst({
+        where: { id: existingParentMemberId, clientId },
+      });
+      if (!found) {
+        return NextResponse.json({ error: "Existing parent not found" }, { status: 404 });
+      }
+      await prisma.member.update({
+        where: { id: found.id },
+        data: {
+          ...(guardianFirstName ? { firstName: guardianFirstName.trim() } : {}),
+          ...(guardianLastName ? { lastName: guardianLastName.trim() } : {}),
+          ...(guardianDateOfBirth ? { dateOfBirth: new Date(guardianDateOfBirth) } : {}),
+          ...(email !== undefined ? { email: email || null } : {}),
+          ...(phone !== undefined ? { phone: phone || null } : {}),
+          ...(address !== undefined ? { address: address || null } : {}),
+          ...(city !== undefined ? { city: city || null } : {}),
+          ...(state !== undefined ? { state: state || null } : {}),
+          ...(zipCode !== undefined ? { zipCode: zipCode || null } : {}),
+          ...(emergencyContactName !== undefined ? { emergencyContactName: emergencyContactName || null } : {}),
+          ...(emergencyContactPhone !== undefined ? { emergencyContactPhone: emergencyContactPhone || null } : {}),
+          ...(emergencyContactRelationship !== undefined ? { emergencyContactRelationship: emergencyContactRelationship || null } : {}),
+          waiverSigned: true,
+          waiverSignedAt: new Date(),
+        },
+      });
+      guardian = { id: found.id };
+    } else {
+      const guardianNumber = await getNextMemberNumber();
+      const created = await prisma.member.create({
+        data: {
+          firstName: guardianFirstName.trim(),
+          lastName: guardianLastName.trim(),
+          dateOfBirth: guardianDateOfBirth ? new Date(guardianDateOfBirth) : null,
+          email: email || null,
+          phone: phone || null,
+          address: address || null,
+          city: city || null,
+          state: state || null,
+          zipCode: zipCode || null,
+          // Guardian's emergency contact + relationship label scoped to the guardian.
+          emergencyContactName: emergencyContactName || null,
+          emergencyContactPhone: emergencyContactPhone || null,
+          emergencyContactRelationship: emergencyContactRelationship || null,
+          medicalNotes: medicalNotes || null,
+          status: "PARENT",
+          memberNumber: guardianNumber,
+          clientId,
+        },
+      });
+      guardian = { id: created.id };
+    }
 
-    // Create relationship
+    // Ensure a parent/guardian relationship from the guardian to the
+    // dependent. Skip if one already exists (e.g. admin re-sign reusing
+    // both existing members).
     const relationshipType = relationship === "Legal Guardian" ? "Guardian of" : "Parent of";
-    await prisma.memberRelationship.create({
-      data: {
-        fromMemberId: guardian.id,
-        toMemberId: dependent.id,
-        relationship: relationshipType,
-      },
+    const existingRel = await prisma.memberRelationship.findFirst({
+      where: { fromMemberId: guardian.id, toMemberId: dependent.id },
     });
+    if (!existingRel) {
+      await prisma.memberRelationship.create({
+        data: {
+          fromMemberId: guardian.id,
+          toMemberId: dependent.id,
+          relationship: relationshipType,
+        },
+      });
+    }
 
     // Parent's own SignedWaiver — its own PDF formatted like the standard
     // adult waiver (no dependent info), so the parent's account shows a

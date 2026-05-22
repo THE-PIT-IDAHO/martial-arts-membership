@@ -22,8 +22,12 @@ export async function POST(req: NextRequest) {
     const settings = await getSettings(["gymName"], member.clientId);
     const gymName = settings.gymName || "the gym";
 
+    // Skip the picker — "Add Child" is an explicit guardian-flow action,
+    // so the recipient lands directly on the guardian sign page with the
+    // parent pre-filled. The legacy /waiver/add-child route still exists
+    // as a fallback for already-sent emails.
     const origin = req.headers.get("origin") || `https://${req.headers.get("host")}`;
-    const link = `${origin}/waiver/add-child/${member.id}`;
+    const link = `${origin}/waivers/new/guardian?parentMemberId=${encodeURIComponent(member.id)}`;
     const memberName = `${member.firstName} ${member.lastName}`.trim();
 
     const html = `

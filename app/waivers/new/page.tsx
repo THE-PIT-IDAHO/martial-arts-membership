@@ -16,14 +16,32 @@ type PublicTemplate = {
 export default function BlankWaiversPage() {
   const [templates, setTemplates] = useState<PublicTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  // Forwarded onto every card link so admin "New Waiver" emails pre-fill
+  // the chosen flow with the existing member's data. Empty string when
+  // there's no ?memberId in the URL (true public sign).
+  const [memberIdParam, setMemberIdParam] = useState<string>("");
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      setMemberIdParam(sp.get("memberId") || "");
+    }
     fetch("/api/public/waiver-templates")
       .then((r) => (r.ok ? r.json() : { templates: [] }))
       .then((data) => setTemplates(data.templates || []))
       .catch(() => setTemplates([]))
       .finally(() => setLoading(false));
   }, []);
+
+  // Append the memberId param onto each card link with the right name
+  // based on the template's audience: adult uses memberId (re-sign as self),
+  // guardian uses parentMemberId (sign on behalf of a child).
+  function cardHref(t: PublicTemplate): string {
+    const base = `/waivers/sign/${t.slug}`;
+    if (!memberIdParam) return base;
+    const key = t.audience === "guardian" ? "parentMemberId" : "memberId";
+    return `${base}?${key}=${encodeURIComponent(memberIdParam)}`;
+  }
 
   // Group by type so multi-template gyms see "Gym", "Event" etc. with the
   // appropriate cards under each heading. Untyped templates fall under
@@ -99,7 +117,7 @@ export default function BlankWaiversPage() {
                         </div>
                         <div className="p-3 sm:p-4 text-center">
                           <Link
-                            href={`/waivers/sign/${t.slug}`}
+                            href={cardHref(t)}
                             className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark transition-colors active:scale-[0.98]"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

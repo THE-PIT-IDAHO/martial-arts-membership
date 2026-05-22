@@ -22,8 +22,12 @@ export async function POST(req: NextRequest) {
     const settings = await getSettings(["gymName"], member.clientId);
     const gymName = settings.gymName || "the gym";
 
+    // Send the recipient to the public blank-waivers picker so they can
+    // choose adult or guardian/parent themselves. The picker page passes
+    // memberId through to the adult flow (for an adult re-sign) or to
+    // parentMemberId on the guardian flow (for an add-child sign).
     const origin = req.headers.get("origin") || `https://${req.headers.get("host")}`;
-    const link = `${origin}/waiver/sign/${member.id}`;
+    const link = `${origin}/waivers/new?memberId=${encodeURIComponent(member.id)}`;
     const memberName = `${member.firstName} ${member.lastName}`.trim();
 
     const html = `

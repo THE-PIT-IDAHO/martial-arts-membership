@@ -202,6 +202,27 @@ export default function GuardianWaiverPage() {
   // options instead of the tenant's global defaults.
   const [templateSlug, setTemplateSlug] = useState<string>("");
   const [templateId, setTemplateId] = useState<string>("");
+  // If ?parentMemberId=<id> is present, this page was reached from an
+  // admin "Add Child" email link. Pre-fill the guardian block from that
+  // member so the parent doesn't re-enter their info, and offer an
+  // existing-child picker so a re-sign attaches to the same child member
+  // record (instead of creating a duplicate).
+  const [parentMemberId, setParentMemberId] = useState<string>("");
+  const [linkedChildren, setLinkedChildren] = useState<Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string | null;
+    email: string | null;
+    phone: string | null;
+    emergencyContactName: string | null;
+    emergencyContactPhone: string | null;
+    emergencyContactRelationship: string | null;
+    medicalNotes: string | null;
+  }>>([]);
+  // When set, the new waiver attaches to this existing child; otherwise a
+  // new child member is created from the form fields.
+  const [existingChildMemberId, setExistingChildMemberId] = useState<string>("");
   // The parent's own PDF reads like an adult enrollment waiver. We pull the
   // first active adult template's content for it so the legal language fits
   // ("I, [parent], acknowledge…") instead of reusing the guardian template
@@ -214,7 +235,40 @@ export default function GuardianWaiverPage() {
       try {
         const params = new URLSearchParams(window.location.search);
         const slug = params.get("template") || "";
+        const parentIdParam = params.get("parentMemberId") || "";
         let usedTemplate = false;
+
+        // Parent pre-fill (admin "Add Child" flow)
+        if (parentIdParam) {
+          const pRes = await fetch(`/api/public/member-info?memberId=${encodeURIComponent(parentIdParam)}`);
+          if (pRes.ok) {
+            const pData = await pRes.json();
+            const p = pData.member;
+            setParentMemberId(p.id);
+            setGuardianFirstName(p.firstName || "");
+            setGuardianLastName(p.lastName || "");
+            if (p.dateOfBirth) setGuardianDateOfBirth(new Date(p.dateOfBirth).toISOString().split("T")[0]);
+            setEmail(p.email || "");
+            setPhone(p.phone || "");
+            setAddress(p.address || "");
+            setCity(p.city || "");
+            setState(p.state || "");
+            setZipCode(p.zipCode || "");
+            setEmergencyContactName(p.emergencyContactName || "");
+            setEmergencyContactPhone(p.emergencyContactPhone || "");
+            setEmergencyContactRelationship(p.emergencyContactRelationship || "");
+          }
+          // Pull linked children for the existing-child dropdown.
+          try {
+            const lcRes = await fetch(
+              `/api/public/linked-children?parentMemberId=${encodeURIComponent(parentIdParam)}`,
+            );
+            if (lcRes.ok) {
+              const lcData = await lcRes.json();
+              setLinkedChildren(lcData.children || []);
+            }
+          } catch { /* non-critical */ }
+        }
 
         if (slug) {
           const tRes = await fetch(`/api/public/waiver-template/${encodeURIComponent(slug)}`);
@@ -687,6 +741,11 @@ export default function GuardianWaiverPage() {
           signatureData: signatureDataUrl || undefined,
           templateSlug: templateSlug || undefined,
           templateId: templateId || undefined,
+          // Admin-emailed "Add Child" flow: attach to the existing parent
+          // and (optionally) an existing child instead of creating new
+          // member rows.
+          existingParentMemberId: parentMemberId || undefined,
+          existingChildMemberId: existingChildMemberId || undefined,
         }),
       });
 
@@ -850,6 +909,65 @@ export default function GuardianWaiverPage() {
               <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
                 Dependent (Minor) Information
               </h2>
+
+              {/* Existing-child picker (only shown when this page was
+                  reached from the admin Add Child flow AND the parent
+                  has at least one linked child on file). Picking one
+                  pre-fills the dependent fields below and tags the
+                  submission so a new waiver attaches to that existing
+                  child instead of creating a duplicate member. */}
+              {parentMemberId && linkedChildren.length > 0 && (
+                <div className="mb-3 sm:mb-4 rounded-md border border-gray-200 bg-gray-50 p-3">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Add a new child, or use an existing one
+                  </label>
+                  <select
+                    value={existingChildMemberId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setExistingChildMemberId(id);
+                      if (!id) {
+                        setDependentFirstName("");
+                        setDependentLastName("");
+                        setDependentDateOfBirth("");
+                        setDependentEmail("");
+                        return;
+                      }
+                      const c = linkedChildren.find((x) => x.id === id);
+                      if (!c) return;
+                      setDependentFirstName(c.firstName || "");
+                      setDependentLastName(c.lastName || "");
+                      if (c.dateOfBirth) {
+                        setDependentDateOfBirth(new Date(c.dateOfBirth).toISOString().split("T")[0]);
+                      } else {
+                        setDependentDateOfBirth("");
+                      }
+                      setDependentEmail(c.email || "");
+                      if (c.emergencyContactName || c.emergencyContactPhone || c.emergencyContactRelationship) {
+                        setDepEmergencyContactSameAsGuardian(false);
+                        setDepEmergencyContactName(c.emergencyContactName || "");
+                        setDepEmergencyContactPhone(c.emergencyContactPhone || "");
+                        setDepEmergencyContactRelationship(c.emergencyContactRelationship || "");
+                      }
+                      if (c.medicalNotes) setMedicalNotes(c.medicalNotes);
+                    }}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">+ Add a new child</option>
+                    {linkedChildren.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.firstName} {c.lastName}
+                      </option>
+                    ))}
+                  </select>
+                  {existingChildMemberId && (
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      Auto-filled from an existing record. Edit anything that's changed before signing.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">

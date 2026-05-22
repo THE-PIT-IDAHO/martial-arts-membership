@@ -147,17 +147,41 @@ export default function AdultWaiverPage() {
   // template was requested).
   const [templateSlug, setTemplateSlug] = useState<string>("");
   const [templateId, setTemplateId] = useState<string>("");
+  // If ?memberId=<id> is present, this page is being used as a re-sign
+  // (e.g. admin emailed an existing member a link). On load we fetch that
+  // member's data and pre-fill the form; on submit we attach a new
+  // SignedWaiver to them instead of creating a fresh member.
+  const [existingMemberId, setExistingMemberId] = useState<string>("");
 
   useEffect(() => {
     async function loadData() {
       try {
-        // If the URL has ?template=<slug>, prefer the template's content +
-        // options + audience over the global defaults. Falls back to the
-        // legacy /api/public/waiver-data when no template is requested so
-        // existing public links keep working.
         const params = new URLSearchParams(window.location.search);
         const slug = params.get("template") || "";
+        const memberIdParam = params.get("memberId") || "";
         let usedTemplate = false;
+
+        // Member pre-fill (admin re-sign flow)
+        if (memberIdParam) {
+          const mRes = await fetch(`/api/public/member-info?memberId=${encodeURIComponent(memberIdParam)}`);
+          if (mRes.ok) {
+            const mData = await mRes.json();
+            const m = mData.member;
+            setExistingMemberId(m.id);
+            setFirstName(m.firstName || "");
+            setLastName(m.lastName || "");
+            if (m.dateOfBirth) setDateOfBirth(new Date(m.dateOfBirth).toISOString().split("T")[0]);
+            setAddress(m.address || "");
+            setCity(m.city || "");
+            setState(m.state || "");
+            setZipCode(m.zipCode || "");
+            setPhone(m.phone || "");
+            setEmail(m.email || "");
+            setEmergencyContactName(m.emergencyContactName || "");
+            setEmergencyContactPhone(m.emergencyContactPhone || "");
+            setMedicalNotes(m.medicalNotes || "");
+          }
+        }
 
         if (slug) {
           const tRes = await fetch(`/api/public/waiver-template/${encodeURIComponent(slug)}`);
@@ -370,6 +394,7 @@ export default function AdultWaiverPage() {
           signatureData: signatureDataUrl || undefined,
           templateSlug: templateSlug || undefined,
           templateId: templateId || undefined,
+          existingMemberId: existingMemberId || undefined,
         }),
       });
 

@@ -11,10 +11,14 @@ import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 
-type PageProps = { params: Promise<{ slug: string }> };
+type PageProps = {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default async function WaiverSignPage({ params }: PageProps) {
+export default async function WaiverSignPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
+  const sp = await searchParams;
   const clientId = await getClientId();
 
   const template = await prisma.waiverTemplate.findFirst({
@@ -24,5 +28,14 @@ export default async function WaiverSignPage({ params }: PageProps) {
   if (!template || !template.slug) notFound();
 
   const target = template.audience === "guardian" ? "/waivers/new/guardian" : "/waivers/new/adult";
-  redirect(`${target}?template=${encodeURIComponent(template.slug)}`);
+  const query = new URLSearchParams();
+  query.set("template", template.slug);
+  // Forward member-prefill params the picker page added on. Adult flow
+  // uses memberId, guardian flow uses parentMemberId.
+  const memberId = typeof sp.memberId === "string" ? sp.memberId : "";
+  const parentMemberId = typeof sp.parentMemberId === "string" ? sp.parentMemberId : "";
+  if (template.audience === "guardian" && parentMemberId) query.set("parentMemberId", parentMemberId);
+  if (template.audience === "adult" && memberId) query.set("memberId", memberId);
+
+  redirect(`${target}?${query.toString()}`);
 }

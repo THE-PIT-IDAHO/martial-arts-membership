@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import Header from "./Header";
 import { ThemeProvider } from "@/components/theme-provider";
 
-const PASSTHROUGH_PREFIXES = ["/portal", "/kiosk", "/waivers/new"];
+const PASSTHROUGH_PREFIXES = ["/portal", "/kiosk", "/waivers/new", "/waivers/sign", "/waiver"];
 const PASSTHROUGH_EXCEPTIONS = ["/kiosk/settings"];
 
 export default function RootShell({ children }: { children: React.ReactNode }) {
