@@ -291,6 +291,9 @@ export default function POSPage() {
   // Loaded HTMLImageElement form of the logo, ready to embed in contract
   // PDFs via the shared waiver-pdf lib.
   const [gymLogoImg, setGymLogoImg] = useState<HTMLImageElement | null>(null);
+  // Style ID → name lookup so the contract can render real style names
+  // for the plan's allowedStyles list (which stores cuids on the model).
+  const [stylesById, setStylesById] = useState<Record<string, string>>({});
   const sigCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
@@ -341,12 +344,13 @@ export default function POSPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      const [itemsRes, plansRes, membersRes, settingsRes, svcRes] = await Promise.all([
+      const [itemsRes, plansRes, membersRes, settingsRes, svcRes, stylesRes] = await Promise.all([
         fetch("/api/pos/items"),
         fetch("/api/membership-plans"),
         fetch("/api/members"),
         fetch("/api/settings"),
         fetch("/api/service-packages"),
+        fetch("/api/styles"),
       ]);
 
       if (itemsRes.ok) {
@@ -364,6 +368,14 @@ export default function POSPage() {
       if (svcRes.ok) {
         const data = await svcRes.json();
         setServicePackages((data.servicePackages || []).filter((p: ServicePackage) => p.isActive));
+      }
+      if (stylesRes.ok) {
+        const data = await stylesRes.json();
+        const map: Record<string, string> = {};
+        for (const s of data.styles || []) {
+          if (s.id && s.name) map[s.id] = s.name;
+        }
+        setStylesById(map);
       }
       if (settingsRes.ok) {
         const data = await settingsRes.json();
@@ -991,20 +1003,16 @@ export default function POSPage() {
           const showDiscount = discountAppliedCents > 0;
           const suffix = billingSuffix(plan?.billingCycle);
 
-          // Lead-in body section with plan name + description (if any).
-          if (plan?.description && plan.description.trim()) {
-            itemSections.push({
-              title: `Membership: ${item.itemName}`,
-              content: plan.description.trim(),
-            });
-          }
-
-          // Allowed styles → comma-separated list.
+          // Allowed styles → comma-separated list of NAMES (resolved
+          // from the stylesById map; falls back to whatever the entry is
+          // if the lookup misses — usually only on stale browser caches).
           let allowedStylesStr = "";
           if (plan?.allowedStyles) {
             try {
               const arr = JSON.parse(plan.allowedStyles);
-              if (Array.isArray(arr) && arr.length > 0) allowedStylesStr = arr.join(", ");
+              if (Array.isArray(arr) && arr.length > 0) {
+                allowedStylesStr = arr.map((id: string) => stylesById[id] || id).join(", ");
+              }
             } catch { /* ignore */ }
           }
 
@@ -1041,19 +1049,26 @@ export default function POSPage() {
               : []),
           ];
 
+          // Plan Terms info block. The plan description renders inside
+          // this block (between the title and the rows) so it stays
+          // grouped with the plan's terms instead of getting bumped to
+          // the bottom of the document.
           itemBlocks.push({
             title: `${item.itemName} — Plan Terms`,
+            description: plan?.description ? plan.description.trim() : undefined,
             rows: planTermsRows,
           });
 
-          // Cancellation block — only render if there's something to say.
+          // Cancellation block — only render if the plan has any
+          // cancellation policy. Cancellation procedure text is sourced
+          // from the global contract clauses (see Memberships page
+          // → Global Contract Clauses) so you can edit the wording.
           if ((plan?.cancellationNoticeDays || plan?.cancellationFeeCents)) {
             itemBlocks.push({
               title: `${item.itemName} — Cancellation`,
               rows: [
                 { label: "Cancellation Notice", value: plan?.cancellationNoticeDays ? `${plan.cancellationNoticeDays} day(s) before next billing cycle` : "" },
                 { label: "Early Termination Fee", value: plan?.cancellationFeeCents ? formatCents(plan.cancellationFeeCents) : "" },
-                { label: "How to Cancel", value: "Email or visit the gym with written notice. Confirmation will be provided." },
               ],
             });
           }
@@ -1070,14 +1085,9 @@ export default function POSPage() {
           }
         } else if (item.type === "service") {
           const pkg = servicePackages.find((p) => p.id === item.servicePackageId);
-          if (pkg?.description && pkg.description.trim()) {
-            itemSections.push({
-              title: `Service: ${item.itemName}`,
-              content: pkg.description.trim(),
-            });
-          }
           itemBlocks.push({
             title: `${item.itemName} — Service Terms`,
+            description: pkg?.description ? pkg.description.trim() : undefined,
             rows: [
               { label: "Price", value: formatCents(item.unitPriceCents) },
               { label: "Sessions Included", value: pkg?.sessionsIncluded ? String(pkg.sessionsIncluded) : "" },
@@ -2667,7 +2677,9 @@ export default function POSPage() {
                 if (plan?.allowedStyles) {
                   try {
                     const arr = JSON.parse(plan.allowedStyles);
-                    if (Array.isArray(arr) && arr.length > 0) allowedStylesStr = arr.join(", ");
+                    if (Array.isArray(arr) && arr.length > 0) {
+                      allowedStylesStr = arr.map((id: string) => stylesById[id] || id).join(", ");
+                    }
                   } catch { /* ignore */ }
                 }
 
@@ -2739,7 +2751,6 @@ export default function POSPage() {
                               {plan?.cancellationFeeCents && (
                                 <div><span className="font-medium">Early Termination Fee:</span> {formatCents(plan.cancellationFeeCents)}</div>
                               )}
-                              <div><span className="font-medium">How to Cancel:</span> Email or visit the gym with written notice. Confirmation will be provided.</div>
                             </div>
                           </div>
                         )}

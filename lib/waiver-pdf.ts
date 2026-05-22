@@ -17,6 +17,10 @@ export type GymInfo = {
 
 export type InfoBlock = {
   title: string;
+  // Optional paragraph rendered between the title and the rows — used for
+  // things like a plan description so it sits inside the same visual
+  // grouping as the rows beneath it.
+  description?: string;
   rows: Array<{ label: string; value?: string | null }>;
 };
 
@@ -79,20 +83,40 @@ export function generateWaiverPdf(opts: WaiverPdfOptions): string {
     const visibleRows = block.rows.filter(
       (r) => r.value != null && String(r.value).trim() !== "",
     );
-    if (visibleRows.length === 0) continue;
+    const hasDescription = !!(block.description && block.description.trim());
+    if (visibleRows.length === 0 && !hasDescription) continue;
 
-    ensureSpace(8 + visibleRows.length * 5);
+    ensureSpace(8);
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(12);
     pdf.text(block.title, margin, yPos);
     yPos += 6;
 
+    // Description paragraph sits between the title and the rows, in the
+    // same normal-weight body font as the rows so it reads cleanly.
+    if (hasDescription) {
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(10);
+      const descLines: string[] = pdf.splitTextToSize(block.description!.trim(), maxWidth);
+      for (const line of descLines) {
+        ensureSpace(5);
+        pdf.text(line, margin, yPos);
+        yPos += 5;
+      }
+      if (visibleRows.length > 0) yPos += 2;
+    }
+
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
     for (const row of visibleRows) {
-      ensureSpace(5);
-      pdf.text(`${row.label}: ${row.value}`, margin, yPos);
-      yPos += 5;
+      // Wrap long row text (e.g. comma-separated style lists) so it
+      // never overflows the page width.
+      const rowLines: string[] = pdf.splitTextToSize(`${row.label}: ${row.value}`, maxWidth);
+      for (const line of rowLines) {
+        ensureSpace(5);
+        pdf.text(line, margin, yPos);
+        yPos += 5;
+      }
     }
     yPos += 5;
   }
