@@ -202,6 +202,12 @@ export default function GuardianWaiverPage() {
   // options instead of the tenant's global defaults.
   const [templateSlug, setTemplateSlug] = useState<string>("");
   const [templateId, setTemplateId] = useState<string>("");
+  // The parent's own PDF reads like an adult enrollment waiver. We pull the
+  // first active adult template's content for it so the legal language fits
+  // ("I, [parent], acknowledge…") instead of reusing the guardian template
+  // (which leaves {{PARENT_GUARDIAN}} dangling because the parent IS the
+  // member on their own copy).
+  const [parentWaiverSections, setParentWaiverSections] = useState<WaiverSection[] | null>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -260,6 +266,33 @@ export default function GuardianWaiverPage() {
             }
           }
         }
+
+        // Fetch the first active adult template (preferring the default
+        // adult one if present) for use as the parent's own PDF content.
+        // Best-effort — if none exists, parent PDF falls back to the
+        // current (guardian) sections.
+        try {
+          const listRes = await fetch("/api/public/waiver-templates");
+          if (listRes.ok) {
+            const listData = await listRes.json();
+            const adultTpl = (listData.templates || []).find(
+              (t: { audience: string; slug: string }) => t.audience === "adult",
+            );
+            if (adultTpl?.slug) {
+              const adultRes = await fetch(
+                `/api/public/waiver-template/${encodeURIComponent(adultTpl.slug)}`,
+              );
+              if (adultRes.ok) {
+                const adultData = await adultRes.json();
+                if (adultData.template?.content) {
+                  try {
+                    setParentWaiverSections(JSON.parse(adultData.template.content));
+                  } catch { /* keep null → fall back to guardian sections */ }
+                }
+              }
+            }
+          }
+        } catch { /* non-critical */ }
       } catch (err) {
         console.error("Failed to load settings");
       } finally {
@@ -587,7 +620,10 @@ export default function GuardianWaiverPage() {
             ],
           },
         ],
-        sections: waiverSections,
+        // Use the adult template's content if we found one; falls back to
+        // the guardian template's sections so we still produce a PDF when
+        // the tenant has no adult template configured.
+        sections: parentWaiverSections && parentWaiverSections.length > 0 ? parentWaiverSections : waiverSections,
         replacePlaceholders: (t) =>
           replacePlaceholders(
             t,
