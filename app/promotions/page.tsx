@@ -98,10 +98,13 @@ function parseEventStyleIds(e: EventRow): string[] {
  * Tailwind token. */
 const BTN_PRIMARY =
   "rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50";
-// White background, gray border + text. Used for neutral / dismissive
-// actions (Cancel, Close, Delete event, secondary chip-style buttons)
-// so the brand-red primary buttons stand out as the main action.
-const BTN_SECONDARY =
+// Secondary uses the same solid red as primary — almost every action
+// button on the page is the brand red.
+const BTN_SECONDARY = BTN_PRIMARY;
+// White/gray neutral, reserved for the two dismissive actions on the
+// event detail modal (Close + Delete event) so they visually de-emphasize
+// against the red action buttons everywhere else.
+const BTN_NEUTRAL =
   "rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50";
 
 export default function PromotionsPage() {
@@ -1151,10 +1154,10 @@ function EventDetailModal(props: {
         </div>
 
         <div className="flex items-center justify-between border-t border-gray-200 pt-3">
-          <button type="button" onClick={deleteEvent} className={BTN_SECONDARY}>
+          <button type="button" onClick={deleteEvent} className={BTN_NEUTRAL}>
             Delete event
           </button>
-          <button type="button" onClick={onClose} className={BTN_SECONDARY}>
+          <button type="button" onClick={onClose} className={BTN_NEUTRAL}>
             Close
           </button>
         </div>
