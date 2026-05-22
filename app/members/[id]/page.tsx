@@ -2694,7 +2694,12 @@ export default function MemberProfilePage() {
                             </div>
                           )}
 
-                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {/* Two red buttons replace the old Send Link /
+                                Copy Link / Send Add-Child Link / Copy
+                                Add-Child Link cluster. Both email the member
+                                a link to the appropriate waiver flow
+                                (adult vs guardian-add-child). */}
                             <button
                               onClick={async () => {
                                 setWaiverActionMsg(null);
@@ -2716,19 +2721,10 @@ export default function MemberProfilePage() {
                                 }
                               }}
                               disabled={sendingWaiverLink || !member.email}
-                              className="text-xs text-primary hover:text-primaryDark font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={!member.email ? "Member has no email on file" : "Email the member a link to fill out a new waiver"}
                             >
-                              {sendingWaiverLink ? "Sending…" : "Send Waiver Link"}
-                            </button>
-                            <button
-                              onClick={() => {
-                                const url = `${window.location.origin}/waiver/sign/${member.id}`;
-                                navigator.clipboard.writeText(url);
-                                setWaiverActionMsg("Link copied to clipboard.");
-                              }}
-                              className="text-xs text-gray-600 hover:text-gray-800 font-medium"
-                            >
-                              Copy Link
+                              {sendingWaiverLink ? "Sending…" : "New Waiver"}
                             </button>
                             <button
                               onClick={async () => {
@@ -2746,19 +2742,10 @@ export default function MemberProfilePage() {
                                 }
                               }}
                               disabled={!member.email}
-                              className="text-xs text-primary hover:text-primaryDark font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={!member.email ? "Member has no email on file" : "Email the member a link to add a child waiver"}
                             >
-                              Send Add-Child Link
-                            </button>
-                            <button
-                              onClick={() => {
-                                const url = `${window.location.origin}/waiver/add-child/${member.id}`;
-                                navigator.clipboard.writeText(url);
-                                setWaiverActionMsg("Add-child link copied to clipboard.");
-                              }}
-                              className="text-xs text-gray-600 hover:text-gray-800 font-medium"
-                            >
-                              Copy Add-Child Link
+                              Add Child
                             </button>
                             {member.waiverSigned && signedWaivers.length === 0 && (
                               <button
