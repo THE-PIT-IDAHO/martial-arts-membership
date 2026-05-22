@@ -351,7 +351,7 @@ export default function PromotionsPage() {
                 tab === t ? "border-primary text-primary" : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
-              {t === "events" ? "Events" : t === "eligible" ? "Ready to Promote" : "Past Events"}
+              {t === "events" ? "Events" : t === "eligible" ? "Quick Promote" : "Past Events"}
             </button>
           ))}
         </div>
@@ -941,11 +941,27 @@ function EventDetailModal(props: {
   // Per-participant fee override editor. We keep a local string buffer
   // per participant so the input stays controllable while typing
   // ("0.5" → "0.50" mid-type would be jarring). Persisted on blur.
+  //
+  // Fee lookup priority (matches Quick Promote tab behavior):
+  //   1. Per-participant feeOverrideCents (admin-set on this event)
+  //   2. The eligible row's computed fee.costCents (plan/style/global
+  //      discounts already applied) for this (member, style) — same
+  //      number Quick Promote shows
+  //   3. The event's flat costCents fallback
+  //   4. 0
   const [feeDrafts, setFeeDrafts] = useState<Record<string, string>>({});
-  function defaultFeeForParticipant(p: { feeOverrideCents?: number | null }): string {
-    const cents = p.feeOverrideCents != null
-      ? p.feeOverrideCents
-      : (event as { costCents?: number | null }).costCents ?? 0;
+  function defaultFeeForParticipant(
+    p: { feeOverrideCents?: number | null },
+    eligibleRow?: { fee?: { costCents: number } } | null,
+  ): string {
+    let cents: number | null | undefined;
+    if (p.feeOverrideCents != null) {
+      cents = p.feeOverrideCents;
+    } else if (eligibleRow?.fee?.costCents != null) {
+      cents = eligibleRow.fee.costCents;
+    } else {
+      cents = (event as { costCents?: number | null }).costCents;
+    }
     return ((cents || 0) / 100).toFixed(2);
   }
   async function saveFee(participantId: string, draft: string) {
@@ -1326,7 +1342,11 @@ function EventDetailModal(props: {
                         {rostered.map((r) => {
                           const participant = event.participants.find((p) => p.id === r.participantId);
                           const draftKey = r.participantId;
-                          const currentDraft = feeDrafts[draftKey] ?? defaultFeeForParticipant(participant || {});
+                          // Pull this row's eligible record so the fee
+                          // input shows the same plan-discounted number
+                          // the Quick Promote tab shows for this style.
+                          const eligibleForFee = eligibleByKey.get(`${styleId}|${r.memberId}`);
+                          const currentDraft = feeDrafts[draftKey] ?? defaultFeeForParticipant(participant || {}, eligibleForFee);
                           return (
                             <div key={`r-${r.memberId}-${styleId}`} className="flex items-center justify-between gap-2 py-1.5 text-sm">
                               <div className="flex items-center gap-2 min-w-0 flex-1">
