@@ -98,8 +98,11 @@ function parseEventStyleIds(e: EventRow): string[] {
  * Tailwind token. */
 const BTN_PRIMARY =
   "rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50";
+// White background, gray border + text. Used for neutral / dismissive
+// actions (Cancel, Close, Delete event, secondary chip-style buttons)
+// so the brand-red primary buttons stand out as the main action.
 const BTN_SECONDARY =
-  "rounded-md border border-primary bg-white px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5 disabled:opacity-50";
+  "rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50";
 
 export default function PromotionsPage() {
   const [tab, setTab] = useState<"eligible" | "events" | "history">("eligible");
@@ -1090,7 +1093,7 @@ function EventDetailModal(props: {
                     onClick={() => addByStyle(id)}
                     className={BTN_SECONDARY}
                   >
-                    + Add all from {s?.name || "style"}
+                    Add all from {s?.name || "style"}
                   </button>
                 );
               })}
@@ -1148,7 +1151,7 @@ function EventDetailModal(props: {
         </div>
 
         <div className="flex items-center justify-between border-t border-gray-200 pt-3">
-          <button type="button" onClick={deleteEvent} className="text-xs text-red-600 hover:text-red-700">
+          <button type="button" onClick={deleteEvent} className={BTN_SECONDARY}>
             Delete event
           </button>
           <button type="button" onClick={onClose} className={BTN_SECONDARY}>
