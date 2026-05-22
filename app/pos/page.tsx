@@ -6,7 +6,7 @@ import { AppLayout } from "@/components/app-layout";
 import Link from "next/link";
 import { serializePaymentMethod } from "@/lib/payment-utils";
 import { getTodayString, parseLocalDate } from "@/lib/dates";
-import jsPDF from "jspdf";
+import { generateWaiverPdf, type InfoBlock, type BodySection } from "@/lib/waiver-pdf";
 
 type POSItemVariant = {
   id: string;
@@ -273,7 +273,13 @@ export default function POSPage() {
   // cleared by resetAfterCheckout before staff gets the tablet back.)
   const [lockedSaleSummary, setLockedSaleSummary] = useState<{ memberName: string } | null>(null);
   const [gymName, setGymName] = useState("");
+  const [gymAddress, setGymAddress] = useState("");
+  const [gymPhone, setGymPhone] = useState("");
+  const [gymEmail, setGymEmail] = useState("");
   const [gymLogo, setGymLogo] = useState("");
+  // Loaded HTMLImageElement form of the logo, ready to embed in contract
+  // PDFs via the shared waiver-pdf lib.
+  const [gymLogoImg, setGymLogoImg] = useState<HTMLImageElement | null>(null);
   const sigCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
@@ -357,8 +363,22 @@ export default function POSPage() {
           // Load gym branding for contract PDFs
           const gn = settingsMap.get("gymName");
           if (gn) setGymName(gn);
+          const ga = settingsMap.get("gymAddress");
+          if (ga) setGymAddress(ga);
+          const gp = settingsMap.get("gymPhone");
+          if (gp) setGymPhone(gp);
+          const ge = settingsMap.get("gymEmail");
+          if (ge) setGymEmail(ge);
           const gl = settingsMap.get("gymLogo");
-          if (gl) setGymLogo(gl);
+          if (gl) {
+            setGymLogo(gl);
+            // Pre-load as HTMLImageElement so the contract PDF can embed
+            // it via the shared waiver-pdf lib (which downsamples + JPEG-
+            // compresses to keep PDF size sane).
+            const img = new Image();
+            img.onload = () => setGymLogoImg(img);
+            img.src = gl;
+          }
           // Load global contract clauses
           const cc = settingsMap.get("contract_clauses");
           if (cc) { try { setGlobalContractClauses(JSON.parse(cc)); } catch { /* ignore */ } }
@@ -867,130 +887,117 @@ export default function POSPage() {
       const signatureDataUrl = canvas ? canvas.toDataURL("image/png") : "";
       const contractText = buildContractText();
 
-      // 1. Generate PDF
-      const pdf = new jsPDF();
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const margin = 20;
-      const maxWidth = pageWidth - margin * 2;
-      let yPos = 20;
+      // Format a contractLengthMonths value (which actually stores days)
+      // into a human-friendly "X month(s)" / "Y year(s)" string.
+      function formatContractDuration(days: number): string {
+        if (days >= 365 && days % 365 === 0) return `${days / 365} year(s)`;
+        if (days >= 30 && days % 30 === 0) return `${days / 30} month(s)`;
+        return `${days} day(s)`;
+      }
 
-      // Header
-      pdf.setFontSize(18);
-      pdf.setFont("helvetica", "bold");
-      pdf.text(gymName || "Martial Arts School", pageWidth / 2, yPos, { align: "center" });
-      yPos += 10;
-      pdf.setFontSize(14);
-      pdf.text("Membership / Service Agreement", pageWidth / 2, yPos, { align: "center" });
-      yPos += 15;
+      // Match the billing cycle to a readable suffix on price lines:
+      // "MONTHLY" → "/month", "YEARLY" → "/year", etc.
+      function billingSuffix(cycle: string | undefined | null): string {
+        if (!cycle) return "/month";
+        const c = cycle.toUpperCase();
+        if (c === "WEEKLY") return "/week";
+        if (c === "MONTHLY") return "/month";
+        if (c === "QUARTERLY") return "/quarter";
+        if (c === "YEARLY" || c === "ANNUAL" || c === "ANNUALLY") return "/year";
+        return `/${c.toLowerCase()}`;
+      }
 
-      // Member info
-      pdf.setFontSize(12);
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Member Information", margin, yPos);
-      yPos += 7;
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.text(`Name: ${selectedMember.firstName} ${selectedMember.lastName}`, margin, yPos); yPos += 5;
-      if (selectedMember.email) { pdf.text(`Email: ${selectedMember.email}`, margin, yPos); yPos += 5; }
-      if (selectedMember.phone) { pdf.text(`Phone: ${selectedMember.phone}`, margin, yPos); yPos += 5; }
-      if (selectedMember.memberNumber) { pdf.text(`Member #: ${selectedMember.memberNumber}`, margin, yPos); yPos += 5; }
-      pdf.text(`Date: ${new Date().toLocaleDateString()}`, margin, yPos); yPos += 10;
-
-      // Items
+      // Build per-item info blocks (one per membership/service in the
+      // cart). Each membership block shows first-month vs recurring
+      // pricing, discount, contract length, dates, cancellation terms.
+      const itemBlocks: InfoBlock[] = [];
+      const itemSections: BodySection[] = [];
       for (const item of cart) {
-        if (item.type !== "membership" && item.type !== "service") continue;
-        if (yPos > 250) { pdf.addPage(); yPos = 20; }
-
-        pdf.setFontSize(12);
-        pdf.setFont("helvetica", "bold");
         if (item.type === "membership") {
-          const plan = membershipPlans.find(p => p.id === item.membershipPlanId);
-          pdf.text(`Membership: ${item.itemName}`, margin, yPos); yPos += 7;
-          pdf.setFont("helvetica", "normal");
-          pdf.setFontSize(10);
-          pdf.text(`Price: ${formatCents(item.unitPriceCents)}/${plan?.billingCycle?.toLowerCase() || "month"}`, margin, yPos); yPos += 5;
-          if (plan?.contractLengthMonths) {
-            const days = plan.contractLengthMonths;
-            const contractStr = days >= 365 && days % 365 === 0 ? `${days / 365} year(s)` : days >= 30 && days % 30 === 0 ? `${days / 30} month(s)` : `${days} days`;
-            pdf.text(`Contract Length: ${contractStr}`, margin, yPos); yPos += 5;
-          }
-          if (item.membershipStartDate) { pdf.text(`Start Date: ${parseLocalDate(item.membershipStartDate).toLocaleDateString()}`, margin, yPos); yPos += 5; }
-          if (plan?.cancellationNoticeDays) { pdf.text(`Cancellation Notice: ${plan.cancellationNoticeDays} days`, margin, yPos); yPos += 5; }
-          if (plan?.cancellationFeeCents) { pdf.text(`Early Termination Fee: ${formatCents(plan.cancellationFeeCents)}`, margin, yPos); yPos += 5; }
+          const plan = membershipPlans.find((p) => p.id === item.membershipPlanId);
+          const fullPriceCents = (plan?.priceCents || 0) + (plan?.setupFeeCents || 0);
+          const firstMonthCents = item.unitPriceCents;
+          const recurringCents = item.firstMonthDiscountOnly ? fullPriceCents : item.unitPriceCents;
+          const discountCents = Math.max(0, fullPriceCents - firstMonthCents);
+          const suffix = billingSuffix(plan?.billingCycle);
+          const isRecurringPlan = plan?.contractLengthMonths == null || plan.contractLengthMonths === 0
+            ? true
+            : true; // memberships in this app are billed recurringly until cancelled
 
-          // Plan-specific clauses
+          itemBlocks.push({
+            title: `Membership: ${item.itemName}`,
+            rows: [
+              { label: "First Payment", value: formatCents(firstMonthCents) },
+              {
+                label: item.firstMonthDiscountOnly ? "Recurring (after first period)" : "Recurring",
+                value: `${formatCents(recurringCents)}${suffix}`,
+              },
+              { label: "Discount Applied", value: discountCents > 0 ? `−${formatCents(discountCents)}${item.firstMonthDiscountOnly ? " (first payment only)" : ""}` : "" },
+              { label: "Billing Cycle", value: plan?.billingCycle || "Monthly" },
+              { label: "Recurring Payments", value: isRecurringPlan ? "Yes — auto-charged each cycle until cancelled" : "No" },
+              { label: "Contract Length", value: plan?.contractLengthMonths ? formatContractDuration(plan.contractLengthMonths) : "" },
+              { label: "Start Date", value: item.membershipStartDate ? parseLocalDate(item.membershipStartDate).toLocaleDateString() : "" },
+              { label: "Cancellation Notice", value: plan?.cancellationNoticeDays ? `${plan.cancellationNoticeDays} day(s)` : "" },
+              { label: "Early Termination Fee", value: plan?.cancellationFeeCents ? formatCents(plan.cancellationFeeCents) : "" },
+            ],
+          });
+
+          // Plan-specific clauses render as body sections after the
+          // member + per-item info blocks.
           if (plan?.contractClauses) {
             try {
               const planClauses: ContractClause[] = JSON.parse(plan.contractClauses);
               for (const clause of planClauses) {
-                yPos += 5;
-                if (yPos > 260) { pdf.addPage(); yPos = 20; }
-                pdf.setFont("helvetica", "bold");
-                pdf.setFontSize(10);
-                pdf.text(clause.title, margin, yPos); yPos += 5;
-                pdf.setFont("helvetica", "normal");
-                pdf.setFontSize(9);
-                const cLines = pdf.splitTextToSize(clause.content, maxWidth);
-                for (const cl of cLines) {
-                  if (yPos > 270) { pdf.addPage(); yPos = 20; }
-                  pdf.text(cl, margin, yPos); yPos += 4;
-                }
+                itemSections.push({ title: clause.title, content: clause.content });
               }
             } catch { /* ignore */ }
           }
-          yPos += 5;
         } else if (item.type === "service") {
-          const pkg = servicePackages.find(p => p.id === item.servicePackageId);
-          pdf.text(`Service: ${item.itemName}`, margin, yPos); yPos += 7;
-          pdf.setFont("helvetica", "normal");
-          pdf.setFontSize(10);
-          pdf.text(`Price: ${formatCents(item.unitPriceCents)}`, margin, yPos); yPos += 5;
-          if (pkg?.sessionsIncluded) { pdf.text(`Sessions: ${pkg.sessionsIncluded}`, margin, yPos); yPos += 5; }
-          if (pkg?.expirationDays) { pdf.text(`Expires: ${pkg.expirationDays} days from purchase`, margin, yPos); yPos += 5; }
-          yPos += 5;
+          const pkg = servicePackages.find((p) => p.id === item.servicePackageId);
+          itemBlocks.push({
+            title: `Service: ${item.itemName}`,
+            rows: [
+              { label: "Price", value: formatCents(item.unitPriceCents) },
+              { label: "Sessions Included", value: pkg?.sessionsIncluded ? String(pkg.sessionsIncluded) : "" },
+              { label: "Expires", value: pkg?.expirationDays ? `${pkg.expirationDays} days from purchase` : "" },
+            ],
+          });
         }
       }
 
-      // Global contract clauses
-      if (globalContractClauses.length > 0) {
-        if (yPos > 240) { pdf.addPage(); yPos = 20; }
-        pdf.setFontSize(12);
-        pdf.setFont("helvetica", "bold");
-        pdf.text("Terms & Conditions", margin, yPos); yPos += 7;
+      // Member info block always renders first.
+      const memberBlock: InfoBlock = {
+        title: "Member Information",
+        rows: [
+          { label: "Name", value: `${selectedMember.firstName} ${selectedMember.lastName}` },
+          { label: "Member #", value: selectedMember.memberNumber ? String(selectedMember.memberNumber) : "" },
+          { label: "Email", value: selectedMember.email || "" },
+          { label: "Phone", value: selectedMember.phone || "" },
+          { label: "Date", value: new Date().toLocaleDateString() },
+        ],
+      };
 
-        for (const clause of globalContractClauses) {
-          if (yPos > 250) { pdf.addPage(); yPos = 20; }
-          pdf.setFont("helvetica", "bold");
-          pdf.setFontSize(10);
-          pdf.text(clause.title, margin, yPos); yPos += 5;
-          pdf.setFont("helvetica", "normal");
-          pdf.setFontSize(9);
-          const clauseLines = pdf.splitTextToSize(clause.content, maxWidth);
-          for (const line of clauseLines) {
-            if (yPos > 270) { pdf.addPage(); yPos = 20; }
-            pdf.text(line, margin, yPos); yPos += 4;
-          }
-          yPos += 4;
-        }
-      }
+      const bodySections: BodySection[] = [
+        ...itemSections,
+        ...globalContractClauses.map((c) => ({ title: c.title, content: c.content })),
+      ];
 
-      // Signature
-      if (yPos > 230) { pdf.addPage(); yPos = 20; }
-      yPos += 10;
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(11);
-      pdf.text("Signature", margin, yPos); yPos += 8;
-      if (canvas && hasSignature) {
-        pdf.addImage(signatureDataUrl, "PNG", margin, yPos, 60, 20);
-        yPos += 25;
-      }
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.text(`Date: ${new Date().toLocaleDateString()}`, margin, yPos); yPos += 8;
-      pdf.setFontSize(8);
-      pdf.text(`Signed electronically on ${new Date().toLocaleString()}`, margin, yPos);
-
-      const pdfBase64 = pdf.output("datauristring");
+      const pdfBase64 = generateWaiverPdf({
+        gym: { name: gymName, address: gymAddress, phone: gymPhone, email: gymEmail },
+        logoImage: gymLogoImg,
+        waiverTitle: "Membership / Service Agreement",
+        infoBlocks: [memberBlock, ...itemBlocks],
+        sections: bodySections,
+        signatures: [
+          {
+            title: "Member Signature",
+            signaturePng: canvas && hasSignature ? signatureDataUrl : undefined,
+            name: `${selectedMember.firstName} ${selectedMember.lastName}`,
+            date: new Date().toLocaleDateString(),
+          },
+        ],
+        electronicallySignedAt: new Date().toLocaleString(),
+      });
 
       // 2. Stash the signed contract — DON'T save yet. We hold it in
       // pendingContractRef and only POST after the transaction actually
