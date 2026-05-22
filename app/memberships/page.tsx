@@ -1427,7 +1427,7 @@ export default function MembershipsPage() {
                       value={planCancellationProcedure}
                       onChange={(e) => setPlanCancellationProcedure(e.target.value)}
                       rows={3}
-                      placeholder="e.g., Email cancel@thepit.com or visit the front desk with written notice. Confirmation will be provided within 3 business days."
+                      placeholder="e.g., Email cancel@yourgym.com or visit the front desk with written notice. Confirmation will be provided within 3 business days."
                       className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
