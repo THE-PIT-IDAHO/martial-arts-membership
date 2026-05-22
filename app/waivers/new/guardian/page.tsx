@@ -120,17 +120,60 @@ function autoCapitalize(value: string): string {
   return value.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+// One signing session can cover up to 5 children — the parent signs once
+// and we generate a separate PDF per kid + a single adult-style PDF for
+// the parent.
+const MAX_CHILDREN = 5;
+
+type ChildEntry = {
+  // When set, the new waiver attaches to this existing member ID. When
+  // empty, a fresh child member is created from the firstName/lastName
+  // fields.
+  existingChildMemberId: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  email: string;
+  // Per-child emergency contact. Defaults to "same as guardian's" so the
+  // common case ("kid's emergency contact is the other parent") is one
+  // click. Toggle off to enter different name/phone.
+  emergencyContactSameAsGuardian: boolean;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  // Relationship label is always per-child ("Aunt" to the kid even if the
+  // person is the guardian's "Sister"). Stored independently.
+  emergencyContactRelationship: string;
+  medicalNotes: string;
+};
+
+function newChildEntry(): ChildEntry {
+  return {
+    existingChildMemberId: "",
+    firstName: "",
+    lastName: "",
+    dateOfBirth: "",
+    email: "",
+    emergencyContactSameAsGuardian: true,
+    emergencyContactName: "",
+    emergencyContactPhone: "",
+    emergencyContactRelationship: "",
+    medicalNotes: "",
+  };
+}
+
 export default function GuardianWaiverPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
-  // Dependent (Minor) fields
-  const [dependentFirstName, setDependentFirstName] = useState("");
-  const [dependentLastName, setDependentLastName] = useState("");
-  const [dependentDateOfBirth, setDependentDateOfBirth] = useState("");
-  const [dependentEmail, setDependentEmail] = useState("");
+  // Dependent (Minor) fields — one entry per child, up to MAX_CHILDREN.
+  // Each entry is self-contained: when picking an existing linked kid via
+  // existingChildMemberId, the form attaches the new SignedWaiver to that
+  // member ID; otherwise a new child member is created from the entered
+  // fields. Emergency contact + medical notes are per-child so siblings
+  // with different needs don't collide.
+  const [children, setChildren] = useState<ChildEntry[]>([newChildEntry()]);
 
   // Guardian fields
   const [guardianFirstName, setGuardianFirstName] = useState("");
@@ -144,20 +187,13 @@ export default function GuardianWaiverPage() {
   const [state, setState] = useState("");
   const [zipCode, setZipCode] = useState("");
 
-  // Emergency contact — captured per member so the same person can be saved
-  // with different relationships ("Aunt" to the kid, "Sister" to the parent).
-  // The dependent's contact defaults to "same as guardian's" since it's the
-  // common case; the toggle reveals separate fields when needed.
-  const [emergencyContactName, setEmergencyContactName] = useState(""); // guardian's
+  // Guardian's emergency contact (single — children carry their own per
+  // ChildEntry.emergency* fields, defaulting to "same as guardian's").
+  const [emergencyContactName, setEmergencyContactName] = useState("");
   const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
-  const [emergencyContactRelationship, setEmergencyContactRelationship] = useState(""); // to guardian
-  const [depEmergencyContactSameAsGuardian, setDepEmergencyContactSameAsGuardian] = useState(true);
-  const [depEmergencyContactName, setDepEmergencyContactName] = useState("");
-  const [depEmergencyContactPhone, setDepEmergencyContactPhone] = useState("");
-  const [depEmergencyContactRelationship, setDepEmergencyContactRelationship] = useState(""); // to dependent
+  const [emergencyContactRelationship, setEmergencyContactRelationship] = useState("");
 
-  // Medical and agreement
-  const [medicalNotes, setMedicalNotes] = useState("");
+  // Agreement
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [agreedToGuardian, setAgreedToGuardian] = useState(false);
   const [hasScrolledWaiver, setHasScrolledWaiver] = useState(false);
@@ -194,7 +230,12 @@ export default function GuardianWaiverPage() {
     return age;
   }
 
-  const minorAge = calculateAge(dependentDateOfBirth);
+  // Minor signature feature is tied to the first child entry only — the
+  // common case for the 14-17 minor-signature requirement. If a parent
+  // needs to sign for multiple 14-17 kids, they should email a separate
+  // session per kid.
+  const firstChild = children[0] || newChildEntry();
+  const minorAge = calculateAge(firstChild.dateOfBirth);
   const isMinor14to17 = minorAge >= 14 && minorAge <= 17;
 
   // Optional template slug from ?template=<slug>. Used to tag the
@@ -220,9 +261,40 @@ export default function GuardianWaiverPage() {
     emergencyContactRelationship: string | null;
     medicalNotes: string | null;
   }>>([]);
-  // When set, the new waiver attaches to this existing child; otherwise a
-  // new child member is created from the form fields.
-  const [existingChildMemberId, setExistingChildMemberId] = useState<string>("");
+  // Helpers for the children[] array. Index-based so the UI can render
+  // one section per kid without prop-drilling.
+  function updateChild(index: number, patch: Partial<ChildEntry>) {
+    setChildren((prev) => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+  }
+  function addChild() {
+    setChildren((prev) => (prev.length >= MAX_CHILDREN ? prev : [...prev, newChildEntry()]));
+  }
+  function removeChild(index: number) {
+    setChildren((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  }
+  // Apply a linked-child record to a child slot (clears it when picker
+  // returns to the empty/"New child" option).
+  function applyExistingChild(index: number, id: string) {
+    if (!id) {
+      updateChild(index, { ...newChildEntry() });
+      return;
+    }
+    const c = linkedChildren.find((x) => x.id === id);
+    if (!c) return;
+    updateChild(index, {
+      existingChildMemberId: id,
+      firstName: c.firstName || "",
+      lastName: c.lastName || "",
+      dateOfBirth: c.dateOfBirth ? new Date(c.dateOfBirth).toISOString().split("T")[0] : "",
+      email: c.email || "",
+      emergencyContactSameAsGuardian: !(c.emergencyContactName || c.emergencyContactPhone || c.emergencyContactRelationship),
+      emergencyContactName: c.emergencyContactName || "",
+      emergencyContactPhone: c.emergencyContactPhone || "",
+      emergencyContactRelationship: c.emergencyContactRelationship || "",
+      medicalNotes: c.medicalNotes || "",
+    });
+  }
+
   // The parent's own PDF reads like an adult enrollment waiver. We pull the
   // first active adult template's content for it so the legal language fits
   // ("I, [parent], acknowledge…") instead of reusing the guardian template
@@ -521,9 +593,14 @@ export default function GuardianWaiverPage() {
       return;
     }
 
-    if (!dependentFirstName.trim() || !dependentLastName.trim()) {
-      setError("Please enter the dependent's first and last name");
-      return;
+    // Every child entry needs first + last name. Walk the array so the
+    // first missing entry gets called out by position.
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i];
+      if (!c.firstName.trim() || !c.lastName.trim()) {
+        setError(`Please enter the first and last name for child ${i + 1}`);
+        return;
+      }
     }
 
     if (!guardianFirstName.trim() || !guardianLastName.trim()) {
@@ -531,7 +608,6 @@ export default function GuardianWaiverPage() {
       return;
     }
 
-    // Require minor signature if they are 14-17 and the option is enabled
     if (isMinor14to17 && waiverOptions.includeMinorSignature && !hasMinorSignature) {
       setError("Please provide the minor's signature (required for ages 14-17)");
       return;
@@ -541,9 +617,8 @@ export default function GuardianWaiverPage() {
     setError("");
 
     try {
-      // Capture signatures from canvases once — both PDFs reuse the same
-      // image so the parent's copy and the child's copy show the same
-      // handwriting from the legal signer.
+      // One signature image reused across every PDF — same handwriting
+      // for the guardian copy + each kid's copy.
       const guardianCanvas = canvasRef.current;
       const signatureDataUrl =
         guardianCanvas && hasSignature
@@ -565,87 +640,96 @@ export default function GuardianWaiverPage() {
         : "Adult Liability Waiver";
       const dependentLabel = isGuardianFlavor ? "Dependent" : "Child";
 
-      // Child PDF — the existing layout with dependent + guardian + emergency
-      // sections, signed by the guardian (and the minor if 14–17).
-      const childPdfBase64 = generateWaiverPdf({
-        gym: gymSettings,
-        logoImage: gymLogoImg,
-        waiverTitle: isGuardianFlavor
-          ? "Guardian and Dependent Liability Waiver"
-          : "Parent and Child Liability Waiver",
-        infoBlocks: [
-          {
-            title: `${dependentLabel} (Minor) Information`,
-            rows: [
-              { label: "Name", value: `${dependentFirstName} ${dependentLastName}` },
-              {
-                label: "Date of Birth",
-                value: dependentDateOfBirth
-                  ? `${new Date(dependentDateOfBirth).toLocaleDateString()} (Age: ${minorAge})`
-                  : "",
-              },
-              { label: "Email", value: dependentEmail },
-            ],
-          },
-          {
-            title: "Parent/Guardian Information",
-            rows: [
-              { label: "Name", value: `${guardianFirstName} ${guardianLastName}` },
-              { label: "Date of Birth", value: guardianDateOfBirth ? new Date(guardianDateOfBirth).toLocaleDateString() : "" },
-              { label: "Relationship", value: relationship },
-              { label: "Email", value: email },
-              { label: "Phone", value: phone },
-              { label: "Address", value: address ? `${address}, ${city}, ${state} ${zipCode}` : "" },
-            ],
-          },
-          {
-            title: `${dependentLabel}'s Emergency Contact`,
-            rows: [
-              {
-                label: "Name",
-                value: depEmergencyContactSameAsGuardian
-                  ? emergencyContactName
-                  : depEmergencyContactName,
-              },
-              {
-                label: "Phone",
-                value: depEmergencyContactSameAsGuardian
-                  ? emergencyContactPhone
-                  : depEmergencyContactPhone,
-              },
-              { label: "Relationship", value: depEmergencyContactRelationship },
-            ],
-          },
-        ],
-        sections: waiverSections,
-        replacePlaceholders: (t) =>
-          replacePlaceholders(
-            t,
-            gymSettings,
-            `${dependentFirstName} ${dependentLastName}`,
-            dependentFirstName,
-            dependentLastName,
-            `${guardianFirstName} ${guardianLastName}`.trim(),
-          ),
-        signatures: [
-          {
-            title: `${isGuardianFlavor ? "Guardian" : "Parent"} Signature`,
-            signaturePng: signatureDataUrl || undefined,
-            name: `${guardianFirstName} ${guardianLastName} (${relationship})`,
-            date: new Date(signatureDate).toLocaleDateString(),
-          },
-          ...(minorSignatureDataUrl
-            ? [
+      // One PDF per child. Each carries that child's info + guardian
+      // info + that child's emergency contact. We attach the minor
+      // signature only to the first child's PDF (the minor-signature
+      // feature is tied to that entry).
+      const childPayloads = children.map((c, idx) => {
+        const cAge = calculateAge(c.dateOfBirth);
+        const ecName = c.emergencyContactSameAsGuardian ? emergencyContactName : c.emergencyContactName;
+        const ecPhone = c.emergencyContactSameAsGuardian ? emergencyContactPhone : c.emergencyContactPhone;
+        const pdfBase64 = generateWaiverPdf({
+          gym: gymSettings,
+          logoImage: gymLogoImg,
+          waiverTitle: isGuardianFlavor
+            ? "Guardian and Dependent Liability Waiver"
+            : "Parent and Child Liability Waiver",
+          infoBlocks: [
+            {
+              title: `${dependentLabel} (Minor) Information`,
+              rows: [
+                { label: "Name", value: `${c.firstName} ${c.lastName}` },
                 {
-                  title: "Minor Signature (Ages 14-17)",
-                  signaturePng: minorSignatureDataUrl,
-                  name: `${dependentFirstName} ${dependentLastName}`,
-                  date: new Date(signatureDate).toLocaleDateString(),
+                  label: "Date of Birth",
+                  value: c.dateOfBirth
+                    ? `${new Date(c.dateOfBirth).toLocaleDateString()} (Age: ${cAge})`
+                    : "",
                 },
-              ]
-            : []),
-        ],
-        electronicallySignedAt: new Date().toLocaleString(),
+                { label: "Email", value: c.email },
+              ],
+            },
+            {
+              title: "Parent/Guardian Information",
+              rows: [
+                { label: "Name", value: `${guardianFirstName} ${guardianLastName}` },
+                { label: "Date of Birth", value: guardianDateOfBirth ? new Date(guardianDateOfBirth).toLocaleDateString() : "" },
+                { label: "Relationship", value: relationship },
+                { label: "Email", value: email },
+                { label: "Phone", value: phone },
+                { label: "Address", value: address ? `${address}, ${city}, ${state} ${zipCode}` : "" },
+              ],
+            },
+            {
+              title: `${dependentLabel}'s Emergency Contact`,
+              rows: [
+                { label: "Name", value: ecName },
+                { label: "Phone", value: ecPhone },
+                { label: "Relationship", value: c.emergencyContactRelationship },
+              ],
+            },
+          ],
+          sections: waiverSections,
+          replacePlaceholders: (t) =>
+            replacePlaceholders(
+              t,
+              gymSettings,
+              `${c.firstName} ${c.lastName}`,
+              c.firstName,
+              c.lastName,
+              `${guardianFirstName} ${guardianLastName}`.trim(),
+            ),
+          signatures: [
+            {
+              title: `${isGuardianFlavor ? "Guardian" : "Parent"} Signature`,
+              signaturePng: signatureDataUrl || undefined,
+              name: `${guardianFirstName} ${guardianLastName} (${relationship})`,
+              date: new Date(signatureDate).toLocaleDateString(),
+            },
+            ...(idx === 0 && minorSignatureDataUrl
+              ? [
+                  {
+                    title: "Minor Signature (Ages 14-17)",
+                    signaturePng: minorSignatureDataUrl,
+                    name: `${c.firstName} ${c.lastName}`,
+                    date: new Date(signatureDate).toLocaleDateString(),
+                  },
+                ]
+              : []),
+          ],
+          electronicallySignedAt: new Date().toLocaleString(),
+        });
+        return {
+          existingChildMemberId: c.existingChildMemberId || undefined,
+          firstName: c.firstName.trim(),
+          lastName: c.lastName.trim(),
+          dateOfBirth: c.dateOfBirth || undefined,
+          email: c.email || undefined,
+          emergencyContactName: ecName || undefined,
+          emergencyContactPhone: ecPhone || undefined,
+          emergencyContactRelationship: c.emergencyContactRelationship || undefined,
+          medicalNotes: c.medicalNotes || undefined,
+          pdfBase64,
+        };
       });
 
       // Parent's own PDF — looks like the standard adult waiver. No dependent
@@ -698,18 +782,14 @@ export default function GuardianWaiverPage() {
         electronicallySignedAt: new Date().toLocaleString(),
       });
 
-      const pdfBase64 = childPdfBase64;
-
-      // Submit via public endpoint (creates dependent + guardian + relationship + saves PDF)
+      // One submit covers every child + the parent. Server iterates
+      // children[] and creates/attaches per kid.
       const res = await fetch("/api/public/waiver-submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "guardian",
-          dependentFirstName: dependentFirstName.trim(),
-          dependentLastName: dependentLastName.trim(),
-          dependentEmail: dependentEmail || undefined,
-          dependentDateOfBirth: dependentDateOfBirth || undefined,
+          children: childPayloads,
           guardianFirstName: guardianFirstName.trim(),
           guardianLastName: guardianLastName.trim(),
           guardianDateOfBirth: guardianDateOfBirth || undefined,
@@ -720,32 +800,14 @@ export default function GuardianWaiverPage() {
           city: city || undefined,
           state: state || undefined,
           zipCode: zipCode || undefined,
-          // Guardian's emergency contact
           emergencyContactName: emergencyContactName || undefined,
           emergencyContactPhone: emergencyContactPhone || undefined,
           emergencyContactRelationship: emergencyContactRelationship || undefined,
-          // Dependent's emergency contact — same name/phone as guardian's
-          // when toggle is on; relationship label always per-member.
-          dependentEmergencyContactName:
-            depEmergencyContactSameAsGuardian
-              ? (emergencyContactName || undefined)
-              : (depEmergencyContactName || undefined),
-          dependentEmergencyContactPhone:
-            depEmergencyContactSameAsGuardian
-              ? (emergencyContactPhone || undefined)
-              : (depEmergencyContactPhone || undefined),
-          dependentEmergencyContactRelationship: depEmergencyContactRelationship || undefined,
-          medicalNotes: medicalNotes || undefined,
-          pdfBase64,
           parentPdfBase64,
           signatureData: signatureDataUrl || undefined,
           templateSlug: templateSlug || undefined,
           templateId: templateId || undefined,
-          // Admin-emailed "Add Child" flow: attach to the existing parent
-          // and (optionally) an existing child instead of creating new
-          // member rows.
           existingParentMemberId: parentMemberId || undefined,
-          existingChildMemberId: existingChildMemberId || undefined,
         }),
       });
 
@@ -765,10 +827,7 @@ export default function GuardianWaiverPage() {
   }
 
   function resetForm() {
-    setDependentFirstName("");
-    setDependentLastName("");
-    setDependentDateOfBirth("");
-    setDependentEmail("");
+    setChildren([newChildEntry()]);
     setGuardianFirstName("");
     setGuardianLastName("");
     setGuardianDateOfBirth("");
@@ -782,11 +841,6 @@ export default function GuardianWaiverPage() {
     setEmergencyContactName("");
     setEmergencyContactPhone("");
     setEmergencyContactRelationship("");
-    setDepEmergencyContactSameAsGuardian(true);
-    setDepEmergencyContactName("");
-    setDepEmergencyContactPhone("");
-    setDepEmergencyContactRelationship("");
-    setMedicalNotes("");
     setAgreedToTerms(false);
     setAgreedToGuardian(false);
     setSignatureDate(getTodayString());
@@ -904,129 +958,184 @@ export default function GuardianWaiverPage() {
               </div>
             )}
 
-            {/* Dependent (Minor) Information */}
-            <section>
-              <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
-                Dependent (Minor) Information
-              </h2>
+            {/* Per-child blocks. Each child gets its own dependent info +
+                existing-child picker + dependent emergency contact +
+                medical notes. Up to MAX_CHILDREN; the "Add Child" button
+                below the last block adds another. */}
+            {children.map((c, idx) => {
+              const cAge = calculateAge(c.dateOfBirth);
+              const cIsMinor14to17 = cAge >= 14 && cAge <= 17;
+              return (
+                <section key={idx} className="rounded-lg border border-gray-200 p-3 sm:p-4 bg-gray-50/40">
+                  <div className="flex items-center justify-between mb-3 sm:mb-4 pb-2 border-b border-gray-200">
+                    <h2 className="text-base sm:text-lg font-semibold text-gray-900">
+                      Child {idx + 1}
+                    </h2>
+                    {children.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeChild(idx)}
+                        className="text-xs text-red-600 hover:text-red-700 font-medium"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
 
-              {/* Existing-child picker (only shown when this page was
-                  reached from the admin Add Child flow AND the parent
-                  has at least one linked child on file). Picking one
-                  pre-fills the dependent fields below and tags the
-                  submission so a new waiver attaches to that existing
-                  child instead of creating a duplicate member. */}
-              {parentMemberId && linkedChildren.length > 0 && (
-                <div className="mb-3 sm:mb-4 rounded-md border border-gray-200 bg-gray-50 p-3">
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    Add a new child, or use an existing one
-                  </label>
-                  <select
-                    value={existingChildMemberId}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      setExistingChildMemberId(id);
-                      if (!id) {
-                        setDependentFirstName("");
-                        setDependentLastName("");
-                        setDependentDateOfBirth("");
-                        setDependentEmail("");
-                        return;
-                      }
-                      const c = linkedChildren.find((x) => x.id === id);
-                      if (!c) return;
-                      setDependentFirstName(c.firstName || "");
-                      setDependentLastName(c.lastName || "");
-                      if (c.dateOfBirth) {
-                        setDependentDateOfBirth(new Date(c.dateOfBirth).toISOString().split("T")[0]);
-                      } else {
-                        setDependentDateOfBirth("");
-                      }
-                      setDependentEmail(c.email || "");
-                      if (c.emergencyContactName || c.emergencyContactPhone || c.emergencyContactRelationship) {
-                        setDepEmergencyContactSameAsGuardian(false);
-                        setDepEmergencyContactName(c.emergencyContactName || "");
-                        setDepEmergencyContactPhone(c.emergencyContactPhone || "");
-                        setDepEmergencyContactRelationship(c.emergencyContactRelationship || "");
-                      }
-                      if (c.medicalNotes) setMedicalNotes(c.medicalNotes);
-                    }}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">+ Add a new child</option>
-                    {linkedChildren.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.firstName} {c.lastName}
-                      </option>
-                    ))}
-                  </select>
-                  {existingChildMemberId && (
-                    <p className="mt-1 text-[11px] text-gray-500">
-                      Auto-filled from an existing record. Edit anything that's changed before signing.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    First Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={dependentFirstName}
-                    onChange={(e) => setDependentFirstName(autoCapitalize(e.target.value))}
-                    required
-                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Last Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={dependentLastName}
-                    onChange={(e) => setDependentLastName(autoCapitalize(e.target.value))}
-                    required
-                    className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Date of Birth *
-                  </label>
-                  <DateOfBirthPicker
-                    value={dependentDateOfBirth}
-                    onChange={setDependentDateOfBirth}
-                    required
-                  />
-                  {minorAge > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Age: {minorAge} years old
-                      {isMinor14to17 && waiverOptions.includeMinorSignature && (
-                        <span className="ml-2 text-primary font-medium">(Minor signature required)</span>
+                  {/* Existing-child picker (admin "Add Child" flow only).
+                      Picking a linked kid auto-fills this entire block. */}
+                  {parentMemberId && linkedChildren.length > 0 && (
+                    <div className="mb-3 sm:mb-4 rounded-md border border-gray-200 bg-white p-3">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Add a new child, or use an existing one
+                      </label>
+                      <select
+                        value={c.existingChildMemberId}
+                        onChange={(e) => applyExistingChild(idx, e.target.value)}
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">+ Add a new child</option>
+                        {linkedChildren.map((lc) => (
+                          <option key={lc.id} value={lc.id}>
+                            {lc.firstName} {lc.lastName}
+                          </option>
+                        ))}
+                      </select>
+                      {c.existingChildMemberId && (
+                        <p className="mt-1 text-[11px] text-gray-500">
+                          Auto-filled from an existing record. Edit anything that&apos;s changed before signing.
+                        </p>
                       )}
-                    </p>
+                    </div>
                   )}
-                </div>
-                {isMinor14to17 && waiverOptions.includeMinorEmail && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Dependent&apos;s Email
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+                      <input
+                        type="text"
+                        value={c.firstName}
+                        onChange={(e) => updateChild(idx, { firstName: autoCapitalize(e.target.value) })}
+                        required
+                        className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+                      <input
+                        type="text"
+                        value={c.lastName}
+                        onChange={(e) => updateChild(idx, { lastName: autoCapitalize(e.target.value) })}
+                        required
+                        className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth *</label>
+                      <DateOfBirthPicker
+                        value={c.dateOfBirth}
+                        onChange={(v) => updateChild(idx, { dateOfBirth: v })}
+                        required
+                      />
+                      {cAge > 0 && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Age: {cAge} years old
+                          {idx === 0 && cIsMinor14to17 && waiverOptions.includeMinorSignature && (
+                            <span className="ml-2 text-primary font-medium">(Minor signature required)</span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    {cIsMinor14to17 && waiverOptions.includeMinorEmail && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Dependent&apos;s Email</label>
+                        <input
+                          type="email"
+                          value={c.email}
+                          onChange={(e) => updateChild(idx, { email: e.target.value })}
+                          placeholder="minor@email.com"
+                          className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Per-child emergency contact + relationship */}
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-2">Emergency Contact for this Child</h3>
+                    <label className="flex items-center gap-2 mb-2 cursor-pointer text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={c.emergencyContactSameAsGuardian}
+                        onChange={(e) => updateChild(idx, { emergencyContactSameAsGuardian: e.target.checked })}
+                        className="h-4 w-4 rounded border-gray-300 accent-primary"
+                      />
+                      Same person as guardian&apos;s emergency contact
                     </label>
-                    <input
-                      type="email"
-                      value={dependentEmail}
-                      onChange={(e) => setDependentEmail(e.target.value)}
-                      placeholder="minor@email.com"
+                    {!c.emergencyContactSameAsGuardian && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Contact Name *</label>
+                          <input
+                            type="text"
+                            value={c.emergencyContactName}
+                            onChange={(e) => updateChild(idx, { emergencyContactName: autoCapitalize(e.target.value) })}
+                            required={!c.emergencyContactSameAsGuardian}
+                            className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Contact Phone *</label>
+                          <input
+                            type="tel"
+                            value={c.emergencyContactPhone}
+                            onChange={(e) => updateChild(idx, { emergencyContactPhone: formatPhoneNumber(e.target.value) })}
+                            placeholder="(123) 456-7890"
+                            maxLength={14}
+                            required={!c.emergencyContactSameAsGuardian}
+                            className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Relationship to Dependent *</label>
+                      <input
+                        type="text"
+                        value={c.emergencyContactRelationship}
+                        onChange={(e) => updateChild(idx, { emergencyContactRelationship: autoCapitalize(e.target.value) })}
+                        placeholder="e.g., Aunt, Uncle, Grandparent"
+                        required
+                        className="w-full sm:max-w-xs rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Per-child medical notes */}
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Medical Notes / Health Conditions</label>
+                    <textarea
+                      value={c.medicalNotes}
+                      onChange={(e) => updateChild(idx, { medicalNotes: e.target.value })}
+                      rows={2}
+                      placeholder="Conditions, allergies, injuries, medications…"
                       className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
-                )}
-              </div>
-            </section>
+                </section>
+              );
+            })}
+
+            {/* Add Child button — disabled at MAX_CHILDREN. */}
+            {children.length < MAX_CHILDREN && (
+              <button
+                type="button"
+                onClick={addChild}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark transition-colors"
+              >
+                Add Child
+              </button>
+            )}
 
             {/* Parent/Guardian Information */}
             <section>
@@ -1206,83 +1315,6 @@ export default function GuardianWaiverPage() {
               </div>
             </section>
 
-            {/* Dependent's Emergency Contact */}
-            <section>
-              <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
-                Dependent&apos;s Emergency Contact
-              </h2>
-              <label className="flex items-center gap-2 mb-3 cursor-pointer text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={depEmergencyContactSameAsGuardian}
-                  onChange={(e) => setDepEmergencyContactSameAsGuardian(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 accent-primary"
-                />
-                Same person as guardian&apos;s emergency contact
-              </label>
-              {!depEmergencyContactSameAsGuardian && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Contact Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={depEmergencyContactName}
-                      onChange={(e) => setDepEmergencyContactName(autoCapitalize(e.target.value))}
-                      required={!depEmergencyContactSameAsGuardian}
-                      className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Contact Phone *
-                    </label>
-                    <input
-                      type="tel"
-                      value={depEmergencyContactPhone}
-                      onChange={(e) => setDepEmergencyContactPhone(formatPhoneNumber(e.target.value))}
-                      placeholder="(123) 456-7890"
-                      maxLength={14}
-                      required={!depEmergencyContactSameAsGuardian}
-                      className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Relationship to Dependent *
-                </label>
-                <input
-                  type="text"
-                  value={depEmergencyContactRelationship}
-                  onChange={(e) => setDepEmergencyContactRelationship(autoCapitalize(e.target.value))}
-                  placeholder="e.g., Aunt, Uncle, Grandparent"
-                  required
-                  className="w-full sm:max-w-xs rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-            </section>
-
-            {/* Medical Information */}
-            <section>
-              <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
-                Medical Information
-              </h2>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Medical Notes / Health Conditions
-                </label>
-                <textarea
-                  value={medicalNotes}
-                  onChange={(e) => setMedicalNotes(e.target.value)}
-                  rows={3}
-                  placeholder="Please list any medical conditions, allergies, injuries, or other health information the instructors should be aware of..."
-                  className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-            </section>
 
             {/* Waiver Terms */}
             <section>
@@ -1294,25 +1326,35 @@ export default function GuardianWaiverPage() {
                 onScroll={handleWaiverScroll}
                 className="bg-gray-50 border border-gray-200 rounded-lg p-3 sm:p-4 max-h-96 sm:max-h-[32rem] overflow-y-auto text-xs sm:text-sm text-gray-700 space-y-2 sm:space-y-3"
               >
-                {waiverSections.map((section) => (
-                  <p key={section.id}>
-                    {section.title && <strong>{replacePlaceholders(
-                      section.title,
-                      gymSettings,
-                      dependentFirstName && dependentLastName ? `${dependentFirstName} ${dependentLastName}` : "my minor child",
-                      dependentFirstName,
-                      dependentLastName,
-                      `${guardianFirstName || ""} ${guardianLastName || ""}`.trim(),
-                    )}:</strong>} {replacePlaceholders(
-                      section.content,
-                      gymSettings,
-                      dependentFirstName && dependentLastName ? `${dependentFirstName} ${dependentLastName}` : "my minor child",
-                      dependentFirstName,
-                      dependentLastName,
-                      `${guardianFirstName || ""} ${guardianLastName || ""}`.trim(),
-                    )}
-                  </p>
-                ))}
+                {(() => {
+                  // Preview uses the first child's name (multi-child sign
+                  // sessions generate the same text, just with per-child
+                  // names on each PDF).
+                  const previewChild = children[0] || newChildEntry();
+                  const previewFull = previewChild.firstName && previewChild.lastName
+                    ? `${previewChild.firstName} ${previewChild.lastName}`
+                    : "my minor child";
+                  const previewGuardianFull = `${guardianFirstName || ""} ${guardianLastName || ""}`.trim();
+                  return waiverSections.map((section) => (
+                    <p key={section.id}>
+                      {section.title && <strong>{replacePlaceholders(
+                        section.title,
+                        gymSettings,
+                        previewFull,
+                        previewChild.firstName,
+                        previewChild.lastName,
+                        previewGuardianFull,
+                      )}:</strong>} {replacePlaceholders(
+                        section.content,
+                        gymSettings,
+                        previewFull,
+                        previewChild.firstName,
+                        previewChild.lastName,
+                        previewGuardianFull,
+                      )}
+                    </p>
+                  ));
+                })()}
               </div>
               {!hasScrolledWaiver && (
                 <p className="text-xs text-gray-400 mt-1 text-center">Scroll to the bottom to continue</p>

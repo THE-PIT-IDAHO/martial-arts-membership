@@ -174,205 +174,220 @@ async function resolveTemplate(
   return null;
 }
 
-async function handleGuardianSubmit(body: Record<string, string>, clientId: string) {
+type GuardianChildPayload = {
+  existingChildMemberId?: string;
+  firstName?: string;
+  lastName?: string;
+  dateOfBirth?: string;
+  email?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelationship?: string;
+  medicalNotes?: string;
+  pdfBase64?: string;
+};
+
+async function handleGuardianSubmit(body: Record<string, unknown>, clientId: string) {
   const {
-    dependentFirstName, dependentLastName, dependentEmail, dependentDateOfBirth,
     guardianFirstName, guardianLastName, guardianDateOfBirth, relationship,
     email, phone, address, city, state, zipCode,
     emergencyContactName, emergencyContactPhone, emergencyContactRelationship,
-    dependentEmergencyContactName, dependentEmergencyContactPhone, dependentEmergencyContactRelationship,
-    medicalNotes, pdfBase64, parentPdfBase64, templateSlug, templateId,
-    existingParentMemberId, existingChildMemberId,
-  } = body;
-  const resolvedTemplate = await resolveTemplate(clientId, templateId, templateSlug);
+    parentPdfBase64, templateSlug, templateId, existingParentMemberId,
+  } = body as Record<string, string | undefined>;
 
-  if (!dependentFirstName || !dependentLastName) {
-    return NextResponse.json({ error: "Dependent first and last name are required" }, { status: 400 });
+  // Accept the new children[] payload. Fall back to building a single-
+  // element array from the legacy dependent* fields so older stale tabs
+  // don't 400 after a deploy.
+  let children: GuardianChildPayload[] = Array.isArray(body.children)
+    ? (body.children as GuardianChildPayload[])
+    : [];
+  if (children.length === 0 && typeof body.dependentFirstName === "string") {
+    const legacy = body as Record<string, string | undefined>;
+    children = [{
+      existingChildMemberId: legacy.existingChildMemberId,
+      firstName: legacy.dependentFirstName,
+      lastName: legacy.dependentLastName,
+      dateOfBirth: legacy.dependentDateOfBirth,
+      email: legacy.dependentEmail,
+      emergencyContactName: legacy.dependentEmergencyContactName || legacy.emergencyContactName,
+      emergencyContactPhone: legacy.dependentEmergencyContactPhone || legacy.emergencyContactPhone,
+      emergencyContactRelationship: legacy.dependentEmergencyContactRelationship,
+      medicalNotes: legacy.medicalNotes,
+      pdfBase64: legacy.pdfBase64,
+    }];
   }
 
-  // Dependent: either attach to an existing child member (admin re-sign /
-  // existing-child picker) or create a fresh member from the form fields.
-  let dependent: { id: string };
-  if (existingChildMemberId) {
+  if (children.length === 0) {
+    return NextResponse.json({ error: "At least one child is required" }, { status: 400 });
+  }
+  for (const c of children) {
+    if (!c.firstName || !c.lastName) {
+      return NextResponse.json({ error: "Each child needs a first and last name" }, { status: 400 });
+    }
+  }
+
+  const resolvedTemplate = await resolveTemplate(clientId, templateId, templateSlug);
+  const signatureData = (typeof body.signatureData === "string" ? body.signatureData : null) || "submitted";
+
+  // Resolve the parent FIRST so we have an ID to link every child to.
+  let guardian: { id: string } | null = null;
+  if (existingParentMemberId) {
     const found = await prisma.member.findFirst({
-      where: { id: existingChildMemberId, clientId },
+      where: { id: existingParentMemberId, clientId },
     });
     if (!found) {
-      return NextResponse.json({ error: "Existing child not found" }, { status: 404 });
+      return NextResponse.json({ error: "Existing parent not found" }, { status: 404 });
     }
-    // Patch with any field edits the signer made.
     await prisma.member.update({
       where: { id: found.id },
       data: {
-        ...(dependentFirstName ? { firstName: dependentFirstName.trim() } : {}),
-        ...(dependentLastName ? { lastName: dependentLastName.trim() } : {}),
-        ...(dependentEmail !== undefined ? { email: dependentEmail || null } : {}),
-        ...(dependentDateOfBirth ? { dateOfBirth: new Date(dependentDateOfBirth) } : {}),
-        ...(dependentEmergencyContactName !== undefined || emergencyContactName !== undefined
-          ? { emergencyContactName: dependentEmergencyContactName || emergencyContactName || null }
-          : {}),
-        ...(dependentEmergencyContactPhone !== undefined || emergencyContactPhone !== undefined
-          ? { emergencyContactPhone: dependentEmergencyContactPhone || emergencyContactPhone || null }
-          : {}),
-        ...(dependentEmergencyContactRelationship !== undefined
-          ? { emergencyContactRelationship: dependentEmergencyContactRelationship || null }
-          : {}),
-        ...(medicalNotes !== undefined ? { medicalNotes: medicalNotes || null } : {}),
+        ...(guardianFirstName ? { firstName: guardianFirstName.trim() } : {}),
+        ...(guardianLastName ? { lastName: guardianLastName.trim() } : {}),
+        ...(guardianDateOfBirth ? { dateOfBirth: new Date(guardianDateOfBirth) } : {}),
+        ...(email !== undefined ? { email: email || null } : {}),
+        ...(phone !== undefined ? { phone: phone || null } : {}),
+        ...(address !== undefined ? { address: address || null } : {}),
+        ...(city !== undefined ? { city: city || null } : {}),
+        ...(state !== undefined ? { state: state || null } : {}),
+        ...(zipCode !== undefined ? { zipCode: zipCode || null } : {}),
+        ...(emergencyContactName !== undefined ? { emergencyContactName: emergencyContactName || null } : {}),
+        ...(emergencyContactPhone !== undefined ? { emergencyContactPhone: emergencyContactPhone || null } : {}),
+        ...(emergencyContactRelationship !== undefined ? { emergencyContactRelationship: emergencyContactRelationship || null } : {}),
         waiverSigned: true,
         waiverSignedAt: new Date(),
       },
     });
-    dependent = { id: found.id };
-  } else {
-    // Create dependent (minor) member — inherits the shared household info
-    // (phone, address, emergency contact) so admins don't have to re-enter it.
-    const depNumber = await getNextMemberNumber();
+    guardian = { id: found.id };
+  } else if (guardianFirstName && guardianLastName) {
+    const guardianNumber = await getNextMemberNumber();
     const created = await prisma.member.create({
       data: {
-        firstName: dependentFirstName.trim(),
-        lastName: dependentLastName.trim(),
-        email: dependentEmail || null,
+        firstName: guardianFirstName.trim(),
+        lastName: guardianLastName.trim(),
+        dateOfBirth: guardianDateOfBirth ? new Date(guardianDateOfBirth) : null,
+        email: email || null,
         phone: phone || null,
-        dateOfBirth: dependentDateOfBirth ? new Date(dependentDateOfBirth) : null,
         address: address || null,
         city: city || null,
         state: state || null,
         zipCode: zipCode || null,
-        parentGuardianName: `${guardianFirstName || ""} ${guardianLastName || ""}`.trim() || null,
-        // Dependent's emergency contact — may be the same person as the
-        // guardian's contact (form sends the guardian's name/phone in that
-        // case) but the relationship is always the dependent's (e.g. "Aunt").
-        emergencyContactName: dependentEmergencyContactName || emergencyContactName || null,
-        emergencyContactPhone: dependentEmergencyContactPhone || emergencyContactPhone || null,
-        emergencyContactRelationship: dependentEmergencyContactRelationship || null,
-        medicalNotes: medicalNotes || null,
-        waiverSigned: false,
-        status: "PROSPECT",
-        memberNumber: depNumber,
+        emergencyContactName: emergencyContactName || null,
+        emergencyContactPhone: emergencyContactPhone || null,
+        emergencyContactRelationship: emergencyContactRelationship || null,
+        status: "PARENT",
+        memberNumber: guardianNumber,
         clientId,
       },
     });
-    dependent = { id: created.id };
+    guardian = { id: created.id };
   }
 
-  // Create SignedWaiver on the CHILD. Same PDF (signature) gets attached
-  // separately to the parent below so each account has its own row — that
-  // way each profile renders its waiver. We used to skip the parent copy
-  // and rely on the portal's minor-child aggregation alone, but that
-  // missed the parent's admin profile + the portal's "own waivers" tab,
-  // so the waiver appeared nowhere on the parent's account.
-  //
-  // Single confirmation: the /api/waivers/confirm/[id] route already
-  // cascade-confirms paired rows within a 30s signedAt window, so admin
-  // only ever clicks once.
-  await prisma.signedWaiver.create({
-    data: {
-      memberId: dependent.id,
-      templateId: resolvedTemplate?.id || null,
-      templateName: resolvedTemplate?.name || "Waiver",
-      waiverContent: "Submitted via guardian waiver form",
-      signatureData: body.signatureData || "submitted",
-      pdfData: pdfBase64 || null,
-      confirmed: false,
-      clientId,
-    },
-  });
-
-  // Guardian: same two-mode logic as the dependent. existingParentMemberId
-  // means "admin emailed an existing parent the Add Child link" — we just
-  // patch their record and add a new SignedWaiver row. Otherwise this is
-  // a public guardian sign and we create the parent fresh.
-  if (existingParentMemberId || (guardianFirstName && guardianLastName)) {
-    let guardian: { id: string };
-    if (existingParentMemberId) {
+  // Resolve each child + create their SignedWaiver. Ensure a relationship
+  // back to the guardian if we have one. Each child carries its own PDF.
+  const relationshipType = relationship === "Legal Guardian" ? "Guardian of" : "Parent of";
+  const dependentIds: string[] = [];
+  for (const c of children) {
+    let dependentId: string;
+    if (c.existingChildMemberId) {
       const found = await prisma.member.findFirst({
-        where: { id: existingParentMemberId, clientId },
+        where: { id: c.existingChildMemberId, clientId },
       });
       if (!found) {
-        return NextResponse.json({ error: "Existing parent not found" }, { status: 404 });
+        return NextResponse.json({ error: "Existing child not found" }, { status: 404 });
       }
       await prisma.member.update({
         where: { id: found.id },
         data: {
-          ...(guardianFirstName ? { firstName: guardianFirstName.trim() } : {}),
-          ...(guardianLastName ? { lastName: guardianLastName.trim() } : {}),
-          ...(guardianDateOfBirth ? { dateOfBirth: new Date(guardianDateOfBirth) } : {}),
-          ...(email !== undefined ? { email: email || null } : {}),
-          ...(phone !== undefined ? { phone: phone || null } : {}),
-          ...(address !== undefined ? { address: address || null } : {}),
-          ...(city !== undefined ? { city: city || null } : {}),
-          ...(state !== undefined ? { state: state || null } : {}),
-          ...(zipCode !== undefined ? { zipCode: zipCode || null } : {}),
-          ...(emergencyContactName !== undefined ? { emergencyContactName: emergencyContactName || null } : {}),
-          ...(emergencyContactPhone !== undefined ? { emergencyContactPhone: emergencyContactPhone || null } : {}),
-          ...(emergencyContactRelationship !== undefined ? { emergencyContactRelationship: emergencyContactRelationship || null } : {}),
+          ...(c.firstName ? { firstName: c.firstName.trim() } : {}),
+          ...(c.lastName ? { lastName: c.lastName.trim() } : {}),
+          ...(c.dateOfBirth ? { dateOfBirth: new Date(c.dateOfBirth) } : {}),
+          ...(c.email !== undefined ? { email: c.email || null } : {}),
+          ...(c.emergencyContactName !== undefined ? { emergencyContactName: c.emergencyContactName || null } : {}),
+          ...(c.emergencyContactPhone !== undefined ? { emergencyContactPhone: c.emergencyContactPhone || null } : {}),
+          ...(c.emergencyContactRelationship !== undefined ? { emergencyContactRelationship: c.emergencyContactRelationship || null } : {}),
+          ...(c.medicalNotes !== undefined ? { medicalNotes: c.medicalNotes || null } : {}),
           waiverSigned: true,
           waiverSignedAt: new Date(),
         },
       });
-      guardian = { id: found.id };
+      dependentId = found.id;
     } else {
-      const guardianNumber = await getNextMemberNumber();
+      const depNumber = await getNextMemberNumber();
       const created = await prisma.member.create({
         data: {
-          firstName: guardianFirstName.trim(),
-          lastName: guardianLastName.trim(),
-          dateOfBirth: guardianDateOfBirth ? new Date(guardianDateOfBirth) : null,
-          email: email || null,
+          firstName: (c.firstName || "").trim(),
+          lastName: (c.lastName || "").trim(),
+          email: c.email || null,
           phone: phone || null,
+          dateOfBirth: c.dateOfBirth ? new Date(c.dateOfBirth) : null,
           address: address || null,
           city: city || null,
           state: state || null,
           zipCode: zipCode || null,
-          // Guardian's emergency contact + relationship label scoped to the guardian.
-          emergencyContactName: emergencyContactName || null,
-          emergencyContactPhone: emergencyContactPhone || null,
-          emergencyContactRelationship: emergencyContactRelationship || null,
-          medicalNotes: medicalNotes || null,
-          status: "PARENT",
-          memberNumber: guardianNumber,
+          parentGuardianName: `${guardianFirstName || ""} ${guardianLastName || ""}`.trim() || null,
+          emergencyContactName: c.emergencyContactName || emergencyContactName || null,
+          emergencyContactPhone: c.emergencyContactPhone || emergencyContactPhone || null,
+          emergencyContactRelationship: c.emergencyContactRelationship || null,
+          medicalNotes: c.medicalNotes || null,
+          waiverSigned: false,
+          status: "PROSPECT",
+          memberNumber: depNumber,
           clientId,
         },
       });
-      guardian = { id: created.id };
+      dependentId = created.id;
     }
 
-    // Ensure a parent/guardian relationship from the guardian to the
-    // dependent. Skip if one already exists (e.g. admin re-sign reusing
-    // both existing members).
-    const relationshipType = relationship === "Legal Guardian" ? "Guardian of" : "Parent of";
-    const existingRel = await prisma.memberRelationship.findFirst({
-      where: { fromMemberId: guardian.id, toMemberId: dependent.id },
+    await prisma.signedWaiver.create({
+      data: {
+        memberId: dependentId,
+        templateId: resolvedTemplate?.id || null,
+        templateName: resolvedTemplate?.name || "Waiver",
+        waiverContent: "Submitted via guardian waiver form",
+        signatureData,
+        pdfData: c.pdfBase64 || null,
+        confirmed: false,
+        clientId,
+      },
     });
-    if (!existingRel) {
-      await prisma.memberRelationship.create({
-        data: {
-          fromMemberId: guardian.id,
-          toMemberId: dependent.id,
-          relationship: relationshipType,
-        },
-      });
-    }
 
-    // Parent's own SignedWaiver — its own PDF formatted like the standard
-    // adult waiver (no dependent info), so the parent's account shows a
-    // proper personal waiver instead of a copy of the child's PDF. Falls
-    // back to the child's PDF for older clients that don't send a
-    // parentPdfBase64 yet. Paired with the child's row by (relationship +
-    // signedAt within 30s) on confirmation.
+    if (guardian) {
+      const existingRel = await prisma.memberRelationship.findFirst({
+        where: { fromMemberId: guardian.id, toMemberId: dependentId },
+      });
+      if (!existingRel) {
+        await prisma.memberRelationship.create({
+          data: {
+            fromMemberId: guardian.id,
+            toMemberId: dependentId,
+            relationship: relationshipType,
+          },
+        });
+      }
+    }
+    dependentIds.push(dependentId);
+  }
+
+  // One parent SignedWaiver total — the parent signed once even though it
+  // may cover multiple kids.
+  if (guardian) {
     await prisma.signedWaiver.create({
       data: {
         memberId: guardian.id,
         templateId: resolvedTemplate?.id || null,
         templateName: resolvedTemplate?.name || "Waiver",
         waiverContent: "Submitted via guardian waiver form (parent copy)",
-        signatureData: body.signatureData || "submitted",
-        pdfData: parentPdfBase64 || pdfBase64 || null,
+        signatureData,
+        pdfData: (typeof parentPdfBase64 === "string" ? parentPdfBase64 : null)
+          || (children[0]?.pdfBase64 || null),
         confirmed: false,
         clientId,
       },
     });
   }
 
-  return NextResponse.json({ member: { id: dependent.id } }, { status: 201 });
+  return NextResponse.json(
+    { member: { id: dependentIds[0] }, dependentIds },
+    { status: 201 },
+  );
 }
