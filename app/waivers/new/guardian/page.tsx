@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { getTodayString } from "@/lib/dates";
+import { getTodayString, parseLocalDate } from "@/lib/dates";
 import { DateOfBirthPicker } from "@/components/date-of-birth-picker";
 import { generateWaiverPdf } from "@/lib/waiver-pdf";
 
@@ -703,7 +703,7 @@ export default function GuardianWaiverPage() {
               title: `${isGuardianFlavor ? "Guardian" : "Parent"} Signature`,
               signaturePng: signatureDataUrl || undefined,
               name: `${guardianFirstName} ${guardianLastName} (${relationship})`,
-              date: new Date(signatureDate).toLocaleDateString(),
+              date: parseLocalDate(signatureDate).toLocaleDateString(),
             },
             ...(idx === 0 && minorSignatureDataUrl
               ? [
@@ -711,7 +711,7 @@ export default function GuardianWaiverPage() {
                     title: "Minor Signature (Ages 14-17)",
                     signaturePng: minorSignatureDataUrl,
                     name: `${c.firstName} ${c.lastName}`,
-                    date: new Date(signatureDate).toLocaleDateString(),
+                    date: parseLocalDate(signatureDate).toLocaleDateString(),
                   },
                 ]
               : []),
@@ -776,7 +776,7 @@ export default function GuardianWaiverPage() {
             title: "Signature",
             signaturePng: signatureDataUrl || undefined,
             name: `${guardianFirstName} ${guardianLastName}`,
-            date: new Date(signatureDate).toLocaleDateString(),
+            date: parseLocalDate(signatureDate).toLocaleDateString(),
           },
         ],
         electronicallySignedAt: new Date().toLocaleString(),

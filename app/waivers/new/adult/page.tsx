@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { getTodayString } from "@/lib/dates";
+import { getTodayString, parseLocalDate } from "@/lib/dates";
 import { DateOfBirthPicker } from "@/components/date-of-birth-picker";
 import { generateWaiverPdf } from "@/lib/waiver-pdf";
 
@@ -367,7 +367,10 @@ export default function AdultWaiverPage() {
             title: "Signature",
             signaturePng: signatureDataUrl || undefined,
             name: `${firstName} ${lastName}`,
-            date: new Date(signatureDate).toLocaleDateString(),
+            // parseLocalDate avoids the timezone bug where
+            // `new Date("2026-05-22")` is interpreted as UTC midnight and
+            // displays as the previous day in negative-offset timezones.
+            date: parseLocalDate(signatureDate).toLocaleDateString(),
           },
         ],
         electronicallySignedAt: new Date().toLocaleString(),
