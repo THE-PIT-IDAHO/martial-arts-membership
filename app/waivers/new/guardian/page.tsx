@@ -1133,7 +1133,7 @@ export default function GuardianWaiverPage() {
                 onClick={addChild}
                 className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primaryDark transition-colors"
               >
-                Add Child
+                Add Additional Child
               </button>
             )}
 
@@ -1208,57 +1208,62 @@ export default function GuardianWaiverPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email
+                    Email *
                   </label>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    required
                     className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
                 <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Street Address
+                    Street Address *
                   </label>
                   <input
                     type="text"
                     value={address}
                     onChange={(e) => setAddress(autoCapitalize(e.target.value))}
+                    required
                     className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    City
+                    City *
                   </label>
                   <input
                     type="text"
                     value={city}
                     onChange={(e) => setCity(autoCapitalize(e.target.value))}
+                    required
                     className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      State
+                      State *
                     </label>
                     <input
                       type="text"
                       value={state}
                       onChange={(e) => setState(autoCapitalize(e.target.value))}
+                      required
                       className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      ZIP Code
+                      ZIP Code *
                     </label>
                     <input
                       type="text"
                       value={zipCode}
                       onChange={(e) => setZipCode(e.target.value)}
+                      required
                       className="w-full rounded-md border border-gray-300 px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
@@ -1270,7 +1275,6 @@ export default function GuardianWaiverPage() {
             <section>
               <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 border-b pb-2">
                 Guardian&apos;s Emergency Contact
-                <span className="block sm:inline text-xs sm:text-sm font-normal text-gray-500 sm:ml-2 mt-1 sm:mt-0">(other than guardian)</span>
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 <div>

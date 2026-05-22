@@ -4919,40 +4919,80 @@ export default function MemberProfilePage() {
                             })}
                             {/* Then contracts — own first (hidden for
                                 dependents), then aggregated children's
-                                contracts labeled with the kid's name. */}
+                                contracts labeled with the kid's name. The
+                                small red × on each card hard-deletes the
+                                SignedContract row via /api/contracts/[id]. */}
                             {showOwnContracts && memberContracts.map((c) => (
-                              <button
-                                key={`contract-${c.id}`}
-                                type="button"
-                                onClick={() => openPdf(`/api/contracts/${c.id}/pdf`)}
-                                className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
-                                title={`${c.planName} — signed ${new Date(c.signedAt).toLocaleDateString()}`}
-                              >
-                                <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
-                                  <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
-                                  <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
-                                  <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
-                                </svg>
-                                <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{c.planName}</span>
-                              </button>
-                            ))}
-                            {childContracts.map((c) => {
-                              const label = `${c.childFirstName} — ${c.planName}`;
-                              return (
+                              <div key={`contract-${c.id}`} className="relative group">
                                 <button
-                                  key={`childcontract-${c.id}`}
                                   type="button"
                                   onClick={() => openPdf(`/api/contracts/${c.id}/pdf`)}
-                                  className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors"
-                                  title={`${label} — signed ${new Date(c.signedAt).toLocaleDateString()}`}
+                                  className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors w-full"
+                                  title={`${c.planName} — signed ${new Date(c.signedAt).toLocaleDateString()}`}
                                 >
                                   <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
                                     <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
                                     <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
                                     <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
                                   </svg>
-                                  <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{label}</span>
+                                  <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{c.planName}</span>
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!window.confirm(`Delete the contract "${c.planName}"? This can't be undone.`)) return;
+                                    const res = await fetch(`/api/contracts/${c.id}`, { method: "DELETE" });
+                                    if (res.ok) {
+                                      setMemberContracts((prev) => prev.filter((x) => x.id !== c.id));
+                                    } else {
+                                      alert("Failed to delete contract.");
+                                    }
+                                  }}
+                                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                                  title="Delete contract"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            ))}
+                            {childContracts.map((c) => {
+                              const label = `${c.childFirstName} — ${c.planName}`;
+                              return (
+                                <div key={`childcontract-${c.id}`} className="relative group">
+                                  <button
+                                    type="button"
+                                    onClick={() => openPdf(`/api/contracts/${c.id}/pdf`)}
+                                    className="flex flex-col items-center gap-1 p-2 rounded-md hover:bg-gray-100 transition-colors w-full"
+                                    title={`${label} — signed ${new Date(c.signedAt).toLocaleDateString()}`}
+                                  >
+                                    <svg className="w-8 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 32">
+                                      <path d="M0 0h16l8 8v24H0V0z" fill="currentColor" opacity="0.15"/>
+                                      <path d="M16 0l8 8h-8V0z" fill="currentColor" opacity="0.3"/>
+                                      <text x="12" y="22" textAnchor="middle" fontSize="7" fill="currentColor" fontWeight="bold">PDF</text>
+                                    </svg>
+                                    <span className="text-[10px] font-medium text-gray-700 text-center leading-tight line-clamp-2 break-words">{label}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (!window.confirm(`Delete the contract "${label}"? This can't be undone.`)) return;
+                                      const res = await fetch(`/api/contracts/${c.id}`, { method: "DELETE" });
+                                      if (res.ok) {
+                                        setChildContracts((prev) => prev.filter((x) => x.id !== c.id));
+                                      } else {
+                                        alert("Failed to delete contract.");
+                                      }
+                                    }}
+                                    className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                                    title="Delete contract"
+                                  >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
                               );
                             })}
 
