@@ -119,7 +119,15 @@ export default function KioskPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-change class based on timing settings (check every 30 seconds)
+  // Auto-change class based on timing settings (check every 30 seconds).
+  //
+  // Priority: switch to an UPCOMING class whose start is within the
+  // auto-change window first (the whole point of this setting). Only
+  // fall back to a currently-running class when there's no upcoming one
+  // ready to flip to. Previous logic used a single find() which picked
+  // whichever class came first in the array — a still-running prior
+  // class blocked the switch to the next one because both matched
+  // simultaneously during the overlap window.
   useEffect(() => {
     if (todaysClasses.length === 0) return;
 
@@ -127,17 +135,30 @@ export default function KioskPage() {
       const now = new Date();
       const nowMins = now.getHours() * 60 + now.getMinutes();
       const autoChangeMins = kioskSettings.autoChangeMinutes || 10;
+      if (autoChangeMins <= 0) return;
 
-      const currentClass = todaysClasses.find((c) => {
+      // Soonest upcoming class within the prep window.
+      const upcoming = todaysClasses
+        .filter((c) => {
+          const start = new Date(c.startsAt);
+          const startMins = start.getHours() * 60 + start.getMinutes();
+          const minsUntilStart = startMins - nowMins;
+          return minsUntilStart > 0 && minsUntilStart <= autoChangeMins;
+        })
+        .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())[0];
+
+      // Currently-running class (only used as fallback when no upcoming).
+      const running = todaysClasses.find((c) => {
         const start = new Date(c.startsAt);
         const end = new Date(c.endsAt);
         const startMins = start.getHours() * 60 + start.getMinutes();
         const endMins = end.getHours() * 60 + end.getMinutes();
-        return nowMins >= startMins - autoChangeMins && nowMins <= endMins;
+        return nowMins >= startMins && nowMins <= endMins;
       });
 
-      if (currentClass && currentClass.id !== selectedClass?.id) {
-        setSelectedClass(currentClass);
+      const target = upcoming || running;
+      if (target && target.id !== selectedClass?.id) {
+        setSelectedClass(target);
       }
     }, 30000);
 
