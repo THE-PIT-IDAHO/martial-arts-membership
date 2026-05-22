@@ -45,8 +45,57 @@ export async function POST(req: Request) {
 }
 
 async function handleAdultSubmit(body: Record<string, string>, clientId: string) {
-  const { firstName, lastName, email, phone, dateOfBirth, address, city, state, zipCode, emergencyContactName, emergencyContactPhone, medicalNotes, pdfBase64, templateSlug, templateId } = body;
+  const { existingMemberId, firstName, lastName, email, phone, dateOfBirth, address, city, state, zipCode, emergencyContactName, emergencyContactPhone, medicalNotes, pdfBase64, templateSlug, templateId } = body;
   const resolvedTemplate = await resolveTemplate(clientId, templateId, templateSlug);
+
+  // Two modes: admin-emailed re-sign (existingMemberId set, attach to that
+  // member) vs new public sign (existingMemberId blank, create a new member).
+  if (existingMemberId) {
+    const existing = await prisma.member.findFirst({
+      where: { id: existingMemberId, clientId },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+
+    // Patch the member with any field updates the signer entered.
+    await prisma.member.update({
+      where: { id: existing.id },
+      data: {
+        ...(firstName ? { firstName: firstName.trim() } : {}),
+        ...(lastName ? { lastName: lastName.trim() } : {}),
+        ...(email !== undefined ? { email: email || null } : {}),
+        ...(phone !== undefined ? { phone: phone || null } : {}),
+        ...(dateOfBirth ? { dateOfBirth: new Date(dateOfBirth) } : {}),
+        ...(address !== undefined ? { address: address || null } : {}),
+        ...(city !== undefined ? { city: city || null } : {}),
+        ...(state !== undefined ? { state: state || null } : {}),
+        ...(zipCode !== undefined ? { zipCode: zipCode || null } : {}),
+        ...(emergencyContactName !== undefined ? { emergencyContactName: emergencyContactName || null } : {}),
+        ...(emergencyContactPhone !== undefined ? { emergencyContactPhone: emergencyContactPhone || null } : {}),
+        ...(medicalNotes !== undefined ? { medicalNotes: medicalNotes || null } : {}),
+        waiverSigned: true,
+        waiverSignedAt: new Date(),
+      },
+    });
+
+    // Additive: every re-sign creates a new SignedWaiver row, never
+    // replaces existing ones (audit trail).
+    await prisma.signedWaiver.create({
+      data: {
+        memberId: existing.id,
+        templateId: resolvedTemplate?.id || null,
+        templateName: resolvedTemplate?.name || "Waiver",
+        waiverContent: "Submitted via waiver form",
+        signatureData: body.signatureData || "submitted",
+        pdfData: pdfBase64 || null,
+        confirmed: false,
+        clientId,
+      },
+    });
+
+    return NextResponse.json({ member: { id: existing.id } }, { status: 200 });
+  }
 
   if (!firstName || !lastName) {
     return NextResponse.json({ error: "First and last name are required" }, { status: 400 });

@@ -168,14 +168,16 @@ export default function WaiverSignPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        // Load member
-        const res = await fetch(`/api/members/${memberId}`);
+        // Email recipients aren't logged in, so we can't use the
+        // admin-only /api/members or /api/settings endpoints. Use the
+        // public counterparts instead — they expose just what the waiver
+        // form needs.
+        const res = await fetch(`/api/public/member-info?memberId=${memberId}`);
         if (res.ok) {
           const data = await res.json();
           const m = data.member;
           setMember(m);
 
-          // Pre-fill form with member data
           setParticipantName(`${m.firstName || ""} ${m.lastName || ""}`.trim());
           if (m.dateOfBirth) {
             setDateOfBirth(new Date(m.dateOfBirth).toISOString().split("T")[0]);
@@ -190,34 +192,20 @@ export default function WaiverSignPage() {
           setEmergencyContactPhone(m.emergencyContactPhone || "");
           setMedicalNotes(m.medicalNotes || "");
         } else {
-          setError("Member not found");
+          setError("This waiver link is invalid or has expired.");
         }
 
-        // Load waiver content
-        const settingsRes = await fetch("/api/settings?key=waiver_content");
-        if (settingsRes.ok) {
-          const settingsData = await settingsRes.json();
-          if (settingsData.setting?.value) {
-            try {
-              const parsed = JSON.parse(settingsData.setting.value);
-              setWaiverSections(parsed);
-            } catch {
-              // Use defaults if parsing fails
-            }
+        // /api/public/waiver-data returns gym settings + waiver content
+        // merged from both the new (gymName) and legacy (gym_settings)
+        // settings keys, no auth required.
+        const wd = await fetch("/api/public/waiver-data");
+        if (wd.ok) {
+          const data = await wd.json();
+          if (data.waiverContent) {
+            try { setWaiverSections(JSON.parse(data.waiverContent)); } catch { /* defaults */ }
           }
-        }
-
-        // Load gym settings
-        const gymRes = await fetch("/api/settings?key=gym_settings");
-        if (gymRes.ok) {
-          const gymData = await gymRes.json();
-          if (gymData.setting?.value) {
-            try {
-              const parsed = JSON.parse(gymData.setting.value);
-              setGymSettings(parsed);
-            } catch {
-              // Use defaults if parsing fails
-            }
+          if (data.gymSettings) {
+            try { setGymSettings(JSON.parse(data.gymSettings)); } catch { /* defaults */ }
           }
         }
       } catch (err) {
@@ -318,54 +306,40 @@ export default function WaiverSignPage() {
     setError("");
 
     try {
-      // Update member with waiver signed and form data
-      const res = await fetch(`/api/members/${memberId}`, {
-        method: "PATCH",
+      const canvas = canvasRef.current;
+      const signatureDataUrl = canvas ? canvas.toDataURL("image/png") : "";
+
+      // Single round-trip through the public submit endpoint, which both
+      // updates the existing member and creates the SignedWaiver row in
+      // one call. The page is reached from an unauthenticated email link,
+      // so we can't use the admin /api/members PATCH route.
+      const res = await fetch("/api/public/waiver-submit", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          waiverSigned: true,
-          waiverSignedAt: new Date().toISOString(),
+          type: "adult",
+          existingMemberId: memberId,
+          firstName: participantName.split(" ")[0] || undefined,
+          lastName: participantName.split(" ").slice(1).join(" ") || undefined,
+          email: email || undefined,
+          phone: phone || undefined,
           dateOfBirth: dateOfBirth || undefined,
           address: address || undefined,
           city: city || undefined,
           state: state || undefined,
           zipCode: zipCode || undefined,
-          phone: phone || undefined,
-          email: email || undefined,
           emergencyContactName: emergencyContactName || undefined,
           emergencyContactPhone: emergencyContactPhone || undefined,
           medicalNotes: medicalNotes || undefined,
+          signatureData: signatureDataUrl,
         }),
       });
 
       if (!res.ok) {
-        setError("Failed to submit waiver");
+        const data = await res.json().catch(() => null);
+        setError(data?.error || "Failed to submit waiver");
         return;
       }
-
-      // Persist a SignedWaiver row so the member can view the signed waiver later
-      const fullName = participantName || `${member?.firstName ?? ""} ${member?.lastName ?? ""}`.trim();
-      const waiverContentText = waiverSections
-        .map((s) => {
-          const title = s.title ? `${s.title}\n` : "";
-          const body = replacePlaceholders(s.content, member, gymSettings, fullName);
-          return `${title}${body}`;
-        })
-        .join("\n\n");
-
-      const canvas = canvasRef.current;
-      const signatureDataUrl = canvas ? canvas.toDataURL("image/png") : "";
-
-      await fetch("/api/waivers/sign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          memberId,
-          signatureData: signatureDataUrl,
-          waiverContent: waiverContentText,
-          templateName: "Liability Waiver",
-        }),
-      }).catch(() => { /* don't block UI on this */ });
 
       setSuccess(true);
     } catch (err) {
