@@ -187,7 +187,7 @@ export default function PromotionsPage() {
   }, [eligible]);
 
   const filtered = useMemo(() => {
-    return eligible.filter((r) => {
+    const rows = eligible.filter((r) => {
       if (showOnlyEligible && !r.allRequirementsMet) return false;
       if (styleFilter.size > 0 && !styleFilter.has(r.styleId)) return false;
       if (search.trim().length >= 2) {
@@ -195,6 +195,16 @@ export default function PromotionsPage() {
         if (!r.memberName.toLowerCase().includes(q) && !r.styleName.toLowerCase().includes(q)) return false;
       }
       return true;
+    });
+    // Group visually by style (sort key 1), then by current rank low →
+    // high within each style (sort key 2), name as tiebreaker. All rows
+    // stay in one flat list so existing select-all / bulk actions keep
+    // working unchanged.
+    return rows.sort((a, b) => {
+      const styleCmp = a.styleName.localeCompare(b.styleName);
+      if (styleCmp !== 0) return styleCmp;
+      if (a.fromRankOrder !== b.fromRankOrder) return a.fromRankOrder - b.fromRankOrder;
+      return a.memberName.localeCompare(b.memberName);
     });
   }, [eligible, search, showOnlyEligible, styleFilter]);
 
