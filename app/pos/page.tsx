@@ -46,6 +46,12 @@ type MembershipPlan = {
   cancellationFeeCents: number | null;
   contractClauses: string | null;
   allowedStyles: string | null;
+  // Access controls — surfaced on the contract only when the plan has
+  // a value set (omit empties to keep the page clean).
+  classesPerDay: number | null;
+  classesPerWeek: number | null;
+  classesPerMonth: number | null;
+  promoCode: string | null;
   isActive: boolean;
 };
 
@@ -87,6 +93,11 @@ type CartItem = {
   membershipStartDate?: string;
   membershipEndDate?: string;
   firstMonthDiscountOnly?: boolean;
+  // Cents reduced by the discount control (not just a custom price change).
+  // Lets the contract surface a discount line only when one was actually
+  // applied via the discount input — a custom-priced plan with no
+  // discount control use will leave this 0 / undefined.
+  discountAppliedCents?: number;
   // Gift certificate fields
   recipientName?: string;
   // Variant selection
@@ -641,18 +652,23 @@ export default function POSPage() {
     const basePriceCents = (plan.priceCents || 0) + (plan.setupFeeCents || 0);
 
     let finalPriceCents = parseCents(membershipConfig.customPrice);
+    let discountAppliedCents = 0;
 
-    // Apply discount if specified
+    // Apply discount if specified. Track cents removed so the contract PDF
+    // can show "Discount Applied" only when the discount control was used.
     if (membershipConfig.discountValue) {
+      const beforeDiscount = finalPriceCents;
       if (membershipConfig.discountType === "percent") {
         const discountPct = parseFloat(membershipConfig.discountValue);
         if (!isNaN(discountPct) && discountPct > 0) {
           finalPriceCents = Math.round(finalPriceCents * (1 - discountPct / 100));
+          discountAppliedCents = beforeDiscount - finalPriceCents;
         }
       } else {
         const discountAmountCents = parseCents(membershipConfig.discountValue);
         if (discountAmountCents > 0) {
           finalPriceCents = Math.max(0, finalPriceCents - discountAmountCents);
+          discountAppliedCents = beforeDiscount - finalPriceCents;
         }
       }
     }
@@ -679,6 +695,7 @@ export default function POSPage() {
         membershipStartDate: membershipConfig.startDate,
         membershipEndDate: endDate,
         firstMonthDiscountOnly: membershipConfig.firstMonthDiscountOnly,
+        discountAppliedCents: discountAppliedCents > 0 ? discountAppliedCents : undefined,
       },
     ]);
 
@@ -907,9 +924,61 @@ export default function POSPage() {
         return `/${c.toLowerCase()}`;
       }
 
-      // Build per-item info blocks (one per membership/service in the
-      // cart). Each membership block shows first-month vs recurring
-      // pricing, discount, contract length, dates, cancellation terms.
+      // Format "Payment Due" line from a start date: returns something
+      // like "11th of each month" — the ordinal day-of-month repeats on
+      // every recurring billing cycle.
+      function ordinalSuffix(n: number): string {
+        const v = n % 100;
+        if (v >= 11 && v <= 13) return "th";
+        switch (n % 10) {
+          case 1: return "st";
+          case 2: return "nd";
+          case 3: return "rd";
+          default: return "th";
+        }
+      }
+      function paymentDueLine(startDateStr: string | undefined, cycle: string | null | undefined): string {
+        if (!startDateStr) return "";
+        const d = parseLocalDate(startDateStr);
+        const day = d.getDate();
+        const cadence = (cycle || "MONTHLY").toUpperCase();
+        if (cadence === "WEEKLY") return `Every ${d.toLocaleDateString(undefined, { weekday: "long" })}`;
+        if (cadence === "YEARLY" || cadence === "ANNUAL" || cadence === "ANNUALLY") {
+          return `${day}${ordinalSuffix(day)} of ${d.toLocaleString(undefined, { month: "long" })} each year`;
+        }
+        return `${day}${ordinalSuffix(day)} of each month`;
+      }
+
+      // Render the cart's payment split(s) into a contract-ready string.
+      // Single split → just the method ("Visa ····4242", "Cash"). Multi
+      // split → method+amount joined with " + " so the contract reflects
+      // exactly what the member paid.
+      function describePaymentMethod(): string {
+        if (paymentSplits.length === 0) return "";
+        const labelFor = (method: string): string => {
+          switch (method) {
+            case "CASH": return "Cash";
+            case "CHECK": return "Check";
+            case "ACCOUNT": return "Account Credit";
+            case "CARD": return "Credit Card";
+            case "SAVED_CARD":
+              return savedCard
+                ? `${savedCard.brand.charAt(0).toUpperCase() + savedCard.brand.slice(1)} ····${savedCard.last4}`
+                : "Card on file";
+            default: return method;
+          }
+        };
+        if (paymentSplits.length === 1 || !isSplitMode) {
+          return labelFor(paymentSplits[0].method);
+        }
+        return paymentSplits.map((s) => `${labelFor(s.method)} ${formatCents(s.amountCents)}`).join(" + ");
+      }
+
+      // Build per-item info blocks. Each membership renders as:
+      //   • body section "Membership: [Plan Name]" with the description
+      //   • info block "Plan Terms" with all the financial + access rows
+      //   • info block "Cancellation" grouping notice + early termination
+      //   • body sections for plan-specific clauses
       const itemBlocks: InfoBlock[] = [];
       const itemSections: BodySection[] = [];
       for (const item of cart) {
@@ -918,32 +987,79 @@ export default function POSPage() {
           const fullPriceCents = (plan?.priceCents || 0) + (plan?.setupFeeCents || 0);
           const firstMonthCents = item.unitPriceCents;
           const recurringCents = item.firstMonthDiscountOnly ? fullPriceCents : item.unitPriceCents;
-          const discountCents = Math.max(0, fullPriceCents - firstMonthCents);
+          const discountAppliedCents = item.discountAppliedCents || 0;
+          const showDiscount = discountAppliedCents > 0;
           const suffix = billingSuffix(plan?.billingCycle);
-          const isRecurringPlan = plan?.contractLengthMonths == null || plan.contractLengthMonths === 0
-            ? true
-            : true; // memberships in this app are billed recurringly until cancelled
+
+          // Lead-in body section with plan name + description (if any).
+          if (plan?.description && plan.description.trim()) {
+            itemSections.push({
+              title: `Membership: ${item.itemName}`,
+              content: plan.description.trim(),
+            });
+          }
+
+          // Allowed styles → comma-separated list.
+          let allowedStylesStr = "";
+          if (plan?.allowedStyles) {
+            try {
+              const arr = JSON.parse(plan.allowedStyles);
+              if (Array.isArray(arr) && arr.length > 0) allowedStylesStr = arr.join(", ");
+            } catch { /* ignore */ }
+          }
+
+          // Build the rows. Empty values get filtered out by the lib, so
+          // unset access controls / promo code don't render — keeps the
+          // contract tight.
+          const paymentMethodStr = describePaymentMethod();
+          const planTermsRows: Array<{ label: string; value?: string | null }> = [
+            ...(item.firstMonthDiscountOnly || showDiscount
+              ? [{ label: "First Payment", value: formatCents(firstMonthCents) }]
+              : []),
+            {
+              label: item.firstMonthDiscountOnly ? "Recurring (after first payment)" : "Price",
+              value: `${formatCents(recurringCents)}${suffix}`,
+            },
+            ...(showDiscount
+              ? [{ label: "Discount Applied", value: `−${formatCents(discountAppliedCents)}${item.firstMonthDiscountOnly ? " (first payment only)" : ""}` }]
+              : []),
+            ...(plan?.promoCode ? [{ label: "Promo Code", value: plan.promoCode }] : []),
+            { label: "Billing Cycle", value: plan?.billingCycle ? plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase() : "Monthly" },
+            { label: "Recurring Payments", value: "Yes — auto-charged each billing cycle until cancelled" },
+            { label: "Payment Due", value: paymentDueLine(item.membershipStartDate, plan?.billingCycle) },
+            ...(paymentMethodStr ? [{ label: "Payment Method", value: paymentMethodStr }] : []),
+            { label: "Start Date", value: item.membershipStartDate ? parseLocalDate(item.membershipStartDate).toLocaleDateString() : "" },
+            { label: "Contract Length", value: plan?.contractLengthMonths ? formatContractDuration(plan.contractLengthMonths) : "" },
+            // Access controls — only render if the plan has values set.
+            ...(plan?.classesPerDay ? [{ label: "Classes per Day", value: String(plan.classesPerDay) }] : []),
+            ...(plan?.classesPerWeek ? [{ label: "Classes per Week", value: String(plan.classesPerWeek) }] : []),
+            ...(plan?.classesPerMonth ? [{ label: "Classes per Month", value: String(plan.classesPerMonth) }] : []),
+            // Styles: clarify that picking a style includes every class
+            // taught under that style — no hidden per-class restrictions.
+            ...(allowedStylesStr
+              ? [{ label: "Styles Included", value: `${allowedStylesStr} — all classes under these styles` }]
+              : []),
+          ];
 
           itemBlocks.push({
-            title: `Membership: ${item.itemName}`,
-            rows: [
-              { label: "First Payment", value: formatCents(firstMonthCents) },
-              {
-                label: item.firstMonthDiscountOnly ? "Recurring (after first period)" : "Recurring",
-                value: `${formatCents(recurringCents)}${suffix}`,
-              },
-              { label: "Discount Applied", value: discountCents > 0 ? `−${formatCents(discountCents)}${item.firstMonthDiscountOnly ? " (first payment only)" : ""}` : "" },
-              { label: "Billing Cycle", value: plan?.billingCycle || "Monthly" },
-              { label: "Recurring Payments", value: isRecurringPlan ? "Yes — auto-charged each cycle until cancelled" : "No" },
-              { label: "Contract Length", value: plan?.contractLengthMonths ? formatContractDuration(plan.contractLengthMonths) : "" },
-              { label: "Start Date", value: item.membershipStartDate ? parseLocalDate(item.membershipStartDate).toLocaleDateString() : "" },
-              { label: "Cancellation Notice", value: plan?.cancellationNoticeDays ? `${plan.cancellationNoticeDays} day(s)` : "" },
-              { label: "Early Termination Fee", value: plan?.cancellationFeeCents ? formatCents(plan.cancellationFeeCents) : "" },
-            ],
+            title: `${item.itemName} — Plan Terms`,
+            rows: planTermsRows,
           });
 
-          // Plan-specific clauses render as body sections after the
-          // member + per-item info blocks.
+          // Cancellation block — only render if there's something to say.
+          if ((plan?.cancellationNoticeDays || plan?.cancellationFeeCents)) {
+            itemBlocks.push({
+              title: `${item.itemName} — Cancellation`,
+              rows: [
+                { label: "Cancellation Notice", value: plan?.cancellationNoticeDays ? `${plan.cancellationNoticeDays} day(s) before next billing cycle` : "" },
+                { label: "Early Termination Fee", value: plan?.cancellationFeeCents ? formatCents(plan.cancellationFeeCents) : "" },
+                { label: "How to Cancel", value: "Email or visit the gym with written notice. Confirmation will be provided." },
+              ],
+            });
+          }
+
+          // Plan-specific clauses render as body sections after the info
+          // blocks.
           if (plan?.contractClauses) {
             try {
               const planClauses: ContractClause[] = JSON.parse(plan.contractClauses);
@@ -954,8 +1070,14 @@ export default function POSPage() {
           }
         } else if (item.type === "service") {
           const pkg = servicePackages.find((p) => p.id === item.servicePackageId);
+          if (pkg?.description && pkg.description.trim()) {
+            itemSections.push({
+              title: `Service: ${item.itemName}`,
+              content: pkg.description.trim(),
+            });
+          }
           itemBlocks.push({
-            title: `Service: ${item.itemName}`,
+            title: `${item.itemName} — Service Terms`,
             rows: [
               { label: "Price", value: formatCents(item.unitPriceCents) },
               { label: "Sessions Included", value: pkg?.sessionsIncluded ? String(pkg.sessionsIncluded) : "" },
@@ -2469,32 +2591,166 @@ export default function POSPage() {
                 </div>
               </div>
 
-              {/* Items */}
+              {/* Items — mirrors the contract PDF layout: plan description
+                  up top, then Terms grid (with conditional discount and
+                  payment-due date), then a dedicated Cancellation block
+                  when the plan has any cancellation policy. */}
               {cart.filter(c => c.type === "membership" || c.type === "service").map((item) => {
                 const plan = item.type === "membership" ? membershipPlans.find(p => p.id === item.membershipPlanId) : null;
                 const pkg = item.type === "service" ? servicePackages.find(p => p.id === item.servicePackageId) : null;
+
+                // Helpers reused from the PDF generator.
+                function ordinalSuffix(n: number): string {
+                  const v = n % 100;
+                  if (v >= 11 && v <= 13) return "th";
+                  switch (n % 10) {
+                    case 1: return "st";
+                    case 2: return "nd";
+                    case 3: return "rd";
+                    default: return "th";
+                  }
+                }
+                function paymentDueLine(startDateStr: string | undefined, cycle: string | null | undefined): string {
+                  if (!startDateStr) return "";
+                  const d = parseLocalDate(startDateStr);
+                  const day = d.getDate();
+                  const cadence = (cycle || "MONTHLY").toUpperCase();
+                  if (cadence === "WEEKLY") return `Every ${d.toLocaleDateString(undefined, { weekday: "long" })}`;
+                  if (cadence === "YEARLY" || cadence === "ANNUAL" || cadence === "ANNUALLY") {
+                    return `${day}${ordinalSuffix(day)} of ${d.toLocaleString(undefined, { month: "long" })} each year`;
+                  }
+                  return `${day}${ordinalSuffix(day)} of each month`;
+                }
+                function describePaymentMethodLocal(): string {
+                  if (paymentSplits.length === 0) return "";
+                  const labelFor = (method: string): string => {
+                    switch (method) {
+                      case "CASH": return "Cash";
+                      case "CHECK": return "Check";
+                      case "ACCOUNT": return "Account Credit";
+                      case "CARD": return "Credit Card";
+                      case "SAVED_CARD":
+                        return savedCard
+                          ? `${savedCard.brand.charAt(0).toUpperCase() + savedCard.brand.slice(1)} ····${savedCard.last4}`
+                          : "Card on file";
+                      default: return method;
+                    }
+                  };
+                  if (paymentSplits.length === 1 || !isSplitMode) {
+                    return labelFor(paymentSplits[0].method);
+                  }
+                  return paymentSplits.map((s) => `${labelFor(s.method)} ${formatCents(s.amountCents)}`).join(" + ");
+                }
+                function billingSfx(cycle: string | undefined | null): string {
+                  if (!cycle) return "/month";
+                  const c = cycle.toUpperCase();
+                  if (c === "WEEKLY") return "/week";
+                  if (c === "MONTHLY") return "/month";
+                  if (c === "QUARTERLY") return "/quarter";
+                  if (c === "YEARLY" || c === "ANNUAL" || c === "ANNUALLY") return "/year";
+                  return `/${c.toLowerCase()}`;
+                }
+                function formatDuration(days: number): string {
+                  if (days >= 365 && days % 365 === 0) return `${days / 365} year(s)`;
+                  if (days >= 30 && days % 30 === 0) return `${days / 30} month(s)`;
+                  return `${days} day(s)`;
+                }
+
+                const fullPriceCents = (plan?.priceCents || 0) + (plan?.setupFeeCents || 0);
+                const firstMonthCents = item.unitPriceCents;
+                const recurringCents = item.firstMonthDiscountOnly ? fullPriceCents : item.unitPriceCents;
+                const discountAppliedCents = item.discountAppliedCents || 0;
+                const showDiscount = discountAppliedCents > 0;
+                const suffix = billingSfx(plan?.billingCycle);
+
+                let allowedStylesStr = "";
+                if (plan?.allowedStyles) {
+                  try {
+                    const arr = JSON.parse(plan.allowedStyles);
+                    if (Array.isArray(arr) && arr.length > 0) allowedStylesStr = arr.join(", ");
+                  } catch { /* ignore */ }
+                }
+
+                const description = item.type === "membership" ? plan?.description : pkg?.description;
+                const hasCancellationBlock = !!(plan?.cancellationNoticeDays || plan?.cancellationFeeCents);
+
                 return (
                   <div key={item.id} className="rounded-md border border-gray-200 p-3">
-                    <h3 className="text-sm font-semibold text-gray-800 mb-2">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-1">
                       {item.type === "membership" ? "Membership" : "Service"}: {item.itemName}
                     </h3>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
-                      <div><span className="font-medium text-gray-700">Price:</span> {formatCents(item.unitPriceCents)}{plan ? `/${plan.billingCycle.toLowerCase()}` : ""}</div>
-                      {plan?.contractLengthMonths && (
-                        <div><span className="font-medium text-gray-700">Contract:</span> {
-                          plan.contractLengthMonths >= 365 && plan.contractLengthMonths % 365 === 0
-                            ? `${plan.contractLengthMonths / 365} year(s)`
-                            : plan.contractLengthMonths >= 30 && plan.contractLengthMonths % 30 === 0
-                              ? `${plan.contractLengthMonths / 30} month(s)`
-                              : `${plan.contractLengthMonths} days`
-                        }</div>
-                      )}
-                      {item.membershipStartDate && <div><span className="font-medium text-gray-700">Start Date:</span> {parseLocalDate(item.membershipStartDate).toLocaleDateString()}</div>}
-                      {plan?.cancellationNoticeDays && <div><span className="font-medium text-gray-700">Cancellation Notice:</span> {plan.cancellationNoticeDays} days</div>}
-                      {plan?.cancellationFeeCents && <div><span className="font-medium text-gray-700">Early Termination Fee:</span> {formatCents(plan.cancellationFeeCents)}</div>}
-                      {pkg?.sessionsIncluded && <div><span className="font-medium text-gray-700">Sessions:</span> {pkg.sessionsIncluded}</div>}
-                      {pkg?.expirationDays && <div><span className="font-medium text-gray-700">Expires:</span> {pkg.expirationDays} days from purchase</div>}
-                    </div>
+                    {description && description.trim() && (
+                      <p className="text-xs text-gray-600 mb-3 whitespace-pre-wrap">{description.trim()}</p>
+                    )}
+
+                    {item.type === "membership" ? (
+                      <>
+                        <div className="rounded bg-gray-50 border border-gray-200 px-2 py-2 mb-2">
+                          <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 mb-1">Plan Terms</p>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-700">
+                            {(item.firstMonthDiscountOnly || showDiscount) && (
+                              <div><span className="font-medium">First Payment:</span> {formatCents(firstMonthCents)}</div>
+                            )}
+                            <div>
+                              <span className="font-medium">{item.firstMonthDiscountOnly ? "Recurring (after first payment):" : "Price:"}</span> {formatCents(recurringCents)}{suffix}
+                            </div>
+                            {showDiscount && (
+                              <div className="text-green-700"><span className="font-medium">Discount Applied:</span> −{formatCents(discountAppliedCents)}{item.firstMonthDiscountOnly ? " (first payment only)" : ""}</div>
+                            )}
+                            {plan?.promoCode && (
+                              <div><span className="font-medium">Promo Code:</span> {plan.promoCode}</div>
+                            )}
+                            <div><span className="font-medium">Billing Cycle:</span> {plan?.billingCycle ? plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase() : "Monthly"}</div>
+                            <div className="col-span-2"><span className="font-medium">Recurring Payments:</span> Yes — auto-charged each billing cycle until cancelled</div>
+                            {item.membershipStartDate && (
+                              <div><span className="font-medium">Payment Due:</span> {paymentDueLine(item.membershipStartDate, plan?.billingCycle)}</div>
+                            )}
+                            {describePaymentMethodLocal() && (
+                              <div className="col-span-2"><span className="font-medium">Payment Method:</span> {describePaymentMethodLocal()}</div>
+                            )}
+                            {item.membershipStartDate && (
+                              <div><span className="font-medium">Start Date:</span> {parseLocalDate(item.membershipStartDate).toLocaleDateString()}</div>
+                            )}
+                            {plan?.contractLengthMonths && (
+                              <div><span className="font-medium">Contract Length:</span> {formatDuration(plan.contractLengthMonths)}</div>
+                            )}
+                            {plan?.classesPerDay && (
+                              <div><span className="font-medium">Classes per Day:</span> {plan.classesPerDay}</div>
+                            )}
+                            {plan?.classesPerWeek && (
+                              <div><span className="font-medium">Classes per Week:</span> {plan.classesPerWeek}</div>
+                            )}
+                            {plan?.classesPerMonth && (
+                              <div><span className="font-medium">Classes per Month:</span> {plan.classesPerMonth}</div>
+                            )}
+                            {allowedStylesStr && (
+                              <div className="col-span-2"><span className="font-medium">Styles Included:</span> {allowedStylesStr} — all classes under these styles</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {hasCancellationBlock && (
+                          <div className="rounded bg-amber-50 border border-amber-200 px-2 py-2 mb-2">
+                            <p className="text-[10px] uppercase tracking-wide font-semibold text-amber-700 mb-1">Cancellation</p>
+                            <div className="space-y-0.5 text-xs text-gray-700">
+                              {plan?.cancellationNoticeDays && (
+                                <div><span className="font-medium">Cancellation Notice:</span> {plan.cancellationNoticeDays} day(s) before next billing cycle</div>
+                              )}
+                              {plan?.cancellationFeeCents && (
+                                <div><span className="font-medium">Early Termination Fee:</span> {formatCents(plan.cancellationFeeCents)}</div>
+                              )}
+                              <div><span className="font-medium">How to Cancel:</span> Email or visit the gym with written notice. Confirmation will be provided.</div>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
+                        <div><span className="font-medium text-gray-700">Price:</span> {formatCents(item.unitPriceCents)}</div>
+                        {pkg?.sessionsIncluded != null && <div><span className="font-medium text-gray-700">Sessions:</span> {pkg.sessionsIncluded}</div>}
+                        {pkg?.expirationDays && <div><span className="font-medium text-gray-700">Expires:</span> {pkg.expirationDays} days from purchase</div>}
+                      </div>
+                    )}
 
                     {/* Plan-specific clauses */}
                     {plan?.contractClauses && (() => {
