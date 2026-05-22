@@ -913,6 +913,52 @@ function EventDetailModal(props: {
   }, [event.id]);
   useEffect(() => { loadEligible(); }, [loadEligible]);
 
+  // Manual add — lets admin add ANY member to the roster regardless of
+  // eligibility (e.g. someone testing out-of-cycle, a guest from another
+  // gym, etc.). The participants API has no eligibility check, so the
+  // backend just accepts the memberId.
+  const [manualQuery, setManualQuery] = useState("");
+  const [manualResults, setManualResults] = useState<Array<{ id: string; firstName: string; lastName: string }>>([]);
+  const [manualSearching, setManualSearching] = useState(false);
+
+  useEffect(() => {
+    const q = manualQuery.trim();
+    if (q.length < 2) {
+      setManualResults([]);
+      return;
+    }
+    let cancelled = false;
+    setManualSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/members?search=${encodeURIComponent(q)}&limit=15`);
+        if (!cancelled && res.ok) {
+          const d = await res.json();
+          setManualResults(d.members || []);
+        }
+      } finally {
+        if (!cancelled) setManualSearching(false);
+      }
+    }, 200);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [manualQuery]);
+
+  async function addManually(memberId: string) {
+    setAdding(true);
+    try {
+      await fetch(`/api/promotion-events/${event.id}/participants`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberId }),
+      });
+      setManualQuery("");
+      setManualResults([]);
+      await Promise.all([onChange(), loadEligible()]);
+    } finally {
+      setAdding(false);
+    }
+  }
+
   async function addByStyle(styleId: string) {
     setAdding(true);
     try {
@@ -1237,6 +1283,59 @@ function EventDetailModal(props: {
             </>
           );
         })()}
+
+        {/* Manual add — search for ANY member and add them regardless of
+            eligibility. Useful for out-of-cycle tests, guests, or members
+            on a no-style plan. The backend doesn't enforce eligibility. */}
+        <div className="border border-gray-200 rounded-md overflow-hidden">
+          <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 text-sm font-semibold text-gray-800">
+            Add anyone manually
+            <span className="ml-2 text-[11px] font-normal text-gray-500">
+              search by name — eligibility not required
+            </span>
+          </div>
+          <div className="px-3 py-2 space-y-2">
+            <input
+              type="text"
+              value={manualQuery}
+              onChange={(e) => setManualQuery(e.target.value)}
+              placeholder="Type at least 2 letters of a name…"
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            {manualQuery.trim().length >= 2 && (
+              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
+                {manualSearching ? (
+                  <div className="text-xs text-gray-500 px-3 py-2">Searching…</div>
+                ) : manualResults.length === 0 ? (
+                  <div className="text-xs text-gray-400 px-3 py-2">No matches.</div>
+                ) : (
+                  manualResults.map((m) => {
+                    const alreadyOn = event.participants.some((p) => p.memberId === m.id);
+                    return (
+                      <div key={m.id} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                        <span>{m.firstName} {m.lastName}</span>
+                        {alreadyOn ? (
+                          <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-400">
+                            Already on roster
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => addManually(m.id)}
+                            disabled={adding}
+                            className={BTN_PRIMARY}
+                          >
+                            Add
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        </div>
 
         <div className="flex items-center justify-between border-t border-gray-200 pt-3">
           <button type="button" onClick={deleteEvent} className={BTN_NEUTRAL}>
