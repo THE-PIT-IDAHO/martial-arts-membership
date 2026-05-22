@@ -833,6 +833,10 @@ model PromotionParticipant {
   notes            String?
   promotedAt       DateTime?
   feeCharged       Boolean        @default(false)
+  // Per-member fee override in cents. NULL = use the event's costCents
+  // (or the plan-driven computed fee). Lets admin discount or adjust
+  // one participant without changing the event-wide default.
+  feeOverrideCents Int?
   transactionId    String?        // Link to POSTransaction if fee was charged
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt

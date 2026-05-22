@@ -60,7 +60,13 @@ type EventRow = {
   location: string | null;
   notes: string | null;
   applyAttendanceWindow: boolean;
-  participants: Array<{ id: string; memberId: string; status: string }>;
+  participants: Array<{
+    id: string;
+    memberId: string;
+    memberName?: string;
+    status: string;
+    feeOverrideCents?: number | null;
+  }>;
 };
 
 type StyleOption = {
@@ -932,6 +938,31 @@ function EventDetailModal(props: {
   }, [event.id]);
   useEffect(() => { loadEligible(); }, [loadEligible]);
 
+  // Per-participant fee override editor. We keep a local string buffer
+  // per participant so the input stays controllable while typing
+  // ("0.5" → "0.50" mid-type would be jarring). Persisted on blur.
+  const [feeDrafts, setFeeDrafts] = useState<Record<string, string>>({});
+  function defaultFeeForParticipant(p: { feeOverrideCents?: number | null }): string {
+    const cents = p.feeOverrideCents != null
+      ? p.feeOverrideCents
+      : (event as { costCents?: number | null }).costCents ?? 0;
+    return ((cents || 0) / 100).toFixed(2);
+  }
+  async function saveFee(participantId: string, draft: string) {
+    const dollars = parseFloat(draft);
+    const cents = Number.isFinite(dollars) && dollars >= 0 ? Math.round(dollars * 100) : null;
+    await fetch(`/api/promotion-events/${event.id}/participants`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        participantId,
+        // Empty input clears the override (falls back to event default).
+        feeOverrideCents: cents,
+      }),
+    });
+    await onChange();
+  }
+
   // Manual add — lets admin add ANY member to the roster regardless of
   // eligibility (e.g. someone testing out-of-cycle, a guest from another
   // gym, etc.). The participants API has no eligibility check, so the
@@ -1078,7 +1109,16 @@ function EventDetailModal(props: {
 
 
   return (
-    <ModalShell title={event.name} onClose={onClose} wide>
+    <ModalShell
+      title={event.name}
+      onClose={onClose}
+      wide
+      headerAction={
+        <button type="button" onClick={onClose} className={BTN_NEUTRAL}>
+          Close
+        </button>
+      }
+    >
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="text-xs text-gray-600">
           {new Date(event.date).toLocaleDateString()} · Styles: {eventStyleNames} · Roster: {event.participants.length}
@@ -1283,25 +1323,53 @@ function EventDetailModal(props: {
                       <div className="text-xs text-gray-400">No one yet.</div>
                     ) : (
                       <div className="divide-y divide-gray-100">
-                        {rostered.map((r) => (
-                          <div key={`r-${r.memberId}-${styleId}`} className="flex items-center justify-between py-1.5 text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
-                                {r.rankName}
-                              </span>
-                              <span>{r.memberName}</span>
-                              {r.toRank && <span className="text-xs text-gray-500">→ {r.toRank}</span>}
-                              {r.allRequirementsMet && (
-                                <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold uppercase">
-                                  Eligible
+                        {rostered.map((r) => {
+                          const participant = event.participants.find((p) => p.id === r.participantId);
+                          const draftKey = r.participantId;
+                          const currentDraft = feeDrafts[draftKey] ?? defaultFeeForParticipant(participant || {});
+                          return (
+                            <div key={`r-${r.memberId}-${styleId}`} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
+                                  {r.rankName}
                                 </span>
-                              )}
+                                <span className="truncate">{r.memberName}</span>
+                                {r.toRank && <span className="text-xs text-gray-500">→ {r.toRank}</span>}
+                                {r.allRequirementsMet && (
+                                  <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold uppercase">
+                                    Eligible
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 text-xs text-gray-600">
+                                <span>$</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={currentDraft}
+                                  onChange={(e) => setFeeDrafts((prev) => ({ ...prev, [draftKey]: e.target.value }))}
+                                  onBlur={() => {
+                                    const next = feeDrafts[draftKey];
+                                    if (next === undefined) return;
+                                    saveFee(r.participantId, next).then(() => {
+                                      setFeeDrafts((prev) => {
+                                        const copy = { ...prev };
+                                        delete copy[draftKey];
+                                        return copy;
+                                      });
+                                    });
+                                  }}
+                                  className="w-16 rounded-md border border-gray-300 px-1.5 py-0.5 text-right text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                                  title="Per-member fee. Leave blank to use the event default."
+                                />
+                              </div>
+                              <button type="button" onClick={() => removeParticipant(r.participantId)} className={BTN_NEUTRAL}>
+                                Remove
+                              </button>
                             </div>
-                            <button type="button" onClick={() => removeParticipant(r.participantId)} className={BTN_NEUTRAL}>
-                              Remove
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1479,12 +1547,15 @@ function EventDetailModal(props: {
           </div>
         )}
 
+        {/* Footer: red action buttons on the left (Finish Event lands
+            here in phase 3), Delete event on the right. Close button
+            moved up to the top-right of the modal header. */}
         <div className="flex items-center justify-between border-t border-gray-200 pt-3">
+          <div className="flex items-center gap-2">
+            {/* Finish Event button slots in here next push. */}
+          </div>
           <button type="button" onClick={deleteEvent} className={BTN_NEUTRAL}>
             Delete event
-          </button>
-          <button type="button" onClick={onClose} className={BTN_NEUTRAL}>
-            Close
           </button>
         </div>
       </div>
@@ -1713,15 +1784,28 @@ function PromoteModal(props: {
 // Shared modal shell
 // ─────────────────────────────────────────────────────────────────────────
 
-function ModalShell(props: { title: string; onClose: () => void; wide?: boolean; children: React.ReactNode }) {
+function ModalShell(props: {
+  title: string;
+  onClose: () => void;
+  wide?: boolean;
+  // Replace the default × button in the top-right with custom content
+  // (e.g. a "Close" button in event modals). When omitted the standard
+  // × renders.
+  headerAction?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto">
       <div className={`bg-white rounded-2xl shadow-xl w-full my-8 ${props.wide ? "max-w-3xl" : "max-w-md"}`}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
           <h2 className="text-lg font-semibold">{props.title}</h2>
-          <button type="button" onClick={props.onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">
-            ×
-          </button>
+          {props.headerAction !== undefined ? (
+            props.headerAction
+          ) : (
+            <button type="button" onClick={props.onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">
+              ×
+            </button>
+          )}
         </div>
         <div className="px-5 py-4">{props.children}</div>
       </div>

@@ -148,7 +148,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { participantId, status, notes, promotingToRank, promotedAt } = body;
+    const { participantId, status, notes, promotingToRank, promotedAt, feeOverrideCents } = body;
     if (!participantId) {
       return NextResponse.json({ error: "participantId required" }, { status: 400 });
     }
@@ -166,6 +166,12 @@ export async function PATCH(
     if (notes !== undefined) updateData.notes = notes?.trim() || null;
     if (promotingToRank !== undefined) updateData.promotingToRank = promotingToRank;
     if (promotedAt !== undefined) updateData.promotedAt = promotedAt ? new Date(promotedAt) : null;
+    if (feeOverrideCents !== undefined) {
+      // Empty string / null / negative → clear the override and fall
+      // back to the event's default cost.
+      const n = feeOverrideCents === null || feeOverrideCents === "" ? null : Number(feeOverrideCents);
+      updateData.feeOverrideCents = n != null && Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+    }
 
     const updated = await prisma.promotionParticipant.update({
       where: { id: participantId },
