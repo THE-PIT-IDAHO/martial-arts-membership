@@ -167,6 +167,51 @@ export async function POST(req: Request) {
   }
 
   // Mark as run today
+  // --- 5. Auto-finish promotion events ---
+  // Events with autoFinishAt <= today and not yet finished get run
+  // through the finish flow (auto mode, so per-member opt-outs are
+  // honored). Runs per-tenant to keep the auto-promote scope correct.
+  let autoFinishedEvents = 0;
+  let autoFinishErrors = 0;
+  try {
+    const dueEvents = await prisma.promotionEvent.findMany({
+      where: {
+        finishedAt: null,
+        status: { not: "CANCELLED" },
+        autoFinishAt: { not: null, lte: new Date() },
+      },
+      select: { id: true, clientId: true },
+    });
+    for (const ev of dueEvents) {
+      try {
+        // Resolve the tenant slug for this event so the inner POST is
+        // routed back to the right Client.
+        const client = await prisma.client.findUnique({
+          where: { id: ev.clientId },
+          select: { slug: true },
+        }).catch(() => null);
+        if (!client?.slug) continue;
+        const origin = req.headers.get("origin") || `https://${req.headers.get("host")}`;
+        const url = `${origin}/api/promotion-events/${ev.id}/finish`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-tenant-slug": client.slug,
+          },
+          body: JSON.stringify({ mode: "auto", paymentMethod: "ACCOUNT" }),
+        });
+        if (res.ok) autoFinishedEvents++;
+        else autoFinishErrors++;
+      } catch (err) {
+        console.error(`Auto-finish failed for event ${ev.id}:`, err);
+        autoFinishErrors++;
+      }
+    }
+  } catch (err) {
+    console.error("Auto-finish promotion events error:", err);
+  }
+
   const existingLifecycleRun = await prisma.settings.findFirst({ where: { key: "lifecycle_last_auto_run" } });
   if (existingLifecycleRun) {
     await prisma.settings.update({ where: { id: existingLifecycleRun.id }, data: { value: today } });
@@ -182,5 +227,7 @@ export async function POST(req: Request) {
     inactiveSent,
     renewalsSent,
     trialsSent,
+    autoFinishedEvents,
+    autoFinishErrors,
   });
 }

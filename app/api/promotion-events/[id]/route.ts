@@ -40,7 +40,7 @@ export async function PATCH(
     const clientId = await getClientId(req);
     const { id } = await params;
     const body = await req.json();
-    const { name, date, time, location, notes, status, costCents, styleIds, applyAttendanceWindow } = body;
+    const { name, date, time, location, notes, status, costCents, styleIds, applyAttendanceWindow, autoFinishAt } = body;
 
     const existing = await prisma.promotionEvent.findUnique({
       where: { id },
@@ -59,6 +59,10 @@ export async function PATCH(
     if (status !== undefined) updateData.status = status;
     if (costCents !== undefined) updateData.costCents = costCents ? parseInt(costCents, 10) : null;
     if (typeof applyAttendanceWindow === "boolean") updateData.applyAttendanceWindow = applyAttendanceWindow;
+    if (autoFinishAt !== undefined) {
+      // Empty string / null clears auto-finish (manual only).
+      updateData.autoFinishAt = autoFinishAt ? parseLocalDate(autoFinishAt) : null;
+    }
 
     if (styleIds !== undefined) {
       const ids: string[] = Array.isArray(styleIds)

@@ -60,12 +60,15 @@ type EventRow = {
   location: string | null;
   notes: string | null;
   applyAttendanceWindow: boolean;
+  autoFinishAt: string | null;
+  finishedAt: string | null;
   participants: Array<{
     id: string;
     memberId: string;
     memberName?: string;
     status: string;
     feeOverrideCents?: number | null;
+    autoPromote?: boolean;
   }>;
 };
 
@@ -879,6 +882,15 @@ function EventDetailModal(props: {
   const [editNotes, setEditNotes] = useState(event.notes || "");
   const [editStyles, setEditStyles] = useState<Set<string>>(new Set(eventStyleIds));
   const [editApplyWindow, setEditApplyWindow] = useState(event.applyAttendanceWindow !== false);
+  // Auto-finish controls: a checkbox + date input. Checkbox on with no
+  // explicit date defaults to the event date (admin's most likely
+  // intent). Clearing the checkbox sends null to the API.
+  const [editAutoFinishEnabled, setEditAutoFinishEnabled] = useState(!!event.autoFinishAt);
+  const [editAutoFinishDate, setEditAutoFinishDate] = useState(() =>
+    event.autoFinishAt
+      ? new Date(event.autoFinishAt).toISOString().split("T")[0]
+      : new Date(event.date).toISOString().split("T")[0],
+  );
   const [savingEdit, setSavingEdit] = useState(false);
 
   function openEditPanel() {
@@ -889,6 +901,12 @@ function EventDetailModal(props: {
     setEditNotes(event.notes || "");
     setEditStyles(new Set(eventStyleIds));
     setEditApplyWindow(event.applyAttendanceWindow !== false);
+    setEditAutoFinishEnabled(!!event.autoFinishAt);
+    setEditAutoFinishDate(
+      event.autoFinishAt
+        ? new Date(event.autoFinishAt).toISOString().split("T")[0]
+        : new Date(event.date).toISOString().split("T")[0],
+    );
     setEditing(true);
   }
 
@@ -913,6 +931,7 @@ function EventDetailModal(props: {
           notes: editNotes.trim() || null,
           styleIds: Array.from(editStyles),
           applyAttendanceWindow: editApplyWindow,
+          autoFinishAt: editAutoFinishEnabled ? editAutoFinishDate : null,
         }),
       });
       if (res.ok) {
@@ -977,6 +996,47 @@ function EventDetailModal(props: {
       }),
     });
     await onChange();
+  }
+
+  // Per-row auto/manual toggle. autoPromote=true means the auto-finish
+  // cron will include this participant; false means they stay on the
+  // roster until admin clicks Finish Event manually.
+  async function toggleAutoPromote(participantId: string, value: boolean) {
+    await fetch(`/api/promotion-events/${event.id}/participants`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ participantId, autoPromote: value }),
+    });
+    await onChange();
+  }
+
+  // Finish Event — promotes every REGISTERED participant + closes the
+  // event. Confirmation dialog shows totals before firing.
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
+
+  async function runFinish() {
+    setFinishing(true);
+    setFinishError(null);
+    try {
+      const res = await fetch(`/api/promotion-events/${event.id}/finish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "manual", paymentMethod: "ACCOUNT" }),
+      });
+      if (res.ok) {
+        setShowFinishConfirm(false);
+        await onChange();
+      } else {
+        const d = await res.json().catch(() => null);
+        setFinishError(d?.error || `Failed (HTTP ${res.status})`);
+      }
+    } catch (err) {
+      setFinishError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setFinishing(false);
+    }
   }
 
   // Manual add — lets admin add ANY member to the roster regardless of
@@ -1143,6 +1203,16 @@ function EventDetailModal(props: {
               Attendance Window Off
             </span>
           )}
+          {event.finishedAt && (
+            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
+              Finished {new Date(event.finishedAt).toLocaleDateString()}
+            </span>
+          )}
+          {!event.finishedAt && event.autoFinishAt && (
+            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+              Auto-finish {new Date(event.autoFinishAt).toLocaleDateString()}
+            </span>
+          )}
         </div>
         {!editing && (
           <button type="button" onClick={openEditPanel} className={BTN_SECONDARY}>
@@ -1184,6 +1254,30 @@ function EventDetailModal(props: {
               Attach Attendance Windows
             </label>
           </div>
+
+          {/* Auto-finish: when checked, the daily lifecycle cron runs
+              the finish flow on or after the chosen date (skipping any
+              participants flagged manual). When unchecked, finish is
+              manual-only via the Finish Event button. */}
+          <div className="flex items-end gap-3">
+            <label className="flex items-center gap-2 text-xs text-gray-700 pb-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editAutoFinishEnabled}
+                onChange={(e) => setEditAutoFinishEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 accent-primary"
+              />
+              Auto-finish event on
+            </label>
+            <input
+              type="date"
+              value={editAutoFinishDate}
+              onChange={(e) => setEditAutoFinishDate(e.target.value)}
+              disabled={!editAutoFinishEnabled}
+              className="px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+            />
+          </div>
+
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Styles</label>
             <div className="flex flex-wrap gap-1.5">
@@ -1361,6 +1455,18 @@ function EventDetailModal(props: {
                                   </span>
                                 )}
                               </div>
+                              <label
+                                className="flex items-center gap-1 text-[10px] text-gray-600 cursor-pointer"
+                                title="When off, this member is skipped during auto-finish. Manual Finish Event still promotes them."
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={participant?.autoPromote !== false}
+                                  onChange={(e) => toggleAutoPromote(r.participantId, e.target.checked)}
+                                  className="h-3.5 w-3.5 rounded border-gray-300 accent-primary"
+                                />
+                                Auto
+                              </label>
                               <div className="flex items-center gap-1 text-xs text-gray-600">
                                 <span>$</span>
                                 <input
@@ -1567,17 +1673,69 @@ function EventDetailModal(props: {
           </div>
         )}
 
-        {/* Footer: red action buttons on the left (Finish Event lands
-            here in phase 3), Delete event on the right. Close button
-            moved up to the top-right of the modal header. */}
+        {/* Footer: Finish Event (red) on the left, Delete event
+            (white/gray) on the right. Close moved up to the modal
+            header. Finish is hidden after the event has been finished. */}
         <div className="flex items-center justify-between border-t border-gray-200 pt-3">
           <div className="flex items-center gap-2">
-            {/* Finish Event button slots in here next push. */}
+            {!event.finishedAt && (
+              <button
+                type="button"
+                onClick={() => setShowFinishConfirm(true)}
+                disabled={event.participants.length === 0}
+                className={BTN_PRIMARY}
+                title={event.participants.length === 0 ? "Add at least one participant first." : "Promote every roster member + charge fees + close the event."}
+              >
+                Finish Event
+              </button>
+            )}
           </div>
           <button type="button" onClick={deleteEvent} className={BTN_NEUTRAL}>
             Delete event
           </button>
         </div>
+
+        {/* Confirm dialog — overlay above the modal. Shows count + a
+            quick summary of what's about to happen so admin can back
+            out before committing. */}
+        {showFinishConfirm && (
+          <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
+              <h3 className="text-lg font-semibold mb-2">Finish event?</h3>
+              <p className="text-sm text-gray-700 mb-3">
+                This will promote every member on the roster ({event.participants.length}) in each of their event-eligible styles,
+                charge the listed fee (per-member override or computed) against their account credit, and mark the event finished.
+              </p>
+              <p className="text-xs text-gray-500 mb-4">
+                Members with their Auto checkbox off will still be promoted by this manual run.
+                To skip them, remove them from the roster first.
+              </p>
+              {finishError && (
+                <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {finishError}
+                </div>
+              )}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowFinishConfirm(false); setFinishError(null); }}
+                  disabled={finishing}
+                  className={BTN_NEUTRAL}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={runFinish}
+                  disabled={finishing}
+                  className={BTN_PRIMARY}
+                >
+                  {finishing ? "Finishing…" : "Yes, finish event"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </ModalShell>
   );

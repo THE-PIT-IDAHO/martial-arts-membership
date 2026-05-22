@@ -17,7 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { computePromotionFee } from "@/lib/promotion-fee";
 
-type PromoteInput = {
+export type PromoteInput = {
   memberId: string;
   styleId: string;
   toRank: string;
@@ -45,7 +45,7 @@ function toLocalDateString(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-async function applyOnePromotion(
+export async function applyOnePromotion(
   input: PromoteInput,
   clientId: string,
 ): Promise<{ promotion: any | null; error?: string }> {

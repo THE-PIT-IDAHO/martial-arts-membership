@@ -771,6 +771,13 @@ model PromotionEvent {
   // a one-off "everyone in good standing is eligible" promotion without
   // editing the rank configs.
   applyAttendanceWindow Boolean @default(true)
+  // When set, the daily lifecycle cron auto-runs the finish flow on or
+  // after this date. Null = manual finish only (admin clicks the button).
+  autoFinishAt          DateTime?
+  // Set to true once the finish flow has actually run (either manually
+  // via the button or by the cron). Stops the cron from re-running and
+  // lets the modal show a "Finished" badge.
+  finishedAt            DateTime?
   location     String?
   notes        String?
   costCents    Int?                   // Optional fee to charge for the promotion
@@ -837,6 +844,11 @@ model PromotionParticipant {
   // (or the plan-driven computed fee). Lets admin discount or adjust
   // one participant without changing the event-wide default.
   feeOverrideCents Int?
+  // false → admin opted this member out of the auto-finish flow.
+  // They stay on the roster but the cron + "Finish auto-promote only"
+  // path skips them. The manual "Finish Event" button still promotes
+  // them when clicked.
+  autoPromote      Boolean        @default(true)
   transactionId    String?        // Link to POSTransaction if fee was charged
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt

@@ -148,7 +148,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { participantId, status, notes, promotingToRank, promotedAt, feeOverrideCents } = body;
+    const { participantId, status, notes, promotingToRank, promotedAt, feeOverrideCents, autoPromote } = body;
     if (!participantId) {
       return NextResponse.json({ error: "participantId required" }, { status: 400 });
     }
@@ -172,6 +172,7 @@ export async function PATCH(
       const n = feeOverrideCents === null || feeOverrideCents === "" ? null : Number(feeOverrideCents);
       updateData.feeOverrideCents = n != null && Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
     }
+    if (typeof autoPromote === "boolean") updateData.autoPromote = autoPromote;
 
     const updated = await prisma.promotionParticipant.update({
       where: { id: participantId },
