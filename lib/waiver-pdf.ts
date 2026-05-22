@@ -46,7 +46,7 @@ export type WaiverPdfOptions = {
 // Fixed header band reserved on every page. Body layout uses this so it can
 // never run under the header — and the header is drawn last so the count of
 // pages is known and "Page X of Y" comes out right.
-const HEADER_BAND = 38;
+const HEADER_BAND = 44;
 const FOOTER_BAND = 12;
 
 export function generateWaiverPdf(opts: WaiverPdfOptions): string {
@@ -97,7 +97,29 @@ export function generateWaiverPdf(opts: WaiverPdfOptions): string {
     yPos += 5;
   }
 
+  // Keep each section together on one page when possible. Compute the full
+  // height (title + every wrapped line + bottom padding) up front; if it
+  // doesn't fit in the space remaining on the current page, page-break
+  // before drawing so the title doesn't get orphaned from its content.
+  // A section taller than a full page falls back to line-by-line breaking
+  // (no other choice).
+  const pageContentHeight = contentBottom - contentTop;
   for (const section of opts.sections) {
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    const text = opts.replacePlaceholders
+      ? opts.replacePlaceholders(section.content)
+      : section.content;
+    const lines: string[] = pdf.splitTextToSize(text, maxWidth);
+
+    const titleHeight = section.title ? 6 : 0;
+    const sectionHeight = titleHeight + lines.length * 4 + 5;
+
+    if (sectionHeight <= pageContentHeight && yPos + sectionHeight > contentBottom) {
+      pdf.addPage();
+      yPos = contentTop;
+    }
+
     if (section.title) {
       ensureSpace(8);
       pdf.setFont("helvetica", "bold");
@@ -110,10 +132,6 @@ export function generateWaiverPdf(opts: WaiverPdfOptions): string {
     }
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(9);
-    const text = opts.replacePlaceholders
-      ? opts.replacePlaceholders(section.content)
-      : section.content;
-    const lines: string[] = pdf.splitTextToSize(text, maxWidth);
     for (const line of lines) {
       ensureSpace(4);
       pdf.text(line, margin, yPos);
@@ -174,6 +192,9 @@ export function generateWaiverPdf(opts: WaiverPdfOptions): string {
   return pdf.output("datauristring");
 }
 
+// Letterhead-style header: logo on the left, gym name + contact info
+// right-aligned to the right margin, both sitting on the same row. Waiver
+// title sits centered below, with a thin rule under it.
 function drawHeader(
   pdf: jsPDF,
   opts: WaiverPdfOptions,
@@ -181,29 +202,47 @@ function drawHeader(
   margin: number,
   logoDataUrl: { dataUrl: string; width: number; height: number } | null,
 ) {
-  let y = 10;
+  const startY = 10;
+  const blockH = 22; // shared height of the logo / contact-info row
+
   if (logoDataUrl) {
-    const targetH = 13;
+    const targetH = 16;
     const aspect = logoDataUrl.width / logoDataUrl.height;
     const targetW = targetH * aspect;
-    const x = (pageWidth - targetW) / 2;
-    pdf.addImage(logoDataUrl.dataUrl, "JPEG", x, y, targetW, targetH);
-    y += targetH + 3;
-  } else {
-    y += 4;
+    const logoY = startY + (blockH - targetH) / 2;
+    pdf.addImage(logoDataUrl.dataUrl, "JPEG", margin, logoY, targetW, targetH);
   }
+
+  // Gym info, right-aligned to the right margin.
+  const rightX = pageWidth - margin;
+  let infoY = startY + 4;
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(16);
-  pdf.text(opts.gym.name || "Martial Arts School", pageWidth / 2, y, {
-    align: "center",
-  });
-  y += 6;
+  pdf.setFontSize(14);
+  pdf.text(opts.gym.name || "Martial Arts School", rightX, infoY, { align: "right" });
+  infoY += 5;
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8);
+  if (opts.gym.address) {
+    pdf.text(opts.gym.address, rightX, infoY, { align: "right" });
+    infoY += 4;
+  }
+  if (opts.gym.phone) {
+    pdf.text(opts.gym.phone, rightX, infoY, { align: "right" });
+    infoY += 4;
+  }
+  if (opts.gym.email) {
+    pdf.text(opts.gym.email, rightX, infoY, { align: "right" });
+    infoY += 4;
+  }
+
+  // Title + rule below the row.
+  const titleY = startY + blockH + 5;
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(11);
-  pdf.text(opts.waiverTitle, pageWidth / 2, y, { align: "center" });
-  y += 3;
+  pdf.setFontSize(12);
+  pdf.text(opts.waiverTitle, pageWidth / 2, titleY, { align: "center" });
+  const ruleY = titleY + 3;
   pdf.setDrawColor(180);
-  pdf.line(margin, y, pageWidth - margin, y);
+  pdf.line(margin, ruleY, pageWidth - margin, ruleY);
   pdf.setDrawColor(0);
 }
 
