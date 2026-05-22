@@ -821,7 +821,7 @@ export default function AdultWaiverPage() {
               <button
                 type="submit"
                 disabled={submitting || !agreedToTerms}
-                className="w-full rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primaryDark active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 {submitting ? "Submitting..." : "Sign Waiver"}
               </button>
