@@ -953,10 +953,66 @@ function EventDetailModal(props: {
       });
       setManualQuery("");
       setManualResults([]);
-      await Promise.all([onChange(), loadEligible()]);
+      await Promise.all([onChange(), loadEligible(), loadStyleMembers()]);
     } finally {
       setAdding(false);
     }
+  }
+
+  // Browse-by-style: load every member on a plan that allows this style
+  // (regardless of eligibility) so admin can scan and add. Keyed by
+  // styleId so multiple parallel fetches feed one map.
+  type BrowseMember = {
+    id: string;
+    firstName: string;
+    lastName: string;
+    primaryStyle: string | null;
+    stylesNotes: string | null;
+    rank: string | null;
+  };
+  const [styleMembers, setStyleMembers] = useState<Record<string, BrowseMember[]>>({});
+  const [loadingStyleMembers, setLoadingStyleMembers] = useState(false);
+
+  // Stable dep key for the styleIds array — useCallback would otherwise
+  // re-create every render and re-fire the effect.
+  const eventStyleIdsKey = eventStyleIds.join(",");
+  const loadStyleMembers = useCallback(async () => {
+    const ids = eventStyleIdsKey ? eventStyleIdsKey.split(",") : [];
+    if (ids.length === 0) {
+      setStyleMembers({});
+      return;
+    }
+    setLoadingStyleMembers(true);
+    try {
+      const results = await Promise.all(
+        ids.map((styleId) =>
+          fetch(`/api/members?styleId=${styleId}&limit=500`)
+            .then((r) => (r.ok ? r.json() : { members: [] }))
+            .then((d) => ({ styleId, members: (d.members || []) as BrowseMember[] }))
+            .catch(() => ({ styleId, members: [] as BrowseMember[] })),
+        ),
+      );
+      const next: Record<string, BrowseMember[]> = {};
+      for (const r of results) next[r.styleId] = r.members;
+      setStyleMembers(next);
+    } finally {
+      setLoadingStyleMembers(false);
+    }
+  }, [eventStyleIdsKey]);
+  useEffect(() => { loadStyleMembers(); }, [loadStyleMembers]);
+
+  // For a given style, pull the member's rank from stylesNotes by name
+  // match. Falls back to the legacy primary `rank` if the per-style
+  // entry isn't there. Used as a contextual chip in the browse list.
+  function rankForStyle(m: BrowseMember, styleName: string): string {
+    if (m.stylesNotes) {
+      try {
+        const arr: Array<{ name?: string; rank?: string }> = JSON.parse(m.stylesNotes);
+        const match = arr.find((e) => (e.name || "").toLowerCase() === styleName.toLowerCase());
+        if (match?.rank) return match.rank;
+      } catch { /* ignore */ }
+    }
+    return m.rank || "—";
   }
 
   async function addByStyle(styleId: string) {
@@ -1336,6 +1392,68 @@ function EventDetailModal(props: {
             )}
           </div>
         </div>
+
+        {/* Browse-by-style: list every member enrolled in each event
+            style, regardless of eligibility. One card per event style
+            so admin can add anyone without searching by name. */}
+        {eventStyleIds.length > 0 && (
+          <div className="space-y-3">
+            {eventStyleIds.map((styleId) => {
+              const styleName = styles.find((s) => s.id === styleId)?.name || "Style";
+              const list = (styleMembers[styleId] || []).slice().sort((a, b) =>
+                `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`),
+              );
+              const rosterIdSet = new Set(event.participants.map((p) => p.memberId));
+              return (
+                <div key={`browse-${styleId}`} className="border border-gray-200 rounded-md overflow-hidden">
+                  <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 text-sm font-semibold text-gray-800">
+                    All members of {styleName}
+                    <span className="ml-2 text-[11px] font-normal text-gray-500">
+                      {list.length} total
+                    </span>
+                  </div>
+                  <div className="px-3 py-2">
+                    {loadingStyleMembers && list.length === 0 ? (
+                      <div className="text-xs text-gray-500">Loading…</div>
+                    ) : list.length === 0 ? (
+                      <div className="text-xs text-gray-400">No members enrolled in this style.</div>
+                    ) : (
+                      <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
+                        {list.map((m) => {
+                          const alreadyOn = rosterIdSet.has(m.id);
+                          return (
+                            <div key={`${styleId}-${m.id}`} className="flex items-center justify-between py-1.5 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
+                                  {rankForStyle(m, styleName)}
+                                </span>
+                                <span>{m.firstName} {m.lastName}</span>
+                              </div>
+                              {alreadyOn ? (
+                                <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-400">
+                                  Already on roster
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => addManually(m.id)}
+                                  disabled={adding}
+                                  className={BTN_PRIMARY}
+                                >
+                                  Add
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="flex items-center justify-between border-t border-gray-200 pt-3">
           <button type="button" onClick={deleteEvent} className={BTN_NEUTRAL}>
