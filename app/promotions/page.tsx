@@ -115,7 +115,7 @@ const BTN_NEUTRAL =
   "rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50";
 
 export default function PromotionsPage() {
-  const [tab, setTab] = useState<"eligible" | "events" | "history">("eligible");
+  const [tab, setTab] = useState<"eligible" | "events" | "history">("events");
   const [loading, setLoading] = useState(true);
   const [eligible, setEligible] = useState<EligibleRow[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
@@ -326,7 +326,7 @@ export default function PromotionsPage() {
         </div>
 
         <div className="flex items-center gap-1 border-b border-gray-200 mb-4">
-          {(["eligible", "events", "history"] as const).map((t) => (
+          {(["events", "eligible", "history"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -335,7 +335,7 @@ export default function PromotionsPage() {
                 tab === t ? "border-primary text-primary" : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
-              {t === "eligible" ? "Ready to Promote" : t === "events" ? "Events" : "History"}
+              {t === "events" ? "Events" : t === "eligible" ? "Ready to Promote" : "Past Events"}
             </button>
           ))}
         </div>
@@ -1168,41 +1168,81 @@ function EventDetailModal(props: {
       <div className="space-y-4">
         {(() => {
           const rosterMemberIdSet = new Set(event.participants.map((p) => p.memberId));
-          // Members covered by at least one event-style eligible row;
-          // anything left in `participants` not covered here is rendered
-          // in an "Other" section so admin can still see + remove them.
+          // Members covered by at least one event-style section;
+          // anything left in `participants` not covered here is
+          // rendered in an "Other" section so admin can still see +
+          // remove them.
           const coveredRosterIds = new Set<string>();
 
-          if (loadingEligible) {
+          if (loadingEligible || loadingStyleMembers) {
             return <div className="text-xs text-gray-500">Loading…</div>;
           }
 
-          // Group eligible rows by styleId.
-          const byStyle = new Map<string, EligibleRow[]>();
+          // Build an (styleId, memberId) → eligible-row lookup so each
+          // section can layer eligibility data (toRank, allRequirementsMet)
+          // on top of the plan-based membership list.
+          const eligibleByKey = new Map<string, EligibleRow>();
           for (const row of eligible) {
-            const list = byStyle.get(row.styleId) || [];
-            list.push(row);
-            byStyle.set(row.styleId, list);
+            eligibleByKey.set(`${row.styleId}|${row.memberId}`, row);
           }
+
+          type DisplayRow = {
+            participantId: string;
+            memberId: string;
+            memberName: string;
+            rankName: string;
+            rankOrder: number;
+            toRank: string | null;
+            allRequirementsMet: boolean;
+          };
 
           // Walk event.styleIds in original order so admins always see
           // sections in the order they configured the event.
           const styleSections = eventStyleIds.map((styleId) => {
-            const styleName = styles.find((s) => s.id === styleId)?.name || "Style";
-            const rows = (byStyle.get(styleId) || [])
-              .slice()
-              .sort((a, b) => {
-                if (a.fromRankOrder !== b.fromRankOrder) return a.fromRankOrder - b.fromRankOrder;
-                return a.memberName.localeCompare(b.memberName);
+            const styleOption = styles.find((s) => s.id === styleId);
+            const styleName = styleOption?.name || "Style";
+            // Build rank-name → order map so members sort low → high.
+            const rankOrderByName = new Map<string, number>();
+            for (const r of styleOption?.ranks || []) {
+              rankOrderByName.set(r.name.toLowerCase(), r.order);
+            }
+
+            // Candidates for this style = members the plan covers
+            // (styleMembers[styleId]). This includes top-rank members
+            // and members with no current rank set — both of which the
+            // eligible API skips. That's why this list, not `eligible`,
+            // is the source of truth for "who belongs to this style".
+            const candidates = styleMembers[styleId] || [];
+            const rostered: DisplayRow[] = [];
+            for (const m of candidates) {
+              if (!rosterMemberIdSet.has(m.id)) continue;
+              const participant = event.participants.find((p) => p.memberId === m.id);
+              if (!participant) continue;
+              const rankName = rankForStyle(m, styleName);
+              const eligibleRow = eligibleByKey.get(`${styleId}|${m.id}`);
+              const rankOrder = eligibleRow
+                ? eligibleRow.fromRankOrder
+                : rankOrderByName.get(rankName.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+              rostered.push({
+                participantId: participant.id,
+                memberId: m.id,
+                memberName: `${m.firstName} ${m.lastName}`,
+                rankName: rankName || "—",
+                rankOrder,
+                toRank: eligibleRow?.toRank || null,
+                allRequirementsMet: eligibleRow?.allRequirementsMet ?? false,
               });
-            const rostered = rows.filter((r) => rosterMemberIdSet.has(r.memberId));
-            for (const r of rostered) coveredRosterIds.add(r.memberId);
+              coveredRosterIds.add(m.id);
+            }
+            rostered.sort((a, b) => {
+              if (a.rankOrder !== b.rankOrder) return a.rankOrder - b.rankOrder;
+              return a.memberName.localeCompare(b.memberName);
+            });
             return { styleId, styleName, rostered };
           });
 
-          // Participant rows not represented in any eligible row (e.g.
-          // manually added member with no enrolled style matching the
-          // event). Surfaces them under a final "Other" group.
+          // Roster members not enrolled in any event style (via plan).
+          // Manually-added members from a non-style plan land here.
           const orphanRoster = event.participants.filter((p) => !coveredRosterIds.has(p.memberId));
 
           return (
@@ -1233,30 +1273,25 @@ function EventDetailModal(props: {
                       <div className="text-xs text-gray-400">No one yet.</div>
                     ) : (
                       <div className="divide-y divide-gray-100">
-                        {rostered.map((r) => {
-                          const participant = event.participants.find((p) => p.memberId === r.memberId);
-                          return (
-                            <div key={`r-${r.memberId}-${r.styleId}`} className="flex items-center justify-between py-1.5 text-sm">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
-                                  {r.fromRank || "—"}
+                        {rostered.map((r) => (
+                          <div key={`r-${r.memberId}-${styleId}`} className="flex items-center justify-between py-1.5 text-sm">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
+                                {r.rankName}
+                              </span>
+                              <span>{r.memberName}</span>
+                              {r.toRank && <span className="text-xs text-gray-500">→ {r.toRank}</span>}
+                              {r.allRequirementsMet && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold uppercase">
+                                  Eligible
                                 </span>
-                                <span>{r.memberName}</span>
-                                <span className="text-xs text-gray-500">→ {r.toRank}</span>
-                                {r.allRequirementsMet && (
-                                  <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold uppercase">
-                                    Eligible
-                                  </span>
-                                )}
-                              </div>
-                              {participant && (
-                                <button type="button" onClick={() => removeParticipant(participant.id)} className={BTN_NEUTRAL}>
-                                  Remove
-                                </button>
                               )}
                             </div>
-                          );
-                        })}
+                            <button type="button" onClick={() => removeParticipant(r.participantId)} className={BTN_NEUTRAL}>
+                              Remove
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
