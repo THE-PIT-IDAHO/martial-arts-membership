@@ -1072,7 +1072,7 @@ function EventDetailModal(props: {
               {event.participants.map((p) => (
                 <div key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
                   <span>{(p as { memberName?: string }).memberName || "Member"}</span>
-                  <button type="button" onClick={() => removeParticipant(p.id)} className="text-xs text-red-600 hover:text-red-700">
+                  <button type="button" onClick={() => removeParticipant(p.id)} className={BTN_NEUTRAL}>
                     Remove
                   </button>
                 </div>
