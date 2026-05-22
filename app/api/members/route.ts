@@ -209,15 +209,18 @@ export async function GET(req: Request) {
       index === self.findIndex((m) => m.id === member.id)
     );
 
-    // Filter by membership that allows the style (if styleId provided)
+    // Filter by membership that allows the style (if styleId provided).
+    //
+    // Strict semantic: a plan with no allowedStyles set (null / empty)
+    // does NOT match any specific styleId filter. The previous "null
+    // means all styles" behavior caused members on no-style plans (e.g.
+    // a flat-rate "Open Mat" membership) to incorrectly appear under
+    // every style's "Add all from style" picker.
     const membersWithAllowedStyle = styleId
       ? uniqueMembers.filter((member) => {
-          // Member must have at least one active membership that allows this style
           return member.memberships.some((membership) => {
             const allowedStyles = membership.membershipPlan.allowedStyles;
-            // null means all styles are allowed
-            if (!allowedStyles) return true;
-            // Check if styleId is in the allowed styles array
+            if (!allowedStyles) return false;
             try {
               const stylesArray = JSON.parse(allowedStyles);
               return Array.isArray(stylesArray) && stylesArray.includes(styleId);
