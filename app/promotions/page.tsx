@@ -58,6 +58,7 @@ type EventRow = {
   styleIds: string | null;
   location: string | null;
   notes: string | null;
+  applyAttendanceWindow: boolean;
   participants: Array<{ id: string; memberId: string; status: string }>;
 };
 
@@ -691,6 +692,11 @@ function EventCreateModal(props: {
   const [date, setDate] = useState(getTodayString());
   const [pickedStyles, setPickedStyles] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState("");
+  // When checked, the eligible-promotions API uses each rank's
+  // attendanceWindow (e.g. "6 months back from event date") as the
+  // start cutoff. When unchecked, all attendance since the member's
+  // last promotion counts.
+  const [applyAttendanceWindow, setApplyAttendanceWindow] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -716,6 +722,7 @@ function EventCreateModal(props: {
           date,
           styleIds: Array.from(pickedStyles),
           notes: notes.trim() || undefined,
+          applyAttendanceWindow,
         }),
       });
       if (!res.ok) {
@@ -743,14 +750,29 @@ function EventCreateModal(props: {
             className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
-        <div>
-          <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Date</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-          />
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          {/* Sits on the right of the Date row. Default on; flip off
+              for one-off events where you want all attendance since the
+              member's last promotion to count regardless of the rank's
+              configured window. */}
+          <label className="flex items-center gap-2 text-xs text-gray-700 pb-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={applyAttendanceWindow}
+              onChange={(e) => setApplyAttendanceWindow(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 accent-primary"
+            />
+            Attach Attendance Windows
+          </label>
         </div>
         <div>
           <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Styles</label>
@@ -815,6 +837,60 @@ function EventDetailModal(props: {
   const [loadingEligible, setLoadingEligible] = useState(true);
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Inline edit panel state — toggled by the "Edit details" button at
+  // the top of the modal. Snapshot the current event's values so Cancel
+  // restores them; Save PATCHes and refreshes the parent list.
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(event.name);
+  const [editDate, setEditDate] = useState(() => new Date(event.date).toISOString().split("T")[0]);
+  const [editNotes, setEditNotes] = useState(event.notes || "");
+  const [editStyles, setEditStyles] = useState<Set<string>>(new Set(eventStyleIds));
+  const [editApplyWindow, setEditApplyWindow] = useState(event.applyAttendanceWindow !== false);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  function openEditPanel() {
+    // Reset to current event values whenever the panel opens (in case
+    // the event was updated elsewhere since this modal first opened).
+    setEditName(event.name);
+    setEditDate(new Date(event.date).toISOString().split("T")[0]);
+    setEditNotes(event.notes || "");
+    setEditStyles(new Set(eventStyleIds));
+    setEditApplyWindow(event.applyAttendanceWindow !== false);
+    setEditing(true);
+  }
+
+  function toggleEditStyle(id: string) {
+    setEditStyles((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function saveEdit() {
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/promotion-events/${event.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName.trim() || event.name,
+          date: editDate,
+          notes: editNotes.trim() || null,
+          styleIds: Array.from(editStyles),
+          applyAttendanceWindow: editApplyWindow,
+        }),
+      });
+      if (res.ok) {
+        setEditing(false);
+        await onChange();
+      }
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   const loadEligible = useCallback(async () => {
     setLoadingEligible(true);
@@ -885,9 +961,97 @@ function EventDetailModal(props: {
 
   return (
     <ModalShell title={event.name} onClose={onClose} wide>
-      <div className="text-xs text-gray-600 mb-3">
-        {new Date(event.date).toLocaleDateString()} · Styles: {eventStyleNames} · Roster: {event.participants.length}
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="text-xs text-gray-600">
+          {new Date(event.date).toLocaleDateString()} · Styles: {eventStyleNames} · Roster: {event.participants.length}
+          {event.applyAttendanceWindow === false && (
+            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+              Attendance Window Off
+            </span>
+          )}
+        </div>
+        {!editing && (
+          <button type="button" onClick={openEditPanel} className={BTN_SECONDARY}>
+            Edit details
+          </button>
+        )}
       </div>
+
+      {/* Inline edit panel — toggled by the "Edit details" button. PATCHes
+          /api/promotion-events/[id] on Save. Cancel discards changes. */}
+      {editing && (
+        <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-3 space-y-3">
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Name</label>
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Date</label>
+              <input
+                type="date"
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
+                className="px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-xs text-gray-700 pb-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editApplyWindow}
+                onChange={(e) => setEditApplyWindow(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 accent-primary"
+              />
+              Attach Attendance Windows
+            </label>
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Styles</label>
+            <div className="flex flex-wrap gap-1.5">
+              {styles.length === 0 ? (
+                <span className="text-xs text-gray-500">No styles set up yet.</span>
+              ) : (
+                styles.map((s) => {
+                  const on = editStyles.has(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => toggleEditStyle(s.id)}
+                      className={`px-2 py-1 rounded-full text-xs font-medium border transition-colors ${
+                        on ? "bg-primary text-white border-primary"
+                           : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Notes</label>
+            <textarea
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              rows={2}
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" onClick={() => setEditing(false)} className={BTN_SECONDARY} disabled={savingEdit}>Cancel</button>
+            <button type="button" onClick={saveEdit} disabled={savingEdit || !editName.trim() || !editDate} className={BTN_PRIMARY}>
+              {savingEdit ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-4">
         {/* Roster */}

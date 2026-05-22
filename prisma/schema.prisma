@@ -764,6 +764,13 @@ model PromotionEvent {
   // events use this; the eligible-promotions API filters by it when
   // computing the attendance-window cutoff per rank.
   styleIds     String?
+  // When true (default), the eligible-promotions API caps attendance
+  // counting at "event date − rank's attendanceWindow". When false, the
+  // window is ignored and ALL attendance since the member's last
+  // promotion / reset date counts toward this event. Lets the admin run
+  // a one-off "everyone in good standing is eligible" promotion without
+  // editing the rank configs.
+  applyAttendanceWindow Boolean @default(true)
   location     String?
   notes        String?
   costCents    Int?                   // Optional fee to charge for the promotion

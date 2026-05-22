@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   try {
     const clientId = await getClientId(req);
     const body = await req.json();
-    const { name, date, time, location, notes, costCents } = body || {};
+    const { name, date, time, location, notes, costCents, applyAttendanceWindow } = body || {};
 
     if (!name || typeof name !== "string") {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -82,6 +82,7 @@ export async function POST(req: Request) {
         location: location || null,
         notes: notes || null,
         costCents: costCents ? parseInt(costCents, 10) : null,
+        applyAttendanceWindow: applyAttendanceWindow === false ? false : true,
         status: "SCHEDULED",
         clientId,
       },

@@ -66,12 +66,16 @@ export async function GET(req: Request) {
       date: Date;
       styleIds: string[];
       memberIds: string[];
+      // false → ignore the per-rank attendanceWindow when computing the
+      // start cutoff; only the member's reset date acts as the floor.
+      applyAttendanceWindow: boolean;
     } | null = null;
     if (eventId) {
       const evRow = await prisma.promotionEvent.findUnique({
         where: { id: eventId },
         select: {
           id: true, date: true, clientId: true, styleId: true, styleIds: true,
+          applyAttendanceWindow: true,
           participants: { select: { memberId: true } },
         },
       });
@@ -88,6 +92,7 @@ export async function GET(req: Request) {
         date: evRow.date,
         styleIds: evStyleIds,
         memberIds: evRow.participants.map((p) => p.memberId),
+        applyAttendanceWindow: evRow.applyAttendanceWindow !== false,
       };
     }
 
@@ -193,7 +198,10 @@ export async function GET(req: Request) {
         const startCutoff = effectiveAttendanceStart({
           endDate: windowEnd,
           resetDate: resetCutoff,
-          window: nextRank.attendanceWindow,
+          // Honor the per-event opt-out: when the admin unchecked
+          // "Attach Attendance Windows" on this event, ignore the
+          // rank's window and let the reset date stand alone.
+          window: event && !event.applyAttendanceWindow ? null : nextRank.attendanceWindow,
         });
         const styleAtts = memberAtts.filter((a) => {
           if (!a.attendanceDate) return false;
