@@ -21,6 +21,7 @@ type EligibleRow = {
   styleId: string;
   styleName: string;
   fromRank: string | null;
+  fromRankOrder: number;
   toRank: string;
   classRequirements: Array<{ label: string; attended: number; required: number; met: boolean }>;
   allRequirementsMet: boolean;
@@ -961,9 +962,6 @@ function EventDetailModal(props: {
     await onChange();
   }
 
-  // Compute which eligible rows are NOT already on the roster.
-  const rosterMemberIds = new Set(event.participants.map((p) => p.memberId));
-  const addableEligible = eligible.filter((r) => !rosterMemberIds.has(r.memberId));
 
   return (
     <ModalShell title={event.name} onClose={onClose} wide>
@@ -1059,99 +1057,186 @@ function EventDetailModal(props: {
         </div>
       )}
 
+      {/* Roster + eligible candidates are grouped per event style, then
+          ordered by current rank low → high inside each style. A member
+          enrolled in multiple event styles appears in each section
+          (they may be promoting in one style and not another). */}
       <div className="space-y-4">
-        {/* Roster */}
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Roster</div>
-          {event.participants.length === 0 ? (
-            <div className="text-xs text-gray-400 border border-dashed border-gray-300 rounded-md p-3 text-center">
-              No members on this event yet.
-            </div>
-          ) : (
-            <div className="border border-gray-200 rounded-md divide-y divide-gray-100">
-              {event.participants.map((p) => (
-                <div key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span>{(p as { memberName?: string }).memberName || "Member"}</span>
-                  <button type="button" onClick={() => removeParticipant(p.id)} className={BTN_NEUTRAL}>
-                    Remove
+        {(() => {
+          const rosterMemberIdSet = new Set(event.participants.map((p) => p.memberId));
+          // Members covered by at least one event-style eligible row;
+          // anything left in `participants` not covered here is rendered
+          // in an "Other" section so admin can still see + remove them.
+          const coveredRosterIds = new Set<string>();
+
+          if (loadingEligible) {
+            return <div className="text-xs text-gray-500">Loading…</div>;
+          }
+
+          // Group eligible rows by styleId.
+          const byStyle = new Map<string, EligibleRow[]>();
+          for (const row of eligible) {
+            const list = byStyle.get(row.styleId) || [];
+            list.push(row);
+            byStyle.set(row.styleId, list);
+          }
+
+          // Walk event.styleIds in original order so admins always see
+          // sections in the order they configured the event.
+          const styleSections = eventStyleIds.map((styleId) => {
+            const styleName = styles.find((s) => s.id === styleId)?.name || "Style";
+            const rows = (byStyle.get(styleId) || [])
+              .slice()
+              .sort((a, b) => {
+                if (a.fromRankOrder !== b.fromRankOrder) return a.fromRankOrder - b.fromRankOrder;
+                return a.memberName.localeCompare(b.memberName);
+              });
+            const rostered = rows.filter((r) => rosterMemberIdSet.has(r.memberId));
+            const addable = rows.filter((r) => !rosterMemberIdSet.has(r.memberId));
+            for (const r of rostered) coveredRosterIds.add(r.memberId);
+            return { styleId, styleName, rostered, addable };
+          });
+
+          // Participant rows not represented in any eligible row (e.g.
+          // manually added member with no enrolled style matching the
+          // event). Surfaces them under a final "Other" group.
+          const orphanRoster = event.participants.filter((p) => !coveredRosterIds.has(p.memberId));
+
+          return (
+            <>
+              {selected.size > 0 && (
+                <div className="sticky top-0 z-10 -mx-3 px-3 py-2 bg-white border-b border-gray-200 flex items-center justify-end">
+                  <button type="button" onClick={addSelected} disabled={adding} className={BTN_PRIMARY}>
+                    Add {selected.size} to roster
                   </button>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              )}
 
-        {/* Add by style */}
-        {eventStyleIds.length > 0 && (
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Add all members of a style</div>
-            <div className="flex flex-wrap gap-1.5">
-              {eventStyleIds.map((id) => {
-                const s = styles.find((x) => x.id === id);
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    disabled={adding}
-                    onClick={() => addByStyle(id)}
-                    className={BTN_SECONDARY}
-                  >
-                    Add all from {s?.name || "style"}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Add from eligible-against-event-date list */}
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Eligible against {new Date(event.date).toLocaleDateString()}
-            </div>
-            {selected.size > 0 && (
-              <button type="button" onClick={addSelected} disabled={adding} className={BTN_PRIMARY}>
-                Add {selected.size} to roster
-              </button>
-            )}
-          </div>
-          {loadingEligible ? (
-            <div className="text-xs text-gray-500">Loading…</div>
-          ) : addableEligible.length === 0 ? (
-            <div className="text-xs text-gray-400 border border-dashed border-gray-300 rounded-md p-3 text-center">
-              No additional candidates against this event date.
-            </div>
-          ) : (
-            <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
-              {addableEligible.map((r) => {
-                const on = selected.has(r.memberId);
-                return (
-                  <label key={`${r.memberId}|${r.styleId}`} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      onChange={() => setSelected((prev) => {
-                        const n = new Set(prev);
-                        if (n.has(r.memberId)) n.delete(r.memberId);
-                        else n.add(r.memberId);
-                        return n;
-                      })}
-                    />
-                    <span className="flex-1">{r.memberName}</span>
-                    <span className="text-xs text-gray-500">{r.styleName}</span>
-                    <span className="text-xs text-gray-500">→ {r.toRank}</span>
-                    {r.allRequirementsMet && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold uppercase">
-                        Eligible
+              {styleSections.map(({ styleId, styleName, rostered, addable }) => (
+                <div key={styleId} className="border border-gray-200 rounded-md overflow-hidden">
+                  <div className="flex items-center justify-between bg-gray-50 px-3 py-2 border-b border-gray-200">
+                    <div className="text-sm font-semibold text-gray-800">
+                      {styleName}
+                      <span className="ml-2 text-[11px] font-normal text-gray-500">
+                        {rostered.length} on roster · {addable.length} eligible to add
                       </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={adding}
+                      onClick={() => addByStyle(styleId)}
+                      className={BTN_SECONDARY}
+                    >
+                      Add all from {styleName}
+                    </button>
+                  </div>
+
+                  {/* On roster */}
+                  <div className="px-3 py-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">On Roster</div>
+                    {rostered.length === 0 ? (
+                      <div className="text-xs text-gray-400">No one yet.</div>
+                    ) : (
+                      <div className="divide-y divide-gray-100">
+                        {rostered.map((r) => {
+                          const participant = event.participants.find((p) => p.memberId === r.memberId);
+                          return (
+                            <div key={`r-${r.memberId}-${r.styleId}`} className="flex items-center justify-between py-1.5 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
+                                  {r.fromRank || "—"}
+                                </span>
+                                <span>{r.memberName}</span>
+                                <span className="text-xs text-gray-500">→ {r.toRank}</span>
+                                {r.allRequirementsMet && (
+                                  <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold uppercase">
+                                    Eligible
+                                  </span>
+                                )}
+                              </div>
+                              {participant && (
+                                <button type="button" onClick={() => removeParticipant(participant.id)} className={BTN_NEUTRAL}>
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
-                  </label>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                  </div>
+
+                  {/* Eligible to add */}
+                  <div className="px-3 py-2 border-t border-gray-100">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Eligible to Add</div>
+                    {addable.length === 0 ? (
+                      <div className="text-xs text-gray-400">No additional candidates.</div>
+                    ) : (
+                      <div className="divide-y divide-gray-100">
+                        {addable.map((r) => {
+                          const on = selected.has(r.memberId);
+                          return (
+                            <label key={`a-${r.memberId}-${r.styleId}`} className="flex items-center gap-2 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                onChange={() => setSelected((prev) => {
+                                  const n = new Set(prev);
+                                  if (n.has(r.memberId)) n.delete(r.memberId);
+                                  else n.add(r.memberId);
+                                  return n;
+                                })}
+                              />
+                              <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
+                                {r.fromRank || "—"}
+                              </span>
+                              <span className="flex-1">{r.memberName}</span>
+                              <span className="text-xs text-gray-500">→ {r.toRank}</span>
+                              {r.allRequirementsMet && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold uppercase">
+                                  Eligible
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Roster members who aren't enrolled in any of the event's
+                  styles still need to be visible (and removable). */}
+              {orphanRoster.length > 0 && (
+                <div className="border border-gray-200 rounded-md overflow-hidden">
+                  <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 text-sm font-semibold text-gray-800">
+                    Other roster members
+                    <span className="ml-2 text-[11px] font-normal text-gray-500">
+                      not enrolled in an event style
+                    </span>
+                  </div>
+                  <div className="px-3 py-2 divide-y divide-gray-100">
+                    {orphanRoster.map((p) => (
+                      <div key={p.id} className="flex items-center justify-between py-1.5 text-sm">
+                        <span>{(p as { memberName?: string }).memberName || "Member"}</span>
+                        <button type="button" onClick={() => removeParticipant(p.id)} className={BTN_NEUTRAL}>
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {styleSections.length === 0 && orphanRoster.length === 0 && (
+                <div className="text-xs text-gray-400 border border-dashed border-gray-300 rounded-md p-3 text-center">
+                  No styles attached to this event yet — edit the event to add styles, then candidates will appear here.
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         <div className="flex items-center justify-between border-t border-gray-200 pt-3">
           <button type="button" onClick={deleteEvent} className={BTN_NEUTRAL}>

@@ -36,6 +36,10 @@ type EligibleEntry = {
   styleId: string;
   styleName: string;
   fromRank: string | null;
+  // Order of the current rank within the style's beltConfig (0-based).
+  // The detail modal uses this to sort per-style rosters low → high
+  // without having to re-fetch belt configs on the client.
+  fromRankOrder: number;
   toRank: string;
   // Per-class-type attendance progress against the next rank's requirements.
   classRequirements: Array<{ label: string; attended: number; required: number; met: boolean }>;
@@ -255,6 +259,7 @@ export async function GET(req: Request) {
           styleId: style.id,
           styleName: style.name,
           fromRank: es.rank,
+          fromRankOrder: currentIdx,
           toRank: nextRank.name,
           classRequirements: classReqs,
           allRequirementsMet: allMet,
