@@ -1011,6 +1011,14 @@ function EventDetailModal(props: {
   }, [eventStyleIdsKey]);
   useEffect(() => { loadStyleMembers(); }, [loadStyleMembers]);
 
+  // Per-style collapse state for the bottom "All members of {style}"
+  // cards. Default collapsed so the modal opens compact; clicking the
+  // header toggles the list open.
+  const [expandedBrowse, setExpandedBrowse] = useState<Record<string, boolean>>({});
+  function toggleBrowse(styleId: string) {
+    setExpandedBrowse((prev) => ({ ...prev, [styleId]: !prev[styleId] }));
+  }
+
   // For a given style, pull the member's rank from stylesNotes by name
   // match. Falls back to the legacy primary `rank` if the per-style
   // entry isn't there. Used as a contextual chip in the browse list.
@@ -1429,42 +1437,59 @@ function EventDetailModal(props: {
                   if (ra !== rb) return ra - rb;
                   return `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`);
                 });
+              const open = !!expandedBrowse[styleId];
               return (
                 <div key={`browse-${styleId}`} className="border border-gray-200 rounded-md overflow-hidden">
-                  <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 text-sm font-semibold text-gray-800">
-                    All members of {styleName}
-                    <span className="ml-2 text-[11px] font-normal text-gray-500">
-                      {list.length} not yet on roster
+                  <button
+                    type="button"
+                    onClick={() => toggleBrowse(styleId)}
+                    className="w-full flex items-center justify-between bg-gray-50 px-3 py-2 border-b border-gray-200 text-sm font-semibold text-gray-800 hover:bg-gray-100 transition-colors"
+                  >
+                    <span>
+                      All members of {styleName}
+                      <span className="ml-2 text-[11px] font-normal text-gray-500">
+                        {list.length} not yet on roster
+                      </span>
                     </span>
-                  </div>
-                  <div className="px-3 py-2">
-                    {loadingStyleMembers && list.length === 0 ? (
-                      <div className="text-xs text-gray-500">Loading…</div>
-                    ) : list.length === 0 ? (
-                      <div className="text-xs text-gray-400">Everyone in this style is already on the roster.</div>
-                    ) : (
-                      <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
-                        {list.map((m) => (
-                          <div key={`${styleId}-${m.id}`} className="flex items-center justify-between py-1.5 text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
-                                {rankForStyle(m, styleName)}
-                              </span>
-                              <span>{m.firstName} {m.lastName}</span>
+                    <svg
+                      className={`w-4 h-4 text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {open && (
+                    <div className="px-3 py-2">
+                      {loadingStyleMembers && list.length === 0 ? (
+                        <div className="text-xs text-gray-500">Loading…</div>
+                      ) : list.length === 0 ? (
+                        <div className="text-xs text-gray-400">Everyone in this style is already on the roster.</div>
+                      ) : (
+                        <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
+                          {list.map((m) => (
+                            <div key={`${styleId}-${m.id}`} className="flex items-center justify-between py-1.5 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-24 truncate">
+                                  {rankForStyle(m, styleName)}
+                                </span>
+                                <span>{m.firstName} {m.lastName}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => addManually(m.id)}
+                                disabled={adding}
+                                className={BTN_PRIMARY}
+                              >
+                                Add
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => addManually(m.id)}
-                              disabled={adding}
-                              className={BTN_PRIMARY}
-                            >
-                              Add
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
