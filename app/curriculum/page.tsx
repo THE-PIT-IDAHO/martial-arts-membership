@@ -1627,10 +1627,11 @@ export default function CurriculumV2Page() {
       }).catch(() => undefined);
     }
 
-    const categoryOrderMap: Record<string, number> = {};
-    allCategories.forEach((cat, i) => { categoryOrderMap[cat.name.trim().toLowerCase()] = i; });
-    console.log("Category order for publish:", allCategories.map((c, i) => `${i}: ${c.name}`));
-
+    // Each rank's PDF uses that rank's own saved category sortOrder.
+    // (Previously we built one orderMap from the page's current allCategories
+    // and forced every rank to match — so Publish All from White Belt would
+    // render Brown/Black's PDF with White Belt's order, ignoring Brown/Black's
+    // locked custom order.)
     const rankTestResults = await Promise.all(
       ranksToPublish.map(rank =>
         fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`)
@@ -1639,12 +1640,7 @@ export default function CurriculumV2Page() {
           .then(data => {
             const tests = (data?.rankTests || data?.tests || []) as PdfRankTest[];
             for (const test of tests) {
-              test.categories.sort((a, b) => {
-                const aOrder = categoryOrderMap[a.name.trim().toLowerCase()] ?? 999;
-                const bOrder = categoryOrderMap[b.name.trim().toLowerCase()] ?? 999;
-                return aOrder - bOrder;
-              });
-              test.categories.forEach((cat, i) => { cat.sortOrder = i; });
+              test.categories.sort((a, b) => a.sortOrder - b.sortOrder);
             }
             return { rank, tests };
           })
