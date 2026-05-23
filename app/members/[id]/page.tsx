@@ -508,6 +508,27 @@ export default function MemberProfilePage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+
+  // Per-member discounts (auto-applied at POS/billing/promotion)
+  type MemberDiscount = {
+    id: string;
+    label: string | null;
+    appliesTo: string;
+    percentOff: number | null;
+    flatCents: number | null;
+    oneTime: boolean;
+    active: boolean;
+    usedAt: string | null;
+    createdAt: string;
+  };
+  const [memberDiscounts, setMemberDiscounts] = useState<MemberDiscount[]>([]);
+  const [showAddDiscount, setShowAddDiscount] = useState(false);
+  const [newDiscountAppliesTo, setNewDiscountAppliesTo] = useState<"POS" | "MEMBERSHIP" | "PROMOTION" | "ALL">("ALL");
+  const [newDiscountPercent, setNewDiscountPercent] = useState("");
+  const [newDiscountFlat, setNewDiscountFlat] = useState("");
+  const [newDiscountLabel, setNewDiscountLabel] = useState("");
+  const [newDiscountOneTime, setNewDiscountOneTime] = useState(false);
+  const [savingDiscount, setSavingDiscount] = useState(false);
   const [serviceCredits, setServiceCredits] = useState<Array<{
     id: string;
     creditsTotal: number;
@@ -818,6 +839,12 @@ export default function MemberProfilePage() {
       fetch(`/api/contracts?memberId=${memberId}`)
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d?.contracts) setMemberContracts(d.contracts); })
+        .catch(() => {});
+
+      // Fetch per-member discounts
+      fetch(`/api/members/${memberId}/discounts`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.discounts) setMemberDiscounts(d.discounts); })
         .catch(() => {});
     } catch (err: any) {
       console.error(err);
@@ -5427,6 +5454,82 @@ export default function MemberProfilePage() {
                 </section>
               )}
 
+              {/* DISCOUNTS */}
+              <section className="rounded-lg border border-gray-200 bg-white p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-semibold">Discounts</h2>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddDiscount(true)}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                  >
+                    Add Discount
+                  </button>
+                </div>
+                {memberDiscounts.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">
+                    No discounts assigned. Discounts apply automatically at POS, membership billing, and promotion fees.
+                  </p>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-200 text-left text-gray-500">
+                        <th className="pb-2 pr-3 font-medium">Applies To</th>
+                        <th className="pb-2 pr-3 font-medium">Amount</th>
+                        <th className="pb-2 pr-3 font-medium">Duration</th>
+                        <th className="pb-2 pr-3 font-medium">Label</th>
+                        <th className="pb-2 pr-3 font-medium">Status</th>
+                        <th className="pb-2 font-medium"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {memberDiscounts.map((d) => {
+                        const amount = d.percentOff
+                          ? `${d.percentOff}%`
+                          : d.flatCents != null
+                            ? `$${(d.flatCents / 100).toFixed(2)}`
+                            : "—";
+                        return (
+                          <tr key={d.id} className={d.active ? "" : "opacity-60"}>
+                            <td className="py-2 pr-3 font-mono text-gray-700">{d.appliesTo}</td>
+                            <td className="py-2 pr-3 font-semibold text-gray-900">{amount}</td>
+                            <td className="py-2 pr-3 text-gray-600">{d.oneTime ? "One-time" : "Lasting"}</td>
+                            <td className="py-2 pr-3 text-gray-600">{d.label || "—"}</td>
+                            <td className="py-2 pr-3">
+                              {d.active ? (
+                                <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">Active</span>
+                              ) : (
+                                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+                                  Used {d.usedAt ? new Date(d.usedAt).toLocaleDateString() : ""}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (!confirm("Delete this discount?")) return;
+                                  try {
+                                    await fetch(
+                                      `/api/members/${memberId}/discounts?discountId=${d.id}`,
+                                      { method: "DELETE" },
+                                    );
+                                    setMemberDiscounts((prev) => prev.filter((x) => x.id !== d.id));
+                                  } catch { /* ignore */ }
+                                }}
+                                className="text-[10px] text-red-600 hover:underline"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </section>
+
               {/* ACTIVITY (flex-1 so it stretches) */}
               <section className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col flex-1">
                 <div className="flex items-center justify-between mb-2">
@@ -6385,6 +6488,153 @@ export default function MemberProfilePage() {
             setTimeout(() => setCardSetupSuccess(false), 4000);
           }}
         />
+      )}
+
+      {/* Add Discount modal */}
+      {showAddDiscount && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setShowAddDiscount(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-lg bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+              <h2 className="text-sm font-bold text-gray-900">Add Discount</h2>
+              <button
+                onClick={() => setShowAddDiscount(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!newDiscountPercent && !newDiscountFlat) {
+                  alert("Enter a percent or flat amount");
+                  return;
+                }
+                setSavingDiscount(true);
+                try {
+                  const res = await fetch(`/api/members/${memberId}/discounts`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      label: newDiscountLabel || null,
+                      appliesTo: newDiscountAppliesTo,
+                      percentOff: newDiscountPercent ? Number(newDiscountPercent) : null,
+                      flatCents: newDiscountFlat ? Math.round(Number(newDiscountFlat) * 100) : null,
+                      oneTime: newDiscountOneTime,
+                    }),
+                  });
+                  if (res.ok) {
+                    const d = await res.json();
+                    setMemberDiscounts((prev) => [d.discount, ...prev]);
+                    setShowAddDiscount(false);
+                    setNewDiscountPercent("");
+                    setNewDiscountFlat("");
+                    setNewDiscountLabel("");
+                    setNewDiscountOneTime(false);
+                    setNewDiscountAppliesTo("ALL");
+                  } else {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.error || "Failed to add discount");
+                  }
+                } catch {
+                  alert("Failed to add discount");
+                } finally {
+                  setSavingDiscount(false);
+                }
+              }}
+              className="p-5 space-y-3"
+            >
+              <div>
+                <label className="text-[10px] font-semibold uppercase text-gray-500">Applies To</label>
+                <select
+                  value={newDiscountAppliesTo}
+                  onChange={(e) =>
+                    setNewDiscountAppliesTo(e.target.value as "POS" | "MEMBERSHIP" | "PROMOTION" | "ALL")
+                  }
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs"
+                >
+                  <option value="ALL">All charges</option>
+                  <option value="POS">POS purchases only</option>
+                  <option value="MEMBERSHIP">Membership billing only</option>
+                  <option value="PROMOTION">Promotion / test fees only</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-semibold uppercase text-gray-500">Percent off</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={newDiscountPercent}
+                    onChange={(e) => setNewDiscountPercent(e.target.value)}
+                    placeholder="e.g. 10"
+                    className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold uppercase text-gray-500">Flat $ off</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newDiscountFlat}
+                    onChange={(e) => setNewDiscountFlat(e.target.value)}
+                    placeholder="e.g. 5.00"
+                    className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-gray-500">
+                Either or both. Both stack additively on top of any plan/family/promo-code discount.
+              </p>
+              <div>
+                <label className="text-[10px] font-semibold uppercase text-gray-500">Label (optional)</label>
+                <input
+                  type="text"
+                  value={newDiscountLabel}
+                  onChange={(e) => setNewDiscountLabel(e.target.value)}
+                  placeholder="e.g. Family hardship rate"
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={newDiscountOneTime}
+                  onChange={(e) => setNewDiscountOneTime(e.target.checked)}
+                  className="accent-primary"
+                />
+                One-time only (auto-disable after first charge)
+              </label>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={savingDiscount}
+                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                >
+                  {savingDiscount ? "Saving..." : "Add Discount"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddDiscount(false)}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </AppLayout>
   );

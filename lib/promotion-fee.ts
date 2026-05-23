@@ -13,6 +13,7 @@
 // If the member has multiple active plans, the one that yields the lowest
 // final cost wins (best discount for the member).
 import { prisma } from "@/lib/prisma";
+import { applyMemberDiscounts, type AppliedMemberDiscount } from "@/lib/member-discounts";
 
 export type PromotionFeeBreakdown = {
   baseCostCents: number;
@@ -20,6 +21,8 @@ export type PromotionFeeBreakdown = {
   costCents: number;
   discountSourcePlanId: string | null;
   discountSourcePlanName: string | null;
+  memberDiscountCents: number;
+  memberDiscountsApplied: AppliedMemberDiscount[];
   source: "member" | "style" | "global" | "none";
 };
 
@@ -99,7 +102,19 @@ export async function computePromotionFee(opts: {
     }
   }
 
-  const costCents = Math.max(0, baseCostCents - bestDiscount);
+  // Stack per-member discounts (PROMOTION or ALL scope) on top of the plan
+  // discount the caller already factored in. Computed against the post-plan
+  // cost so a 10% personal discount on top of a 20% plan discount comes out
+  // ≈ 28% off, not 30% off — matches the additive-on-top semantics the rest
+  // of the system uses.
+  const afterPlanDiscount = Math.max(0, baseCostCents - bestDiscount);
+  const memberDiscResult = await applyMemberDiscounts(
+    opts.memberId,
+    "PROMOTION",
+    afterPlanDiscount,
+  );
+
+  const costCents = Math.max(0, afterPlanDiscount - memberDiscResult.discountCents);
 
   return {
     baseCostCents,
@@ -107,6 +122,8 @@ export async function computePromotionFee(opts: {
     costCents,
     discountSourcePlanId: bestPlanId,
     discountSourcePlanName: bestPlanName,
+    memberDiscountCents: memberDiscResult.discountCents,
+    memberDiscountsApplied: memberDiscResult.applied,
     source,
   };
 }

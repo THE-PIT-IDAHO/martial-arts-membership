@@ -16,6 +16,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { computePromotionFee } from "@/lib/promotion-fee";
+import { markDiscountsUsed } from "@/lib/member-discounts";
 
 export type PromoteInput = {
   memberId: string;
@@ -83,10 +84,13 @@ export async function applyOnePromotion(
     styleId: style.id,
     clientId,
   });
-  const finalCostCents =
-    typeof input.costOverrideCents === "number" && input.costOverrideCents >= 0
-      ? input.costOverrideCents
-      : fee.costCents;
+  const usingOverride =
+    typeof input.costOverrideCents === "number" && input.costOverrideCents >= 0;
+  const finalCostCents = usingOverride ? input.costOverrideCents! : fee.costCents;
+  // Admin override means the auto-applied member discount is bypassed for
+  // this charge — don't burn the one-time discount.
+  const memberDiscountUsedHere = usingOverride ? 0 : fee.memberDiscountCents;
+  const totalDiscountForTxn = fee.discountCents + memberDiscountUsedHere;
 
   const promotedAt = input.date ? new Date(input.date) : new Date();
   if (isNaN(promotedAt.getTime())) {
@@ -142,7 +146,7 @@ export async function applyOnePromotion(
         memberName: `${member.firstName} ${member.lastName}`.trim(),
         subtotalCents: finalCostCents,
         taxCents: 0,
-        discountCents: fee.discountCents,
+        discountCents: totalDiscountForTxn,
         totalCents: finalCostCents,
         paymentMethod: method,
         notes: `Promotion: ${input.toRank} (${style.name})`,
@@ -207,7 +211,7 @@ export async function applyOnePromotion(
       promotedAt,
       testResult: input.testResult ?? undefined,
       baseCostCents: fee.baseCostCents,
-      discountCents: fee.discountCents,
+      discountCents: fee.discountCents + memberDiscountUsedHere,
       costCents: finalCostCents,
       discountSourcePlanId: fee.discountSourcePlanId ?? undefined,
       paymentStatus,
@@ -217,6 +221,12 @@ export async function applyOnePromotion(
       clientId,
     },
   });
+
+  // Burn one-time member discounts now the promotion is committed.
+  // Skipped when the admin overrode the cost (memberDiscountUsedHere = 0).
+  if (memberDiscountUsedHere > 0 && fee.memberDiscountsApplied.length > 0) {
+    await markDiscountsUsed(fee.memberDiscountsApplied);
+  }
 
   return { promotion };
 }

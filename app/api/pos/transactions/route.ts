@@ -4,6 +4,7 @@ import { getClientId } from "@/lib/tenant";
 import { parseLocalDate } from "@/lib/dates";
 import { calculateNextPaymentDate } from "@/lib/billing";
 import { getAccountPaymentAmount } from "@/lib/payment-utils";
+import { applyMemberDiscounts, markDiscountsUsed } from "@/lib/member-discounts";
 
 import { getFirstRankFromBeltConfig, addRankPdfsToDocuments, type StyleDocument } from "@/lib/belt-config";
 
@@ -62,7 +63,21 @@ export async function POST(req: Request) {
       (sum: number, item: any) => sum + item.unitPriceCents * item.quantity,
       0
     );
-    const totalCents = subtotalCents - discountCents + taxCents;
+
+    // Stack per-member discounts on top of the client-supplied discountCents.
+    // Computed against the subtotal so the percent matches what a customer
+    // expects ("10% off my purchase"). Skipped for membership-only carts —
+    // those discounts are applied at billing time instead.
+    let memberDiscountCents = 0;
+    let appliedMemberDiscounts: Awaited<ReturnType<typeof applyMemberDiscounts>>["applied"] = [];
+    const cartHasNonMembershipItems = lineItems.some((i: any) => i.type !== "membership");
+    if (memberId && cartHasNonMembershipItems) {
+      const result = await applyMemberDiscounts(memberId, "POS", subtotalCents);
+      memberDiscountCents = result.discountCents;
+      appliedMemberDiscounts = result.applied;
+    }
+    const finalDiscountCents = discountCents + memberDiscountCents;
+    const totalCents = Math.max(0, subtotalCents - finalDiscountCents + taxCents);
 
     // Generate transaction number
     const transactionNumber = `TXN-${Date.now()}`;
@@ -77,7 +92,7 @@ export async function POST(req: Request) {
         memberName: memberName || null,
         subtotalCents,
         taxCents,
-        discountCents,
+        discountCents: finalDiscountCents,
         totalCents,
         paymentMethod: paymentMethod || "CASH",
         notes: notes || null,
@@ -447,6 +462,11 @@ export async function POST(req: Request) {
           },
         });
       }
+    }
+
+    // Burn one-time member discounts now that the charge is committed.
+    if (appliedMemberDiscounts.length > 0) {
+      await markDiscountsUsed(appliedMemberDiscounts);
     }
 
     return NextResponse.json({ transaction }, { status: 201 });

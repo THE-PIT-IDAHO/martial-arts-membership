@@ -267,7 +267,10 @@ export async function GET(req: Request) {
           lastPromotionDate: es.lastPromotionDate || null,
           fee: {
             baseCostCents: fee.baseCostCents,
-            discountCents: fee.discountCents,
+            // discountCents now includes both the plan discount and any
+            // per-member discount stacked on top, matching what the member
+            // will actually save (base - cost).
+            discountCents: fee.discountCents + fee.memberDiscountCents,
             costCents: fee.costCents,
             discountSourcePlanName: fee.discountSourcePlanName,
             source: fee.source,

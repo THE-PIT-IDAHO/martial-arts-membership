@@ -33,6 +33,7 @@ model Client {
   appointments    Appointment[]
   classSessions   ClassSession[]
   members         Member[]
+  memberDiscounts MemberDiscount[]
   membershipPlans MembershipPlan[]
   programs        Program[]
   tasks           Task[]
@@ -219,8 +220,37 @@ model Member {
   serviceCredits        MemberServiceCredit[]
   emailLogs             EmailLog[]
   promotions            Promotion[]
+  discounts             MemberDiscount[]
 
   @@unique([memberNumber, clientId])
+}
+
+// Per-member discount applied automatically at POS, membership billing,
+// and promotion fees. `appliesTo` decides which subsystem(s) consume it;
+// percent and flatCents stack additively on top of any existing discount
+// (family/promotion plan/promo code) for that subsystem.
+//
+// oneTime=true: discount is removed (active=false) the first time it's
+// applied to a real charge. lasting (oneTime=false): stays active until
+// the operator deletes it.
+model MemberDiscount {
+  id          String   @id @default(cuid())
+  memberId    String
+  clientId    String
+  label       String?
+  appliesTo   String   // POS | MEMBERSHIP | PROMOTION | ALL
+  percentOff  Float?   // 0-100, optional
+  flatCents   Int?     // optional flat-amount alternative
+  oneTime     Boolean  @default(false)
+  active      Boolean  @default(true)
+  usedAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  client      Client   @relation(fields: [clientId], references: [id])
+
+  @@index([memberId, active])
+  @@index([clientId])
 }
 
 model MemberRelationship {

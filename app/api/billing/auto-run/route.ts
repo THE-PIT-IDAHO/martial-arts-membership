@@ -14,6 +14,7 @@ import { getTodayInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
 import { getActiveProcessor, chargeStoredPaymentMethod, getCurrency, type ProcessorType } from "@/lib/payment";
 import { getClientId } from "@/lib/tenant";
+import { applyMemberDiscounts, markDiscountsUsed } from "@/lib/member-discounts";
 
 // POST /api/billing/auto-run
 // Called automatically from the dashboard on first load of the day.
@@ -107,7 +108,7 @@ export async function POST(req: Request) {
         );
 
         // Apply family discount if plan has one and member has family relationships
-        let familyDiscountNote = "";
+        const discountNotes: string[] = [];
         const familyDiscountPct = ms.membershipPlan.familyDiscountPercent;
         if (familyDiscountPct && familyDiscountPct > 0) {
           const relatedIds = new Set([
@@ -118,8 +119,20 @@ export async function POST(req: Request) {
           if (familyMemberCount >= 2) {
             const originalAmount = amountCents;
             amountCents = applyFamilyDiscount(amountCents, familyDiscountPct, familyMemberCount);
-            familyDiscountNote = `Family discount (${familyDiscountPct}%): -$${((originalAmount - amountCents) / 100).toFixed(2)}`;
+            discountNotes.push(
+              `Family discount (${familyDiscountPct}%): -$${((originalAmount - amountCents) / 100).toFixed(2)}`,
+            );
           }
+        }
+
+        // Stack any per-member discounts (MEMBERSHIP or ALL scope) on top.
+        const { discountCents: memberDiscCents, applied: appliedMemberDiscs } =
+          await applyMemberDiscounts(ms.member.id, "MEMBERSHIP", amountCents);
+        if (memberDiscCents > 0) {
+          amountCents = Math.max(0, amountCents - memberDiscCents);
+          discountNotes.push(
+            `Member discount: -$${(memberDiscCents / 100).toFixed(2)}`,
+          );
         }
 
         try {
@@ -133,11 +146,16 @@ export async function POST(req: Request) {
               billingPeriodStart,
               billingPeriodEnd,
               dueDate,
-              notes: familyDiscountNote || null,
+              notes: discountNotes.length > 0 ? discountNotes.join(" | ") : null,
               clientId,
             },
           });
           invoicesCreated++;
+
+          // Burn one-time member discounts once the invoice exists.
+          if (appliedMemberDiscs.length > 0) {
+            await markDiscountsUsed(appliedMemberDiscs);
+          }
 
           // Attempt auto-charge if member has a stored payment method
           if (activeProcessor && ms.member.defaultPaymentMethodId) {
