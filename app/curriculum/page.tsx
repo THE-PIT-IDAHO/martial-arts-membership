@@ -1429,8 +1429,43 @@ export default function CurriculumV2Page() {
     const testId = getTestId();
     if (!testId) { setSavingReorder(false); return; }
     try {
-      // Save order on current rank
-      await Promise.all(reorderList.map((cat, i) =>
+      // Save order on current rank.
+      //
+      // reorderList can contain "virtual" entries (id starts with "virtual-")
+      // for categories that exist style-wide but aren't materialized on this
+      // rank yet. Patching a virtual id used to 500 silently — fetch doesn't
+      // throw on HTTP errors, Promise.all resolved fine, and the user saw the
+      // modal close without anything saving (the symptom on Brown/Black Belt
+      // after its categories were nuked by the earlier rank-rename bug).
+      //
+      // Materialize each virtual entry on the current rank first (the POST
+      // endpoint upserts by name + rankTestId), then PATCH every category's
+      // sortOrder using its real DB id.
+      const resolved: { id: string; name: string }[] = [];
+      for (const entry of reorderList) {
+        if (entry.id.startsWith("virtual-")) {
+          try {
+            const res = await fetch(`/api/rank-tests/${testId}/categories`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: entry.name }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.category?.id) {
+                resolved.push({ id: data.category.id, name: entry.name });
+                continue;
+              }
+            }
+          } catch { /* fall through — skip this entry */ }
+          // Failed create → drop it; the remaining real categories still get
+          // tight sortOrder values.
+          continue;
+        }
+        resolved.push({ id: entry.id, name: entry.name });
+      }
+
+      await Promise.all(resolved.map((cat, i) =>
         fetch(`/api/rank-tests/${testId}/categories`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
