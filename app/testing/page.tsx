@@ -209,10 +209,15 @@ export default function TestingPage() {
   const [viewingPdfUrl, setViewingPdfUrl] = useState<string | null>(null);
   const [viewingPdfTitle, setViewingPdfTitle] = useState<string>("");
 
-  // Get display text for an item: use description (stripped of HTML) if available, fall back to name
+  // Get display text for an item: use description (stripped of HTML) if available, fall back to name.
+  // Knowledge items keep all lines — they're often multi-paragraph and the
+  // first-line-only truncation hid most of the actual content on the test sheet.
+  // Other types stay single-line so the grid rows don't blow out.
   function getItemDisplay(item: RankTestItem): string {
     if (item.description) {
-      return item.description.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]*>/g, "").split("\n")[0];
+      const stripped = item.description.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]*>/g, "");
+      if (item.type === "knowledge") return stripped.trim();
+      return stripped.split("\n")[0];
     }
     return item.name || "";
   }
@@ -986,10 +991,12 @@ export default function TestingPage() {
         }
         pdf.text(statusSymbol, margin, yPos);
 
-        // Item name
+        // Item name (PDF: collapse newlines so a multi-line knowledge item
+        // doesn't blow out a single text row — the on-screen view shows the
+        // full text; the printed grading sheet keeps each row to one line.)
         pdf.setTextColor(0, 0, 0);
         pdf.setFont("helvetica", "normal");
-        const itemText = getItemDisplay(item);
+        const itemText = getItemDisplay(item).split("\n")[0];
         pdf.text(itemText, margin + 12, yPos);
 
         // Time/notes if present
@@ -2084,7 +2091,7 @@ export default function TestingPage() {
                                                           {isPassed ? "✓" : "○"}
                                                         </span>
                                                         <div className="flex-1 min-w-0">
-                                                          <span className={isPassed ? "line-through" : ""}>
+                                                          <span className={`whitespace-pre-wrap ${isPassed ? "line-through" : ""}`}>
                                                             {getItemDisplay(item)}
                                                           </span>
                                                           {getItemSpecs(item) && (
@@ -2543,7 +2550,7 @@ export default function TestingPage() {
                                                                     {isPassed ? "✓" : "○"}
                                                                   </span>
                                                                   <div className="flex-1 min-w-0">
-                                                                    <span>
+                                                                    <span className="whitespace-pre-wrap">
                                                                       {getItemDisplay(item)}
                                                                     </span>
                                                                     {itemScore?.notes && (
@@ -3236,7 +3243,7 @@ export default function TestingPage() {
                               <div key={item.id}>
                                 {/* Curriculum item row */}
                                 <div className="px-3 py-1 sm:px-4 bg-gray-100 border-b flex items-center gap-2 flex-wrap">
-                                  <span className="text-sm sm:text-base font-medium">{getItemDisplay(item)}</span>
+                                  <span className="text-sm sm:text-base font-medium whitespace-pre-wrap">{getItemDisplay(item)}</span>
                                   <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] sm:text-xs font-medium ${getTypeColor(item.type)}`}>
                                     {getTypeLabel(item.type)}
                                   </span>
@@ -3576,7 +3583,7 @@ export default function TestingPage() {
                                   <React.Fragment key={item.id}>
                                     {/* Curriculum item row */}
                                     <div className="px-3 py-1 bg-gray-100 border-b flex items-center gap-2">
-                                      <span className="text-sm font-medium">{getItemDisplay(item)}</span>
+                                      <span className="text-sm font-medium whitespace-pre-wrap">{getItemDisplay(item)}</span>
                                       <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${getTypeColor(item.type)}`}>
                                         {getTypeLabel(item.type)}
                                       </span>
@@ -3764,7 +3771,7 @@ export default function TestingPage() {
                                         className="border border-gray-300 px-3 py-1"
                                       >
                                         <div className="flex items-center gap-2">
-                                          <span className="text-xs font-medium">{getItemDisplay(item)}</span>
+                                          <span className="text-xs font-medium whitespace-pre-wrap">{getItemDisplay(item)}</span>
                                           <span className={`shrink-0 inline-block rounded px-1 py-0.5 text-[9px] font-medium ${getTypeColor(item.type)}`}>
                                             {getTypeLabel(item.type)}
                                           </span>

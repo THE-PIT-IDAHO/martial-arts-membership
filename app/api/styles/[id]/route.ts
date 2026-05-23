@@ -219,18 +219,24 @@ export async function PATCH(req: Request, { params }: RouteParams) {
       data,
     });
 
-    // Sync ranks from beltConfig to Rank table (preserving existing rank IDs to keep RankTest references intact)
+    // Sync ranks from beltConfig to Rank table.
+    //
+    // Matching strategy: try beltConfig.ranks[].id first (this is the DB
+    // Rank.id once the belt designer has hydrated it on load), then fall back
+    // to name. Matching by name alone made rank renames look like "delete old
+    // + create new" — which cascade-deletes the RankTest (categories + items),
+    // wiping the curriculum every time someone fixed a typo in a rank name.
     if (beltConfig !== undefined) {
       const config = typeof beltConfig === 'string' ? JSON.parse(beltConfig) : beltConfig;
 
       if (config.ranks && Array.isArray(config.ranks)) {
-        // Get existing ranks for this style
         const existingRanks = await prisma.rank.findMany({
           where: { styleId: id },
         });
 
-        const existingByName = new Map(existingRanks.map(r => [r.name, r]));
-        const newRankNames = new Set(config.ranks.map((r: any) => r.name as string));
+        const existingById = new Map(existingRanks.map((r) => [r.id, r]));
+        const existingByName = new Map(existingRanks.map((r) => [r.name, r]));
+        const matchedDbIds = new Set<string>();
 
         // Update or create ranks
         for (const rank of config.ranks) {
@@ -245,19 +251,29 @@ export async function PATCH(req: Request, { params }: RouteParams) {
             }
           }
 
-          const existing = existingByName.get(rank.name);
+          // Prefer id match — handles renames. Fall back to name match for
+          // unmigrated beltConfigs where ranks[].id is still the legacy
+          // user-generated string ("rank_<ts>_<rand>") rather than a DB CUID.
+          const existing =
+            (rank.id && existingById.get(rank.id)) ||
+            existingByName.get(rank.name) ||
+            null;
+
           if (existing) {
-            // Update existing rank (preserves ID and all related RankTest records)
+            matchedDbIds.add(existing.id);
             await prisma.rank.update({
               where: { id: existing.id },
               data: {
+                name: rank.name,
                 order: rank.order,
                 classRequirement: totalClassRequirement,
               },
             });
+            // Write the DB id back into beltConfig so future saves match
+            // by id and survive renames cleanly.
+            rank.id = existing.id;
           } else {
-            // Create new rank
-            await prisma.rank.create({
+            const created = await prisma.rank.create({
               data: {
                 styleId: id,
                 name: rank.name,
@@ -266,19 +282,27 @@ export async function PATCH(req: Request, { params }: RouteParams) {
                 thumbnail: null,
               },
             });
+            matchedDbIds.add(created.id);
+            rank.id = created.id;
           }
         }
 
-        // Delete ranks that are no longer in the beltConfig (these will cascade-delete their RankTests)
+        // Delete only ranks that weren't matched (truly removed).
+        // Cascades through to RankTest — fine, they're actually gone.
         for (const existing of existingRanks) {
-          if (!newRankNames.has(existing.name)) {
+          if (!matchedDbIds.has(existing.id)) {
             await prisma.rank.delete({
               where: { id: existing.id },
             });
           }
         }
 
-        // Rank PDFs are now displayed directly on member profiles — no sync needed
+        // Persist the rewritten beltConfig (with synced ids) back to Style so
+        // the next load already has DB ids in place.
+        await prisma.style.update({
+          where: { id },
+          data: { beltConfig: JSON.stringify(config) },
+        });
       }
     }
 
