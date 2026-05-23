@@ -317,38 +317,70 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
     }
   }
 
-  // Toggle visibleOnTest. If `allRanks`, toggle every category with the same
-  // name across every rank test for this style — matches the user's "all the
-  // identical sections" ask. Else toggle just this one.
-  async function toggleVisibleOnTest(allRanks: boolean) {
+  // Flip the "show on test" flag for this rank only.
+  async function toggleVisibleOnThisRank() {
+    if (!testId) return;
     const next = !visibleOnTest;
     try {
-      if (allRanks) {
-        const matches = rankTests
-          .flatMap((t) =>
-            t.categories
-              .filter((c) => c.name.trim().toLowerCase() === categoryName.trim().toLowerCase())
-              .map((c) => ({ testId: t.id, categoryId: c.id })),
-          );
-        await Promise.all(
-          matches.map(({ testId: tId, categoryId: cId }) =>
-            fetch(`/api/rank-tests/${tId}/categories`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ categoryId: cId, visibleOnTest: next }),
-            }),
-          ),
-        );
-      } else if (testId) {
-        await fetch(`/api/rank-tests/${testId}/categories`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ categoryId, visibleOnTest: next }),
-        });
-      }
+      await fetch(`/api/rank-tests/${testId}/categories`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categoryId, visibleOnTest: next }),
+      });
       await onReload();
     } catch {
       alert("Failed to update visibility");
+    }
+  }
+
+  // Apply the CURRENT visibility setting to every same-named category across
+  // every rank in this style. Previously this only saw `rankTests` (the
+  // current rank's tests), so "all ranks" silently only affected this rank.
+  // Now we fetch each other rank's tests and PATCH every match.
+  async function applyVisibilityToAllRanks() {
+    const wantVisible = visibleOnTest;
+    try {
+      const targets: { testId: string; categoryId: string }[] = [];
+      // Current rank matches (already loaded).
+      for (const t of rankTests) {
+        for (const c of t.categories) {
+          if (c.name.trim().toLowerCase() === categoryName.trim().toLowerCase()) {
+            targets.push({ testId: t.id, categoryId: c.id });
+          }
+        }
+      }
+      // Other ranks — fetch and add matches.
+      const otherRanks = ranks.filter((r) => r.id !== selectedRankId);
+      const otherResults = await Promise.all(
+        otherRanks.map((r) =>
+          fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${r.id}`)
+            .then((res) => (res.ok ? res.json() : null))
+            .catch(() => null),
+        ),
+      );
+      for (const data of otherResults) {
+        if (!data) continue;
+        const tests: RankTest[] = data.rankTests || data.tests || [];
+        for (const t of tests) {
+          for (const c of t.categories) {
+            if (c.name.trim().toLowerCase() === categoryName.trim().toLowerCase()) {
+              targets.push({ testId: t.id, categoryId: c.id });
+            }
+          }
+        }
+      }
+      await Promise.all(
+        targets.map((t) =>
+          fetch(`/api/rank-tests/${t.testId}/categories`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ categoryId: t.categoryId, visibleOnTest: wantVisible }),
+          }),
+        ),
+      );
+      await onReload();
+    } catch {
+      alert("Failed to apply to all ranks");
     }
   }
 
@@ -462,25 +494,23 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
               </div>
             )}
           </div>
-          <div className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1">
-            <span className="text-[10px] font-semibold uppercase text-gray-500">On Test</span>
+          <div className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-2 py-1">
+            <label className="flex items-center gap-1.5 cursor-pointer" title="Show this section on the printed grading sheet for this rank">
+              <input
+                type="checkbox"
+                checked={visibleOnTest}
+                onChange={toggleVisibleOnThisRank}
+                className="h-3.5 w-3.5 accent-primary cursor-pointer"
+              />
+              <span className="text-xs font-medium text-gray-700">Show on test</span>
+            </label>
             <button
               type="button"
-              onClick={() => toggleVisibleOnTest(false)}
-              title="Toggle visibility on test for this rank only"
-              className={`rounded px-2 py-0.5 text-xs font-semibold ${
-                visibleOnTest ? "bg-primary text-white" : "bg-gray-100 text-gray-500"
-              }`}
+              onClick={applyVisibilityToAllRanks}
+              title={`Set every rank's "${categoryName}" section to ${visibleOnTest ? "shown" : "hidden"} on test`}
+              className="rounded border-l border-gray-200 pl-2 text-[10px] font-semibold text-primary hover:underline"
             >
-              {visibleOnTest ? "Yes" : "No"}
-            </button>
-            <button
-              type="button"
-              onClick={() => toggleVisibleOnTest(true)}
-              title={`Toggle "${categoryName}" visibility on test across all ranks`}
-              className="rounded px-2 py-0.5 text-[10px] font-semibold text-primary hover:underline"
-            >
-              All Ranks
+              Apply to all ranks
             </button>
           </div>
           <button onClick={onDeleteCategory} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete Section</button>

@@ -610,6 +610,106 @@ export default function TestingPage() {
     }
   };
 
+  // For a member + multi-style event, return the rank info for the first of
+  // the event's styles that the member actually holds. Falls back to the
+  // event's primary style when no match (legacy single-style behavior).
+  function resolveMemberRankForEvent(
+    member: Member,
+    event: TestingEvent,
+  ): { styleId: string; styleName: string; memberRank: string; nextRank: string } {
+    const evStyles = getEventStyles(event);
+    let memberStyles: Array<{ name?: string; rank?: string }> = [];
+    if (member.stylesNotes) {
+      try {
+        const parsed = JSON.parse(member.stylesNotes);
+        if (Array.isArray(parsed)) memberStyles = parsed;
+      } catch { /* ignore */ }
+    }
+    for (const es of evStyles) {
+      const ms = memberStyles.find(
+        (s) => (s.name || "").toLowerCase() === es.styleName.toLowerCase(),
+      );
+      if (ms?.rank) {
+        const memberRank = ms.rank;
+        const style = styles.find((s) => s.id === es.styleId);
+        let nextRank = "";
+        if (style?.ranks) {
+          const sortedRanks = [...style.ranks].sort((a, b) => a.order - b.order);
+          const idx = sortedRanks.findIndex((r) => r.name === memberRank);
+          if (idx !== -1 && idx < sortedRanks.length - 1) {
+            nextRank = sortedRanks[idx + 1].name;
+          }
+        }
+        return { styleId: es.styleId, styleName: es.styleName, memberRank, nextRank };
+      }
+    }
+    // No matching style on the member — fall back to event's primary so the
+    // existing behavior (showing "No rank") is preserved.
+    return {
+      styleId: evStyles[0]?.styleId || event.styleId,
+      styleName: evStyles[0]?.styleName || event.styleName,
+      memberRank: "",
+      nextRank: "",
+    };
+  }
+
+  // Resolve every style attached to an event — multi (styleIds JSON array)
+  // when present, falls back to the legacy single styleId/styleName fields.
+  // Returns [{styleId, styleName}] in the event's stored order.
+  function getEventStyles(event: TestingEvent): { styleId: string; styleName: string }[] {
+    let ids: string[] = [];
+    let names: string[] = [];
+    if (event.styleIds) {
+      try {
+        const parsed = JSON.parse(event.styleIds);
+        if (Array.isArray(parsed)) ids = parsed.filter((s) => typeof s === "string");
+      } catch { /* ignore */ }
+    }
+    if (event.styleNames) {
+      try {
+        const parsed = JSON.parse(event.styleNames);
+        if (Array.isArray(parsed)) names = parsed.filter((s) => typeof s === "string");
+      } catch { /* ignore */ }
+    }
+    if (ids.length > 0) {
+      return ids.map((id, i) => ({
+        styleId: id,
+        styleName: names[i] || styles.find((s) => s.id === id)?.name || event.styleName,
+      }));
+    }
+    // Legacy single-style event
+    return [{ styleId: event.styleId, styleName: event.styleName }];
+  }
+
+  // Multi-style variant: load members from every style attached to the event
+  // and dedupe by member id so each person shows up once even if they hold
+  // multiple of the event's styles.
+  const loadStyleMembersMulti = async (entries: { styleName: string; styleId: string }[]) => {
+    setLoadingMembers(true);
+    try {
+      const results = await Promise.all(
+        entries.map((e) =>
+          fetch(`/api/members?styleName=${encodeURIComponent(e.styleName)}&styleId=${encodeURIComponent(e.styleId)}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
+        ),
+      );
+      const byId = new Map<string, Member>();
+      for (const data of results) {
+        for (const m of data?.members || []) {
+          if (!byId.has(m.id)) byId.set(m.id, m);
+        }
+      }
+      const merged = Array.from(byId.values());
+      setStyleMembers(merged);
+      setMembers(merged);
+    } catch (err) {
+      console.error("Error loading multi-style members:", err);
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
   const loadMembers = async (query: string) => {
     // Filter from styleMembers if we have them loaded
     if (styleMembers.length > 0) {
@@ -1816,9 +1916,9 @@ export default function TestingPage() {
               <div className="space-y-4">
                 <button
                   onClick={() => setSelectedEvent(null)}
-                  className="text-sm text-primary hover:text-primaryDark flex items-center gap-1"
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                 >
-                  ← Back to Events
+                  Back to Events
                 </button>
 
                 <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -1831,22 +1931,26 @@ export default function TestingPage() {
                         {selectedEvent.location && ` • ${selectedEvent.location}`}
                       </p>
                       <p className="text-sm text-gray-500 mt-1">
-                        Style: {selectedEvent.styleName}
                         {(() => {
-                          const eventStyle = styles.find(s => s.id === selectedEvent.styleId);
-                          if (eventStyle?.testNamingConvention) {
-                            return (
-                              <>
-                                {" • "}
-                                <span className="text-gray-400">
-                                  {eventStyle.testNamingConvention === "FROM_RANK"
-                                    ? "Testing FROM this rank level"
-                                    : "Testing INTO this rank level"}
-                                </span>
-                              </>
-                            );
-                          }
-                          return null;
+                          const evStyles = getEventStyles(selectedEvent);
+                          const label = evStyles.length > 1 ? "Styles" : "Style";
+                          const names = evStyles.map((s) => s.styleName).join(", ");
+                          const primary = styles.find((s) => s.id === evStyles[0]?.styleId);
+                          return (
+                            <>
+                              {label}: {names}
+                              {primary?.testNamingConvention && (
+                                <>
+                                  {" • "}
+                                  <span className="text-gray-400">
+                                    {primary.testNamingConvention === "FROM_RANK"
+                                      ? "Testing FROM this rank level"
+                                      : "Testing INTO this rank level"}
+                                  </span>
+                                </>
+                              )}
+                            </>
+                          );
                         })()}
                       </p>
                       {selectedEvent.notes && (
@@ -1859,13 +1963,14 @@ export default function TestingPage() {
                           setShowAddMemberModal(true);
                           setSearchQuery("");
                           setSelectedMembersForTest([]);
-                          // Set the style to match the testing event's style
+                          // Set the style to match the testing event's primary style
                           if (selectedEvent?.styleId) {
                             setSelectedStyleId(selectedEvent.styleId);
                           }
-                          // Load all members for this style who have proper membership
-                          if (selectedEvent?.styleName && selectedEvent?.styleId) {
-                            loadStyleMembers(selectedEvent.styleName, selectedEvent.styleId);
+                          // Load members from every style attached to the event,
+                          // so admins can add people from all included styles.
+                          if (selectedEvent) {
+                            loadStyleMembersMulti(getEventStyles(selectedEvent));
                           }
                         }}
                         className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
@@ -1902,36 +2007,79 @@ export default function TestingPage() {
                         No participants added yet. Click "Add Member" to register members for this test.
                       </p>
                     ) : (
-                      <div className="space-y-4">
+                      <div className="space-y-6">
                         {(() => {
-                          // Group participants by testingForRank
-                          const groupedByRank: Record<string, typeof selectedEvent.participants> = {};
-                          const eventStyle = styles.find(s => s.id === selectedEvent.styleId);
-                          const styleRanks = eventStyle?.ranks || [];
+                          // Multi-style events also group by style.
+                          // Participants don't carry a styleId, so we infer:
+                          // pick the first event-style whose ranks include the
+                          // participant's testingForRank; otherwise fall back
+                          // to the event's primary style.
+                          const ev = selectedEvent;  // pin a non-null reference for nested closures
+                          const evStyles = getEventStyles(ev);
+                          const isMultiStyle = evStyles.length > 1;
+                          const styleById = new Map(
+                            evStyles.map((es) => [es.styleId, styles.find((s) => s.id === es.styleId)]),
+                          );
 
-                          selectedEvent.participants.forEach(p => {
-                            const rank = p.testingForRank || "Unassigned";
-                            if (!groupedByRank[rank]) {
-                              groupedByRank[rank] = [];
+                          function pickStyleForParticipant(p: typeof ev.participants[number]): string {
+                            const rankName = p.testingForRank || "";
+                            for (const es of evStyles) {
+                              const st = styleById.get(es.styleId);
+                              if (st?.ranks?.some((r) => r.name === rankName)) {
+                                return es.styleId;
+                              }
                             }
-                            groupedByRank[rank].push(p);
-                          });
+                            return evStyles[0]?.styleId || ev.styleId;
+                          }
 
-                          // Sort by rank order
-                          const sortedRanks = Object.keys(groupedByRank).sort((a, b) => {
-                            const aOrder = styleRanks.find(r => r.name === a)?.order ?? 999;
-                            const bOrder = styleRanks.find(r => r.name === b)?.order ?? 999;
-                            return aOrder - bOrder;
-                          });
+                          // Bucket participants per style.
+                          const perStyle = new Map<string, typeof ev.participants>();
+                          for (const es of evStyles) perStyle.set(es.styleId, []);
+                          for (const p of ev.participants) {
+                            const sid = pickStyleForParticipant(p);
+                            const bucket = perStyle.get(sid) ?? [];
+                            bucket.push(p);
+                            perStyle.set(sid, bucket);
+                          }
 
-                          return sortedRanks.map(rankName => {
-                            const participants = groupedByRank[rankName];
-                            const passedCount = participants.filter(p => p.status === "PASSED").length;
-                            const failedCount = participants.filter(p => p.status === "FAILED").length;
-                            const pendingCount = participants.filter(p => p.status === "REGISTERED").length;
-                            const rankConfig = styleRanks.find(r => r.name === rankName);
+                          return evStyles
+                            .filter((es) => (perStyle.get(es.styleId)?.length ?? 0) > 0)
+                            .map((es) => {
+                              const styleParticipants = perStyle.get(es.styleId) || [];
+                              const styleConfig = styleById.get(es.styleId);
+                              const styleRanks = styleConfig?.ranks || [];
 
-                            return (
+                              // Group this style's participants by rank.
+                              const groupedByRank: Record<string, typeof selectedEvent.participants> = {};
+                              for (const p of styleParticipants) {
+                                const rank = p.testingForRank || "Unassigned";
+                                (groupedByRank[rank] ||= []).push(p);
+                              }
+
+                              const sortedRanks = Object.keys(groupedByRank).sort((a, b) => {
+                                const aOrder = styleRanks.find((r) => r.name === a)?.order ?? 999;
+                                const bOrder = styleRanks.find((r) => r.name === b)?.order ?? 999;
+                                return aOrder - bOrder;
+                              });
+
+                              return (
+                                <div key={es.styleId} className="space-y-3">
+                                  {isMultiStyle && (
+                                    <div className="flex items-center gap-2 border-b-2 border-primary/30 pb-1">
+                                      <h3 className="text-base font-bold text-primary uppercase tracking-wide">{es.styleName}</h3>
+                                      <span className="text-xs text-gray-500">
+                                        ({styleParticipants.length} participant{styleParticipants.length !== 1 ? "s" : ""})
+                                      </span>
+                                    </div>
+                                  )}
+                                  {sortedRanks.map((rankName) => {
+                                    const participants = groupedByRank[rankName];
+                                    const passedCount = participants.filter((p) => p.status === "PASSED").length;
+                                    const failedCount = participants.filter((p) => p.status === "FAILED").length;
+                                    const pendingCount = participants.filter((p) => p.status === "REGISTERED").length;
+                                    const rankConfig = styleRanks.find((r) => r.name === rankName);
+
+                                    return (
                               <div key={rankName} className="border border-gray-200 rounded-lg overflow-hidden">
                                 <div className="bg-gray-50 px-4 py-3 border-b flex items-center justify-between">
                                   <div className="flex items-center gap-3">
@@ -2128,8 +2276,11 @@ export default function TestingPage() {
                                   </table>
                                 </div>
                               </div>
-                            );
-                          });
+                                    );
+                                  })}
+                                </div>
+                              );
+                            });
                         })()}
                       </div>
                     )}
@@ -2812,7 +2963,7 @@ export default function TestingPage() {
             <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-6 max-h-[90vh] flex flex-col">
               <h2 className="text-lg font-bold mb-2">Add Members to Test</h2>
               <p className="text-sm text-gray-500 mb-4">
-                Select members from {selectedEvent.styleName} to add to this test
+                Select members from {getEventStyles(selectedEvent).map((s) => s.styleName).join(", ")} to add to this test
               </p>
 
               <div className="space-y-4 flex-1 min-h-0 flex flex-col">
@@ -2875,30 +3026,13 @@ export default function TestingPage() {
                                   // Deselect all
                                   setSelectedMembersForTest([]);
                                 } else {
-                                  // Select all available members
+                                  // Select all available members. Rank lookup
+                                  // walks every style attached to the event so
+                                  // members who only hold a secondary style
+                                  // still get their rank + next-rank filled in.
                                   const newSelections: SelectedMemberForTest[] = availableMembers.map(m => {
-                                    let memberRank = "";
-                                    let nextRank = "";
-                                    if (m.stylesNotes) {
-                                      try {
-                                        const stylesData = JSON.parse(m.stylesNotes);
-                                        const styleData = stylesData.find((s: MemberStyle) => s.name === selectedEvent.styleName);
-                                        if (styleData?.rank) {
-                                          memberRank = styleData.rank;
-                                        }
-                                      } catch {}
-                                    }
-                                    if (memberRank) {
-                                      const style = styles.find(s => s.id === selectedEvent.styleId);
-                                      if (style?.ranks) {
-                                        const sortedRanks = [...style.ranks].sort((a, b) => a.order - b.order);
-                                        const currentRankIndex = sortedRanks.findIndex(r => r.name === memberRank);
-                                        if (currentRankIndex !== -1 && currentRankIndex < sortedRanks.length - 1) {
-                                          nextRank = sortedRanks[currentRankIndex + 1].name;
-                                        }
-                                      }
-                                    }
-                                    return { member: m, currentRank: memberRank, testingForRank: nextRank };
+                                    const r = resolveMemberRankForEvent(m, selectedEvent);
+                                    return { member: m, currentRank: r.memberRank, testingForRank: r.nextRank };
                                   });
                                   setSelectedMembersForTest(newSelections);
                                 }
@@ -2913,34 +3047,15 @@ export default function TestingPage() {
                       })()}
 
                       {members.map((m) => {
-                        // Check if already added to test
                         const alreadyAdded = selectedEvent.participants.some(p => p.memberId === m.id);
                         const isSelected = selectedMembersForTest.some(s => s.member.id === m.id);
-
-                        // Get member's rank for this style
-                        let memberRank = "";
-                        if (m.stylesNotes) {
-                          try {
-                            const stylesData = JSON.parse(m.stylesNotes);
-                            const styleData = stylesData.find((s: MemberStyle) => s.name === selectedEvent.styleName);
-                            if (styleData?.rank) {
-                              memberRank = styleData.rank;
-                            }
-                          } catch {}
-                        }
-
-                        // Find the next rank for testing
-                        let nextRank = "";
-                        if (memberRank && selectedEvent) {
-                          const style = styles.find(s => s.id === selectedEvent.styleId);
-                          if (style?.ranks) {
-                            const sortedRanks = [...style.ranks].sort((a, b) => a.order - b.order);
-                            const currentRankIndex = sortedRanks.findIndex(r => r.name === memberRank);
-                            if (currentRankIndex !== -1 && currentRankIndex < sortedRanks.length - 1) {
-                              nextRank = sortedRanks[currentRankIndex + 1].name;
-                            }
-                          }
-                        }
+                        // Walks every event style to find this member's rank,
+                        // so multi-style events show ranks for members of any
+                        // included style.
+                        const r = resolveMemberRankForEvent(m, selectedEvent);
+                        const memberRank = r.memberRank;
+                        const nextRank = r.nextRank;
+                        const isMultiStyle = getEventStyles(selectedEvent).length > 1;
 
                         return (
                           <label
@@ -2964,6 +3079,9 @@ export default function TestingPage() {
                               <span className="text-sm">
                                 {m.firstName} {m.lastName}
                               </span>
+                              {isMultiStyle && r.styleName && memberRank && (
+                                <span className="ml-2 text-[10px] text-gray-400">({r.styleName})</span>
+                              )}
                             </div>
                             <div className="text-right text-xs">
                               {alreadyAdded ? (
