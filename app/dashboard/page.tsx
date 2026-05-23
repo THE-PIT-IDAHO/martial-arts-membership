@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 import dynamic from "next/dynamic";
+import { checkMemberRequirements, type ReqMember, type ReqStyle } from "@/lib/class-requirements";
 
 const DashboardCharts = dynamic(() => import("@/components/dashboard-charts"), { ssr: false });
 
@@ -25,6 +26,11 @@ type ClassToday = {
   styleName: string | null;
   styleIds?: string | null;
   styleId?: string | null;
+  minRankId?: string | null;
+  minRankName?: string | null;
+  minRankIds?: string | null;
+  minAge?: number | null;
+  maxAge?: number | null;
   classType: string | null;
   color: string | null;
   coachName: string | null;
@@ -139,6 +145,18 @@ type SearchMember = {
   lastName: string;
 };
 
+// Full member record we cache for requirement checks during a modal session.
+// `stylesNotes` is the JSON-encoded per-style rank list from the Member row.
+type CachedMember = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth?: string | null;
+  primaryStyle?: string | null;
+  stylesNotes?: string | null;
+  rank?: string | null;
+};
+
 type DashboardSection = {
   id: string;
   label: string;
@@ -194,6 +212,17 @@ export default function DashboardPage() {
   const [styleMembers, setStyleMembers] = useState<{ styleName: string; styleId: string; members: { id: string; firstName: string; lastName: string; photoUrl?: string | null; rank?: string }[] }[]>([]);
   const [showStyleMembersModal, setShowStyleMembersModal] = useState(false);
   const [styleModalFilter, setStyleModalFilter] = useState<string | null>(null);
+
+  // Cached on openClassModal so addMemberToClass can run the same
+  // requirement check the calendar runs without re-fetching per click.
+  const [allMembersCache, setAllMembersCache] = useState<CachedMember[]>([]);
+  const [stylesCache, setStylesCache] = useState<ReqStyle[]>([]);
+
+  // Requirement-not-met popup state — mirrors the calendar's popup so the
+  // dashboard's check-in flow can't silently add a non-qualifying member.
+  const [showRequirementError, setShowRequirementError] = useState(false);
+  const [requirementErrorMessage, setRequirementErrorMessage] = useState("");
+  const [pendingAdd, setPendingAdd] = useState<{ classId: string; memberId: string } | null>(null);
 
   const isSectionVisible = (id: string) => sections.find(s => s.id === id)?.visible !== false;
 
@@ -310,7 +339,54 @@ export default function DashboardPage() {
     setSearching(false);
   }
 
-  async function addMemberToClass(classId: string, memberId: string) {
+  function buildReqMember(memberId: string): ReqMember | null {
+    const m = allMembersCache.find((x) => x.id === memberId);
+    if (!m) return null;
+    let styles: ReqMember["styles"] = [];
+    if (m.stylesNotes) {
+      try {
+        const parsed = JSON.parse(m.stylesNotes);
+        if (Array.isArray(parsed)) {
+          styles = parsed
+            .filter((s: { active?: boolean }) => s.active !== false)
+            .map((s: { name?: string; rank?: string; startDate?: string; styleId?: string }) => {
+              const matched = stylesCache.find(
+                (st) => st.name.toLowerCase() === (s.name || "").toLowerCase(),
+              );
+              return {
+                styleId: matched?.id || s.styleId || "",
+                styleName: s.name || "",
+                rank: s.rank || "",
+                startDate: s.startDate || null,
+              };
+            });
+        }
+      } catch { /* ignore */ }
+    }
+    return {
+      firstName: m.firstName,
+      lastName: m.lastName,
+      dateOfBirth: m.dateOfBirth ?? null,
+      styles,
+    };
+  }
+
+  async function addMemberToClass(classId: string, memberId: string, forceAdd: boolean = false) {
+    const cls = data?.classesToday.find((c) => c.id === classId) ?? null;
+    const reqMember = buildReqMember(memberId);
+
+    if (cls && reqMember && !forceAdd) {
+      const { meets, reason } = checkMemberRequirements(reqMember, cls, stylesCache, new Date());
+      if (!meets) {
+        setRequirementErrorMessage(reason);
+        setPendingAdd({ classId, memberId });
+        setShowRequirementError(true);
+        setMemberSearch("");
+        setSearchResults([]);
+        return;
+      }
+    }
+
     try {
       const res = await fetch("/api/attendance", {
         method: "POST",
@@ -319,6 +395,7 @@ export default function DashboardPage() {
           memberId,
           classSessionId: classId,
           attendanceDate: todayDateStr(),
+          requirementOverride: forceAdd,
         }),
       });
       if (res.ok || res.status === 409) {
@@ -327,6 +404,15 @@ export default function DashboardPage() {
         loadDashboard();
       }
     } catch { /* ignore */ }
+  }
+
+  function handleJoinAnyways() {
+    if (pendingAdd) {
+      const { classId, memberId } = pendingAdd;
+      setShowRequirementError(false);
+      setPendingAdd(null);
+      addMemberToClass(classId, memberId, true);
+    }
   }
 
   async function toggleConfirm(attendee: Attendee, classId: string) {
@@ -388,8 +474,24 @@ export default function DashboardPage() {
       if (membersRes.ok && stylesRes.ok) {
         const membersData = await membersRes.json();
         const stylesData = await stylesRes.json();
-        const allStyles: { id: string; name: string }[] = stylesData.styles || [];
-        const allMembers: { id: string; firstName: string; lastName: string; photoUrl?: string | null; primaryStyle?: string; stylesNotes?: string; rank?: string }[] = membersData.members || [];
+        const allStyles: { id: string; name: string; beltConfig?: string | null }[] = stylesData.styles || [];
+        const allMembers: { id: string; firstName: string; lastName: string; photoUrl?: string | null; primaryStyle?: string; stylesNotes?: string; rank?: string; dateOfBirth?: string | null }[] = membersData.members || [];
+
+        // Cache full data for requirement checks
+        setStylesCache(
+          allStyles.map((s) => ({ id: s.id, name: s.name, beltConfig: s.beltConfig })),
+        );
+        setAllMembersCache(
+          allMembers.map((m) => ({
+            id: m.id,
+            firstName: m.firstName,
+            lastName: m.lastName,
+            dateOfBirth: m.dateOfBirth,
+            primaryStyle: m.primaryStyle,
+            stylesNotes: m.stylesNotes,
+            rank: m.rank,
+          })),
+        );
 
         // Use class style requirements if set, otherwise all styles
         let classStyleIds: string[] = [];
@@ -1452,6 +1554,42 @@ export default function DashboardPage() {
                 className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Requirement Error Popup — mirrors the calendar's popup */}
+      {showRequirementError && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20">
+                <span className="text-xl text-primary">⚠</span>
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">
+                Requirement Not Met
+              </h3>
+            </div>
+            <p className="mb-6 whitespace-pre-line text-xs text-gray-600">
+              {requirementErrorMessage}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={handleJoinAnyways}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+              >
+                Join Anyways
+              </button>
+              <button
+                onClick={() => {
+                  setShowRequirementError(false);
+                  setPendingAdd(null);
+                }}
+                className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
               </button>
             </div>
           </div>

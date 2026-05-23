@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 import { getTodayString } from "@/lib/dates";
+import { checkMemberRequirements as checkReqShared } from "@/lib/class-requirements";
 
 // Helper to get local date string (YYYY-MM-DD) avoiding UTC timezone shift
 function toLocalDateStr(date: Date): string {
@@ -310,11 +311,7 @@ export default function CalendarPage() {
   const [modalStep, setModalStep] = useState<"view" | "select" | "edit">("view");
   const [selectedClass, setSelectedClass] = useState<ClassSession | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  // Default to "future" so coach/type/style edits update the recurring
-  // parent (the common case). "single" still available — but it forks a new
-  // one-off class per save, which used to silently duplicate classes when
-  // the admin re-saved a few times.
-  const [editOption, setEditOption] = useState<"single" | "day" | "range" | "future">("future");
+  const [editOption, setEditOption] = useState<"single" | "day" | "range" | "future">("single");
   const [rangeStartDate, setRangeStartDate] = useState(getTodayString());
   const [rangeEndDate, setRangeEndDate] = useState("");
   const [classAttendees, setClassAttendees] = useState<MemberWithStyles[]>([]);
@@ -958,208 +955,10 @@ export default function CalendarPage() {
     setFilteredMembers(filtered.slice(0, 5)); // Limit to 5 results
   }
 
-  // Calculate member's age from date of birth
-  function getMemberAge(dateOfBirth: string | null | undefined): number | null {
-    if (!dateOfBirth) return null;
-    const dob = new Date(dateOfBirth);
-    const today = new Date();
-    let age = today.getFullYear() - dob.getFullYear();
-    const m = today.getMonth() - dob.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-    return age;
-  }
-
   // Check if member meets class requirements (style, rank, and age)
-  // Returns all missing requirements in a single message
+  // Delegates to the shared lib so the dashboard's check-in flow stays in sync.
   function checkMemberRequirements(member: MemberWithStyles): { meets: boolean; reason: string } {
-    if (!selectedClass) return { meets: true, reason: "" };
-
-    const missingRequirements: string[] = [];
-
-    // Check age requirement
-    if (selectedClass.minAge != null || selectedClass.maxAge != null) {
-      const age = getMemberAge(member.dateOfBirth);
-      if (age === null) {
-        missingRequirements.push("No date of birth on file (age requirement applies)");
-      } else {
-        if (selectedClass.minAge != null && age < selectedClass.minAge) {
-          missingRequirements.push(`Must be at least ${selectedClass.minAge} years old (member is ${age})`);
-        }
-        if (selectedClass.maxAge != null && age > selectedClass.maxAge) {
-          missingRequirements.push(`Must be ${selectedClass.maxAge} or younger (member is ${age})`);
-        }
-      }
-    }
-
-    // Parse class style requirements
-    let classStyleIds: string[] = [];
-    if (selectedClass.styleIds) {
-      try {
-        classStyleIds = JSON.parse(selectedClass.styleIds);
-      } catch {
-        classStyleIds = [];
-      }
-    } else if (selectedClass.styleId) {
-      classStyleIds = [selectedClass.styleId];
-    }
-
-    // Filter out empty/invalid style IDs
-    classStyleIds = classStyleIds.filter(id => id && id !== "NO_STYLE");
-
-    // If no style requirements, check age only
-    if (classStyleIds.length === 0) {
-      if (missingRequirements.length > 0) {
-        return {
-          meets: false,
-          reason: `${member.firstName} ${member.lastName}:\n• ${missingRequirements.join("\n• ")}`,
-        };
-      }
-      return { meets: true, reason: "" };
-    }
-
-    // Get the names of required styles for display
-    const requiredStyleNames = classStyleIds
-      .map(id => styles.find(s => s.id === id)?.name)
-      .filter(Boolean);
-
-    // Check if member has any styles at all
-    if (!member.styles || member.styles.length === 0) {
-      missingRequirements.push(`Missing required style: ${requiredStyleNames.join(", ")}`);
-
-      // Also check if there's a rank requirement to display
-      if (selectedClass.minRankId && selectedClass.minRankName) {
-        missingRequirements.push(`Missing minimum rank requirement: ${selectedClass.minRankName}`);
-      }
-
-      return {
-        meets: false,
-        reason: `${member.firstName} ${member.lastName}:\n• ${missingRequirements.join("\n• ")}`
-      };
-    }
-
-    // Check style requirement - member needs at least one of the required styles
-    // Also check that the style's start date is on or before the class date
-    let hasMatchingStyle = false;
-    let matchedStyleName = "";
-    let matchedMemberStyle: MemberStyle | null = null;
-    let styleStartDateAfterClass = false;
-    let styleStartDateInfo = "";
-
-    // Get the class date for comparison (use selectedDate)
-    const classDate = selectedDate ? new Date(selectedDate) : null;
-    if (classDate) {
-      classDate.setHours(0, 0, 0, 0);
-    }
-
-    for (const requiredStyleId of classStyleIds) {
-      const requiredStyle = styles.find(s => s.id === requiredStyleId);
-      if (!requiredStyle) continue;
-
-      // Check if member has this style (case-insensitive comparison)
-      const memberStyle = member.styles.find(
-        ms => ms.styleId === requiredStyleId ||
-          ms.styleName?.toLowerCase() === requiredStyle.name?.toLowerCase()
-      );
-
-      if (memberStyle) {
-        // Check if the style's start date is after the class date
-        if (memberStyle.startDate && classDate) {
-          const styleStart = new Date(memberStyle.startDate);
-          styleStart.setHours(0, 0, 0, 0);
-
-          if (styleStart > classDate) {
-            // Member got this style AFTER this class date - doesn't count
-            styleStartDateAfterClass = true;
-            styleStartDateInfo = `Style "${requiredStyle.name}" was added on ${memberStyle.startDate} (after this class date)`;
-            continue; // Try other required styles
-          }
-        }
-
-        hasMatchingStyle = true;
-        matchedStyleName = requiredStyle.name;
-        matchedMemberStyle = memberStyle;
-        break; // Found a valid matching style
-      }
-    }
-
-    // Add style requirement error if no matching style
-    if (!hasMatchingStyle) {
-      if (styleStartDateAfterClass) {
-        missingRequirements.push(styleStartDateInfo);
-      } else {
-        missingRequirements.push(`Missing required style: ${requiredStyleNames.join(", ")}`);
-      }
-    }
-
-    // Check rank requirement. Per-style mins come from minRankIds (JSON array
-    // aligned with classStyleIds); falls back to the legacy minRankId/Name for
-    // backward compat with classes saved before that field existed.
-    let perStyleMinRankIds: string[] = [];
-    if (selectedClass.minRankIds) {
-      try {
-        const parsed = JSON.parse(selectedClass.minRankIds);
-        if (Array.isArray(parsed)) perStyleMinRankIds = parsed.map((v) => String(v ?? ""));
-      } catch { /* ignore */ }
-    }
-    const hasAnyRankReq = perStyleMinRankIds.some((v) => v) ||
-      !!(selectedClass.minRankId && selectedClass.minRankName);
-
-    if (hasAnyRankReq) {
-      if (!hasMatchingStyle) {
-        const label = selectedClass.minRankName || "configured rank";
-        missingRequirements.push(`Missing minimum rank requirement: ${label}`);
-      } else if (matchedMemberStyle) {
-        const matchedClassIdx = classStyleIds.findIndex(id => {
-          const s = styles.find(st => st.id === id);
-          return s?.name.toLowerCase() === matchedStyleName.toLowerCase();
-        });
-        const requiredStyle = styles.find(s => s.id === classStyleIds[matchedClassIdx]);
-
-        // Pick the rank ID for this specific style. Per-style first, else the
-        // legacy single minRankId (only applies if it actually belongs to this
-        // style's beltConfig — otherwise skip the check rather than mismatch).
-        const minRankIdForStyle = perStyleMinRankIds[matchedClassIdx] || selectedClass.minRankId || "";
-
-        if (requiredStyle?.beltConfig && minRankIdForStyle) {
-          try {
-            const beltConfig = JSON.parse(requiredStyle.beltConfig);
-            if (beltConfig.ranks && Array.isArray(beltConfig.ranks)) {
-              const minRank = beltConfig.ranks.find((r: { id: string; name: string }) =>
-                r.id === minRankIdForStyle
-              );
-
-              if (minRank) {
-                if (!matchedMemberStyle.rank || matchedMemberStyle.rank.trim() === "") {
-                  missingRequirements.push(`No rank assigned in ${requiredStyle.name} (minimum required: ${minRank.name})`);
-                } else {
-                  const memberRank = beltConfig.ranks.find((r: { name: string }) =>
-                    r.name === matchedMemberStyle!.rank
-                  );
-
-                  if (!memberRank) {
-                    missingRequirements.push(`Rank "${matchedMemberStyle.rank}" is not recognized in ${requiredStyle.name} (minimum required: ${minRank.name})`);
-                  } else if (memberRank.order < minRank.order) {
-                    missingRequirements.push(`Current rank in ${requiredStyle.name}: ${matchedMemberStyle.rank} (minimum required: ${minRank.name})`);
-                  }
-                }
-              }
-            }
-          } catch {
-            // Invalid JSON, skip rank check
-          }
-        }
-      }
-    }
-
-    // Return all missing requirements
-    if (missingRequirements.length > 0) {
-      return {
-        meets: false,
-        reason: `${member.firstName} ${member.lastName}:\n• ${missingRequirements.join("\n• ")}`
-      };
-    }
-
-    return { meets: true, reason: "" };
+    return checkReqShared(member, selectedClass, styles, selectedDate);
   }
 
   async function handleAddMember(member: MemberWithStyles, forceAdd: boolean = false) {
@@ -1699,11 +1498,24 @@ export default function CalendarPage() {
         if (selectedClass.isRecurring) {
           // Fork: exclude this date from the recurring parent + create a new
           // non-recurring class at the new time so the change only affects
-          // this one occurrence.
+          // this one occurrence. Pull canonical excludedDates from the server
+          // so prior exclusions in this session aren't dropped (would cause
+          // previously-deleted occurrences to reappear).
           const dateStr = toLocalDateStr(selectedDate);
           let excludedDates: string[] = [];
-          if (selectedClass.excludedDates) {
-            try { excludedDates = JSON.parse(selectedClass.excludedDates); } catch { /* ignore */ }
+          try {
+            const freshRes = await fetch(`/api/classes/${selectedClass.id}`);
+            if (freshRes.ok) {
+              const freshData = await freshRes.json();
+              const raw = freshData?.class?.excludedDates;
+              if (raw) {
+                try { excludedDates = JSON.parse(raw); } catch { excludedDates = []; }
+              }
+            }
+          } catch {
+            if (selectedClass.excludedDates) {
+              try { excludedDates = JSON.parse(selectedClass.excludedDates); } catch { /* ignore */ }
+            }
           }
           if (!excludedDates.includes(dateStr)) excludedDates.push(dateStr);
 
@@ -1823,14 +1635,26 @@ export default function CalendarPage() {
     try {
       if (editOption === "single") {
         if (selectedClass.isRecurring) {
-          // For recurring classes, add the date to excludedDates instead of deleting
+          // For recurring classes, add the date to excludedDates instead of deleting.
+          // Fetch the canonical excludedDates from the server first — `selectedClass`
+          // can be stale (e.g. another exclusion added earlier in this session never
+          // re-hydrated the in-memory copy), and writing a stale array back would
+          // drop those prior exclusions and the class would reappear.
           const dateStr = toLocalDateStr(selectedDate);
           let excludedDates: string[] = [];
-          if (selectedClass.excludedDates) {
-            try {
-              excludedDates = JSON.parse(selectedClass.excludedDates);
-            } catch {
-              excludedDates = [];
+          try {
+            const freshRes = await fetch(`/api/classes/${selectedClass.id}`);
+            if (freshRes.ok) {
+              const freshData = await freshRes.json();
+              const raw = freshData?.class?.excludedDates;
+              if (raw) {
+                try { excludedDates = JSON.parse(raw); } catch { excludedDates = []; }
+              }
+            }
+          } catch {
+            // Fall back to local state if the fresh fetch fails
+            if (selectedClass.excludedDates) {
+              try { excludedDates = JSON.parse(selectedClass.excludedDates); } catch {}
             }
           }
           if (!excludedDates.includes(dateStr)) {
@@ -1864,13 +1688,23 @@ export default function CalendarPage() {
 
         for (const cls of classesOnDay) {
           if (cls.isRecurring) {
-            // For recurring classes, add the date to excludedDates
+            // For recurring classes, add the date to excludedDates. Pull the
+            // canonical list from the server first so prior exclusions added in
+            // this session aren't dropped (would otherwise make a deleted class
+            // reappear).
             let excludedDates: string[] = [];
-            if (cls.excludedDates) {
-              try {
-                excludedDates = JSON.parse(cls.excludedDates);
-              } catch {
-                excludedDates = [];
+            try {
+              const freshRes = await fetch(`/api/classes/${cls.id}`);
+              if (freshRes.ok) {
+                const freshData = await freshRes.json();
+                const raw = freshData?.class?.excludedDates;
+                if (raw) {
+                  try { excludedDates = JSON.parse(raw); } catch { excludedDates = []; }
+                }
+              }
+            } catch {
+              if (cls.excludedDates) {
+                try { excludedDates = JSON.parse(cls.excludedDates); } catch {}
               }
             }
             if (!excludedDates.includes(dateStr)) {
@@ -1923,12 +1757,21 @@ export default function CalendarPage() {
           }
 
           if (datesToExclude.length > 0) {
+            // Pull canonical excludedDates from the server so we don't drop
+            // prior exclusions added in this session.
             let excludedDates: string[] = [];
-            if (selectedClass.excludedDates) {
-              try {
-                excludedDates = JSON.parse(selectedClass.excludedDates);
-              } catch {
-                excludedDates = [];
+            try {
+              const freshRes = await fetch(`/api/classes/${selectedClass.id}`);
+              if (freshRes.ok) {
+                const freshData = await freshRes.json();
+                const raw = freshData?.class?.excludedDates;
+                if (raw) {
+                  try { excludedDates = JSON.parse(raw); } catch { excludedDates = []; }
+                }
+              }
+            } catch {
+              if (selectedClass.excludedDates) {
+                try { excludedDates = JSON.parse(selectedClass.excludedDates); } catch {}
               }
             }
             // Add new dates without duplicates
@@ -3738,16 +3581,16 @@ export default function CalendarPage() {
                   {/* Modal Actions */}
                   <div className="mt-6 flex justify-end gap-2">
                     <button
-                      onClick={handleCloseModal}
-                      className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
                       onClick={handleContinueToEdit}
                       className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
                       Continue to Edit
+                    </button>
+                    <button
+                      onClick={handleCloseModal}
+                      className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
                     </button>
                   </div>
                 </>
@@ -4090,18 +3933,18 @@ export default function CalendarPage() {
                       </button>
                       <div className="flex gap-2">
                         <button
-                          type="button"
-                          onClick={handleCloseModal}
-                          className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                        >
-                          Cancel
-                        </button>
-                        <button
                           type="submit"
                           disabled={saving}
                           className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:bg-gray-300"
                         >
                           {saving ? "Saving..." : "Save Changes"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCloseModal}
+                          className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          Cancel
                         </button>
                       </div>
                     </div>
@@ -4129,6 +3972,12 @@ export default function CalendarPage() {
               </p>
               <div className="flex justify-end gap-2">
                 <button
+                  onClick={handleJoinAnyways}
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                >
+                  Join Anyways
+                </button>
+                <button
                   onClick={() => {
                     setShowRequirementError(false);
                     setPendingMember(null);
@@ -4136,12 +3985,6 @@ export default function CalendarPage() {
                   className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
-                </button>
-                <button
-                  onClick={handleJoinAnyways}
-                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
-                >
-                  Join Anyways
                 </button>
               </div>
             </div>
