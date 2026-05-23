@@ -23,7 +23,7 @@ import { CSS } from "@dnd-kit/utilities";
 
 type Style = { id: string; name: string; ranks: { id: string; name: string; order: number }[] };
 type RankTest = { id: string; name: string; rankId: string; categories: Category[] };
-type Category = { id: string; name: string; sortOrder: number; items: Item[] };
+type Category = { id: string; name: string; sortOrder: number; visibleOnTest?: boolean; items: Item[] };
 type Item = {
   id: string; name: string; type: string; description?: string | null;
   sets?: number | null; rounds?: number | null; reps?: number | null;
@@ -307,9 +307,49 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
 
   let items: Item[] = [];
   let testId = "";
+  let visibleOnTest = true;
   for (const test of rankTests) {
     const c = test.categories.find(tc => tc.id === categoryId);
-    if (c) { items = [...c.items].sort((a, b) => a.sortOrder - b.sortOrder); testId = test.id; }
+    if (c) {
+      items = [...c.items].sort((a, b) => a.sortOrder - b.sortOrder);
+      testId = test.id;
+      visibleOnTest = c.visibleOnTest !== false;
+    }
+  }
+
+  // Toggle visibleOnTest. If `allRanks`, toggle every category with the same
+  // name across every rank test for this style — matches the user's "all the
+  // identical sections" ask. Else toggle just this one.
+  async function toggleVisibleOnTest(allRanks: boolean) {
+    const next = !visibleOnTest;
+    try {
+      if (allRanks) {
+        const matches = rankTests
+          .flatMap((t) =>
+            t.categories
+              .filter((c) => c.name.trim().toLowerCase() === categoryName.trim().toLowerCase())
+              .map((c) => ({ testId: t.id, categoryId: c.id })),
+          );
+        await Promise.all(
+          matches.map(({ testId: tId, categoryId: cId }) =>
+            fetch(`/api/rank-tests/${tId}/categories`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ categoryId: cId, visibleOnTest: next }),
+            }),
+          ),
+        );
+      } else if (testId) {
+        await fetch(`/api/rank-tests/${testId}/categories`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ categoryId, visibleOnTest: next }),
+        });
+      }
+      await onReload();
+    } catch {
+      alert("Failed to update visibility");
+    }
   }
 
   async function addItem() {
@@ -421,6 +461,27 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
                 </div>
               </div>
             )}
+          </div>
+          <div className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1">
+            <span className="text-[10px] font-semibold uppercase text-gray-500">On Test</span>
+            <button
+              type="button"
+              onClick={() => toggleVisibleOnTest(false)}
+              title="Toggle visibility on test for this rank only"
+              className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                visibleOnTest ? "bg-primary text-white" : "bg-gray-100 text-gray-500"
+              }`}
+            >
+              {visibleOnTest ? "Yes" : "No"}
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleVisibleOnTest(true)}
+              title={`Toggle "${categoryName}" visibility on test across all ranks`}
+              className="rounded px-2 py-0.5 text-[10px] font-semibold text-primary hover:underline"
+            >
+              All Ranks
+            </button>
           </div>
           <button onClick={onDeleteCategory} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete Section</button>
           <button onClick={onDeleteFromAllRanks} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete from All Ranks</button>

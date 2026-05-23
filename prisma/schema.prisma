@@ -447,15 +447,16 @@ model RankTest {
 }
 
 model RankTestCategory {
-  id          String         @id @default(cuid())
-  name        String
-  description String?
-  sortOrder   Int            @default(0)
-  rankTestId  String
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  rankTest    RankTest       @relation(fields: [rankTestId], references: [id], onDelete: Cascade)
-  items       RankTestItem[]
+  id            String         @id @default(cuid())
+  name          String
+  description   String?
+  sortOrder     Int            @default(0)
+  visibleOnTest Boolean        @default(true)
+  rankTestId    String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  rankTest      RankTest       @relation(fields: [rankTestId], references: [id], onDelete: Cascade)
+  items         RankTestItem[]
 
   // Prevents the race condition where two concurrent POSTs to
   // /api/rank-tests/[id]/categories both pass the client-side dedupe check

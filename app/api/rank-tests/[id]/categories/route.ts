@@ -99,7 +99,7 @@ export async function PATCH(
 ) {
   try {
     const body = await req.json();
-    const { categoryId, name, description, sortOrder } = body;
+    const { categoryId, name, description, sortOrder, visibleOnTest } = body;
 
     if (!categoryId) {
       return new NextResponse("categoryId is required", { status: 400 });
@@ -109,6 +109,7 @@ export async function PATCH(
     if (name !== undefined) updateData.name = name.trim();
     if (description !== undefined) updateData.description = description?.trim() || null;
     if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
+    if (typeof visibleOnTest === "boolean") updateData.visibleOnTest = visibleOnTest;
 
     const category = await prisma.rankTestCategory.update({
       where: { id: categoryId },

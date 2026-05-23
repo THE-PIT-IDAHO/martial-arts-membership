@@ -77,6 +77,7 @@ type RankTestCategory = {
   name: string;
   description?: string | null;
   sortOrder: number;
+  visibleOnTest?: boolean;
   items: RankTestItem[];
 };
 
@@ -208,6 +209,12 @@ export default function TestingPage() {
   // PDF Viewer modal
   const [viewingPdfUrl, setViewingPdfUrl] = useState<string | null>(null);
   const [viewingPdfTitle, setViewingPdfTitle] = useState<string>("");
+
+  // Categories shown on the grading sheet: must have items AND not be hidden
+  // via the "On Test" toggle on the curriculum page.
+  function visibleCategories(cats: RankTestCategory[]): RankTestCategory[] {
+    return cats.filter((c) => c.items.length > 0 && c.visibleOnTest !== false);
+  }
 
   // Get display text for an item: use description (stripped of HTML) if available, fall back to name.
   // Knowledge items keep all lines — they're often multi-paragraph and the
@@ -942,7 +949,7 @@ export default function TestingPage() {
     yPos += 8;
 
     // Curriculum breakdown
-    for (const category of curriculum.categories.filter(c => c.items.length > 0)) {
+    for (const category of visibleCategories(curriculum.categories)) {
       // Check for page break
       if (yPos > 260) {
         pdf.addPage();
@@ -1344,7 +1351,7 @@ export default function TestingPage() {
       let passedItems = 0;
 
       if (rankTestCurriculum) {
-        rankTestCurriculum.categories.forEach(category => {
+        visibleCategories(rankTestCurriculum.categories).forEach(category => {
           category.items.forEach(item => {
             totalItems++;
             const score = itemScores[item.id];
@@ -1570,7 +1577,7 @@ export default function TestingPage() {
           let totalItems = 0;
           let passedItems = 0;
 
-          bulkGradingCurriculum.categories.forEach(category => {
+          visibleCategories(bulkGradingCurriculum.categories).forEach(category => {
             category.items.forEach(item => {
               totalItems++;
               const score = participantScores[item.id];
@@ -2069,11 +2076,11 @@ export default function TestingPage() {
                                               {curriculum.name} - Test Requirements
                                             </h4>
                                             <span className="text-xs text-gray-500">
-                                              {curriculum.categories.filter(c => c.items.length > 0).reduce((sum, c) => sum + c.items.length, 0)} items total
+                                              {visibleCategories(curriculum.categories).reduce((sum, c) => sum + c.items.length, 0)} items total
                                             </span>
                                           </div>
                                           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                                            {curriculum.categories.filter(c => c.items.length > 0).map((category) => (
+                                            {visibleCategories(curriculum.categories).map((category) => (
                                               <div key={category.id} className="bg-white border rounded-lg p-3">
                                                 <h5 className="font-medium text-sm mb-2">{category.name}</h5>
                                                 <ul className="space-y-1">
@@ -2528,11 +2535,11 @@ export default function TestingPage() {
                                                         {curriculum.name} - Test Results
                                                       </h4>
                                                       <span className="text-xs text-gray-500">
-                                                        {Object.values(parsedItemScores).filter(s => s.passed).length} / {curriculum.categories.filter(c => c.items.length > 0).reduce((sum, c) => sum + c.items.length, 0)} passed
+                                                        {Object.values(parsedItemScores).filter(s => s.passed).length} / {visibleCategories(curriculum.categories).reduce((sum, c) => sum + c.items.length, 0)} passed
                                                       </span>
                                                     </div>
                                                     <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                                                      {curriculum.categories.filter(c => c.items.length > 0).map((category) => (
+                                                      {visibleCategories(curriculum.categories).map((category) => (
                                                         <div key={category.id} className="bg-white border rounded-lg p-3">
                                                           <h5 className="font-medium text-sm mb-2">{category.name}</h5>
                                                           <ul className="space-y-1">
@@ -3225,7 +3232,7 @@ export default function TestingPage() {
                   </div>
                 ) : (
                   <div className="space-y-3 sm:space-y-4">
-                    {rankTestCurriculum.categories.filter(c => c.items.length > 0).map((category) => (
+                    {visibleCategories(rankTestCurriculum.categories).map((category) => (
                       <div key={category.id} className="border rounded-lg overflow-hidden">
                         <div className="bg-gray-100 px-3 py-2 sm:px-4 sm:py-3">
                           <h3 className="font-semibold text-sm sm:text-base">{category.name}</h3>
@@ -3566,7 +3573,7 @@ export default function TestingPage() {
 
                       {/* Curriculum Items List */}
                       <div className="space-y-3">
-                        {bulkGradingCurriculum.categories.filter(c => c.items.length > 0).map((category) => (
+                        {visibleCategories(bulkGradingCurriculum.categories).map((category) => (
                           <div key={category.id} className="border rounded-lg overflow-hidden">
                             <div className="bg-gray-100 px-3 py-2">
                               <h4 className="font-semibold text-sm">{category.name}</h4>
@@ -3748,7 +3755,7 @@ export default function TestingPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {bulkGradingCurriculum.categories.filter(c => c.items.length > 0).map((category) => (
+                          {visibleCategories(bulkGradingCurriculum.categories).map((category) => (
                             <React.Fragment key={category.id}>
                               <tr className="bg-gray-50">
                                 <td
