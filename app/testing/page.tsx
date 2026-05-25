@@ -246,12 +246,12 @@ export default function TestingPage() {
 
   // Short label for use in the bulk grading spreadsheet, where each item gets
   // ONE row and there's no space for a multi-line knowledge description.
-  // Knowledge items show their (typically short) name or just "Knowledge" —
-  // the full content is rendered once above the table in the Information box.
+  // Knowledge items always show the literal label "Information" — matches
+  // the header on the Information box above the table, where the actual
+  // knowledge content lives. (Using item.name fell back to the auto-derived
+  // first line of the description, which was the original duplication bug.)
   function getItemLabel(item: RankTestItem): string {
-    if (item.type === "knowledge") {
-      return (item.name || "").trim() || "Knowledge";
-    }
+    if (item.type === "knowledge") return "Information";
     return getItemDisplay(item);
   }
 
