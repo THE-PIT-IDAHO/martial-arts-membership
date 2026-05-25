@@ -217,8 +217,20 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  // Sort by start time
-  result.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  // Sort by time-of-day in the client's local timezone.
+  //
+  // We CAN'T sort by the raw startsAt timestamp — recurring classes carry
+  // their original creation-date timestamp (e.g. a Monday 5pm class created
+  // last January has startsAt = "2026-01-05T17:00:00", a Tuesday 9am class
+  // created last March has startsAt = "2026-03-10T09:00:00"). Sorting those
+  // numerically puts the older-created class first regardless of its actual
+  // time of day on the target date.
+  function localMinutes(utc: Date): number {
+    const ms = utc.getTime() - tzOffsetMin * 60 * 1000;
+    const d = new Date(ms);
+    return d.getUTCHours() * 60 + d.getUTCMinutes();
+  }
+  result.sort((a, b) => localMinutes(new Date(a.startsAt)) - localMinutes(new Date(b.startsAt)));
 
   return NextResponse.json(result);
 }
