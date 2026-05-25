@@ -669,34 +669,46 @@ export default function POSPage() {
     return date.toISOString().split("T")[0];
   }
 
-  // Add membership to cart from modal
+  // Add membership to cart from modal.
+  //
+  // Price + Discount are independent inputs:
+  //   - Price = the recurring amount the member will be billed every cycle
+  //     (overrides the plan default for THIS signup only — the plan row in
+  //     the DB is untouched).
+  //   - Discount = subtracted from the first payment.
+  //   - "First month discount only" checked → discount applies only to the
+  //     first payment; recurring stays at Price.
+  //   - Unchecked → discount applies every cycle; recurring also = Price - Discount.
+  //
+  // Lets the admin do things like "$80/mo recurring (down from $100) with
+  // $20 off the first month" without one input clobbering the other.
   function addMembershipToCart() {
     if (!selectedPlanForConfig) return;
 
     const plan = selectedPlanForConfig;
     const basePriceCents = (plan.priceCents || 0) + (plan.setupFeeCents || 0);
+    const priceCents = parseCents(membershipConfig.customPrice);
 
-    let finalPriceCents = parseCents(membershipConfig.customPrice);
     let discountAppliedCents = 0;
-
-    // Apply discount if specified. Track cents removed so the contract PDF
-    // can show "Discount Applied" only when the discount control was used.
     if (membershipConfig.discountValue) {
-      const beforeDiscount = finalPriceCents;
       if (membershipConfig.discountType === "percent") {
         const discountPct = parseFloat(membershipConfig.discountValue);
         if (!isNaN(discountPct) && discountPct > 0) {
-          finalPriceCents = Math.round(finalPriceCents * (1 - discountPct / 100));
-          discountAppliedCents = beforeDiscount - finalPriceCents;
+          discountAppliedCents = Math.round(priceCents * discountPct / 100);
         }
       } else {
         const discountAmountCents = parseCents(membershipConfig.discountValue);
         if (discountAmountCents > 0) {
-          finalPriceCents = Math.max(0, finalPriceCents - discountAmountCents);
-          discountAppliedCents = beforeDiscount - finalPriceCents;
+          discountAppliedCents = discountAmountCents;
         }
       }
     }
+    discountAppliedCents = Math.max(0, Math.min(priceCents, discountAppliedCents));
+
+    const firstPaymentCents = Math.max(0, priceCents - discountAppliedCents);
+    const recurringCents = membershipConfig.firstMonthDiscountOnly
+      ? priceCents
+      : firstPaymentCents;
 
     // Only calculate end date if not recurring
     const endDate = membershipConfig.isRecurring
@@ -714,9 +726,12 @@ export default function POSPage() {
         type: "membership",
         membershipPlanId: plan.id,
         itemName: plan.name,
-        unitPriceCents: finalPriceCents,
+        unitPriceCents: firstPaymentCents,
         quantity: 1,
-        customPriceCents: finalPriceCents !== basePriceCents ? finalPriceCents : undefined,
+        // customPriceCents drives recurring billing on the Membership row.
+        // Only persist it when it differs from the plan's default, so plans
+        // that weren't customized still pick up future plan-price changes.
+        customPriceCents: recurringCents !== basePriceCents ? recurringCents : undefined,
         membershipStartDate: membershipConfig.startDate,
         membershipEndDate: endDate,
         firstMonthDiscountOnly: membershipConfig.firstMonthDiscountOnly,
@@ -1009,9 +1024,13 @@ export default function POSPage() {
       for (const item of cart) {
         if (item.type === "membership") {
           const plan = membershipPlans.find((p) => p.id === item.membershipPlanId);
-          const fullPriceCents = (plan?.priceCents || 0) + (plan?.setupFeeCents || 0);
+          const planDefaultCents = (plan?.priceCents || 0) + (plan?.setupFeeCents || 0);
           const firstMonthCents = item.unitPriceCents;
-          const recurringCents = item.firstMonthDiscountOnly ? fullPriceCents : item.unitPriceCents;
+          // Recurring is what's stored on the Membership row (item.customPriceCents).
+          // Falls back to the plan default when the admin didn't override Price.
+          // Previously this used the plan default whenever first-month-only was
+          // checked — clobbering any custom recurring price the admin had set.
+          const recurringCents = item.customPriceCents ?? planDefaultCents;
           const discountAppliedCents = item.discountAppliedCents || 0;
           const showDiscount = discountAppliedCents > 0;
           const suffix = billingSuffix(plan?.billingCycle);
@@ -2394,73 +2413,99 @@ export default function POSPage() {
               )}
 
               {/* Price */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Price
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
-                  <input
-                    type="text"
-                    value={membershipConfig.customPrice}
-                    onChange={(e) => setMembershipConfig({ ...membershipConfig, customPrice: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    placeholder="0.00"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Plan price: {formatCents((selectedPlanForConfig.priceCents || 0) + (selectedPlanForConfig.setupFeeCents || 0))}
-                </p>
-              </div>
+              {(() => {
+                const planDefaultCents = (selectedPlanForConfig.priceCents || 0) + (selectedPlanForConfig.setupFeeCents || 0);
+                const enteredPriceCents = parseCents(membershipConfig.customPrice);
+                const enteredDiscountCents = membershipConfig.discountValue
+                  ? membershipConfig.discountType === "percent"
+                    ? Math.round(enteredPriceCents * (parseFloat(membershipConfig.discountValue) || 0) / 100)
+                    : parseCents(membershipConfig.discountValue)
+                  : 0;
+                const cappedDiscount = Math.max(0, Math.min(enteredPriceCents, enteredDiscountCents));
+                const firstPaymentCents = Math.max(0, enteredPriceCents - cappedDiscount);
+                const recurringCents = membershipConfig.firstMonthDiscountOnly
+                  ? enteredPriceCents
+                  : firstPaymentCents;
+                const showPreview = cappedDiscount > 0 || enteredPriceCents !== planDefaultCents;
 
-              {/* Discount */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Discount
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    value={membershipConfig.discountType}
-                    onChange={(e) => setMembershipConfig({ ...membershipConfig, discountType: e.target.value as "percent" | "amount" })}
-                    className="border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option value="percent">%</option>
-                    <option value="amount">$</option>
-                  </select>
-                  <input
-                    type="text"
-                    value={membershipConfig.discountValue}
-                    onChange={(e) => setMembershipConfig({ ...membershipConfig, discountValue: e.target.value })}
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    placeholder={membershipConfig.discountType === "percent" ? "0" : "0.00"}
-                  />
-                </div>
-              </div>
+                return (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Price (recurring)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                        <input
+                          type="text"
+                          value={membershipConfig.customPrice}
+                          onChange={(e) => setMembershipConfig({ ...membershipConfig, customPrice: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Plan price: {formatCents(enteredPriceCents)}
+                        {enteredPriceCents !== planDefaultCents && (
+                          <span className="ml-1 text-gray-400">(plan default {formatCents(planDefaultCents)})</span>
+                        )}
+                      </p>
+                    </div>
 
-              {/* First month discount only */}
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={membershipConfig.firstMonthDiscountOnly}
-                  onChange={(e) => setMembershipConfig({ ...membershipConfig, firstMonthDiscountOnly: e.target.checked })}
-                  className="rounded border-gray-300 text-primary focus:ring-primary"
-                />
-                <span className="text-sm text-gray-700">First month discount only</span>
-              </label>
+                    {/* Discount */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Discount on first payment
+                      </label>
+                      <div className="flex gap-2">
+                        <select
+                          value={membershipConfig.discountType}
+                          onChange={(e) => setMembershipConfig({ ...membershipConfig, discountType: e.target.value as "percent" | "amount" })}
+                          className="border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        >
+                          <option value="percent">%</option>
+                          <option value="amount">$</option>
+                        </select>
+                        <input
+                          type="text"
+                          value={membershipConfig.discountValue}
+                          onChange={(e) => setMembershipConfig({ ...membershipConfig, discountValue: e.target.value })}
+                          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          placeholder={membershipConfig.discountType === "percent" ? "0" : "0.00"}
+                        />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Applied on top of Price — does not change the recurring amount unless you uncheck the box below.
+                      </p>
+                    </div>
 
-              {/* Calculated price */}
-              {membershipConfig.discountValue && parseFloat(membershipConfig.discountValue) > 0 && (
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-sm text-gray-600">Final price:</p>
-                  <p className="text-lg font-bold text-primary">
-                    {formatCents(
-                      membershipConfig.discountType === "percent"
-                        ? Math.round(parseCents(membershipConfig.customPrice) * (1 - parseFloat(membershipConfig.discountValue) / 100))
-                        : Math.max(0, parseCents(membershipConfig.customPrice) - parseCents(membershipConfig.discountValue))
+                    {/* First month discount only */}
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={membershipConfig.firstMonthDiscountOnly}
+                        onChange={(e) => setMembershipConfig({ ...membershipConfig, firstMonthDiscountOnly: e.target.checked })}
+                        className="rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">First payment discount only (don't carry the discount into recurring)</span>
+                    </label>
+
+                    {/* Calculated price preview */}
+                    {showPreview && (
+                      <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">First payment:</span>
+                          <span className="font-bold text-primary">{formatCents(firstPaymentCents)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Recurring (every cycle):</span>
+                          <span className="font-bold text-gray-800">{formatCents(recurringCents)}</span>
+                        </div>
+                      </div>
                     )}
-                  </p>
-                </div>
-              )}
+                  </>
+                );
+              })()}
             </div>
             <div className="p-4 border-t border-gray-200 flex gap-3 justify-end">
               <button
@@ -2701,9 +2746,11 @@ export default function POSPage() {
                   return `${days} day(s)`;
                 }
 
-                const fullPriceCents = (plan?.priceCents || 0) + (plan?.setupFeeCents || 0);
+                const planDefaultCents = (plan?.priceCents || 0) + (plan?.setupFeeCents || 0);
                 const firstMonthCents = item.unitPriceCents;
-                const recurringCents = item.firstMonthDiscountOnly ? fullPriceCents : item.unitPriceCents;
+                // Recurring = the price stored on the cart item; only falls back
+                // to the plan default when the admin didn't override Price.
+                const recurringCents = item.customPriceCents ?? planDefaultCents;
                 const discountAppliedCents = item.discountAppliedCents || 0;
                 const showDiscount = discountAppliedCents > 0;
                 const suffix = billingSfx(plan?.billingCycle);
