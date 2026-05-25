@@ -68,6 +68,15 @@ type ClassSession = {
   minRankName: string | null;
   color: string | null;
   kioskEnabled: boolean;
+  // Recurrence fields, required so the kiosk's "today's classes" filter
+  // can honor admin schedule changes (excluded dates, end dates, cadence).
+  isRecurring?: boolean;
+  isOngoing?: boolean;
+  excludedDates?: string | null;
+  frequencyNumber?: number | null;
+  frequencyUnit?: string | null;
+  scheduleStartDate?: string | null;
+  scheduleEndDate?: string | null;
 };
 
 type CheckInState = "idle" | "search" | "confirm" | "success" | "error";
@@ -237,13 +246,73 @@ export default function KioskPage() {
           });
           setClasses(nonImportedClasses);
 
-          // Filter to today's classes (based on day of week matching)
+          // Filter to today's classes. Previously this only checked
+          // day-of-week, so it ignored excludedDates (e.g. Memorial Day),
+          // schedule start/end, and frequency intervals — meaning the
+          // kiosk kept showing the normal Monday schedule on a holiday
+          // even after the admin had excluded those classes from the date.
+          //
+          // Now mirrors the calendar/portal logic: day-of-week match AND
+          // not in excludedDates AND within schedule range AND on the
+          // right frequency cadence. One-off classes are matched by exact
+          // date.
           const today = new Date();
+          today.setHours(0, 0, 0, 0);
           const dayOfWeek = today.getDay();
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
           let todayClasses = nonImportedClasses.filter((c: ClassSession) => {
-            const classDate = new Date(c.startsAt);
-            return classDate.getDay() === dayOfWeek;
+            // Excluded by admin for this specific date (calendar's
+            // "delete this class only" writes the date into excludedDates).
+            if (c.excludedDates) {
+              try {
+                const ex: string[] = JSON.parse(c.excludedDates);
+                if (ex.includes(todayStr)) return false;
+              } catch { /* ignore */ }
+            }
+
+            const classStart = new Date(c.startsAt);
+
+            // One-off class — must be on today's date exactly.
+            if (!c.isRecurring) {
+              const cs = new Date(classStart);
+              cs.setHours(0, 0, 0, 0);
+              return cs.getTime() === today.getTime();
+            }
+
+            // Recurring — day-of-week must match.
+            if (classStart.getDay() !== dayOfWeek) return false;
+
+            // Within schedule window.
+            const schedStart = c.scheduleStartDate
+              ? new Date(c.scheduleStartDate)
+              : null;
+            if (schedStart) {
+              schedStart.setHours(0, 0, 0, 0);
+              if (today < schedStart) return false;
+            }
+            const schedEnd = c.scheduleEndDate && !c.isOngoing
+              ? new Date(c.scheduleEndDate)
+              : null;
+            if (schedEnd) {
+              schedEnd.setHours(23, 59, 59, 999);
+              if (today > schedEnd) return false;
+            }
+
+            // Frequency cadence (e.g. every-other-week, every 3 days).
+            const freq = c.frequencyNumber || 1;
+            const unit = (c.frequencyUnit || "Week").toLowerCase();
+            if (freq <= 1) return true;
+            const refDate = schedStart || classStart;
+            if (unit === "week") {
+              const weeks = Math.floor((today.getTime() - refDate.getTime()) / (7 * 24 * 60 * 60 * 1000));
+              return weeks % freq === 0;
+            }
+            if (unit === "day") {
+              const days = Math.floor((today.getTime() - refDate.getTime()) / (24 * 60 * 60 * 1000));
+              return days % freq === 0;
+            }
+            return true;
           }).sort((a: ClassSession, b: ClassSession) => {
             const aTime = new Date(a.startsAt);
             const bTime = new Date(b.startsAt);
@@ -528,8 +597,12 @@ export default function KioskPage() {
       const res = await fetch(`/api/attendance?classSessionId=${classId}&date=${today}`);
       if (res.ok) {
         const data = await res.json();
+        // Show ALL attendances for this class today, not just confirmed ones.
+        // Kiosk check-ins land as unconfirmed (source=QR) — staff confirms
+        // them later on the dashboard. Filtering by confirmed=true meant
+        // anyone who just walked up and scanned in was invisible to the
+        // kiosk's "Checked In" list.
         setClassAttendees((data.attendances || [])
-          .filter((a: { confirmed?: boolean }) => a.confirmed === true)
           .map((a: { memberId: string; member?: { firstName: string; lastName: string } }) => ({
             memberId: a.memberId,
             memberName: a.member ? `${a.member.firstName} ${a.member.lastName}` : "Unknown",
