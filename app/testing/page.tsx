@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useState, useCallback } from "react";
 import { AppLayout } from "@/components/app-layout";
@@ -178,9 +178,24 @@ export default function TestingPage() {
   const [individualNotes, setIndividualNotes] = useState("");
   const [individualAdminNotes, setIndividualAdminNotes] = useState("");
 
-  // For bulk grading spreadsheet modal
+  // For bulk grading spreadsheet modal.
+  //
+  // Bulk grading is split into one "sheet" per (style, rank) — so e.g. all
+  // White Belt Karate students share one grading sheet, Yellow Belt Karate
+  // share another, Blue Belt BJJ another. Each sheet carries its own
+  // curriculum (the rank test for that style+rank) and its own filtered list
+  // of participants. The modal renders one sheet at a time via a tab bar.
+  type BulkSheet = {
+    key: string;            // styleId__rankName
+    styleId: string;
+    styleName: string;
+    rankName: string;
+    participants: TestingParticipant[];
+    curriculum: RankTest | null;
+  };
   const [showBulkGrading, setShowBulkGrading] = useState(false);
-  const [bulkGradingCurriculum, setBulkGradingCurriculum] = useState<RankTest | null>(null);
+  const [bulkSheets, setBulkSheets] = useState<BulkSheet[]>([]);
+  const [activeSheetKey, setActiveSheetKey] = useState<string>("");
   const [loadingBulkCurriculum, setLoadingBulkCurriculum] = useState(false);
   const [savingBulkGrades, setSavingBulkGrades] = useState(false);
   // Maps participantId -> itemId -> ItemScore
@@ -1526,13 +1541,13 @@ export default function TestingPage() {
   // Bulk grading functions
   const openBulkGrading = async () => {
     if (!selectedEvent || selectedEvent.participants.length === 0) return;
+    const ev = selectedEvent;  // pin non-null for nested closures
 
     setShowBulkGrading(true);
     setLoadingBulkCurriculum(true);
-    // Initialize mobile view with first participant selected
-    setMobileSelectedParticipant(selectedEvent.participants[0]?.id || "");
 
-    // Initialize bulk scores, notes, admin notes, and manual status from existing participant data
+    // Initialize bulk scores, notes, admin notes, and manual status from existing
+    // participant data. Indexed by participantId so values survive switching sheets.
     const initialScores: Record<string, ItemScores> = {};
     const initialNotes: Record<string, string> = {};
     const initialAdminNotes: Record<string, string> = {};
@@ -1549,7 +1564,6 @@ export default function TestingPage() {
       }
       initialNotes[p.id] = p.notes || "";
       initialAdminNotes[p.id] = p.adminNotes || "";
-      // Load existing status if already graded
       if (p.status === "PASSED" || p.status === "FAILED") {
         initialManualStatus[p.id] = p.status as "PASSED" | "FAILED";
       } else {
@@ -1561,53 +1575,88 @@ export default function TestingPage() {
     setBulkAdminNotes(initialAdminNotes);
     setBulkManualStatus(initialManualStatus);
 
-    // Load curriculum - we'll use the first participant's curriculum as a template
-    // All participants testing for the same rank should share the same curriculum
-    const style = styles.find(s => s.id === selectedEvent.styleId);
-    const namingConvention = style?.testNamingConvention || "INTO_RANK";
-
-    // Get the first valid rank to lookup
-    const firstParticipant = selectedEvent.participants[0];
-    const rankToLookup = namingConvention === "FROM_RANK"
-      ? firstParticipant?.currentRank
-      : firstParticipant?.testingForRank;
-
-    if (!rankToLookup || !style?.ranks) {
-      setLoadingBulkCurriculum(false);
-      return;
-    }
-
-    // Find the rank
-    let rank = style.ranks.find(r => r.name === rankToLookup);
-    if (!rank) {
-      rank = style.ranks.find(r => r.name.toLowerCase().trim() === rankToLookup.toLowerCase().trim());
-    }
-
-    if (!rank) {
-      setLoadingBulkCurriculum(false);
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/rank-tests?rankId=${rank.id}&styleId=${selectedEvent.styleId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.rankTests && data.rankTests.length > 0) {
-          setBulkGradingCurriculum(data.rankTests[0]);
-        } else {
-          setBulkGradingCurriculum(null);
-        }
+    // Build one sheet per (styleId, rank). Style is inferred the same way
+    // the open-event view does it: pick the first event-style whose ranks
+    // include the participant's testingForRank.
+    const evStyles = getEventStyles(ev);
+    const styleById = new Map(
+      evStyles.map((es) => [es.styleId, styles.find((s) => s.id === es.styleId)]),
+    );
+    function pickStyle(p: TestingParticipant): string {
+      const rn = p.testingForRank || "";
+      for (const es of evStyles) {
+        const st = styleById.get(es.styleId);
+        if (st?.ranks?.some((r) => r.name === rn)) return es.styleId;
       }
-    } catch (err) {
-      console.error("Error loading bulk curriculum:", err);
-    } finally {
-      setLoadingBulkCurriculum(false);
+      return evStyles[0]?.styleId || ev.styleId;
     }
+
+    const groupsMap = new Map<string, BulkSheet>();
+    for (const p of ev.participants) {
+      const styleId = pickStyle(p);
+      const style = styleById.get(styleId);
+      const naming = style?.testNamingConvention || "INTO_RANK";
+      const rankName = (naming === "FROM_RANK" ? p.currentRank : p.testingForRank) || "Unassigned";
+      const key = `${styleId}__${rankName}`;
+      const existing = groupsMap.get(key);
+      if (existing) {
+        existing.participants.push(p);
+      } else {
+        const evStyleEntry = evStyles.find((e) => e.styleId === styleId);
+        groupsMap.set(key, {
+          key,
+          styleId,
+          styleName: evStyleEntry?.styleName || style?.name || "",
+          rankName,
+          participants: [p],
+          curriculum: null,
+        });
+      }
+    }
+
+    // Fetch each group's curriculum in parallel.
+    const groups = Array.from(groupsMap.values());
+    const loaded = await Promise.all(
+      groups.map(async (g) => {
+        const style = styleById.get(g.styleId);
+        const rank = style?.ranks?.find((r) => r.name === g.rankName)
+          || style?.ranks?.find((r) => r.name.toLowerCase().trim() === g.rankName.toLowerCase().trim());
+        if (!rank) return { ...g, curriculum: null };
+        try {
+          const res = await fetch(`/api/rank-tests?rankId=${rank.id}&styleId=${g.styleId}`);
+          if (res.ok) {
+            const data = await res.json();
+            const test: RankTest | null = data.rankTests?.[0] || null;
+            return { ...g, curriculum: test };
+          }
+        } catch (err) {
+          console.error(`Error loading curriculum for ${g.styleName} / ${g.rankName}:`, err);
+        }
+        return { ...g, curriculum: null };
+      }),
+    );
+
+    // Stable sort: by event-style order, then rank order within the style.
+    const styleOrder = new Map(evStyles.map((es, i) => [es.styleId, i]));
+    loaded.sort((a, b) => {
+      const ds = (styleOrder.get(a.styleId) ?? 0) - (styleOrder.get(b.styleId) ?? 0);
+      if (ds !== 0) return ds;
+      const sa = styleById.get(a.styleId)?.ranks?.find((r) => r.name === a.rankName)?.order ?? 999;
+      const sb = styleById.get(b.styleId)?.ranks?.find((r) => r.name === b.rankName)?.order ?? 999;
+      return sa - sb;
+    });
+
+    setBulkSheets(loaded);
+    const firstKey = loaded[0]?.key || "";
+    setActiveSheetKey(firstKey);
+    setMobileSelectedParticipant(loaded[0]?.participants[0]?.id || "");
+    setLoadingBulkCurriculum(false);
   };
 
   const closeBulkGrading = () => {
     setShowBulkGrading(false);
-    setBulkGradingCurriculum(null);
+    setBulkSheets([]);
+    setActiveSheetKey("");
     setBulkItemScores({});
     setMobileSelectedParticipant("");
     setBulkSelectedForStatus(new Set());
@@ -1663,32 +1712,36 @@ export default function TestingPage() {
   };
 
   const saveBulkGrades = async () => {
-    if (!selectedEvent || !bulkGradingCurriculum) return;
+    if (!selectedEvent || bulkSheets.length === 0) return;
 
     setSavingBulkGrades(true);
     try {
-      // Save grades for each participant and track results for PDF generation
+      // Flatten all participants across all sheets, pairing each with its
+      // sheet's curriculum so the score + PDF use the right rank's items.
+      type SaveTarget = { participant: TestingParticipant; curriculum: RankTest | null };
+      const targets: SaveTarget[] = [];
+      for (const sheet of bulkSheets) {
+        for (const p of sheet.participants) {
+          targets.push({ participant: p, curriculum: sheet.curriculum });
+        }
+      }
+
       const results = await Promise.all(
-        selectedEvent.participants.map(async (p) => {
+        targets.map(async ({ participant: p, curriculum }) => {
           const participantScores = bulkItemScores[p.id] || {};
 
-          // Calculate pass/fail based on required items
-          let allRequiredPassed = true;
+          // Calculate pass/fail using THIS participant's own curriculum.
           let totalItems = 0;
           let passedItems = 0;
-
-          visibleCategories(bulkGradingCurriculum.categories).forEach(category => {
-            category.items.forEach(item => {
-              totalItems++;
-              const score = participantScores[item.id];
-              if (score?.passed) {
-                passedItems++;
-              } else if (item.required) {
-                allRequiredPassed = false;
-              }
+          if (curriculum) {
+            visibleCategories(curriculum.categories).forEach((category) => {
+              category.items.forEach((item) => {
+                totalItems++;
+                const score = participantScores[item.id];
+                if (score?.passed) passedItems++;
+              });
             });
-          });
-
+          }
           const percentScore = totalItems > 0 ? Math.round((passedItems / totalItems) * 100) : 0;
 
           // Use manual status if set, otherwise keep as INCOMPLETE
@@ -1709,39 +1762,41 @@ export default function TestingPage() {
 
           return {
             participant: p,
+            curriculum,
             ok: res.ok,
             scores: participantScores,
             percentScore,
-            passed: finalStatus === "PASSED"
+            passed: finalStatus === "PASSED",
           };
-        })
+        }),
       );
 
-      const failed = results.filter(r => !r.ok);
+      const failed = results.filter((r) => !r.ok);
       if (failed.length > 0) {
         alert(`Failed to save grades for ${failed.length} participant(s)`);
       }
 
-      // Generate PDFs for all successfully saved participants
+      // Generate PDFs for all successfully saved participants. Each PDF uses
+      // its sheet's curriculum so multi-rank tests don't mis-render.
       setGeneratingPdf(true);
       try {
-        const successfulResults = results.filter(r => r.ok);
+        const successfulResults = results.filter((r) => r.ok && r.curriculum);
         await Promise.all(
           successfulResults.map(async (result) => {
             try {
               const pdfBlob = generateTestResultPdf(
                 result.participant,
                 selectedEvent,
-                bulkGradingCurriculum,
+                result.curriculum!,
                 result.scores,
                 result.percentScore,
-                result.passed
+                result.passed,
               );
               await uploadAndSavePdf(pdfBlob, result.participant, selectedEvent);
             } catch (pdfErr) {
               console.error(`Error generating PDF for ${result.participant.memberName}:`, pdfErr);
             }
-          })
+          }),
         );
       } catch (pdfErr) {
         console.error("Error generating PDFs:", pdfErr);
@@ -3565,7 +3620,11 @@ export default function TestingPage() {
         )}
 
         {/* Bulk Grading Modal - Mobile Optimized */}
-        {showBulkGrading && selectedEvent && (
+        {showBulkGrading && selectedEvent && (() => {
+          const activeSheet = bulkSheets.find((s) => s.key === activeSheetKey) || bulkSheets[0] || null;
+          const sheetParticipants = activeSheet?.participants ?? [];
+          const sheetCurriculum = activeSheet?.curriculum ?? null;
+          return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-[95vw] mx-2 sm:mx-4 max-h-[95vh] flex flex-col">
               {/* Header */}
@@ -3586,20 +3645,53 @@ export default function TestingPage() {
                 </button>
               </div>
 
+              {/* Sheet tabs — one per (style, rank) group. Switching tabs
+                  scopes the grading table to that sheet's participants and
+                  curriculum. Per-participant scores/notes persist across tab
+                  switches because they're keyed by participantId. */}
+              {bulkSheets.length > 1 && (
+                <div className="border-b bg-gray-50 px-2 sm:px-4 flex gap-1 overflow-x-auto shrink-0">
+                  {bulkSheets.map((sheet) => {
+                    const isActive = sheet.key === activeSheetKey;
+                    return (
+                      <button
+                        key={sheet.key}
+                        onClick={() => {
+                          setActiveSheetKey(sheet.key);
+                          setMobileSelectedParticipant(sheet.participants[0]?.id || "");
+                        }}
+                        className={`shrink-0 px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors ${
+                          isActive
+                            ? "border-primary text-primary"
+                            : "border-transparent text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        {sheet.styleName} — {sheet.rankName}{" "}
+                        <span className="text-[10px] text-gray-400 font-normal">
+                          ({sheet.participants.length})
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Content */}
               <div className="flex-1 overflow-auto p-2 sm:p-4">
                 {loadingBulkCurriculum ? (
                   <div className="text-center py-8 text-gray-500">
                     Loading curriculum...
                   </div>
-                ) : !bulkGradingCurriculum ? (
+                ) : !sheetCurriculum ? (
                   <div className="text-center py-8">
                     <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     <h3 className="mt-4 text-lg font-medium text-gray-900">No curriculum found</h3>
                     <p className="mt-2 text-sm text-gray-500">
-                      Create a curriculum for this rank to enable bulk grading.
+                      {activeSheet
+                        ? `Create a curriculum for ${activeSheet.styleName} — ${activeSheet.rankName} to enable bulk grading for this sheet.`
+                        : "Create a curriculum for this rank to enable bulk grading."}
                     </p>
                     <Link
                       href="/curriculum"
@@ -3620,9 +3712,9 @@ export default function TestingPage() {
                           onChange={(e) => setMobileSelectedParticipant(e.target.value)}
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         >
-                          {selectedEvent.participants.map((p) => {
+                          {sheetParticipants.map((p) => {
                             const scores = bulkItemScores[p.id] || {};
-                            const totalItems = bulkGradingCurriculum.categories.reduce((sum, c) => sum + c.items.length, 0);
+                            const totalItems = sheetCurriculum.categories.reduce((sum, c) => sum + c.items.length, 0);
                             const passedItems = Object.values(scores).filter(s => s.passed).length;
                             return (
                               <option key={p.id} value={p.id}>
@@ -3633,9 +3725,9 @@ export default function TestingPage() {
                         </select>
                         {/* Quick nav buttons */}
                         <div className="flex gap-1 mt-2 overflow-x-auto pb-1">
-                          {selectedEvent.participants.map((p, idx) => {
+                          {sheetParticipants.map((p, idx) => {
                             const scores = bulkItemScores[p.id] || {};
-                            const requiredRemaining = bulkGradingCurriculum.categories.reduce((sum, c) =>
+                            const requiredRemaining = sheetCurriculum.categories.reduce((sum, c) =>
                               sum + c.items.filter(item => item.required && !scores[item.id]?.passed).length
                             , 0);
                             const isSelected = mobileSelectedParticipant === p.id;
@@ -3662,12 +3754,12 @@ export default function TestingPage() {
 
                       {/* Current Participant Summary */}
                       {(() => {
-                        const currentP = selectedEvent.participants.find(p => p.id === mobileSelectedParticipant);
+                        const currentP = sheetParticipants.find(p => p.id === mobileSelectedParticipant);
                         if (!currentP) return null;
                         const scores = bulkItemScores[currentP.id] || {};
-                        const totalItems = bulkGradingCurriculum.categories.reduce((sum, c) => sum + c.items.length, 0);
+                        const totalItems = sheetCurriculum.categories.reduce((sum, c) => sum + c.items.length, 0);
                         const passedItems = Object.values(scores).filter(s => s.passed).length;
-                        const requiredRemaining = bulkGradingCurriculum.categories.reduce((sum, c) =>
+                        const requiredRemaining = sheetCurriculum.categories.reduce((sum, c) =>
                           sum + c.items.filter(item => item.required && !scores[item.id]?.passed).length
                         , 0);
                         const percentScore = totalItems > 0 ? Math.round((passedItems / totalItems) * 100) : 0;
@@ -3691,7 +3783,7 @@ export default function TestingPage() {
 
                       {/* Curriculum Items List */}
                       <div className="space-y-3">
-                        {visibleCategories(bulkGradingCurriculum.categories).map((category) => (
+                        {visibleCategories(sheetCurriculum.categories).map((category) => (
                           <div key={category.id} className="border rounded-lg overflow-hidden">
                             <div className="bg-gray-100 px-3 py-2">
                               <h4 className="font-semibold text-sm">{category.name}</h4>
@@ -3811,13 +3903,13 @@ export default function TestingPage() {
                     {/* Desktop View - Spreadsheet */}
                     <div className="hidden md:block overflow-x-auto">
                       {/* Information Box - Shows item descriptions above the grading table */}
-                      {bulkGradingCurriculum.categories.some(cat => cat.items.some(item => item.description && (item.description.includes("<br") || item.description.includes("<div") || item.description.includes("\n")))) && (
+                      {sheetCurriculum.categories.some(cat => cat.items.some(item => item.description && (item.description.includes("<br") || item.description.includes("<div") || item.description.includes("\n")))) && (
                         <div className="mb-4 border border-gray-300 rounded-lg overflow-hidden">
                           <div className="bg-gray-100 px-4 py-2 border-b border-gray-300">
                             <h4 className="font-semibold text-sm">Information</h4>
                           </div>
                           <div className="p-4 bg-white">
-                            {bulkGradingCurriculum.categories.flatMap((category) =>
+                            {sheetCurriculum.categories.flatMap((category) =>
                               category.items.filter(item => item.description && (item.description.includes("<br") || item.description.includes("<div") || item.description.includes("\n"))).map((item) => (
                                 <div
                                   key={item.id}
@@ -3837,7 +3929,7 @@ export default function TestingPage() {
                             <th className="sticky left-0 z-20 bg-gray-50 border border-gray-300 px-3 py-2 text-left text-sm font-bold text-gray-800 min-w-[200px]">
                               Curriculum Item
                             </th>
-                            {selectedEvent.participants.map((p) => (
+                            {sheetParticipants.map((p) => (
                               <th
                                 key={p.id}
                                 className="border border-gray-300 px-2 py-1 text-center text-xs font-semibold text-gray-700 min-w-[100px] max-w-[120px]"
@@ -3854,9 +3946,9 @@ export default function TestingPage() {
                               Rank
                             </th>
                             {(() => {
-                              const eventStyle = styles.find(s => s.id === selectedEvent.styleId);
+                              const eventStyle = activeSheet ? styles.find(s => s.id === activeSheet.styleId) : null;
                               const namingConv = eventStyle?.testNamingConvention || "INTO_RANK";
-                              return selectedEvent.participants.map((p) => {
+                              return sheetParticipants.map((p) => {
                                 const displayRank = namingConv === "FROM_RANK" ? p.currentRank : p.testingForRank;
                                 return (
                                   <th
@@ -3873,11 +3965,11 @@ export default function TestingPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {visibleCategories(bulkGradingCurriculum.categories).map((category) => (
+                          {visibleCategories(sheetCurriculum.categories).map((category) => (
                             <React.Fragment key={category.id}>
                               <tr className="bg-gray-50">
                                 <td
-                                  colSpan={selectedEvent.participants.length + 1}
+                                  colSpan={sheetParticipants.length + 1}
                                   className="sticky left-0 border border-gray-300 px-3 py-2 text-sm font-bold text-gray-800"
                                 >
                                   {category.name}
@@ -3892,7 +3984,7 @@ export default function TestingPage() {
                                     {/* Curriculum item name row */}
                                     <tr className="bg-gray-100">
                                       <td
-                                        colSpan={selectedEvent.participants.length + 1}
+                                        colSpan={sheetParticipants.length + 1}
                                         className="border border-gray-300 px-3 py-1"
                                       >
                                         <div className="flex items-center gap-2">
@@ -3910,7 +4002,7 @@ export default function TestingPage() {
                                     <tr className="hover:bg-gray-50">
                                     <td className="sticky left-0 z-10 bg-white border border-gray-300 px-3 py-2 text-xs text-gray-500">
                                     </td>
-                                    {selectedEvent.participants.map((p) => {
+                                    {sheetParticipants.map((p) => {
                                       const score = bulkItemScores[p.id]?.[item.id];
                                       const isPassed = score?.passed ?? false;
                                       const isFailed = score?.failed ?? false;
@@ -4003,7 +4095,7 @@ export default function TestingPage() {
                               <div>Notes</div>
                               <div className="font-normal text-[10px] text-gray-500">Included in PDF</div>
                             </td>
-                            {selectedEvent.participants.map((p) => (
+                            {sheetParticipants.map((p) => (
                               <td key={p.id} className="border border-gray-300 p-1 bg-white">
                                 <RichTextInput
                                   value={bulkParticipantNotes[p.id] || ""}
@@ -4022,7 +4114,7 @@ export default function TestingPage() {
                               <div>Admin Notes</div>
                               <div className="font-normal text-[10px] text-gray-500">Internal only</div>
                             </td>
-                            {selectedEvent.participants.map((p) => (
+                            {sheetParticipants.map((p) => (
                               <td key={p.id} className="border border-gray-300 p-1 bg-red-50">
                                 <RichTextInput
                                   value={bulkAdminNotes[p.id] || ""}
@@ -4041,7 +4133,7 @@ export default function TestingPage() {
                 )}
 
                 {/* Summary Section */}
-                {bulkGradingCurriculum && (
+                {sheetCurriculum && (
                   <div className="mt-4 bg-gray-50 rounded-lg p-3 sm:p-4">
                     <h4 className="font-semibold text-sm mb-2 sm:mb-3">Summary</h4>
 
@@ -4050,10 +4142,10 @@ export default function TestingPage() {
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={bulkSelectedForStatus.size === selectedEvent.participants.length && selectedEvent.participants.length > 0}
+                          checked={bulkSelectedForStatus.size === sheetParticipants.length && sheetParticipants.length > 0}
                           onChange={(e) => {
                             if (e.target.checked) {
-                              setBulkSelectedForStatus(new Set(selectedEvent.participants.map(p => p.id)));
+                              setBulkSelectedForStatus(new Set(sheetParticipants.map(p => p.id)));
                             } else {
                               setBulkSelectedForStatus(new Set());
                             }
@@ -4101,11 +4193,11 @@ export default function TestingPage() {
                     </div>
 
                     <div className="grid gap-2">
-                      {selectedEvent.participants.map((p) => {
+                      {sheetParticipants.map((p) => {
                         const scores = bulkItemScores[p.id] || {};
-                        const totalItems = bulkGradingCurriculum.categories.reduce((sum, c) => sum + c.items.length, 0);
+                        const totalItems = sheetCurriculum.categories.reduce((sum, c) => sum + c.items.length, 0);
                         const passedItems = Object.values(scores).filter(s => s.passed).length;
-                        const requiredRemaining = bulkGradingCurriculum.categories.reduce((sum, c) =>
+                        const requiredRemaining = sheetCurriculum.categories.reduce((sum, c) =>
                           sum + c.items.filter(item => item.required && !scores[item.id]?.passed).length
                         , 0);
                         const percentScore = totalItems > 0 ? Math.round((passedItems / totalItems) * 100) : 0;
@@ -4164,7 +4256,7 @@ export default function TestingPage() {
               <div className="p-3 sm:p-4 border-t bg-gray-50 flex justify-end gap-2 shrink-0">
                 <button
                   onClick={saveBulkGrades}
-                  disabled={savingBulkGrades || generatingPdf || !bulkGradingCurriculum}
+                  disabled={savingBulkGrades || generatingPdf || bulkSheets.length === 0}
                   className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                 >
                   {savingBulkGrades ? "Saving..." : generatingPdf ? "Generating PDFs..." : "Save All"}
@@ -4178,7 +4270,8 @@ export default function TestingPage() {
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* PDF Viewer Modal */}
         {viewingPdfUrl && (
