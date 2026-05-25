@@ -266,14 +266,12 @@ export async function GET(req: Request) {
         const stillInContract = !!membership.contractEndDate
           && new Date(membership.contractEndDate) > now;
         if (isActive && notExpired && (willRenew || stillInContract)) {
-          // Recurring monthly price: if the member got a first-month-only
-          // discount (e.g. 100% off month 1 during a backdated migration),
-          // use the plan's standard price for the recurring calc since the
-          // discount only applies to the first cycle. Otherwise honor the
-          // custom price.
-          const recurringPriceCents = membership.firstMonthDiscountOnly
-            ? (membership.membershipPlan.priceCents ?? 0)
-            : (membership.customPriceCents ?? membership.membershipPlan.priceCents ?? 0);
+          // customPriceCents IS the recurring price (set by the POS Price
+          // input). Plan price is the fallback when the admin didn't
+          // override it for this signup.
+          const recurringPriceCents = membership.customPriceCents
+            ?? membership.membershipPlan.priceCents
+            ?? 0;
           monthlyPaymentCents += recurringPriceCents;
         }
 

@@ -46,33 +46,32 @@ export function calculateBillingPeriodEnd(periodStart: Date, billingCycle: strin
 
 /**
  * Determine the effective price for a billing event.
- * Handles customPriceCents and firstMonthDiscountOnly logic.
+ *
+ * Under the current POS model, customPriceCents IS the recurring amount —
+ * set by the admin's Price input in the Configure Membership modal. Auto-
+ * billing charges that amount every cycle; the plan price is only used as
+ * a fallback when no override was set.
+ *
+ * firstMonthDiscountOnly used to flip behavior — customPriceCents only for
+ * the first cycle, then plan price thereafter — back when the POS Price
+ * and Discount inputs were entangled. That semantic was retired; the field
+ * is informational only now (records whether a first-payment discount was
+ * applied at signup, but doesn't change what recurs).
+ *
+ * billingPeriodStart is kept in the signature for callers that already
+ * pass it, but it's no longer needed.
  */
 export function getEffectivePriceCents(
   membership: {
     customPriceCents: number | null;
-    firstMonthDiscountOnly: boolean;
-    startDate: Date | string;
+    firstMonthDiscountOnly?: boolean;
+    startDate?: Date | string;
   },
   plan: { priceCents: number | null },
-  billingPeriodStart: Date
+  _billingPeriodStart?: Date,
 ): number {
   const planPrice = plan.priceCents ?? 0;
-
-  if (membership.customPriceCents === null) return planPrice;
-
-  if (membership.firstMonthDiscountOnly) {
-    const startDate =
-      typeof membership.startDate === "string"
-        ? new Date(membership.startDate)
-        : membership.startDate;
-    // First period: billingPeriodStart is within 1 day of membership start
-    const isFirstPeriod =
-      billingPeriodStart.getTime() <= startDate.getTime() + 86400000;
-    return isFirstPeriod ? membership.customPriceCents : planPrice;
-  }
-
-  return membership.customPriceCents;
+  return membership.customPriceCents ?? planPrice;
 }
 
 /** Apply family discount: reduces amount by familyDiscountPercent per additional member. */

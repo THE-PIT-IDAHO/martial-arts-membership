@@ -104,29 +104,27 @@ describe("getEffectivePriceCents", () => {
     expect(getEffectivePriceCents(membership, plan, new Date())).toBe(10000);
   });
 
-  it("returns custom price when set and not first-month-only", () => {
+  it("returns custom price when set", () => {
     const membership = { customPriceCents: 5000, firstMonthDiscountOnly: false, startDate: new Date() };
     expect(getEffectivePriceCents(membership, plan, new Date())).toBe(5000);
   });
 
-  it("returns custom price in first period when firstMonthDiscountOnly", () => {
+  // customPriceCents is now the recurring price for EVERY cycle, including
+  // the first. The firstMonthDiscountOnly flag used to flip the price back
+  // to plan after the first period — that semantic was retired when the
+  // POS modal split Price (recurring) and Discount (first payment only).
+  it("returns custom price for first cycle even with firstMonthDiscountOnly", () => {
     const startDate = new Date("2024-01-01T12:00:00");
     const membership = { customPriceCents: 5000, firstMonthDiscountOnly: true, startDate };
     const billingStart = new Date("2024-01-01T12:00:00");
     expect(getEffectivePriceCents(membership, plan, billingStart)).toBe(5000);
   });
 
-  it("returns plan price after first period when firstMonthDiscountOnly", () => {
+  it("returns custom price for later cycles even with firstMonthDiscountOnly", () => {
     const startDate = new Date("2024-01-01T12:00:00");
     const membership = { customPriceCents: 5000, firstMonthDiscountOnly: true, startDate };
     const billingStart = new Date("2024-02-01T12:00:00");
-    expect(getEffectivePriceCents(membership, plan, billingStart)).toBe(10000);
-  });
-
-  it("handles string startDate", () => {
-    const membership = { customPriceCents: 5000, firstMonthDiscountOnly: true, startDate: "2024-01-01" };
-    const billingStart = new Date("2024-02-01T12:00:00");
-    expect(getEffectivePriceCents(membership, plan, billingStart)).toBe(10000);
+    expect(getEffectivePriceCents(membership, plan, billingStart)).toBe(5000);
   });
 
   it("handles null plan price", () => {

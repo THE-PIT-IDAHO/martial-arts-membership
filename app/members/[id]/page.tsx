@@ -5073,13 +5073,16 @@ export default function MemberProfilePage() {
                 let lastAmount = 0;
                 let monthlyTotal = 0;
                 for (const mb of ms) {
-                  // First-month-only discount: customPriceCents applies only
-                  // to the first cycle; recurring (and Next Payment) uses the plan price.
-                  const recurringPrice = mb.firstMonthDiscountOnly
-                    ? (mb.membershipPlan?.priceCents ?? 0)
-                    : (mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0);
-                  // First-cycle price = what was actually paid (e.g. $0 for 100%-off-first-month).
-                  const firstCyclePrice = mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0;
+                  // customPriceCents IS the recurring price (set on the
+                  // Membership row at POS-time). Plan price is the fallback
+                  // when the admin didn't override Price for this signup.
+                  //
+                  // firstMonthDiscountOnly used to mean "customPriceCents
+                  // applies only to the first cycle, then revert to plan
+                  // price" — that semantic was retired when the POS modal
+                  // split Price and Discount into independent inputs.
+                  // It's now informational only; recurring always = customPriceCents.
+                  const recurringPrice = mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0;
                   const isActive = mb.status === "ACTIVE";
                   const notExpired = !mb.endDate || new Date(mb.endDate) > now;
                   const willRenew = mb.membershipPlan?.autoRenew === true;
@@ -5089,20 +5092,15 @@ export default function MemberProfilePage() {
                   }
                   if (mb.nextPaymentDate) {
                     const d = new Date(mb.nextPaymentDate);
-                    // Next Payment is always a future cycle, so use recurring price.
                     if (!nextDate || d < nextDate) { nextDate = d; nextAmount = recurringPrice; }
                   }
                   if (mb.lastPaymentDate) {
                     const d = new Date(mb.lastPaymentDate);
-                    // Last Payment = what they actually paid. If only one payment has
-                    // happened (lastPaymentDate == startDate) and first-month-discount
-                    // was applied, use the first-cycle price. Otherwise it was a
-                    // recurring charge.
-                    const startD = mb.startDate ? new Date(mb.startDate) : null;
-                    const isFirstCycle = mb.firstMonthDiscountOnly && startD
-                      && Math.abs(d.getTime() - startD.getTime()) < 1000 * 60 * 60 * 24;
-                    const paid = isFirstCycle ? firstCyclePrice : recurringPrice;
-                    if (!lastDate || d > lastDate) { lastDate = d; lastAmount = paid; }
+                    // Last Payment shows the recurring price as a best-effort
+                    // estimate. The exact at-signup amount (which may differ
+                    // when a first-payment discount was applied) lives on the
+                    // POS transaction, not on Membership.
+                    if (!lastDate || d > lastDate) { lastDate = d; lastAmount = recurringPrice; }
                   }
                 }
                 const fmtDate = (d: Date) => d.toLocaleDateString();

@@ -438,11 +438,10 @@ function MembershipsContent() {
         let nextAmount = 0;
         let monthlyTotal = 0;
         for (const m of memberships) {
-          // Recurring price (used for "Monthly" total). First-month-only
-          // discounts don't apply to the recurring calc.
-          const recurringPrice = m.firstMonthDiscountOnly
-            ? (m.membershipPlan?.priceCents ?? 0)
-            : (m.customPriceCents ?? m.membershipPlan?.priceCents ?? 0);
+          // customPriceCents IS the recurring amount under the current POS
+          // model; falls back to the plan default when the admin didn't
+          // override Price for this signup.
+          const recurringPrice = m.customPriceCents ?? m.membershipPlan?.priceCents ?? 0;
           const notExpired = !m.endDate || new Date(m.endDate) > now;
           const willRenew = m.membershipPlan?.autoRenew === true;
           const stillInContract = !!m.contractEndDate && new Date(m.contractEndDate) > now;
