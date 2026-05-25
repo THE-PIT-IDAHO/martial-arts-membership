@@ -244,6 +244,17 @@ export default function TestingPage() {
     return item.name || "";
   }
 
+  // Short label for use in the bulk grading spreadsheet, where each item gets
+  // ONE row and there's no space for a multi-line knowledge description.
+  // Knowledge items show their (typically short) name or just "Knowledge" —
+  // the full content is rendered once above the table in the Information box.
+  function getItemLabel(item: RankTestItem): string {
+    if (item.type === "knowledge") {
+      return (item.name || "").trim() || "Knowledge";
+    }
+    return getItemDisplay(item);
+  }
+
   // Build specs string for an item (in column order: reps, sets, min/rd, rnds, duration, distance, time limit)
   function getItemSpecs(item: RankTestItem): string {
     const parts: string[] = [];
@@ -3793,25 +3804,18 @@ export default function TestingPage() {
                                 const hasTimeInput = item.timeLimit || item.duration;
                                 const hasRepsInput = item.reps;
                                 const hasInputField = hasTimeInput || hasRepsInput;
+                                const isKnowledge = item.type === "knowledge";
                                 const score = bulkItemScores[mobileSelectedParticipant]?.[item.id];
                                 const isPassed = score?.passed ?? false;
                                 const isFailed = score?.failed ?? false;
+                                // Single row: checkbox + label + (optional) numeric input.
+                                // Knowledge items show just the short label, no input — the
+                                // full content lives in the Information box above the list.
                                 return (
-                                  <React.Fragment key={item.id}>
-                                    {/* Curriculum item row */}
-                                    <div className="px-3 py-1 bg-gray-100 border-b flex items-center gap-2">
-                                      <span className="text-sm font-medium whitespace-pre-wrap">{getItemDisplay(item)}</span>
-                                      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${getTypeColor(item.type)}`}>
-                                        {getTypeLabel(item.type)}
-                                      </span>
-                                      {getItemSpecs(item) && (
-                                        <span className="text-xs text-gray-500">{getItemSpecs(item)}</span>
-                                      )}
-                                    </div>
-                                    {/* Checkbox row */}
-                                    <div
-                                      className={`p-3 flex items-center gap-3 ${isPassed ? "bg-green-50" : isFailed ? "bg-red-50" : ""}`}
-                                    >
+                                  <div
+                                    key={item.id}
+                                    className={`p-3 flex items-center gap-3 ${isPassed ? "bg-green-50" : isFailed ? "bg-red-50" : ""}`}
+                                  >
                                     <button
                                       onClick={() => toggleBulkItemPassed(mobileSelectedParticipant, item.id)}
                                       className={`shrink-0 w-8 h-8 rounded border-2 flex items-center justify-center transition-colors ${
@@ -3834,7 +3838,18 @@ export default function TestingPage() {
                                       )}
                                     </button>
                                     <div className="flex-1 min-w-0">
-                                      {hasInputField && (
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-sm font-medium">{getItemLabel(item)}</span>
+                                        {!isKnowledge && (
+                                          <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${getTypeColor(item.type)}`}>
+                                            {getTypeLabel(item.type)}
+                                          </span>
+                                        )}
+                                        {!isKnowledge && getItemSpecs(item) && (
+                                          <span className="text-xs text-gray-500">{getItemSpecs(item)}</span>
+                                        )}
+                                      </div>
+                                      {hasInputField && !isKnowledge && (
                                         hasTimeInput ? (
                                           <input
                                             type="text"
@@ -3857,7 +3872,6 @@ export default function TestingPage() {
                                       )}
                                     </div>
                                   </div>
-                                  </React.Fragment>
                                 );
                               })}
                             </div>
@@ -3979,28 +3993,25 @@ export default function TestingPage() {
                                 const hasTimeInput = item.timeLimit || item.duration;
                                 const hasRepsInput = item.reps;
                                 const hasInputField = hasTimeInput || hasRepsInput;
+                                const isKnowledge = item.type === "knowledge";
+                                // Single row per item: name in the sticky-left cell, checkboxes
+                                // in the participant columns. Knowledge items show just their
+                                // short name (or "Knowledge") — the full prose lives once in
+                                // the Information box above the table.
                                 return (
-                                  <React.Fragment key={item.id}>
-                                    {/* Curriculum item name row */}
-                                    <tr className="bg-gray-100">
-                                      <td
-                                        colSpan={sheetParticipants.length + 1}
-                                        className="border border-gray-300 px-3 py-1"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs font-medium whitespace-pre-wrap">{getItemDisplay(item)}</span>
+                                  <tr key={item.id} className="hover:bg-gray-50">
+                                    <td className="sticky left-0 z-10 bg-white border border-gray-300 px-3 py-2 align-middle">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-medium">{getItemLabel(item)}</span>
+                                        {!isKnowledge && (
                                           <span className={`shrink-0 inline-block rounded px-1 py-0.5 text-[9px] font-medium ${getTypeColor(item.type)}`}>
                                             {getTypeLabel(item.type)}
                                           </span>
-                                          {getItemSpecs(item) && (
-                                            <span className="text-[10px] text-gray-500">{getItemSpecs(item)}</span>
-                                          )}
-                                        </div>
-                                      </td>
-                                    </tr>
-                                    {/* Checkbox row with participant names */}
-                                    <tr className="hover:bg-gray-50">
-                                    <td className="sticky left-0 z-10 bg-white border border-gray-300 px-3 py-2 text-xs text-gray-500">
+                                        )}
+                                        {!isKnowledge && getItemSpecs(item) && (
+                                          <span className="text-[10px] text-gray-500">{getItemSpecs(item)}</span>
+                                        )}
+                                      </div>
                                     </td>
                                     {sheetParticipants.map((p) => {
                                       const score = bulkItemScores[p.id]?.[item.id];
@@ -4013,7 +4024,7 @@ export default function TestingPage() {
                                             isPassed ? "bg-green-50" : isFailed ? "bg-red-50" : ""
                                           }`}
                                         >
-                                          {hasInputField ? (
+                                          {hasInputField && !isKnowledge ? (
                                             <div className="flex flex-col items-center gap-1">
                                               <button
                                                 onClick={() => toggleBulkItemPassed(p.id, item.id)}
@@ -4083,7 +4094,6 @@ export default function TestingPage() {
                                       );
                                     })}
                                   </tr>
-                                  </React.Fragment>
                                 );
                               })}
                             </React.Fragment>
