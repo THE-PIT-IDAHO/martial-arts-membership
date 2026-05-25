@@ -154,11 +154,22 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       }
     }
   } else if (rel === "GUARDIAN") {
-    // Guardian is directional, similar to parent
-    // UI is "Guardian of X" – current member is guardian
+    // Guardian is directional. UI is "Guardian of X" – current member is guardian.
     await ensureDirectedRelationship(currentMemberId, targetMemberId, "GUARDIAN");
+  } else if (rel === "DEPENDENT") {
+    // "Dependant of X" – current member is dependant; X is guardian.
+    // Stored as GUARDIAN from X → current, so existing display + sibling
+    // logic keep working.
+    await ensureDirectedRelationship(targetMemberId, currentMemberId, "GUARDIAN");
+  } else if (rel === "HUSBAND" || rel === "WIFE" || rel === "PARTNER") {
+    // Spouse-like relationships stored symmetrically (one canonical row).
+    // The gendered label (HUSBAND vs WIFE) is preserved; PARTNER is the
+    // neutral option. Migrated SPOUSE / SIGNIFICANT_OTHER rows still
+    // display correctly via the profile's label component.
+    await ensureSymmetricRelationship(currentMemberId, targetMemberId, rel);
   } else if (rel === "SPOUSE" || rel === "SIGNIFICANT_OTHER" || rel === "SIBLING") {
-    // Symmetric: store one canonical record with sorted IDs
+    // Legacy symmetric labels (kept for backward compat — UI no longer
+    // offers these as new picks).
     await ensureSymmetricRelationship(currentMemberId, targetMemberId, rel);
   } else if (rel === "PAYS_FOR" || rel === "PAID_FOR_BY") {
     // Payment relationships are directional, but we store only PAYS_FOR

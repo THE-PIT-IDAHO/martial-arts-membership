@@ -399,8 +399,19 @@ export async function chargeStoredPaymentMethod(params: {
   const processor = await getActiveProcessor();
   if (!processor) return { success: false, error: "No processor configured" };
 
+  // Resolve who actually gets billed. By default it's the member themselves,
+  // but if a PAYS_FOR relationship exists (someone else is marked as paying
+  // for this member in the profile Account Summary), the payer's saved card
+  // is charged instead. Lets a spouse/parent/etc. cover a member's bills
+  // without having to attach the same card to multiple profiles.
+  const payerRow = await prisma.memberRelationship.findFirst({
+    where: { relationship: "PAYS_FOR", toMemberId: params.memberId },
+    select: { fromMemberId: true },
+  });
+  const billedMemberId = payerRow?.fromMemberId || params.memberId;
+
   const member = await prisma.member.findUnique({
-    where: { id: params.memberId },
+    where: { id: billedMemberId },
     select: {
       stripeCustomerId: true,
       defaultPaymentMethodId: true,
@@ -428,6 +439,9 @@ export async function chargeStoredPaymentMethod(params: {
         metadata: {
           ...(params.invoiceId ? { invoiceId: params.invoiceId } : {}),
           memberId: params.memberId,
+          // billedMemberId differs from memberId when a PAYS_FOR
+          // relationship redirected the charge to a payer's card.
+          ...(billedMemberId !== params.memberId ? { billedMemberId } : {}),
         },
       });
 

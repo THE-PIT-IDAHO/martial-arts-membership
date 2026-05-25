@@ -367,15 +367,16 @@ function getStatusBadgeClasses(status: string): string {
 }
 
 // Relationship types
+// Family relationships. PAYS_FOR / PAID_FOR_BY moved to a dedicated
+// section in the Account Summary so they can be wired to actual billing.
 const RELATIONSHIP_OPTIONS = [
   { value: "PARENT", label: "Parent of" },
   { value: "CHILD", label: "Child of" },
   { value: "GUARDIAN", label: "Guardian of" },
-  { value: "SPOUSE", label: "Spouse of" },
-  { value: "SIGNIFICANT_OTHER", label: "Significant other of" },
-  { value: "SIBLING", label: "Sibling of" },
-  { value: "PAYS_FOR", label: "Pays for" },
-  { value: "PAID_FOR_BY", label: "Paid for by" }
+  { value: "DEPENDENT", label: "Dependant of" },
+  { value: "HUSBAND", label: "Husband of" },
+  { value: "WIFE", label: "Wife of" },
+  { value: "PARTNER", label: "Partner of" },
 ] as const;
 
 function calculateAgeFromDateString(dateString?: string | null): number | null {
@@ -454,8 +455,14 @@ function RelationshipLabel({
   if (type === "SPOUSE") {
     return <>Spouse of {linkedName}</>;
   }
-  if (type === "SIGNIFICANT_OTHER") {
-    return <>Significant other of {linkedName}</>;
+  if (type === "HUSBAND") {
+    return <>Husband of {linkedName}</>;
+  }
+  if (type === "WIFE") {
+    return <>Wife of {linkedName}</>;
+  }
+  if (type === "PARTNER" || type === "SIGNIFICANT_OTHER") {
+    return <>Partner of {linkedName}</>;
   }
   if (type === "SIBLING") {
     return <>Sibling of {linkedName}</>;
@@ -2067,6 +2074,82 @@ export default function MemberProfilePage() {
   const availableMembersForRelationships = allMembers.filter(
     (m) => m.id !== memberId
   );
+
+  // Derived from existing family relationships: members linked to this person
+  // (any direction, any family type). Used as the candidate pool for the
+  // Pays For / Paid For By picker in Account Summary, since the user only
+  // wants billing relationships set between people who are already family.
+  const relatedMembersForBilling = (() => {
+    const seen = new Set<string>();
+    const out: Array<{ id: string; firstName: string; lastName: string }> = [];
+    for (const r of relationships) {
+      if (r.relationship === "PAYS_FOR") continue; // skip billing rows
+      const other = r.fromMemberId === memberId ? r.toMember : r.fromMember;
+      if (other.id === memberId) continue;
+      if (!seen.has(other.id)) {
+        seen.add(other.id);
+        out.push({ id: other.id, firstName: other.firstName, lastName: other.lastName });
+      }
+    }
+    return out;
+  })();
+
+  // Who currently pays for this member (looks for a PAYS_FOR row where
+  // this member is the toMember — the payee).
+  const paidForByRel = relationships.find(
+    (r) => r.relationship === "PAYS_FOR" && r.toMemberId === memberId,
+  ) || null;
+  // Who this member pays for (rows where they are the fromMember).
+  const paysForRels = relationships.filter(
+    (r) => r.relationship === "PAYS_FOR" && r.fromMemberId === memberId,
+  );
+
+  const [billingPickerMode, setBillingPickerMode] = useState<"none" | "paid_for_by" | "pays_for">("none");
+  const [billingPickerMemberId, setBillingPickerMemberId] = useState("");
+  const [billingPickerError, setBillingPickerError] = useState<string | null>(null);
+
+  async function handleAddBillingRelationship() {
+    if (!memberId) return;
+    setBillingPickerError(null);
+    if (!billingPickerMemberId) {
+      setBillingPickerError("Pick a member first.");
+      return;
+    }
+    const relationship = billingPickerMode === "paid_for_by" ? "PAID_FOR_BY" : "PAYS_FOR";
+    try {
+      const res = await fetch(`/api/members/${memberId}/relationships`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetMemberId: billingPickerMemberId, relationship }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update billing");
+      }
+      await fetchRelationships();
+      setBillingPickerMode("none");
+      setBillingPickerMemberId("");
+      addActivityFromUpdate("Billing relationship updated");
+    } catch (err: any) {
+      setBillingPickerError(err.message || "Failed to update billing");
+    }
+  }
+
+  async function handleRemoveBillingRelationship(id: string) {
+    if (!memberId) return;
+    try {
+      const res = await fetch(`/api/members/${memberId}/relationships`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error("Failed to remove");
+      setRelationships((prev) => prev.filter((r) => r.id !== id));
+      addActivityFromUpdate("Billing relationship removed");
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   const ageFromState = calculateAgeFromDateString(dateOfBirth);
   const ageFromMember = calculateAgeFromDateString(member?.dateOfBirth);
@@ -5128,6 +5211,146 @@ export default function MemberProfilePage() {
                         {nextDate && <p className="text-[11px] text-gray-500">{fmtMoney(nextAmount)}</p>}
                       </div>
                     </div>
+
+                    {/* Billing relationships: who pays for whom. The picker
+                        is restricted to people already linked via a family
+                        relationship — set up the family connection first,
+                        then mark them as payer/payee here. */}
+                    <div className="mt-4 pt-4 border-t border-gray-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                          Billing Relationships
+                        </h3>
+                        <div className="flex gap-1">
+                          {!paidForByRel && billingPickerMode === "none" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBillingPickerMode("paid_for_by");
+                                setBillingPickerError(null);
+                              }}
+                              disabled={relatedMembersForBilling.length === 0}
+                              className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                              title={relatedMembersForBilling.length === 0 ? "Add a family relationship first" : "Mark someone as paying for this member"}
+                            >
+                              Set Paid For By
+                            </button>
+                          )}
+                          {billingPickerMode === "none" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBillingPickerMode("pays_for");
+                                setBillingPickerError(null);
+                              }}
+                              disabled={relatedMembersForBilling.length === 0}
+                              className="rounded-md border border-primary px-2 py-1 text-[10px] font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
+                              title={relatedMembersForBilling.length === 0 ? "Add a family relationship first" : "Mark this member as paying for someone"}
+                            >
+                              Add Pays For
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Paid For By (single) */}
+                      <div className="mb-2">
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide">Paid For By</p>
+                        {paidForByRel ? (
+                          <div className="flex items-center justify-between text-xs mt-1">
+                            <Link
+                              href={`/members/${paidForByRel.fromMember.id}`}
+                              className="text-primary hover:text-primaryDark font-medium"
+                            >
+                              {paidForByRel.fromMember.firstName} {paidForByRel.fromMember.lastName}
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveBillingRelationship(paidForByRel.id)}
+                              className="text-[10px] text-red-600 hover:underline"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-400 italic mt-1">No payer set — charges go on this member's own card.</p>
+                        )}
+                      </div>
+
+                      {/* Pays For (list) */}
+                      <div>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide">Pays For</p>
+                        {paysForRels.length === 0 ? (
+                          <p className="text-xs text-gray-400 italic mt-1">Not paying for anyone else.</p>
+                        ) : (
+                          <ul className="mt-1 space-y-1">
+                            {paysForRels.map((r) => (
+                              <li key={r.id} className="flex items-center justify-between text-xs">
+                                <Link
+                                  href={`/members/${r.toMember.id}`}
+                                  className="text-primary hover:text-primaryDark font-medium"
+                                >
+                                  {r.toMember.firstName} {r.toMember.lastName}
+                                </Link>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveBillingRelationship(r.id)}
+                                  className="text-[10px] text-red-600 hover:underline"
+                                >
+                                  Remove
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      {/* Picker */}
+                      {billingPickerMode !== "none" && (
+                        <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 p-2 space-y-2">
+                          <p className="text-[10px] font-semibold text-gray-600">
+                            {billingPickerMode === "paid_for_by"
+                              ? "Who pays for this member?"
+                              : "Who does this member pay for?"}
+                          </p>
+                          <select
+                            value={billingPickerMemberId}
+                            onChange={(e) => setBillingPickerMemberId(e.target.value)}
+                            className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs"
+                          >
+                            <option value="">Select…</option>
+                            {relatedMembersForBilling.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.firstName} {m.lastName}
+                              </option>
+                            ))}
+                          </select>
+                          {billingPickerError && (
+                            <p className="text-[10px] text-red-600">{billingPickerError}</p>
+                          )}
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={handleAddBillingRelationship}
+                              className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white hover:bg-primaryDark"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBillingPickerMode("none");
+                                setBillingPickerMemberId("");
+                                setBillingPickerError(null);
+                              }}
+                              className="rounded-md border border-gray-300 px-2 py-1 text-[10px] font-semibold text-gray-700 hover:bg-gray-100"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </section>
                 );
               })()}
@@ -5172,6 +5395,19 @@ export default function MemberProfilePage() {
                   {cardSetupSuccess && (
                     <div className="mb-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700">
                       Card added successfully.
+                    </div>
+                  )}
+
+                  {paidForByRel && (
+                    <div className="mb-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+                      Recurring charges for this member are billed to{" "}
+                      <Link
+                        href={`/members/${paidForByRel.fromMember.id}`}
+                        className="font-semibold underline hover:text-blue-900"
+                      >
+                        {paidForByRel.fromMember.firstName} {paidForByRel.fromMember.lastName}
+                      </Link>
+                      's card on file. Manage that card on their profile.
                     </div>
                   )}
 
