@@ -2074,6 +2074,63 @@ export default function MemberProfilePage() {
     }
   }
 
+  // Reset class requirements for one style without touching the rank.
+  // Sets attendanceResetDate to today on that style entry, which causes
+  // the dashboard / promotions-eligible / profile progress bars to ignore
+  // every attendance recorded before today. Useful when a member transfers
+  // in, returns after a break, etc.
+  async function resetStyleAttendance(index: number) {
+    if (!memberId) return;
+    const target = styles[index];
+    if (!target) return;
+    if (!window.confirm(
+      `Reset class requirement progress for "${target.name}"? Their current rank stays the same; only attendance counted toward the next rank goes back to 0.`,
+    )) {
+      return;
+    }
+
+    const today = getTodayString();
+    const updatedStyles = styles.map((s, i) =>
+      i === index ? { ...s, attendanceResetDate: today } : s,
+    );
+    setStyles(updatedStyles);
+
+    try {
+      const normalizedStyles = updatedStyles
+        .map((s) => ({
+          name: s.name.trim(),
+          rank: s.rank?.trim() || undefined,
+          beltSize: s.beltSize?.trim() || undefined,
+          uniformSize: s.uniformSize?.trim() || undefined,
+          startDate: s.startDate || undefined,
+          lastPromotionDate: s.lastPromotionDate || undefined,
+          active: s.active,
+          attendanceResetDate: s.attendanceResetDate || undefined,
+        }))
+        .filter((s) => s.name !== "");
+
+      const primary = normalizedStyles[0];
+      const res = await fetch(`/api/members/${memberId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          primaryStyle: primary ? primary.name : null,
+          stylesNotes: normalizedStyles.length > 0 ? JSON.stringify(normalizedStyles) : null,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMember(data.member);
+        addActivityFromUpdate(`Class progress reset for ${target.name}`);
+      } else {
+        alert("Failed to reset class progress.");
+      }
+    } catch (err) {
+      console.error("Failed to reset class progress:", err);
+      alert("Failed to reset class progress.");
+    }
+  }
+
   const availableMembersForRelationships = allMembers.filter(
     (m) => m.id !== memberId
   );
@@ -4240,6 +4297,23 @@ export default function MemberProfilePage() {
                                   const isAnyClass = req.label === "*";
                                   const attended = (member?.attendances || []).filter(
                                     (att) => {
+                                      // Honor attendanceResetDate: skip any
+                                      // attendance dated before the reset.
+                                      // Without this, hitting "Reset Classes"
+                                      // wouldn't visibly change the bars here
+                                      // even though the dashboard / promotions
+                                      // page already exclude pre-reset rows.
+                                      if (s.attendanceResetDate) {
+                                        const attDate = att.attendanceDate
+                                          ? new Date(att.attendanceDate)
+                                          : att.checkedInAt
+                                            ? new Date(att.checkedInAt)
+                                            : null;
+                                        if (attDate) {
+                                          const attYmd = `${attDate.getFullYear()}-${String(attDate.getMonth() + 1).padStart(2, "0")}-${String(attDate.getDate()).padStart(2, "0")}`;
+                                          if (attYmd < s.attendanceResetDate) return false;
+                                        }
+                                      }
                                       let typesMatch = isAnyClass;
                                       if (!typesMatch && att.classSession?.classTypes) {
                                         try {
@@ -4280,6 +4354,18 @@ export default function MemberProfilePage() {
                               if (selectedRank?.classRequirement != null) {
                                 const styleAttendance = (member?.attendances || []).filter(
                                   (att) => {
+                                    // Same reset-date guard as the multi-req path above.
+                                    if (s.attendanceResetDate) {
+                                      const attDate = att.attendanceDate
+                                        ? new Date(att.attendanceDate)
+                                        : att.checkedInAt
+                                          ? new Date(att.checkedInAt)
+                                          : null;
+                                      if (attDate) {
+                                        const attYmd = `${attDate.getFullYear()}-${String(attDate.getMonth() + 1).padStart(2, "0")}-${String(attDate.getDate()).padStart(2, "0")}`;
+                                        if (attYmd < s.attendanceResetDate) return false;
+                                      }
+                                    }
                                     const classHasNoStyle = !att.classSession?.styleName && !att.classSession?.styleNames;
                                     return matchesStyle(att) || att.source === "IMPORTED" || classHasNoStyle;
                                   }
@@ -4306,13 +4392,21 @@ export default function MemberProfilePage() {
                               }
                               return null;
                             })()}
-                            <div className="flex gap-1 pt-1 border-t border-gray-100">
+                            <div className="flex flex-wrap gap-1 pt-1 border-t border-gray-100">
                               <button
                                 type="button"
                                 onClick={() => setEditingStyleIndex(i)}
                                 className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                               >
                                 Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => resetStyleAttendance(i)}
+                                title="Reset class requirement progress to 0 without changing the belt"
+                                className="rounded-md border border-primary px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/5"
+                              >
+                                Reset Classes
                               </button>
                               <button
                                 type="button"
