@@ -731,6 +731,9 @@ export default function MemberProfilePage() {
   const [newRelationshipType, setNewRelationshipType] =
     useState<string>("PARENT");
   const [newRelationshipMemberId, setNewRelationshipMemberId] = useState("");
+  // Typeahead query for the "Add Relationship" picker — replaces the old
+  // full-roster <select> dropdown that became unusable on bigger gyms.
+  const [relationshipSearchQuery, setRelationshipSearchQuery] = useState("");
   const [allMembers, setAllMembers] = useState<MemberSummary[]>([]);
   const [relationshipError, setRelationshipError] = useState<string | null>(
     null
@@ -2709,46 +2712,7 @@ export default function MemberProfilePage() {
                       </dd>
                     </div>
 
-                    {/* RELATIONSHIPS SECTION */}
-                    <div>
-                      <dt className="text-gray-500 text-xs uppercase">
-                        Relationships
-                      </dt>
-                      <dd className="text-gray-900">
-                        {relationshipsLoading ? (
-                          <span className="text-xs text-gray-500">
-                            Loading relationships…
-                          </span>
-                        ) : relationships.length === 0 ? (
-                          <span className="text-gray-400">—</span>
-                        ) : (
-                          <div className="space-y-1">
-                            {relationships.map((rel) => (
-                              <div key={rel.id} className="text-sm">
-                                <RelationshipLabel
-                                  rel={rel}
-                                  currentMemberId={memberId}
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {/* Split Account — only show when there's a parent
-                            linking IN to this member (i.e. they're someone's
-                            child). Hides for self-managed adults. */}
-                        {relationships.some((r) => r.toMemberId === memberId) && (
-                          <button
-                            type="button"
-                            onClick={handleSplitAccount}
-                            disabled={splittingAccount}
-                            title="Convert this dependent into a fully independent account"
-                            className="mt-2 rounded-md border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/5 disabled:opacity-50"
-                          >
-                            {splittingAccount ? "Splitting…" : "Split into Own Account"}
-                          </button>
-                        )}
-                      </dd>
-                    </div>
+                    {/* Relationships moved to a dedicated section below personal info. */}
 
                     {/* WAIVER SECTION */}
                     <div>
@@ -3295,129 +3259,7 @@ export default function MemberProfilePage() {
                       />
                     </div>
 
-                    {/* RELATIONSHIPS AND WAIVER SECTION - SIDE BY SIDE */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-xs font-medium text-gray-700">
-                          Relationships
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddingRelationship(true);
-                            setRelationshipError(null);
-                          }}
-                          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
-                        >
-                          Add Relationship
-                        </button>
-                      </div>
-                      <div className="space-y-2 text-sm">
-                        {relationshipsLoading ? (
-                          <p className="text-xs text-gray-500">
-                            Loading relationships…
-                          </p>
-                        ) : relationships.length === 0 ? (
-                          <p className="text-xs text-gray-400">
-                            No relationships linked yet.
-                          </p>
-                        ) : (
-                          <div className="space-y-1">
-                            {relationships.map((rel) => (
-                              <div
-                                key={rel.id}
-                                className="flex items-center justify-between gap-2"
-                              >
-                                <span className="text-xs text-gray-900">
-                                  <RelationshipLabel
-                                    rel={rel}
-                                    currentMemberId={memberId}
-                                  />
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveRelationship(rel.id)}
-                                  className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {addingRelationship && (
-                          <div className="mt-2 rounded-md border border-gray-200 p-2 space-y-2">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <label className="block text-xs font-medium text-gray-700">
-                                  Relationship Type
-                                </label>
-                                <select
-                                  value={newRelationshipType}
-                                  onChange={(e) =>
-                                    setNewRelationshipType(e.target.value)
-                                  }
-                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                >
-                                  {RELATIONSHIP_OPTIONS.map((opt) => (
-                                    <option key={opt.value} value={opt.value}>
-                                      {opt.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="space-y-1">
-                                <label className="block text-xs font-medium text-gray-700">
-                                  Linked Member
-                                </label>
-                                <select
-                                  value={newRelationshipMemberId}
-                                  onChange={(e) =>
-                                    setNewRelationshipMemberId(e.target.value)
-                                  }
-                                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                                >
-                                  <option value="">Select member…</option>
-                                  {availableMembersForRelationships.map((m) => (
-                                    <option key={m.id} value={m.id}>
-                                      {m.firstName} {m.lastName} (
-                                      {m.status.toLowerCase()})
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={handleAddRelationship}
-                                className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
-                              >
-                                Add
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAddingRelationship(false);
-                                  setNewRelationshipType("PARENT");
-                                  setNewRelationshipMemberId("");
-                                  setRelationshipError(null);
-                                }}
-                                className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                            {relationshipError && (
-                              <p className="text-xs text-primary">
-                                {relationshipError}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    {/* Relationships moved to its own dedicated section below. */}
 
                     {/* WAIVER SECTION */}
                     <div className="space-y-2">
@@ -3515,6 +3357,208 @@ export default function MemberProfilePage() {
                     )}
                   </form>
                 )}
+              </section>
+
+              {/* RELATIONSHIPS — standalone section, always visible (not gated
+                  on Personal Info edit mode like before). Picker is a
+                  search-as-you-type input so the list of members doesn't
+                  blow out on larger gyms. */}
+              <section className="rounded-lg border border-gray-200 bg-white p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-semibold">Relationships</h2>
+                  {!addingRelationship && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddingRelationship(true);
+                        setRelationshipError(null);
+                        setRelationshipSearchQuery("");
+                        setNewRelationshipMemberId("");
+                      }}
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                    >
+                      Add Relationship
+                    </button>
+                  )}
+                </div>
+
+                {relationshipsLoading ? (
+                  <p className="text-xs text-gray-500">Loading relationships…</p>
+                ) : relationships.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">No relationships linked yet.</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {relationships.map((rel) => (
+                      <li key={rel.id} className="flex items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-gray-50">
+                        <span className="text-sm text-gray-900">
+                          <RelationshipLabel rel={rel} currentMemberId={memberId} />
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRelationship(rel.id)}
+                          className="text-[10px] text-red-600 hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {/* Split Account — only when this person is somebody's
+                    dependent/child. Lets staff promote them to a fully
+                    independent profile. */}
+                {relationships.some((r) => r.toMemberId === memberId) && (
+                  <button
+                    type="button"
+                    onClick={handleSplitAccount}
+                    disabled={splittingAccount}
+                    title="Convert this dependent into a fully independent account"
+                    className="mt-3 rounded-md border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/5 disabled:opacity-50"
+                  >
+                    {splittingAccount ? "Splitting…" : "Split into Own Account"}
+                  </button>
+                )}
+
+                {addingRelationship && (() => {
+                  const q = relationshipSearchQuery.trim().toLowerCase();
+                  // Hide members already linked via any non-billing relationship
+                  // so we don't suggest duplicates. Billing rows (PAYS_FOR) are
+                  // a separate concept and don't block re-adding a family link.
+                  const alreadyLinkedIds = new Set(
+                    relationships
+                      .filter((r) => r.relationship !== "PAYS_FOR")
+                      .map((r) => (r.fromMemberId === memberId ? r.toMemberId : r.fromMemberId)),
+                  );
+                  const matches = q
+                    ? availableMembersForRelationships.filter((m) => {
+                        const name = `${m.firstName} ${m.lastName}`.toLowerCase();
+                        return name.includes(q);
+                      }).slice(0, 8)
+                    : [];
+                  const selected = newRelationshipMemberId
+                    ? availableMembersForRelationships.find((m) => m.id === newRelationshipMemberId)
+                    : null;
+                  return (
+                    <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 p-3 space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-semibold uppercase text-gray-500">
+                            Relationship
+                          </label>
+                          <select
+                            value={newRelationshipType}
+                            onChange={(e) => setNewRelationshipType(e.target.value)}
+                            className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                          >
+                            {RELATIONSHIP_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-semibold uppercase text-gray-500">
+                            Linked Member
+                          </label>
+                          {selected ? (
+                            <div className="flex items-center justify-between rounded-md border border-primary bg-white px-2 py-1.5">
+                              <span className="text-sm font-medium text-gray-900">
+                                {selected.firstName} {selected.lastName}
+                                <span className="text-xs text-gray-400 ml-1">
+                                  ({selected.status.toLowerCase()})
+                                </span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNewRelationshipMemberId("");
+                                  setRelationshipSearchQuery("");
+                                }}
+                                className="text-gray-400 hover:text-red-500 text-sm"
+                                title="Clear"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={relationshipSearchQuery}
+                                onChange={(e) => setRelationshipSearchQuery(e.target.value)}
+                                placeholder="Search members…"
+                                className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                                autoFocus
+                              />
+                              {q && (
+                                <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                                  {matches.length === 0 ? (
+                                    <li className="px-3 py-2 text-xs text-gray-400">No matches</li>
+                                  ) : (
+                                    matches.map((m) => {
+                                      const dup = alreadyLinkedIds.has(m.id);
+                                      return (
+                                        <li
+                                          key={m.id}
+                                          onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            if (dup) return;
+                                            setNewRelationshipMemberId(m.id);
+                                            setRelationshipSearchQuery("");
+                                          }}
+                                          className={`px-3 py-2 text-sm ${
+                                            dup
+                                              ? "text-gray-400 cursor-not-allowed"
+                                              : "text-gray-700 hover:bg-primary hover:text-white cursor-pointer"
+                                          }`}
+                                          title={dup ? "Already linked" : ""}
+                                        >
+                                          {m.firstName} {m.lastName}
+                                          <span className="text-xs ml-2 opacity-70">
+                                            ({m.status.toLowerCase()})
+                                          </span>
+                                          {dup && <span className="text-[10px] ml-2">already linked</span>}
+                                        </li>
+                                      );
+                                    })
+                                  )}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {relationshipError && (
+                        <p className="text-xs text-red-600">{relationshipError}</p>
+                      )}
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAddRelationship}
+                          disabled={!newRelationshipMemberId}
+                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddingRelationship(false);
+                            setNewRelationshipType("PARENT");
+                            setNewRelationshipMemberId("");
+                            setRelationshipSearchQuery("");
+                            setRelationshipError(null);
+                          }}
+                          className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </section>
 
               {/* MEMBERSHIPS */}
