@@ -1360,11 +1360,35 @@ export default function ClassesPage() {
     finally { setEvSaving(false); }
   }
 
-  // Group classes by day of week (exclude imported placeholder class sessions)
+  // Group classes by day of week (exclude imported placeholder class sessions).
+  //
+  // We hide classes that have aged out of the recurring schedule:
+  //   - One-off classes whose date has passed (e.g. a Memorial Day Kickboxing
+  //     that ran on 2026-05-25 should disappear from the Monday column on
+  //     5/26 and after).
+  //   - Recurring series whose scheduleEndDate is in the past AND that
+  //     aren't marked Ongoing.
+  // Attendance rows from those classes stay in the database — class
+  // requirement progress is untouched.
+  const todayStartOfDay = new Date();
+  todayStartOfDay.setHours(0, 0, 0, 0);
   const classesByDay = DAYS_OF_WEEK.reduce((acc, day) => {
     acc[day] = classes.filter(c => {
       // Skip imported placeholder class sessions (startsAt in far past)
       if (new Date(c.startsAt).getFullYear() < 2010) return false;
+
+      // One-off class — drop from the weekly schedule once the date is gone.
+      if (c.isRecurring === false) {
+        const cd = new Date(c.startsAt);
+        cd.setHours(0, 0, 0, 0);
+        if (cd < todayStartOfDay) return false;
+      } else if (c.scheduleEndDate && !c.isOngoing) {
+        // Recurring series — drop once it's past its end date.
+        const ed = new Date(c.scheduleEndDate);
+        ed.setHours(23, 59, 59, 999);
+        if (ed < todayStartOfDay) return false;
+      }
+
       const date = new Date(c.startsAt);
       const dayIndex = date.getDay();
       const dayMap = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
