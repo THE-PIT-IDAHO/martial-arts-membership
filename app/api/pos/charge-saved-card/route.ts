@@ -30,16 +30,35 @@ export async function POST(req: Request) {
     });
   }
 
-  const member = await prisma.member.findUnique({
+  // Tenant check on the actual payee.
+  const payee = await prisma.member.findUnique({
     where: { id: memberId },
-    select: { stripeCustomerId: true, defaultPaymentMethodId: true, clientId: true },
+    select: { clientId: true },
   });
-
-  if (!member || member.clientId !== clientId) {
+  if (!payee || payee.clientId !== clientId) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
-  if (!member.stripeCustomerId || !member.defaultPaymentMethodId) {
-    return NextResponse.json({ error: "Member has no saved card on file" }, { status: 400 });
+
+  // Resolve who gets charged. If a PAYS_FOR relationship exists
+  // (someone else marked as paying for this member in the profile
+  // Account Summary → Billing Relationships), use the payer's card
+  // instead. Matches the same fallback the auto-billing cron uses.
+  const payerRow = await prisma.memberRelationship.findFirst({
+    where: { relationship: "PAYS_FOR", toMemberId: memberId },
+    select: { fromMemberId: true },
+  });
+  const billedMemberId = payerRow?.fromMemberId || memberId;
+
+  const member = await prisma.member.findUnique({
+    where: { id: billedMemberId },
+    select: { stripeCustomerId: true, defaultPaymentMethodId: true },
+  });
+  if (!member?.stripeCustomerId || !member.defaultPaymentMethodId) {
+    return NextResponse.json({
+      error: billedMemberId === memberId
+        ? "Member has no saved card on file"
+        : "Linked payer has no saved card on file",
+    }, { status: 400 });
   }
 
   const stripeClient = await getStripeClient();
@@ -64,6 +83,7 @@ export async function POST(req: Request) {
       metadata: {
         source: "admin_pos",
         memberId,
+        ...(billedMemberId !== memberId ? { billedMemberId } : {}),
         ...(metadata || {}),
       },
     });
