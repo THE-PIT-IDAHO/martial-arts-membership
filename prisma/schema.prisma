@@ -339,6 +339,11 @@ model Membership {
   startDate              DateTime
   endDate                DateTime?
   customPriceCents       Int?
+  // Amount actually charged at signup (after any first-payment discount).
+  // Distinct from customPriceCents, which is the recurring amount.
+  // Used by the profile to display the correct first-cycle price instead
+  // of falling back to the recurring price when first-month-only is set.
+  firstPaymentCents      Int?
   firstMonthDiscountOnly Boolean        @default(false)
   lastPaymentDate        DateTime?
   nextPaymentDate        DateTime?

@@ -309,6 +309,9 @@ type MembershipRecord = {
   endDate: string | null;
   status: string;
   customPriceCents: number | null;
+  // What the member actually paid at signup (after first-payment discount).
+  // Distinct from customPriceCents (the recurring amount).
+  firstPaymentCents: number | null;
   firstMonthDiscountOnly: boolean;
   lastPaymentDate: string | null;
   nextPaymentDate: string | null;
@@ -3875,45 +3878,47 @@ export default function MemberProfilePage() {
                                 </div>
 
                                 {/* Price and Billing.
-                                    - If firstMonthDiscountOnly: headline the
-                                      RECURRING (plan) price; show the
-                                      discounted first-month price below.
-                                    - Else: headline the customPriceCents (or
-                                      plan price if no custom). */}
+                                    Headline is always the RECURRING price
+                                    (customPriceCents if set, else plan price).
+                                    When a first-payment discount was applied,
+                                    the actual first cycle's amount renders
+                                    below using firstPaymentCents. */}
                                 {(() => {
                                   const cycleSuffix = membership.membershipPlan.billingCycle.toLowerCase().replace("ly", "");
-                                  if (membership.firstMonthDiscountOnly) {
-                                    return (
-                                      <div>
-                                        <div className="flex items-baseline gap-1">
-                                          <span className="text-lg font-bold text-gray-900">
+                                  const recurringCents = displayPrice; // customPriceCents ?? planPrice
+                                  // First-cycle amount: prefer the actually-charged value
+                                  // recorded on the membership; fall back to recurring for
+                                  // pre-migration rows that don't have firstPaymentCents.
+                                  const firstCycleCents = membership.firstPaymentCents ?? recurringCents;
+                                  const showFirstCycleLine =
+                                    membership.firstMonthDiscountOnly &&
+                                    firstCycleCents !== recurringCents;
+                                  return (
+                                    <div>
+                                      <div className="flex items-baseline gap-1 flex-wrap">
+                                        <span className="text-lg font-bold text-gray-900">
+                                          ${(recurringCents / 100).toFixed(2)}
+                                        </span>
+                                        <span className="text-[10px] text-gray-500 uppercase">
+                                          /{cycleSuffix}
+                                        </span>
+                                        {showFirstCycleLine && (
+                                          <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full ml-1">
+                                            1st {cycleSuffix} discount
+                                          </span>
+                                        )}
+                                        {!membership.firstMonthDiscountOnly &&
+                                          membership.customPriceCents !== null &&
+                                          membership.customPriceCents !== planPrice && (
+                                          <span className="text-[10px] text-gray-400 line-through ml-1">
                                             ${(planPrice / 100).toFixed(2)}
                                           </span>
-                                          <span className="text-[10px] text-gray-500 uppercase">
-                                            /{cycleSuffix}
-                                          </span>
-                                          <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full ml-1">
-                                            1st mo. discount
-                                          </span>
-                                        </div>
-                                        <p className="text-[10px] text-gray-500 mt-0.5">
-                                          First {cycleSuffix}: ${(displayPrice / 100).toFixed(2)}
-                                        </p>
+                                        )}
                                       </div>
-                                    );
-                                  }
-                                  return (
-                                    <div className="flex items-baseline gap-1">
-                                      <span className="text-lg font-bold text-gray-900">
-                                        ${(displayPrice / 100).toFixed(2)}
-                                      </span>
-                                      <span className="text-[10px] text-gray-500 uppercase">
-                                        /{cycleSuffix}
-                                      </span>
-                                      {membership.customPriceCents !== null && membership.customPriceCents !== planPrice && (
-                                        <span className="text-[10px] text-gray-400 line-through ml-1">
-                                          ${(planPrice / 100).toFixed(2)}
-                                        </span>
+                                      {showFirstCycleLine && (
+                                        <p className="text-[10px] text-gray-500 mt-0.5">
+                                          First {cycleSuffix}: ${(firstCycleCents / 100).toFixed(2)}
+                                        </p>
                                       )}
                                     </div>
                                   );
@@ -5298,11 +5303,9 @@ export default function MemberProfilePage() {
                   // Membership row at POS-time). Plan price is the fallback
                   // when the admin didn't override Price for this signup.
                   //
-                  // firstMonthDiscountOnly used to mean "customPriceCents
-                  // applies only to the first cycle, then revert to plan
-                  // price" — that semantic was retired when the POS modal
-                  // split Price and Discount into independent inputs.
-                  // It's now informational only; recurring always = customPriceCents.
+                  // firstPaymentCents IS the amount the member actually paid
+                  // at signup (after any first-payment discount). Used when
+                  // the most recent payment is the at-signup payment.
                   const recurringPrice = mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0;
                   const isActive = mb.status === "ACTIVE";
                   const notExpired = !mb.endDate || new Date(mb.endDate) > now;
@@ -5317,11 +5320,18 @@ export default function MemberProfilePage() {
                   }
                   if (mb.lastPaymentDate) {
                     const d = new Date(mb.lastPaymentDate);
-                    // Last Payment shows the recurring price as a best-effort
-                    // estimate. The exact at-signup amount (which may differ
-                    // when a first-payment discount was applied) lives on the
-                    // POS transaction, not on Membership.
-                    if (!lastDate || d > lastDate) { lastDate = d; lastAmount = recurringPrice; }
+                    // Last Payment: when the most recent payment is the
+                    // at-signup payment (lastPaymentDate ≈ startDate), show
+                    // firstPaymentCents — what the member actually paid
+                    // after any first-payment discount. Otherwise show the
+                    // recurring price (auto-billing cycle).
+                    const startD = mb.startDate ? new Date(mb.startDate) : null;
+                    const isFirstCycle = startD
+                      && Math.abs(d.getTime() - startD.getTime()) < 1000 * 60 * 60 * 24;
+                    const paid = isFirstCycle && mb.firstPaymentCents != null
+                      ? mb.firstPaymentCents
+                      : recurringPrice;
+                    if (!lastDate || d > lastDate) { lastDate = d; lastAmount = paid; }
                   }
                 }
                 const fmtDate = (d: Date) => d.toLocaleDateString();

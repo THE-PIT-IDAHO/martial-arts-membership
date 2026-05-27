@@ -181,7 +181,12 @@ export async function POST(req: Request) {
             ? calculateNextPaymentDate(startDate, plan.billingCycle)
             : null;
 
-          // Create a new Membership record linking member to the plan
+          // Create a new Membership record linking member to the plan.
+          // firstPaymentCents is what the member actually paid at signup
+          // (item.unitPriceCents = Price - first-payment discount). Stored
+          // separately from customPriceCents (the recurring amount) so the
+          // profile can show the correct first-cycle figure even when a
+          // 100%-off-first-month discount was applied.
           await prisma.membership.create({
             data: {
               memberId: memberId,
@@ -190,6 +195,7 @@ export async function POST(req: Request) {
               endDate,
               status: "ACTIVE",
               customPriceCents: customPrice,
+              firstPaymentCents: item.unitPriceCents,
               firstMonthDiscountOnly: item.firstMonthDiscountOnly || false,
               lastPaymentDate: startDate,
               nextPaymentDate,

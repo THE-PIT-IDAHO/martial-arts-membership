@@ -836,6 +836,7 @@ async function processAdminPOSCheckout(params: {
             endDate,
             nextPaymentDate,
             customPriceCents: (item.customPriceCents as number) || null,
+            firstPaymentCents: (item.unitPriceCents as number) ?? null,
             firstMonthDiscountOnly: (item.firstMonthDiscountOnly as boolean) || false,
           },
         });
