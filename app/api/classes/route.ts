@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { canAddClass } from "@/lib/trial";
+import { logAudit } from "@/lib/audit";
 
 // GET /api/classes
 export async function GET(req: Request) {
@@ -119,9 +120,22 @@ export async function POST(req: Request) {
       },
     });
 
+    logAudit({
+      entityType: "ClassSession",
+      entityId: classSession.id,
+      action: "CREATE",
+      summary: `Created class "${classSession.name}"`,
+      clientId,
+    }).catch(() => {});
+
     return NextResponse.json({ class: classSession }, { status: 201 });
   } catch (error) {
+    // Surface the real Prisma error to the client so admins see why the
+    // create failed (was returning a generic "Failed to create class"
+    // for every error, which masked validation hints, missing required
+    // fields, and FK violations).
     console.error("Error creating class:", error);
-    return new NextResponse("Failed to create class", { status: 500 });
+    const msg = error instanceof Error ? error.message : "Failed to create class";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

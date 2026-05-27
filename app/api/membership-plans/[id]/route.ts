@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { logAudit } from "@/lib/audit";
 
 // GET /api/membership-plans/[id]
 export async function GET(
@@ -223,10 +224,21 @@ export async function PATCH(
       }
     }
 
+    if (membershipPlan) {
+      logAudit({
+        entityType: "MembershipPlan",
+        entityId: id,
+        action: "UPDATE",
+        summary: `Updated membership plan "${membershipPlan.name}"`,
+        clientId,
+      }).catch(() => {});
+    }
+
     return NextResponse.json({ membershipPlan });
   } catch (error) {
     console.error("Error updating membership plan:", error);
-    return new NextResponse("Failed to update membership plan", { status: 500 });
+    const msg = error instanceof Error ? error.message : "Failed to update membership plan";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
@@ -263,9 +275,23 @@ export async function DELETE(
       );
     }
 
+    // Capture the name BEFORE delete so we can put it in the audit summary.
+    const before = await prisma.membershipPlan.findUnique({
+      where: { id },
+      select: { name: true, membershipId: true },
+    });
+
     await prisma.membershipPlan.delete({
       where: { id },
     });
+
+    logAudit({
+      entityType: "MembershipPlan",
+      entityId: id,
+      action: "DELETE",
+      summary: `Deleted membership plan "${before?.name || id}"${before?.membershipId ? ` (#${before.membershipId})` : ""}`,
+      clientId,
+    }).catch(() => {});
 
     return new NextResponse(null, { status: 204 });
   } catch (error) {

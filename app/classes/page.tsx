@@ -692,7 +692,15 @@ export default function ClassesPage() {
             });
 
             if (!res.ok) {
-              throw new Error(`Failed to create class for ${schedule.day} at ${time.startTime}`);
+              // Pull the real server error message out of the response so the
+              // admin sees WHY the create failed, not just which slot.
+              const raw = await res.text().catch(() => "");
+              let serverMsg = raw || `HTTP ${res.status}`;
+              try {
+                const parsed = JSON.parse(raw);
+                if (parsed?.error) serverMsg = parsed.error;
+              } catch { /* not JSON */ }
+              throw new Error(`Failed to create class for ${schedule.day} at ${time.startTime}: ${serverMsg}`);
             }
 
             const data = await res.json();
@@ -780,7 +788,15 @@ export default function ClassesPage() {
             });
 
             if (!res.ok) {
-              throw new Error(`Failed to create class for ${schedule.day} at ${time.startTime}`);
+              // Pull the real server error message out of the response so the
+              // admin sees WHY the create failed, not just which slot.
+              const raw = await res.text().catch(() => "");
+              let serverMsg = raw || `HTTP ${res.status}`;
+              try {
+                const parsed = JSON.parse(raw);
+                if (parsed?.error) serverMsg = parsed.error;
+              } catch { /* not JSON */ }
+              throw new Error(`Failed to create class for ${schedule.day} at ${time.startTime}: ${serverMsg}`);
             }
 
             const data = await res.json();

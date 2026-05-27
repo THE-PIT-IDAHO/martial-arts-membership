@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { canAddMembershipPlan } from "@/lib/trial";
 import { getNextMembershipPlanId } from "@/lib/sequence";
+import { logAudit } from "@/lib/audit";
 
 // GET /api/membership-plans
 export async function GET(req: Request) {
@@ -116,6 +117,14 @@ export async function POST(req: Request) {
         clientId,
       },
     });
+
+    logAudit({
+      entityType: "MembershipPlan",
+      entityId: membershipPlan.id,
+      action: "CREATE",
+      summary: `Created membership plan "${membershipPlan.name}" (#${finalMembershipId})`,
+      clientId,
+    }).catch(() => {});
 
     return NextResponse.json({ membershipPlan }, { status: 201 });
   } catch (error) {
