@@ -288,8 +288,10 @@ model MembershipType {
 
 model MembershipPlan {
   id                           String          @id @default(cuid())
-  /// Membership ID number – unique identifier for display
-  membershipId                 String?         @unique
+  /// Membership ID number – unique per tenant (see @@unique below).
+  /// Was globally @unique, which caused cross-gym collisions when the
+  /// auto-generator picked an id that another tenant already used.
+  membershipId                 String?
   /// Membership Type for reporting purposes
   membershipTypeId             String?
   name                         String
@@ -330,6 +332,8 @@ model MembershipPlan {
   memberships                  Membership[]
   client                       Client          @relation(fields: [clientId], references: [id])
   membershipType               MembershipType? @relation(fields: [membershipTypeId], references: [id])
+
+  @@unique([membershipId, clientId])
 }
 
 model Membership {

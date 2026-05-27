@@ -2,36 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { canAddMembershipPlan } from "@/lib/trial";
-
-const MIN_MEMBERSHIP_NUMBER = 20000000;
-
-// Find lowest free membershipId >= MIN_MEMBERSHIP_NUMBER, scoped to one
-// tenant. Each gym gets its own membershipId sequence.
-async function getNextMembershipId(clientId: string): Promise<string> {
-  const existing = await prisma.membershipPlan.findMany({
-    where: {
-      clientId,
-      membershipId: { not: null },
-    },
-    select: { membershipId: true },
-  });
-
-  // Parse numeric IDs and filter valid ones
-  const numericIds = existing
-    .map((p) => parseInt(p.membershipId || "", 10))
-    .filter((n) => !isNaN(n) && n >= MIN_MEMBERSHIP_NUMBER)
-    .sort((a, b) => a - b);
-
-  let candidate = MIN_MEMBERSHIP_NUMBER;
-  for (const id of numericIds) {
-    if (id === candidate) {
-      candidate++;
-    } else if (id > candidate) {
-      break;
-    }
-  }
-  return String(candidate);
-}
+import { getNextMembershipPlanId } from "@/lib/sequence";
 
 // GET /api/membership-plans
 export async function GET(req: Request) {
@@ -110,7 +81,7 @@ export async function POST(req: Request) {
     }
 
     // Auto-generate membershipId if not provided
-    const finalMembershipId = membershipId?.trim() || await getNextMembershipId(clientId);
+    const finalMembershipId = membershipId?.trim() || await getNextMembershipPlanId(clientId);
 
     const membershipPlan = await prisma.membershipPlan.create({
       data: {
@@ -149,6 +120,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ membershipPlan }, { status: 201 });
   } catch (error) {
     console.error("Error creating membership plan:", error);
-    return new NextResponse("Failed to create membership plan", { status: 500 });
+    // Surface the real message so the admin sees something useful in the
+    // toast / alert. Unique-constraint hits (e.g. duplicate membershipId)
+    // and missing-relation errors used to all collapse into a generic
+    // "Failed to create membership plan."
+    const msg =
+      error instanceof Error
+        ? error.message
+        : "Failed to create membership plan";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

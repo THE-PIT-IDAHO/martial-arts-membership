@@ -4,14 +4,7 @@ import { canAddMember } from "@/lib/trial";
 import { logAudit } from "@/lib/audit";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
-
-async function getNextMemberNumber(): Promise<number> {
-  const lastMember = await prisma.member.findFirst({
-    orderBy: { memberNumber: "desc" },
-    select: { memberNumber: true },
-  });
-  return lastMember?.memberNumber ? Number(lastMember.memberNumber) + 1 : 10000001;
-}
+import { getNextMemberNumber } from "@/lib/sequence";
 
 // POST /api/waivers/add-child
 // Public endpoint. Parent (identified by parentMemberId) signs a waiver to add a new
@@ -79,7 +72,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: memberCheck.reason }, { status: 403 });
     }
 
-    const childNumber = await getNextMemberNumber();
+    const childNumber = await getNextMemberNumber(parent.clientId);
     const parentName = `${parent.firstName} ${parent.lastName}`.trim();
 
     // Email uniqueness: kids commonly use the parent's email. The

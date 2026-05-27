@@ -4,8 +4,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { normalizeEmail } from "@/lib/member-email";
-
-const MIN_MEMBER_NUMBER = 10000000;
+import { getNextMemberNumbers } from "@/lib/sequence";
 
 function toDateOrNull(value: any): Date | null {
   if (!value) return null;
@@ -32,32 +31,6 @@ function toDateOrNull(value: any): Date | null {
   }
 
   return null;
-}
-
-// Get next available member numbers starting from a given number
-async function getNextMemberNumbers(count: number): Promise<number[]> {
-  const existing = await prisma.member.findMany({
-    where: {
-      memberNumber: {
-        gte: MIN_MEMBER_NUMBER,
-      },
-    },
-    select: { memberNumber: true },
-    orderBy: { memberNumber: "asc" },
-  });
-
-  const existingSet = new Set(existing.map(e => e.memberNumber).filter(n => n !== null));
-  const numbers: number[] = [];
-  let candidate = MIN_MEMBER_NUMBER;
-
-  while (numbers.length < count) {
-    if (!existingSet.has(candidate)) {
-      numbers.push(candidate);
-    }
-    candidate++;
-  }
-
-  return numbers;
 }
 
 type ImportMember = {
@@ -112,8 +85,10 @@ export async function POST(req: Request) {
     // Resolve tenant clientId from request header
     const clientId = await getClientId(req);
 
-    // Get member numbers for all imports
-    const memberNumbers = await getNextMemberNumbers(importMembers.length);
+    // Get member numbers for all imports — scoped to this tenant so a
+    // gym importing its first batch gets numbers starting at 10000000
+    // regardless of what other gyms in the same DB have.
+    const memberNumbers = await getNextMemberNumbers(clientId, importMembers.length);
 
     // Get all styles with their belt configs for style/rank validation
     const allStyles = await prisma.style.findMany({

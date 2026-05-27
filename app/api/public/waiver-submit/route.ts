@@ -4,16 +4,7 @@ import { getClientId } from "@/lib/tenant";
 import { canAddMember } from "@/lib/trial";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
-
-async function getNextMemberNumber(): Promise<number> {
-  const lastMember = await prisma.member.findFirst({
-    orderBy: { memberNumber: "desc" },
-    select: { memberNumber: true },
-  });
-  return lastMember?.memberNumber
-    ? Number(lastMember.memberNumber) + 1
-    : 10000001;
-}
+import { getNextMemberNumber } from "@/lib/sequence";
 
 
 // POST /api/public/waiver-submit
@@ -121,7 +112,7 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
     return NextResponse.json({ error: memberCheck.reason }, { status: 403 });
   }
 
-  const memberNumber = await getNextMemberNumber();
+  const memberNumber = await getNextMemberNumber(clientId);
 
   const normalizedEmail = normalizeEmail(email);
   const emailCheck = await checkEmailAvailable({ email: normalizedEmail, clientId });
@@ -294,7 +285,7 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
     });
     guardian = { id: found.id };
   } else if (guardianFirstName && guardianLastName) {
-    const guardianNumber = await getNextMemberNumber();
+    const guardianNumber = await getNextMemberNumber(clientId);
     const normalizedGuardianEmail = normalizeEmail(email);
     const guardianEmailCheck = await checkEmailAvailable({
       email: normalizedGuardianEmail,
@@ -372,7 +363,7 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
       });
       dependentId = found.id;
     } else {
-      const depNumber = await getNextMemberNumber();
+      const depNumber = await getNextMemberNumber(clientId);
       const normalizedNewChildEmail = normalizeEmail(c.email);
       const newChildEmailCheck = await checkEmailAvailable({
         email: normalizedNewChildEmail,

@@ -8,40 +8,13 @@ import { logAudit } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
 import { canAddMember } from "@/lib/trial";
 import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
-
-const MIN_MEMBER_NUMBER = 10000000;
+import { getNextMemberNumber } from "@/lib/sequence";
 
 function toDateOrNull(value: any): Date | null {
   if (!value) return null;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   return d;
-}
-
-// Find lowest free memberNumber >= MIN_MEMBER_NUMBER, scoped to one tenant.
-// Each gym keeps its own member-number sequence — they don't share a pool.
-async function getNextMemberNumber(clientId: string) {
-  const existing = await prisma.member.findMany({
-    where: {
-      clientId,
-      memberNumber: {
-        gte: MIN_MEMBER_NUMBER,
-      },
-    },
-    select: { memberNumber: true },
-    orderBy: { memberNumber: "asc" },
-  });
-
-  let candidate = MIN_MEMBER_NUMBER;
-  for (const row of existing) {
-    if (row.memberNumber == null) continue;
-    if (row.memberNumber === candidate) {
-      candidate++;
-    } else if (row.memberNumber > candidate) {
-      break;
-    }
-  }
-  return candidate;
 }
 
 // GET /api/members
