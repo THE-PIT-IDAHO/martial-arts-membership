@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
+
+// All ops here are now tenant-scoped — previously GET/PATCH/DELETE
+// would return or mutate any TestingEvent by id without checking the
+// caller's clientId, leaking events between gyms.
 
 // GET /api/testing/[id] - Get a single testing event with participants
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
 
     const event = await prisma.testingEvent.findUnique({
@@ -18,7 +24,7 @@ export async function GET(
       },
     });
 
-    if (!event) {
+    if (!event || event.clientId !== clientId) {
       return new NextResponse("Testing event not found", { status: 404 });
     }
 
@@ -32,10 +38,20 @@ export async function GET(
 // PATCH /api/testing/[id] - Update a testing event
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    const existing = await prisma.testingEvent.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existing || existing.clientId !== clientId) {
+      return new NextResponse("Testing event not found", { status: 404 });
+    }
+
     const body = await req.json();
     const { name, date, time, location, notes, status, styleId, styleName, styleIds, styleNames } = body;
 
@@ -80,10 +96,19 @@ export async function PATCH(
 // DELETE /api/testing/[id] - Delete a testing event
 export async function DELETE(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    const existing = await prisma.testingEvent.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existing || existing.clientId !== clientId) {
+      return new NextResponse("Testing event not found", { status: 404 });
+    }
 
     await prisma.testingEvent.delete({
       where: { id },

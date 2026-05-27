@@ -1,13 +1,35 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
+
+// RankTest is tenant-scoped through its parent Style.clientId. All ops
+// here now verify the rank test's style belongs to the caller's tenant
+// before touching it — previously GET/PATCH/DELETE worked on any rank
+// test by id.
+async function verifyTenant(rankTestId: string, clientId: string) {
+  const rankTest = await prisma.rankTest.findUnique({
+    where: { id: rankTestId },
+    select: { styleId: true },
+  });
+  if (!rankTest) return false;
+  const style = await prisma.style.findUnique({
+    where: { id: rankTest.styleId },
+    select: { clientId: true },
+  });
+  return !!style && style.clientId === clientId;
+}
 
 // GET /api/rank-tests/[id] - Get a single rank test with all categories and items
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
+    if (!(await verifyTenant(id, clientId))) {
+      return new NextResponse("Rank test not found", { status: 404 });
+    }
 
     const rankTest = await prisma.rankTest.findUnique({
       where: { id },
@@ -44,10 +66,15 @@ export async function GET(
 // PATCH /api/rank-tests/[id] - Update a rank test
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
+    if (!(await verifyTenant(id, clientId))) {
+      return new NextResponse("Rank test not found", { status: 404 });
+    }
+
     const body = await req.json();
     const { name, description, isActive, sortOrder } = body;
 
@@ -89,10 +116,14 @@ export async function PATCH(
 // DELETE /api/rank-tests/[id] - Delete a rank test
 export async function DELETE(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
+    const clientId = await getClientId(req);
+    if (!(await verifyTenant(id, clientId))) {
+      return new NextResponse("Rank test not found", { status: 404 });
+    }
 
     await prisma.rankTest.delete({
       where: { id },

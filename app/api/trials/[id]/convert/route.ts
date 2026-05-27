@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
+import { getClientId } from "@/lib/tenant";
 
 export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const clientId = await getClientId(req);
     const { membershipPlanId } = await req.json();
     if (!membershipPlanId) {
       return NextResponse.json({ error: "membershipPlanId required" }, { status: 400 });
@@ -14,9 +16,17 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
       where: { id: params.id },
       include: { member: true },
     });
-    if (!trial) return NextResponse.json({ error: "Trial not found" }, { status: 404 });
+    // Trial's tenant is its owning member's tenant. Without this guard
+    // an admin could convert another gym's trial.
+    if (!trial || trial.member.clientId !== clientId) {
+      return NextResponse.json({ error: "Trial not found" }, { status: 404 });
+    }
 
-    const plan = await prisma.membershipPlan.findUnique({ where: { id: membershipPlanId } });
+    // Plan must also be in the same tenant — prevents linking a trial
+    // to a plan in a different gym.
+    const plan = await prisma.membershipPlan.findFirst({
+      where: { id: membershipPlanId, clientId },
+    });
     if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
 
     // Create membership

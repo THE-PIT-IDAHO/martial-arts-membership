@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   try {
     const member = await prisma.member.findUnique({
       where: { id: auth.memberId },
-      select: { id: true, firstName: true, lastName: true },
+      select: { id: true, firstName: true, lastName: true, clientId: true },
     });
 
     if (!member) {
@@ -27,8 +27,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Content is required" }, { status: 400 });
     }
 
-    const post = await prisma.boardPost.findUnique({ where: { id: postId } });
-    if (!post) {
+    // Verify the post belongs to this member's tenant — without this a
+    // member could reply to another gym's board post by guessing the id.
+    const post = await prisma.boardPost.findUnique({
+      where: { id: postId },
+      select: { channel: { select: { clientId: true } } },
+    });
+    if (!post || post.channel?.clientId !== member.clientId) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
 

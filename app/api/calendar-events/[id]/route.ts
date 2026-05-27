@@ -1,11 +1,25 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
+
+// All ops here are now tenant-scoped — previously PATCH/DELETE acted on
+// any event by id with no tenant check, letting an admin in one gym
+// modify or destroy another gym's calendar events.
 
 // PATCH /api/calendar-events/[id]
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
     const body = await req.json();
+
+    const existing = await prisma.calendarEvent.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existing || existing.clientId !== clientId) {
+      return new NextResponse("Event not found", { status: 404 });
+    }
 
     const data: Record<string, unknown> = {};
     const fields = [
@@ -39,9 +53,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 // DELETE /api/calendar-events/[id]
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    const existing = await prisma.calendarEvent.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existing || existing.clientId !== clientId) {
+      return new NextResponse("Event not found", { status: 404 });
+    }
+
     await prisma.calendarEvent.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {

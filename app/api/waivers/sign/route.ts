@@ -21,13 +21,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get template (or use default)
+    // Get template (or use default) — scoped to this tenant. Without
+    // the clientId guard, a member could sign a template that belongs
+    // to a different gym entirely.
     let template;
     if (templateId) {
-      template = await prisma.waiverTemplate.findUnique({ where: { id: templateId } });
+      template = await prisma.waiverTemplate.findFirst({
+        where: { id: templateId, clientId },
+      });
     } else {
       template = await prisma.waiverTemplate.findFirst({
-        where: { isDefault: true, isActive: true },
+        where: { isDefault: true, isActive: true, clientId },
       });
     }
 

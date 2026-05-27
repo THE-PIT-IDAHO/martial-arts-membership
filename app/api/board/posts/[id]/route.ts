@@ -2,14 +2,29 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 
+// BoardPost is tenant-scoped through its channel.clientId. All ops here
+// now verify the post's channel belongs to the caller's tenant before
+// touching it — previously GET/PATCH/DELETE acted on any post by id.
+
+async function verifyTenant(postId: string, clientId: string) {
+  const post = await prisma.boardPost.findUnique({
+    where: { id: postId },
+    select: { channel: { select: { clientId: true } } },
+  });
+  return !!post && post.channel?.clientId === clientId;
+}
+
 // GET /api/board/posts/[id]
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
+    if (!(await verifyTenant(id, clientId))) {
+      return new NextResponse("Post not found", { status: 404 });
+    }
 
     const post = await prisma.boardPost.findUnique({
       where: { id },
@@ -24,7 +39,6 @@ export async function GET(
         },
       },
     });
-
     if (!post) {
       return new NextResponse("Post not found", { status: 404 });
     }
@@ -39,11 +53,15 @@ export async function GET(
 // PATCH /api/board/posts/[id]
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
+    if (!(await verifyTenant(id, clientId))) {
+      return new NextResponse("Post not found", { status: 404 });
+    }
+
     const body = await req.json();
     const { type, title, content, isPriority, styleTags, reactions } = body;
 
@@ -79,11 +97,14 @@ export async function PATCH(
 // DELETE /api/board/posts/[id]
 export async function DELETE(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
+    if (!(await verifyTenant(id, clientId))) {
+      return new NextResponse("Post not found", { status: 404 });
+    }
 
     // Delete the post (files and replies will cascade delete)
     await prisma.boardPost.delete({

@@ -2,14 +2,29 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 
+// BoardPoll is tenant-scoped through channel.clientId. All ops here
+// now verify the poll's channel belongs to the caller's tenant before
+// touching it — previously GET/PATCH/DELETE worked on any poll by id.
+
+async function verifyTenant(pollId: string, clientId: string) {
+  const poll = await prisma.boardPoll.findUnique({
+    where: { id: pollId },
+    select: { channel: { select: { clientId: true } } },
+  });
+  return !!poll && poll.channel?.clientId === clientId;
+}
+
 // GET /api/board/polls/[id]
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
+    if (!(await verifyTenant(id, clientId))) {
+      return new NextResponse("Poll not found", { status: 404 });
+    }
 
     const poll = await prisma.boardPoll.findUnique({
       where: { id },
@@ -28,7 +43,6 @@ export async function GET(
         },
       },
     });
-
     if (!poll) {
       return new NextResponse("Poll not found", { status: 404 });
     }
@@ -43,11 +57,15 @@ export async function GET(
 // PATCH /api/board/polls/[id]
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
+    if (!(await verifyTenant(id, clientId))) {
+      return new NextResponse("Poll not found", { status: 404 });
+    }
+
     const body = await req.json();
     const { question, endsAt, allowMultiple, isClosed } = body;
 
@@ -85,11 +103,14 @@ export async function PATCH(
 // DELETE /api/board/polls/[id]
 export async function DELETE(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
+    if (!(await verifyTenant(id, clientId))) {
+      return new NextResponse("Poll not found", { status: 404 });
+    }
 
     // Delete the poll (options and votes will cascade delete)
     await prisma.boardPoll.delete({

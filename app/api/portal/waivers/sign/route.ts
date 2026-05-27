@@ -33,16 +33,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Signature required" }, { status: 400 });
     }
 
+    const clientId = await getClientId(request);
+
     let template;
     if (templateId) {
-      template = await prisma.waiverTemplate.findUnique({ where: { id: templateId } });
+      template = await prisma.waiverTemplate.findFirst({
+        where: { id: templateId, clientId },
+      });
     } else {
       template = await prisma.waiverTemplate.findFirst({
-        where: { isDefault: true, isActive: true },
+        where: { isDefault: true, isActive: true, clientId },
       });
     }
-
-    const clientId = await getClientId(request);
 
     const signed = await prisma.signedWaiver.create({
       data: {

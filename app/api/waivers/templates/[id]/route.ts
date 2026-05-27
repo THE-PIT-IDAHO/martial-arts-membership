@@ -29,8 +29,16 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
       });
     }
 
-    const existing = await prisma.waiverTemplate.findUnique({ where: { id: params.id } });
-    const newVersion = content && content !== existing?.content ? (existing?.version || 1) + 1 : undefined;
+    // Verify the template belongs to this tenant before reading old
+    // content or applying updates. The PATCH used to operate on any
+    // template by id with no tenant check.
+    const existing = await prisma.waiverTemplate.findFirst({
+      where: { id: params.id, clientId },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const newVersion = content && content !== existing.content ? (existing.version || 1) + 1 : undefined;
 
     const template = await prisma.waiverTemplate.update({
       where: { id: params.id },

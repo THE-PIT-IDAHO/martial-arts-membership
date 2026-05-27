@@ -1,17 +1,28 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
+import { getClientId } from "@/lib/tenant";
 
-export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
+  const clientId = await getClientId(req);
 
-  // Scope by id only — legacy rows may have a different clientId than the current
-  // tenant, but admin auth has already established access to the member.
+  // Verify the waiver belongs to this tenant via its owning member.
+  // SignedWaiver carries a clientId column directly too — we check both
+  // (member.clientId is the canonical source; signedWaiver.clientId can
+  // get stale on legacy rows).
   const waiver = await prisma.signedWaiver.findUnique({
     where: { id },
-    select: { id: true, memberId: true, templateName: true },
+    select: {
+      id: true,
+      memberId: true,
+      templateName: true,
+      member: { select: { clientId: true } },
+    },
   });
-  if (!waiver) return NextResponse.json({ error: "Waiver not found" }, { status: 404 });
+  if (!waiver || waiver.member?.clientId !== clientId) {
+    return NextResponse.json({ error: "Waiver not found" }, { status: 404 });
+  }
 
   await prisma.signedWaiver.delete({ where: { id: waiver.id } });
 

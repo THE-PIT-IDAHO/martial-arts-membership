@@ -9,7 +9,7 @@ export async function POST(
 ) {
   try {
     const { id: pollId } = await params;
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { optionId, optionIds, odentifier, voterId, voterName } = body;
 
@@ -20,10 +20,13 @@ export async function POST(
       return new NextResponse("At least one option must be selected", { status: 400 });
     }
 
-    // Get the poll to check settings
+    // Get the poll, verifying it belongs to this tenant. Without the
+    // tenant check, a member from one gym could vote on another gym's
+    // poll just by knowing the poll id.
     const poll = await prisma.boardPoll.findUnique({
       where: { id: pollId },
       include: {
+        channel: { select: { clientId: true } },
         options: {
           include: {
             votes: true,
@@ -32,7 +35,7 @@ export async function POST(
       },
     });
 
-    if (!poll) {
+    if (!poll || poll.channel?.clientId !== clientId) {
       return new NextResponse("Poll not found", { status: 404 });
     }
 
@@ -118,12 +121,22 @@ export async function DELETE(
 ) {
   try {
     const { id: pollId } = await params;
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const identifier = searchParams.get("voterId") || searchParams.get("odentifier");
 
     if (!identifier) {
       return new NextResponse("Voter ID is required", { status: 400 });
+    }
+
+    // Verify the poll belongs to this tenant before letting anyone
+    // delete votes against it.
+    const pollCheck = await prisma.boardPoll.findUnique({
+      where: { id: pollId },
+      select: { channel: { select: { clientId: true } } },
+    });
+    if (!pollCheck || pollCheck.channel?.clientId !== clientId) {
+      return new NextResponse("Poll not found", { status: 404 });
     }
 
     // Delete all votes from this identifier for this poll
