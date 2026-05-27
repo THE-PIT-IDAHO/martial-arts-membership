@@ -298,11 +298,16 @@ export default function ManageGymsPage() {
                   <label className="block text-[11px] font-medium text-gray-600 mb-1">Pricing Tier</label>
                   <select value={selectedTierId} onChange={e => setSelectedTierId(e.target.value)} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                     <option value="">Select a tier...</option>
-                    {tiers.map(t => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} — {t.priceCents > 0 ? `$${(t.priceCents / 100).toFixed(2)}/mo` : "Free"} ({t.maxMembers >= 999999 ? "Unlimited" : t.maxMembers} members)
-                      </option>
-                    ))}
+                    {tiers.map(t => {
+                      const members = t.maxMembers >= 999999 ? "Unlimited" : t.maxMembers;
+                      const classes = t.maxClasses >= 999999 ? "Unlimited" : t.maxClasses;
+                      const styles = t.maxStyles >= 999999 ? "Unlimited" : t.maxStyles;
+                      return (
+                        <option key={t.id} value={t.id}>
+                          {t.name} — {t.priceCents > 0 ? `$${(t.priceCents / 100).toFixed(2)}/mo` : "Free"} ({members} members, {styles} styles, {classes} class types)
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
                 <div>

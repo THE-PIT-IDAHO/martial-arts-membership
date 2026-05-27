@@ -156,6 +156,9 @@ export async function POST(req: Request) {
       const kempoStyle = createdStyles.find(s => s.name === "Kempo");
       const bjjStyle = createdStyles.find(s => s.name === "Brazilian Jiu-Jitsu");
 
+      // Three sample class types to seed (was four — dropped "No-Gi" so a
+      // new trial gym with maxClasses=5 still has headroom to add two of
+      // their own class types without hitting the trial limit on day one).
       const sampleClasses = [
         {
           name: "Kempo",
@@ -183,15 +186,6 @@ export async function POST(req: Request) {
           styleIds: JSON.stringify([kempoStyle?.id, bjjStyle?.id].filter(Boolean)),
           styleNames: JSON.stringify(["Kempo", "Brazilian Jiu-Jitsu"].filter((_, i) => [kempoStyle, bjjStyle][i])),
           color: "#8b0000",
-        },
-        {
-          name: "No-Gi",
-          classType: "No-Gi",
-          styleId: bjjStyle?.id || null,
-          styleName: bjjStyle ? "Brazilian Jiu-Jitsu" : null,
-          styleIds: JSON.stringify([bjjStyle?.id, kempoStyle?.id].filter(Boolean)),
-          styleNames: JSON.stringify(["Brazilian Jiu-Jitsu", "Kempo"].filter((_, i) => [bjjStyle, kempoStyle][i])),
-          color: "#7d7d7d",
         },
       ];
 
