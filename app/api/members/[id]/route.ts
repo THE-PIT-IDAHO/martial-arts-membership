@@ -437,6 +437,7 @@ export async function PATCH(req: Request, { params }: Params) {
       entityId: id,
       action: "UPDATE",
       summary: `Updated member ${member.firstName} ${member.lastName}`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ member });
@@ -499,6 +500,7 @@ export async function DELETE(_req: Request, { params }: Params) {
       entityId: id,
       action: "DELETE",
       summary: `Deleted member ${memberToDelete?.firstName || ""} ${memberToDelete?.lastName || ""}`.trim(),
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ success: true });

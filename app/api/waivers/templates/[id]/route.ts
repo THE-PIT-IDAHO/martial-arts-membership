@@ -56,6 +56,7 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
       entityId: params.id,
       action: "UPDATE",
       summary: `Updated waiver template "${template.name}"`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ template });
@@ -84,6 +85,7 @@ export async function DELETE(_req: Request, props: { params: Promise<{ id: strin
       entityId: params.id,
       action: "DELETE",
       summary: "Deactivated waiver template",
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ success: true });

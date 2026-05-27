@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
-    select: { totpSecret: true, totpEnabled: true },
+    select: { totpSecret: true, totpEnabled: true, clientId: true },
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
   if (!user.totpSecret) {
@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
     entityId: session.userId,
     action: "UPDATE",
     summary: "Enabled 2FA",
+    clientId: user.clientId,
   }).catch(() => {});
 
   return NextResponse.json({ success: true, backupCodes: plainCodes });

@@ -832,6 +832,7 @@ export async function PATCH(
       entityId: id,
       action,
       summary: `${action === "CANCEL" ? "Canceled" : "Updated"} membership for ${memberName}`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({

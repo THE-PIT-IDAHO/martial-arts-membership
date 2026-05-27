@@ -67,6 +67,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
       entityId: member.id,
       action: "UPDATE",
       summary: `Split account: ${member.firstName} ${member.lastName} is now independent (was linked to ${parentSummary})`,
+      clientId,
     }).catch(() => {});
 
     // 4. Email the new adult waiver link (if member has an email).

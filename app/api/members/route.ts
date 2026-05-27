@@ -393,6 +393,7 @@ export async function POST(req: Request) {
       entityId: member.id,
       action: "CREATE",
       summary: `Created member ${member.firstName} ${member.lastName}`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ member }, { status: 201 });

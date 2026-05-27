@@ -31,6 +31,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       entityId: space.id,
       action: "UPDATE",
       summary: `Updated space "${space.name}"`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ space });
@@ -61,6 +62,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
       entityId: id,
       action: "DELETE",
       summary: `Deleted space "${space?.name || id}"`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ success: true });

@@ -61,6 +61,7 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
       entityId: params.id,
       action: "CONVERT",
       summary: `Converted trial to membership "${plan.name}" for ${trial.member.firstName} ${trial.member.lastName}`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ membership, trial: { status: "CONVERTED" } });

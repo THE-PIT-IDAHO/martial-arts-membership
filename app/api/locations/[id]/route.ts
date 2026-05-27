@@ -32,6 +32,7 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
       entityId: location.id,
       action: "UPDATE",
       summary: `Updated location "${location.name}"`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ location });
@@ -61,6 +62,7 @@ export async function DELETE(_req: Request, props: { params: Promise<{ id: strin
       entityId: params.id,
       action: "DELETE",
       summary: `Deleted location "${location?.name || params.id}"`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ success: true });

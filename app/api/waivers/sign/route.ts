@@ -55,6 +55,7 @@ export async function POST(request: Request) {
       entityId: signed.id,
       action: "CREATE",
       summary: `Waiver signed for member ${memberId}: ${templateName}`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ signedWaiver: signed }, { status: 201 });

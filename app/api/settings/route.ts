@@ -55,6 +55,7 @@ export async function PUT(req: Request) {
       entityId: "bulk",
       action: "UPDATE",
       summary: `Updated settings: ${keys.join(", ")}`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ success: true });

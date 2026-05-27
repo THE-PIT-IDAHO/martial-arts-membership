@@ -38,6 +38,7 @@ export async function POST(request: Request) {
       entityId: template.id,
       action: "CREATE",
       summary: `Created waiver template "${name}"`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ template }, { status: 201 });

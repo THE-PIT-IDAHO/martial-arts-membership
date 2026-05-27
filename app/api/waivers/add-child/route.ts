@@ -156,6 +156,7 @@ export async function POST(req: Request) {
       entityId: child.id,
       action: "CREATE",
       summary: `Child ${childFirstName} ${childLastName} added under parent ${parentName}; waiver signed`,
+      clientId: parent.clientId,
     }).catch(() => {});
 
     return NextResponse.json({

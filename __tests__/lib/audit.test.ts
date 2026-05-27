@@ -76,6 +76,7 @@ describe("logAudit", () => {
       entityId: "mem-123",
       action: "UPDATE",
       summary: "Updated email",
+      clientId: "client-1",
     });
 
     expect(prisma.auditLog.create).toHaveBeenCalledWith({
@@ -84,6 +85,7 @@ describe("logAudit", () => {
         entityId: "mem-123",
         action: "UPDATE",
         summary: "Updated email",
+        clientId: "client-1",
         changes: null,
       },
     });
@@ -98,12 +100,14 @@ describe("logAudit", () => {
       entityId: "mem-123",
       action: "UPDATE",
       summary: "Updated email",
+      clientId: "client-1",
       changes,
     });
 
     expect(prisma.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         changes: JSON.stringify(changes),
+        clientId: "client-1",
       }),
     });
   });
@@ -118,6 +122,7 @@ describe("logAudit", () => {
         entityId: "mem-123",
         action: "DELETE",
         summary: "Deleted member",
+        clientId: "client-1",
       })
     ).resolves.toBeUndefined();
   });

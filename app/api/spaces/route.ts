@@ -41,6 +41,7 @@ export async function POST(req: Request) {
       entityId: space.id,
       action: "CREATE",
       summary: `Created space "${space.name}"`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ space }, { status: 201 });

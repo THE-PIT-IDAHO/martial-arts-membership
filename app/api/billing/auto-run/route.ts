@@ -548,6 +548,7 @@ export async function POST(req: Request) {
       entityId: today,
       action: "BILLING_RUN",
       summary: `Auto billing run: ${invoicesCreated} invoices created, ${pastDueCount} past-due, ${dunningProcessed} dunning, ${membershipsSuspended} suspended, ${cancellationsProcessed} cancellations`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({

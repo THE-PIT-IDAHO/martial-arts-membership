@@ -51,6 +51,7 @@ export async function POST(request: Request) {
       entityId: trial.id,
       action: "CREATE",
       summary: `Created trial pass for member ${memberId}: ${maxClasses || 3} classes`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ trial }, { status: 201 });

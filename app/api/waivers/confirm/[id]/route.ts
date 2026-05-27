@@ -118,6 +118,7 @@ export async function PATCH(req: Request, { params }: Params) {
       entityId: id,
       action: "UPDATE",
       summary: `Waiver confirmed for ${waiver.member.firstName} ${waiver.member.lastName}`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ success: true });

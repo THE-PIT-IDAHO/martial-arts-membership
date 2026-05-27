@@ -51,6 +51,7 @@ export async function POST(req: Request) {
       entityId: location.id,
       action: "CREATE",
       summary: `Created location "${location.name}"`,
+      clientId,
     }).catch(() => {});
 
     return NextResponse.json({ location }, { status: 201 });

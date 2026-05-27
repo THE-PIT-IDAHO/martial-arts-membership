@@ -38,6 +38,7 @@ export async function DELETE(req: Request, props: { params: Promise<{ id: string
     entityId: waiver.id,
     action: "DELETE",
     summary: `Deleted waiver "${waiver.templateName}" for member ${waiver.memberId} (status reset)`,
+    clientId,
   }).catch(() => {});
 
   return NextResponse.json({ success: true, waiverSignedReset: true });

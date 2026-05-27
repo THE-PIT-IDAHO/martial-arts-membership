@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
       entityId: member.id,
       action: "UPDATE",
       summary: `Sent add-child waiver link to ${member.email}`,
+      clientId: member.clientId,
     }).catch(() => {});
 
     return NextResponse.json({ success: true, sentTo: member.email });

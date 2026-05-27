@@ -5,6 +5,10 @@ export async function logAudit(params: {
   entityId: string;
   action: string;
   summary: string;
+  // Required. Previously omitted, so every row inherited the schema
+  // default of "default-client" and the audit log page (which filters
+  // by the caller's real clientId) found nothing.
+  clientId: string;
   changes?: Record<string, { from: any; to: any }>;
 }) {
   try {
@@ -14,6 +18,7 @@ export async function logAudit(params: {
         entityId: params.entityId,
         action: params.action,
         summary: params.summary,
+        clientId: params.clientId,
         changes: params.changes ? JSON.stringify(params.changes) : null,
       },
     });
