@@ -2,21 +2,27 @@ import { prisma } from "@/lib/prisma";
 import { getDefaultTemplate } from "@/lib/email-template-defaults";
 
 /**
- * Resolve an email template by eventKey:
- * 1. Check DB for a custom template (isCustom: true)
+ * Resolve an email template by eventKey for a specific tenant:
+ * 1. Check DB for a custom template scoped to this tenant
  * 2. Fall back to the hardcoded default
  * 3. Interpolate {{variable}} placeholders with provided values
+ *
+ * clientId is REQUIRED — previously this ran an unscoped findFirst,
+ * which meant tenant A's disabled template would silently cancel
+ * tenant B's emails (and tenant B would receive tenant A's custom
+ * subject/body if it existed). Symptom: "Send Portal Access" button
+ * appearing to succeed but no email actually arriving for a new gym.
  */
 export async function resolveTemplate(
   eventKey: string,
-  variables: Record<string, string>
+  variables: Record<string, string>,
+  clientId: string,
 ): Promise<{ subject: string; bodyHtml: string } | null> {
-  // Try DB first
   const dbTemplate = await prisma.emailTemplate.findFirst({
-    where: { eventKey },
+    where: { eventKey, clientId },
   });
 
-  // If template is disabled, skip sending
+  // If THIS tenant explicitly disabled the template, skip sending.
   if (dbTemplate && dbTemplate.enabled === false) {
     return null;
   }

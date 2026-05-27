@@ -43,13 +43,25 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     const protocol = request.headers.get("x-forwarded-proto") || "http";
     const loginUrl = `${protocol}://${origin}/portal/verify?token=${token}`;
 
-    await sendMagicLinkEmail({
+    const result = await sendMagicLinkEmail({
       email: member.email,
       memberName: `${member.firstName} ${member.lastName}`.trim(),
       loginUrl,
       memberId: member.id,
+      clientId,
       linkExpiry: "7 days",
     });
+
+    if (!result.ok) {
+      // Surface the real reason (Resend not configured, template
+      // disabled for this gym, send rejected, etc.) instead of a
+      // generic 500 — was silently returning success while the email
+      // never made it out.
+      return NextResponse.json(
+        { error: result.error || "Failed to send portal access email" },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({ success: true, email: member.email });
   } catch (err) {

@@ -34,12 +34,20 @@ export async function POST(_request: NextRequest, props: { params: Promise<{ id:
     const protocol = _request.headers.get("x-forwarded-proto") || "http";
     const resetUrl = `${protocol}://${origin}/portal/reset-password?token=${token}`;
 
-    await sendPasswordResetEmail({
+    const result = await sendPasswordResetEmail({
       email: member.email,
       memberName: `${member.firstName} ${member.lastName}`.trim(),
       resetUrl,
       memberId: member.id,
+      clientId,
     });
+
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error || "Failed to send password reset email" },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (err) {

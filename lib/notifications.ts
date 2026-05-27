@@ -4,11 +4,33 @@ import { prisma } from "@/lib/prisma";
 import { generateMagicLinkToken } from "@/lib/portal-auth";
 
 // Wrapper: returns { subject, bodyHtml } or null if the template is disabled
+// for this tenant — OR if we can't resolve which tenant to send for, since
+// running unscoped would leak / inherit another tenant's template state.
+//
+// scope can be either an explicit clientId or a memberId we derive it from.
 async function resolveTemplate(
   eventKey: string,
-  variables: Record<string, string>
+  variables: Record<string, string>,
+  scope: { clientId?: string; memberId?: string },
 ): Promise<{ subject: string; bodyHtml: string } | null> {
-  return _resolveTemplate(eventKey, variables);
+  const clientId = await resolveClientId(scope);
+  if (!clientId) return null;
+  return _resolveTemplate(eventKey, variables, clientId);
+}
+
+// Derive the acting tenant from a memberId when the caller didn't pass
+// clientId explicitly. Returns null if the member isn't found.
+async function resolveClientId(opts: {
+  clientId?: string;
+  memberId?: string;
+}): Promise<string | null> {
+  if (opts.clientId) return opts.clientId;
+  if (!opts.memberId) return null;
+  const m = await prisma.member.findUnique({
+    where: { id: opts.memberId },
+    select: { clientId: true },
+  });
+  return m?.clientId || null;
 }
 
 // --- Branding ---
@@ -129,7 +151,7 @@ export async function sendWelcomeEmail(params: {
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
     portalSection,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -157,7 +179,7 @@ export async function sendInvoiceCreatedEmail(params: {
     amount: formatCents(params.amountCents),
     dueDate: formatDate(params.dueDate),
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -183,7 +205,7 @@ export async function sendPaymentReceivedEmail(params: {
     planName: params.planName ? ` for ${params.planName}` : "",
     invoiceNumber: params.invoiceNumber ? `<p style="color:#6b7280;">Invoice: ${params.invoiceNumber}</p>` : "",
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -210,7 +232,7 @@ export async function sendPastDueAlertEmail(params: {
     invoiceNumber: params.invoiceNumber ? `<p style="color:#6b7280;">Invoice: ${params.invoiceNumber}</p>` : "",
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -234,7 +256,7 @@ export async function sendPromotionCongratsEmail(params: {
     newRank: params.newRank,
     styleName: params.styleName,
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -260,7 +282,7 @@ export async function sendClassReminderEmail(params: {
     classDate: params.classDate,
     classTime: params.classTime,
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -284,7 +306,7 @@ export async function sendMembershipExpiryWarningEmail(params: {
     planName: params.planName,
     expiryDate: formatDate(params.expiryDate),
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -298,19 +320,25 @@ export async function sendMagicLinkEmail(params: {
   memberName: string;
   loginUrl: string;
   memberId?: string;
+  clientId?: string;  // pass when memberId isn't available (e.g. before member is loaded)
   linkExpiry?: string; // Human-readable expiry shown in the email body (default "15 minutes")
-}) {
-  const brand = await getGymBranding();
+}): Promise<{ ok: boolean; error?: string }> {
+  const clientId = await resolveClientId({ clientId: params.clientId, memberId: params.memberId });
+  if (!clientId) return { ok: false, error: "Could not determine tenant for this email" };
+  const brand = await getGymBranding(clientId);
   const resolved = await resolveTemplate("magic_link", {
     memberName: params.memberName,
     loginUrl: params.loginUrl,
     linkExpiry: params.linkExpiry || "15 minutes",
     gymName: brand.gymName,
-  });
-  if (!resolved) return;
+  }, { clientId });
+  if (!resolved) {
+    return { ok: false, error: "Magic-link email template is disabled for this gym" };
+  }
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [params.email], subject, html, memberId: params.memberId, eventType: "MAGIC_LINK" });
+  const sent = await sendEmail({ to: [params.email], subject, html, memberId: params.memberId, clientId, eventType: "MAGIC_LINK" });
+  return sent ? { ok: true } : { ok: false, error: "Email provider rejected the send (check RESEND_API_KEY and notifications setting)" };
 }
 
 // --- 8b. Password Reset Email ---
@@ -320,20 +348,23 @@ export async function sendPasswordResetEmail(params: {
   memberName: string;
   resetUrl: string;
   memberId?: string;
-}) {
-  const brand = await getGymBranding();
+  clientId?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const clientId = await resolveClientId({ clientId: params.clientId, memberId: params.memberId });
+  if (!clientId) return { ok: false, error: "Could not determine tenant for this email" };
+  const brand = await getGymBranding(clientId);
   let resolved = null;
   try {
     resolved = await resolveTemplate("password_reset", {
       memberName: params.memberName,
       resetUrl: params.resetUrl,
       gymName: brand.gymName,
-    });
+    }, { clientId });
   } catch { /* no template, use fallback */ }
   if (resolved) {
     const html = wrapInTemplate(brand, resolved.bodyHtml);
-    await sendEmail({ to: [params.email], subject: resolved.subject, html, memberId: params.memberId, eventType: "PASSWORD_RESET" });
-    return;
+    const sent = await sendEmail({ to: [params.email], subject: resolved.subject, html, memberId: params.memberId, clientId, eventType: "PASSWORD_RESET" });
+    return sent ? { ok: true } : { ok: false, error: "Email provider rejected the send" };
   }
   // Fallback if no template configured
   const subject = `Reset your ${brand.gymName} portal password`;
@@ -349,7 +380,8 @@ export async function sendPasswordResetEmail(params: {
     <p style="font-size:13px;color:#666;">If you didn't request this, you can safely ignore this email.</p>
   `;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [params.email], subject, html, memberId: params.memberId, eventType: "PASSWORD_RESET" });
+  const sent = await sendEmail({ to: [params.email], subject, html, memberId: params.memberId, clientId, eventType: "PASSWORD_RESET" });
+  return sent ? { ok: true } : { ok: false, error: "Email provider rejected the send" };
 }
 
 // --- 9. Booking Confirmation ---
@@ -378,7 +410,7 @@ export async function sendBookingConfirmationEmail(params: {
   if (isWaitlisted && params.waitlistPosition) {
     vars.waitlistPosition = String(params.waitlistPosition);
   }
-  const resolved = await resolveTemplate(eventKey, vars);
+  const resolved = await resolveTemplate(eventKey, vars, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -403,7 +435,7 @@ export async function sendWaitlistPromotionEmail(params: {
     classDate: params.classDate,
     classTime: params.classTime,
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -427,7 +459,7 @@ export async function sendWaiverReceivedEmail(params: {
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
     portalSection,
-  });
+  }, { memberId: params.memberId, clientId: params.clientId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -464,7 +496,7 @@ export async function sendContractSignedEmail(params: {
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
     portalSection,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -486,15 +518,18 @@ export async function sendWaiverWelcomeEmail(params: {
   memberName: string;
   portalUrl: string;
   memberId?: string;
+  clientId?: string;
 }) {
-  const brand = await getGymBranding();
+  const clientId = await resolveClientId({ clientId: params.clientId, memberId: params.memberId });
+  if (!clientId) return;
+  const brand = await getGymBranding(clientId);
   const resolved = await resolveTemplate("waiver_welcome", {
     memberName: params.memberName,
     memberEmail: params.email,
     portalUrl: params.portalUrl,
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
-  });
+  }, { memberId: params.memberId, clientId: params.clientId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -519,7 +554,7 @@ export async function sendWaiverConfirmationEmail(params: {
     magicLoginUrl: params.magicLoginUrl,
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
-  });
+  }, { memberId: params.memberId, clientId: params.clientId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -542,7 +577,7 @@ export async function sendCustomMessageEmail(params: {
     subject: params.subject,
     message: params.message,
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -571,7 +606,7 @@ export async function sendCancellationConfirmationEmail(params: {
       : "",
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -584,9 +619,10 @@ export async function sendLowStockAlertEmail(params: {
   itemName: string;
   currentQuantity: number;
   threshold: number;
+  clientId: string;
 }) {
   if (!(await isEnabled("notify_low_stock"))) return;
-  const brand = await getGymBranding();
+  const brand = await getGymBranding(params.clientId);
   const gymEmail = brand.gymEmail;
   if (!gymEmail) return;
   const resolved = await resolveTemplate("low_stock_alert", {
@@ -594,7 +630,7 @@ export async function sendLowStockAlertEmail(params: {
     currentQuantity: String(params.currentQuantity),
     threshold: String(params.threshold),
     gymName: brand.gymName,
-  });
+  }, { clientId: params.clientId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -620,7 +656,7 @@ export async function sendDunningEmail(params: {
     invoiceNumber: params.invoiceNumber ? `<p style="color:#6b7280;">Invoice: ${params.invoiceNumber}</p>` : "",
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -636,10 +672,11 @@ export async function sendPromotionEligibilityAlertEmail(params: {
     currentRank: string;
     nextRank: string;
   }>;
+  clientId: string;
 }) {
   if (!(await isEnabled("notify_promotion_eligible"))) return;
   if (params.eligible.length === 0) return;
-  const brand = await getGymBranding();
+  const brand = await getGymBranding(params.clientId);
   const gymEmail = brand.gymEmail;
   if (!gymEmail) return;
 
@@ -663,7 +700,7 @@ export async function sendPromotionEligibilityAlertEmail(params: {
     eligibleList,
     eligibleCount: String(params.eligible.length),
     gymName: brand.gymName,
-  });
+  }, { clientId: params.clientId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -683,7 +720,7 @@ export async function sendBirthdayEmail(params: {
   const resolved = await resolveTemplate("birthday", {
     memberName: params.memberName,
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -707,7 +744,7 @@ export async function sendInactiveReengagementEmail(params: {
     memberName: params.memberName,
     daysSinceLastClass: String(params.daysSinceLastClass),
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -735,7 +772,7 @@ export async function sendRenewalReminderEmail(params: {
     expiryDate: formatDate(params.expiryDate),
     daysRemaining: String(params.daysRemaining),
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
@@ -763,7 +800,7 @@ export async function sendTrialExpiringEmail(params: {
     expiresAt: formatDate(params.expiresAt),
     classesRemaining: `${remaining} class${remaining === 1 ? "" : "es"}`,
     gymName: brand.gymName,
-  });
+  }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);

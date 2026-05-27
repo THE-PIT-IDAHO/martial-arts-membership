@@ -520,7 +520,7 @@ export async function POST(req: Request) {
           const newlyEligible = eligible.filter((e) => !previousKeys.has(makeKey(e)));
 
           if (newlyEligible.length > 0) {
-            sendPromotionEligibilityAlertEmail({ eligible: newlyEligible }).catch(() => {});
+            sendPromotionEligibilityAlertEmail({ eligible: newlyEligible, clientId }).catch(() => {});
           }
 
           const existingPromoSetting = await prisma.settings.findFirst({ where: { key: "promotion_eligible_last_notified", clientId } });
