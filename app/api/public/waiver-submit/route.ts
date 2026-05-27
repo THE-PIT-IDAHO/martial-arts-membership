@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { canAddMember } from "@/lib/trial";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 
 async function getNextMemberNumber(): Promise<number> {
   const lastMember = await prisma.member.findFirst({
@@ -59,12 +60,26 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
     }
 
     // Patch the member with any field updates the signer entered.
+    let emailUpdate: { email: string | null } | null = null;
+    if (email !== undefined) {
+      const normalizedEmail = normalizeEmail(email);
+      const emailCheck = await checkEmailAvailable({
+        email: normalizedEmail,
+        clientId,
+        excludeMemberId: existing.id,
+      });
+      if (!emailCheck.ok) {
+        return NextResponse.json({ error: emailCheck.reason }, { status: 409 });
+      }
+      emailUpdate = { email: normalizedEmail };
+    }
+
     await prisma.member.update({
       where: { id: existing.id },
       data: {
         ...(firstName ? { firstName: firstName.trim() } : {}),
         ...(lastName ? { lastName: lastName.trim() } : {}),
-        ...(email !== undefined ? { email: email || null } : {}),
+        ...(emailUpdate || {}),
         ...(phone !== undefined ? { phone: phone || null } : {}),
         ...(dateOfBirth ? { dateOfBirth: new Date(dateOfBirth) } : {}),
         ...(address !== undefined ? { address: address || null } : {}),
@@ -108,11 +123,17 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
 
   const memberNumber = await getNextMemberNumber();
 
+  const normalizedEmail = normalizeEmail(email);
+  const emailCheck = await checkEmailAvailable({ email: normalizedEmail, clientId });
+  if (!emailCheck.ok) {
+    return NextResponse.json({ error: emailCheck.reason }, { status: 409 });
+  }
+
   const member = await prisma.member.create({
     data: {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
-      email: email || null,
+      email: normalizedEmail,
       phone: phone || null,
       dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
       address: address || null,
@@ -238,13 +259,27 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
     if (!found) {
       return NextResponse.json({ error: "Existing parent not found" }, { status: 404 });
     }
+    let emailUpdate: { email: string | null } | null = null;
+    if (email !== undefined) {
+      const normalizedEmail = normalizeEmail(email);
+      const emailCheck = await checkEmailAvailable({
+        email: normalizedEmail,
+        clientId,
+        excludeMemberId: found.id,
+      });
+      if (!emailCheck.ok) {
+        return NextResponse.json({ error: emailCheck.reason }, { status: 409 });
+      }
+      emailUpdate = { email: normalizedEmail };
+    }
+
     await prisma.member.update({
       where: { id: found.id },
       data: {
         ...(guardianFirstName ? { firstName: guardianFirstName.trim() } : {}),
         ...(guardianLastName ? { lastName: guardianLastName.trim() } : {}),
         ...(guardianDateOfBirth ? { dateOfBirth: new Date(guardianDateOfBirth) } : {}),
-        ...(email !== undefined ? { email: email || null } : {}),
+        ...(emailUpdate || {}),
         ...(phone !== undefined ? { phone: phone || null } : {}),
         ...(address !== undefined ? { address: address || null } : {}),
         ...(city !== undefined ? { city: city || null } : {}),
@@ -260,12 +295,20 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
     guardian = { id: found.id };
   } else if (guardianFirstName && guardianLastName) {
     const guardianNumber = await getNextMemberNumber();
+    const normalizedGuardianEmail = normalizeEmail(email);
+    const guardianEmailCheck = await checkEmailAvailable({
+      email: normalizedGuardianEmail,
+      clientId,
+    });
+    if (!guardianEmailCheck.ok) {
+      return NextResponse.json({ error: guardianEmailCheck.reason }, { status: 409 });
+    }
     const created = await prisma.member.create({
       data: {
         firstName: guardianFirstName.trim(),
         lastName: guardianLastName.trim(),
         dateOfBirth: guardianDateOfBirth ? new Date(guardianDateOfBirth) : null,
-        email: email || null,
+        email: normalizedGuardianEmail,
         phone: phone || null,
         address: address || null,
         city: city || null,
@@ -295,13 +338,30 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
       if (!found) {
         return NextResponse.json({ error: "Existing child not found" }, { status: 404 });
       }
+      let childEmailUpdate: { email: string | null } | null = null;
+      if (c.email !== undefined) {
+        const normalizedChildEmail = normalizeEmail(c.email);
+        const childEmailCheck = await checkEmailAvailable({
+          email: normalizedChildEmail,
+          clientId,
+          excludeMemberId: found.id,
+          // The guardian is part of the same submission — sharing email
+          // with them is the expected "kid uses parent's email" case.
+          allowedRelatedMemberIds: guardian ? [guardian.id] : undefined,
+        });
+        if (!childEmailCheck.ok) {
+          return NextResponse.json({ error: childEmailCheck.reason }, { status: 409 });
+        }
+        childEmailUpdate = { email: normalizedChildEmail };
+      }
+
       await prisma.member.update({
         where: { id: found.id },
         data: {
           ...(c.firstName ? { firstName: c.firstName.trim() } : {}),
           ...(c.lastName ? { lastName: c.lastName.trim() } : {}),
           ...(c.dateOfBirth ? { dateOfBirth: new Date(c.dateOfBirth) } : {}),
-          ...(c.email !== undefined ? { email: c.email || null } : {}),
+          ...(childEmailUpdate || {}),
           ...(c.emergencyContactName !== undefined ? { emergencyContactName: c.emergencyContactName || null } : {}),
           ...(c.emergencyContactPhone !== undefined ? { emergencyContactPhone: c.emergencyContactPhone || null } : {}),
           ...(c.emergencyContactRelationship !== undefined ? { emergencyContactRelationship: c.emergencyContactRelationship || null } : {}),
@@ -313,11 +373,20 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
       dependentId = found.id;
     } else {
       const depNumber = await getNextMemberNumber();
+      const normalizedNewChildEmail = normalizeEmail(c.email);
+      const newChildEmailCheck = await checkEmailAvailable({
+        email: normalizedNewChildEmail,
+        clientId,
+        allowedRelatedMemberIds: guardian ? [guardian.id] : undefined,
+      });
+      if (!newChildEmailCheck.ok) {
+        return NextResponse.json({ error: newChildEmailCheck.reason }, { status: 409 });
+      }
       const created = await prisma.member.create({
         data: {
           firstName: (c.firstName || "").trim(),
           lastName: (c.lastName || "").trim(),
-          email: c.email || null,
+          email: normalizedNewChildEmail,
           phone: phone || null,
           dateOfBirth: c.dateOfBirth ? new Date(c.dateOfBirth) : null,
           address: address || null,

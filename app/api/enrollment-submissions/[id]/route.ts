@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendWelcomeEmail } from "@/lib/notifications";
 import { getClientId } from "@/lib/tenant";
+import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -24,12 +25,21 @@ export async function PATCH(req: Request, { params }: Params) {
     }
 
     if (action === "approve") {
+      // Reject the approval if the submitted email collides with an
+      // unrelated existing member. Admin can resolve the conflict on
+      // the submission (or link the families) and re-approve.
+      const normalizedEmail = normalizeEmail(submission.email);
+      const emailCheck = await checkEmailAvailable({ email: normalizedEmail, clientId });
+      if (!emailCheck.ok) {
+        return NextResponse.json({ error: emailCheck.reason }, { status: 409 });
+      }
+
       // Create the member
       const member = await prisma.member.create({
         data: {
           firstName: submission.firstName,
           lastName: submission.lastName,
-          email: submission.email,
+          email: normalizedEmail,
           phone: submission.phone,
           dateOfBirth: submission.dateOfBirth,
           address: submission.address,

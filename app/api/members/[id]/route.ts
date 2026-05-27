@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit, computeChanges } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
+import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -247,7 +248,21 @@ export async function PATCH(req: Request, { params }: Params) {
 
     if (firstName !== undefined) updateData.firstName = firstName;
     if (lastName !== undefined) updateData.lastName = lastName;
-    if (email !== undefined) updateData.email = email;
+    if (email !== undefined) {
+      // Normalize + enforce one-email-per-tenant. Family members are
+      // exempt (a kid updating to a sibling's own email would still be
+      // blocked unless that link exists).
+      const normalizedEmail = normalizeEmail(email);
+      const emailCheck = await checkEmailAvailable({
+        email: normalizedEmail,
+        clientId,
+        excludeMemberId: id,
+      });
+      if (!emailCheck.ok) {
+        return NextResponse.json({ error: emailCheck.reason }, { status: 409 });
+      }
+      updateData.email = normalizedEmail;
+    }
     if (phone !== undefined) updateData.phone = phone;
     if (status !== undefined) updateData.status = status;
 

@@ -7,6 +7,7 @@ import { sendWelcomeEmail } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
 import { canAddMember } from "@/lib/trial";
+import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 
 const MIN_MEMBER_NUMBER = 10000000;
 
@@ -363,6 +364,15 @@ export async function POST(req: Request) {
     // Resolve tenant clientId from request header
     const clientId = await getClientId(req);
 
+    // Enforce one-email-per-member at the tenant scope. Family members
+    // get an exception (handled by the helper) so the add-child flow can
+    // share a parent's email with their kids' profiles.
+    const normalizedEmail = normalizeEmail(email);
+    const emailCheck = await checkEmailAvailable({ email: normalizedEmail, clientId });
+    if (!emailCheck.ok) {
+      return NextResponse.json({ error: emailCheck.reason }, { status: 409 });
+    }
+
     // Check trial limits
     const memberCheck = await canAddMember(clientId);
     if (!memberCheck.allowed) {
@@ -375,7 +385,7 @@ export async function POST(req: Request) {
       data: {
         firstName,
         lastName,
-        email: email || null,
+        email: normalizedEmail,
         phone: phone || null,
         clientId,
         status: status || "PROSPECT",

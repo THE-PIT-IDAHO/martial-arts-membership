@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { normalizeEmail } from "@/lib/member-email";
 
 const MIN_MEMBER_NUMBER = 10000000;
 
@@ -185,11 +186,14 @@ export async function POST(req: Request) {
         }
       }
 
-      // Build base member data
+      // Build base member data. Email is normalized to lowercase for
+      // consistency with the rest of the app — bulk-import doesn't
+      // enforce uniqueness (migration data may legitimately contain
+      // shared emails for households; admin can clean up afterward).
       const memberData: any = {
         firstName: m.firstName.trim(),
         lastName: m.lastName.trim(),
-        email: m.email?.trim() || null,
+        email: normalizeEmail(m.email),
         phone: m.phone?.trim() || null,
         clientId,
         status: m.status?.toUpperCase().trim() || "PROSPECT",

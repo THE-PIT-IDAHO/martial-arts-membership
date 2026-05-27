@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { canAddMember } from "@/lib/trial";
 import { logAudit } from "@/lib/audit";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 
 async function getNextMemberNumber(): Promise<number> {
   const lastMember = await prisma.member.findFirst({
@@ -81,11 +82,25 @@ export async function POST(req: Request) {
     const childNumber = await getNextMemberNumber();
     const parentName = `${parent.firstName} ${parent.lastName}`.trim();
 
+    // Email uniqueness: kids commonly use the parent's email. The
+    // allowlist tells the helper that sharing with this specific parent
+    // is fine, but the child still can't pick an email belonging to a
+    // random unrelated member.
+    const normalizedChildEmail = normalizeEmail(childEmail);
+    const emailCheck = await checkEmailAvailable({
+      email: normalizedChildEmail,
+      clientId: parent.clientId,
+      allowedRelatedMemberIds: [parent.id],
+    });
+    if (!emailCheck.ok) {
+      return NextResponse.json({ error: emailCheck.reason }, { status: 409 });
+    }
+
     const child = await prisma.member.create({
       data: {
         firstName: childFirstName.trim(),
         lastName: childLastName.trim(),
-        email: childEmail || null,
+        email: normalizedChildEmail,
         dateOfBirth: childDateOfBirth ? new Date(childDateOfBirth) : null,
         address: parent.address,
         city: parent.city,
