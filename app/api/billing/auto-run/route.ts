@@ -16,13 +16,114 @@ import { getActiveProcessor, chargeStoredPaymentMethod, getCurrency, type Proces
 import { getClientId } from "@/lib/tenant";
 import { applyMemberDiscounts, markDiscountsUsed } from "@/lib/member-discounts";
 
+// Vercel cron sends a GET request to the path on its schedule. The
+// dashboard caller still uses POST. Both delegate to the same handler.
+export async function GET(req: Request) {
+  return POST(req);
+}
+
+type TenantResult = {
+  clientId: string;
+  skipped?: boolean;
+  message?: string;
+  invoicesCreated?: number;
+  invoicesSkipped?: number;
+  pastDueMarked?: number;
+  dunningProcessed?: number;
+  membershipsSuspended?: number;
+  cancellationsProcessed?: number;
+  error?: string;
+};
+
 // POST /api/billing/auto-run
-// Called automatically from the dashboard on first load of the day.
-// Checks if billing has already run today; if not, runs billing + past-due sweep.
+//
+// Two callers:
+//   1. Dashboard (browser, has x-tenant-slug header): run billing for that
+//      single tenant. Used as a daily catch-up when an admin signs in.
+//   2. Vercel cron (no tenant header, since cron URLs aren't subdomain-
+//      scoped): iterate every Client with autoRenew memberships and run
+//      billing for each.
+//
+// Previously the route did `const clientId = await getClientId(req)` at
+// the top with no fallback. The cron has no header, so getClientId threw
+// "Tenant not resolved", the catch returned 500, and auto-billing never
+// happened for ANY tenant — every member's recurring charge silently
+// skipped on the scheduled date and `nextPaymentDate` stayed where it was.
 export async function POST(req: Request) {
   try {
-    const clientId = await getClientId(req);
-    const tz = (await getSetting("timezone")) || "America/Denver";
+    // Try to resolve a single tenant from the request header. If we can,
+    // we're the dashboard caller and only run for that tenant. If not,
+    // we're the cron and iterate every active tenant.
+    let tenantIds: string[] | null = null;
+    try {
+      const single = await getClientId(req);
+      tenantIds = [single];
+    } catch {
+      // No tenant header → cron call. Find every tenant that has at
+      // least one auto-renew membership to bill.
+      const candidates = await prisma.client.findMany({
+        where: {
+          members: {
+            some: {
+              memberships: {
+                some: {
+                  status: "ACTIVE",
+                  membershipPlan: { autoRenew: true },
+                },
+              },
+            },
+          },
+        },
+        select: { id: true },
+      });
+      tenantIds = candidates.map((c) => c.id);
+    }
+
+    const results: TenantResult[] = [];
+    for (const clientId of tenantIds) {
+      try {
+        const r = await processBillingForTenant(clientId);
+        results.push(r);
+      } catch (err) {
+        console.error(`Auto-billing failed for tenant ${clientId}:`, err);
+        results.push({
+          clientId,
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
+      }
+    }
+
+    // For the dashboard caller (single tenant), preserve the old response
+    // shape so the front-end doesn't need to change. For the cron we
+    // return a summary array.
+    if (results.length === 1) {
+      const r = results[0];
+      if (r.error) {
+        return NextResponse.json({ error: r.error }, { status: 500 });
+      }
+      if (r.skipped) {
+        return NextResponse.json({ skipped: true, message: r.message });
+      }
+      return NextResponse.json({
+        skipped: false,
+        invoicesCreated: r.invoicesCreated || 0,
+        invoicesSkipped: r.invoicesSkipped || 0,
+        pastDueMarked: r.pastDueMarked || 0,
+        dunningProcessed: r.dunningProcessed || 0,
+        membershipsSuspended: r.membershipsSuspended || 0,
+        cancellationsProcessed: r.cancellationsProcessed || 0,
+      });
+    }
+    return NextResponse.json({ tenants: results.length, results });
+  } catch (error) {
+    console.error("Error in auto billing run:", error);
+    return new NextResponse("Failed to run auto billing", { status: 500 });
+  }
+}
+
+async function processBillingForTenant(clientId: string): Promise<TenantResult> {
+  try {
+    const tz = (await getSetting("timezone", clientId)) || "America/Denver";
     const today = getTodayInTimezone(tz); // YYYY-MM-DD in gym's timezone
 
     // Check if already run today
@@ -31,7 +132,7 @@ export async function POST(req: Request) {
     });
 
     if (lastRunSetting?.value === today) {
-      return NextResponse.json({ skipped: true, message: "Already run today" });
+      return { clientId, skipped: true, message: "Already run today" };
     }
 
     // Check if auto-generate is enabled
@@ -39,7 +140,7 @@ export async function POST(req: Request) {
       where: { key: "billing_auto_generate", clientId },
     });
     if (autoGenSetting?.value === "false") {
-      return NextResponse.json({ skipped: true, message: "Auto-generate disabled" });
+      return { clientId, skipped: true, message: "Auto-generate disabled" };
     }
 
     // --- Run billing (same logic as /api/billing/run) ---
@@ -551,7 +652,8 @@ export async function POST(req: Request) {
       clientId,
     }).catch(() => {});
 
-    return NextResponse.json({
+    return {
+      clientId,
       skipped: false,
       invoicesCreated,
       invoicesSkipped,
@@ -559,9 +661,12 @@ export async function POST(req: Request) {
       dunningProcessed,
       membershipsSuspended,
       cancellationsProcessed,
-    });
+    };
   } catch (error) {
-    console.error("Error in auto billing run:", error);
-    return new NextResponse("Failed to run auto billing", { status: 500 });
+    console.error(`Error processing billing for tenant ${clientId}:`, error);
+    return {
+      clientId,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
   }
 }

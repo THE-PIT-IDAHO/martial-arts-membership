@@ -10,6 +10,16 @@ import { getTodayInTimezone, formatDateInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
 import { getClientId } from "@/lib/tenant";
 
+// Vercel cron sends GET. Dashboard sends POST. Both delegate here.
+// NOTE: the body of this route still uses unscoped queries in places
+// (lifecycle_last_auto_run findFirst, member sweeps without clientId).
+// Those are separate latent bugs to clean up — for this commit we just
+// want the cron to actually fire so birthday / inactive / renewal /
+// trial-expiring emails resume going out.
+export async function GET(req: Request) {
+  return POST(req);
+}
+
 export async function POST(req: Request) {
   const tz = (await getSetting("timezone")) || "America/Denver";
   const today = getTodayInTimezone(tz);
