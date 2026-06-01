@@ -13,8 +13,13 @@ function getGracePeriodDays(priceCents: number): number {
   return 7;                              // Trial / Free
 }
 
-// POST /api/admin/cleanup — auto-delete expired/canceled gyms past grace period
-// Called daily by Vercel cron
+// GET/POST /api/admin/cleanup — auto-delete expired/canceled gyms past grace
+// period. Vercel cron sends GET; manual/admin invocations send POST. Both
+// delegate to the same handler.
+export async function GET() {
+  return POST();
+}
+
 export async function POST() {
   try {
     const now = new Date();
