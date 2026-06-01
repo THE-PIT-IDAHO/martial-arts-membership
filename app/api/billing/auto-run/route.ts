@@ -237,6 +237,13 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
 
         try {
           const invoiceNumber = generateInvoiceNumber();
+          // $0 invoices (coach comps, fully-discounted plans) skip the
+          // processor entirely. Stripe rejects sub-minimum charges, which
+          // would leave the row PENDING → the past-due sweep would then
+          // flip it to PAST_DUE and start emailing the member as if they
+          // owed money. Mark them PAID at creation so they read as a
+          // clean monthly receipt.
+          const isZeroDollar = amountCents === 0;
           await prisma.invoice.create({
             data: {
               invoiceNumber,
@@ -248,6 +255,13 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
               dueDate,
               notes: discountNotes.length > 0 ? discountNotes.join(" | ") : null,
               clientId,
+              ...(isZeroDollar
+                ? {
+                    status: "PAID",
+                    paidAt: new Date(),
+                    paymentMethod: "COMPLIMENTARY",
+                  }
+                : {}),
             },
           });
           invoicesCreated++;
@@ -258,7 +272,7 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
           }
 
           // Attempt auto-charge if member has a stored payment method
-          if (activeProcessor && ms.member.defaultPaymentMethodId) {
+          if (!isZeroDollar && activeProcessor && ms.member.defaultPaymentMethodId) {
             try {
               const chargeResult = await chargeStoredPaymentMethod({
                 memberId: ms.member.id,
@@ -317,10 +331,19 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
     }
 
     // --- Run past-due sweep ---
+    // amountCents > 0 — a $0 invoice has nothing to dun on. If one ever
+    // ended up PENDING (legacy data from before the $0 short-circuit),
+    // upgrade it to PAID/COMPLIMENTARY rather than flipping it PAST_DUE.
+    await prisma.invoice.updateMany({
+      where: { clientId, status: "PENDING", amountCents: 0 },
+      data: { status: "PAID", paidAt: new Date(), paymentMethod: "COMPLIMENTARY" },
+    });
+
     const pastDueInvoices = await prisma.invoice.findMany({
       where: {
         clientId,
         status: "PENDING",
+        amountCents: { gt: 0 },
         dueDate: { lt: new Date() },
       },
       include: {

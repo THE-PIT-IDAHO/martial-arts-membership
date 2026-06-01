@@ -73,9 +73,12 @@ export async function POST(req: Request) {
           billingPeriodStart
         );
 
-        // Try to create invoice — unique constraint prevents duplicates
+        // Try to create invoice — unique constraint prevents duplicates.
+        // $0 invoices (coach comps etc.) come out PAID so the past-due
+        // sweep doesn't later email the member chasing nothing.
         try {
           const invoiceNumber = generateInvoiceNumber();
+          const isZeroDollar = amountCents === 0;
           await prisma.invoice.create({
             data: {
               invoiceNumber,
@@ -86,6 +89,13 @@ export async function POST(req: Request) {
               billingPeriodEnd,
               dueDate,
               clientId,
+              ...(isZeroDollar
+                ? {
+                    status: "PAID",
+                    paidAt: new Date(),
+                    paymentMethod: "COMPLIMENTARY",
+                  }
+                : {}),
             },
           });
           created++;
