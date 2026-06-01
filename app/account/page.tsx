@@ -115,7 +115,7 @@ export default function AccountPage() {
   const [dunningEnabled, setDunningEnabled] = useState(true);
   const [dunningMaxRetries, setDunningMaxRetries] = useState(4);
   const [billingGracePeriod, setBillingGracePeriod] = useState(7);
-  const [billingAutoGenerate, setBillingAutoGenerate] = useState(false);
+  const [billingAutoGenerate, setBillingAutoGenerate] = useState(true);
   const [savingDunning, setSavingDunning] = useState(false);
   const [runningBilling, setRunningBilling] = useState(false);
   const [billingRunResult, setBillingRunResult] = useState<string | null>(null);
@@ -224,7 +224,7 @@ export default function AccountPage() {
             setDunningEnabled(map.dunning_enabled !== "false");
             setDunningMaxRetries(parseInt(map.dunning_max_retries) || 4);
             setBillingGracePeriod(parseInt(map.billing_grace_period_days) || 7);
-            setBillingAutoGenerate(map.billing_auto_generate === "true");
+            setBillingAutoGenerate(map.billing_auto_generate !== "false");
             // Load payment processor settings
             const pmKeys = Object.keys(map).filter((k) => k.startsWith("payment_"));
             if (pmKeys.length > 0) {
