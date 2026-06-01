@@ -38,29 +38,24 @@ type TenantResult = {
 // POST /api/billing/auto-run
 //
 // Two callers:
-//   1. Dashboard (browser, has x-tenant-slug header): run billing for that
-//      single tenant. Used as a daily catch-up when an admin signs in.
-//   2. Vercel cron (no tenant header, since cron URLs aren't subdomain-
-//      scoped): iterate every Client with autoRenew memberships and run
+//   1. Dashboard (browser, admin cookie + x-tenant-slug header): run
+//      billing for that single tenant. Used as a daily catch-up when an
+//      admin signs in.
+//   2. Vercel cron: middleware verifies CRON_SECRET and sets x-cron-mode.
+//      We then iterate every Client with autoRenew memberships and run
 //      billing for each.
 //
-// Previously the route did `const clientId = await getClientId(req)` at
-// the top with no fallback. The cron has no header, so getClientId threw
-// "Tenant not resolved", the catch returned 500, and auto-billing never
-// happened for ANY tenant — every member's recurring charge silently
-// skipped on the scheduled date and `nextPaymentDate` stayed where it was.
+// Cron history: before this fix, middleware 401'd every cron call (no
+// admin cookie) so the route never ran. Recurring memberships have not
+// been auto-charged for any gym since the multi-tenant refactor — they
+// just sat past-due with stale nextPaymentDate.
 export async function POST(req: Request) {
   try {
-    // Try to resolve a single tenant from the request header. If we can,
-    // we're the dashboard caller and only run for that tenant. If not,
-    // we're the cron and iterate every active tenant.
-    let tenantIds: string[] | null = null;
-    try {
-      const single = await getClientId(req);
-      tenantIds = [single];
-    } catch {
-      // No tenant header → cron call. Find every tenant that has at
-      // least one auto-renew membership to bill.
+    const isCronCall = req.headers.get("x-cron-mode") === "true";
+
+    let tenantIds: string[];
+    if (isCronCall) {
+      // Iterate every tenant that has at least one auto-renew membership.
       const candidates = await prisma.client.findMany({
         where: {
           members: {
@@ -77,6 +72,10 @@ export async function POST(req: Request) {
         select: { id: true },
       });
       tenantIds = candidates.map((c) => c.id);
+    } else {
+      // Dashboard caller — middleware already validated the admin session
+      // and set x-tenant-slug. Run for that single tenant.
+      tenantIds = [await getClientId(req)];
     }
 
     const results: TenantResult[] = [];

@@ -5,6 +5,19 @@ import { getPermissionForRoute } from "@/lib/permissions";
 const PORTAL_COOKIE = "portal_session";
 const ADMIN_COOKIE = "admin_session";
 const TENANT_SLUG_HEADER = "x-tenant-slug";
+const CRON_MODE_HEADER = "x-cron-mode";
+
+// API paths Vercel cron hits. These bypass admin auth iff the request
+// carries a valid CRON_SECRET (Vercel sends `Authorization: Bearer
+// ${CRON_SECRET}` automatically when the env var is set). Without that
+// env var, the path falls through to the normal admin-auth check —
+// matching what dashboard callers already do.
+const CRON_API_PATHS = [
+  "/api/billing/auto-run",
+  "/api/lifecycle/auto-run",
+  "/api/admin/cleanup",
+  "/api/cron/",
+];
 
 // Default slug for localhost / bare domain / "app" subdomain
 // The Client record in DB was created with slug "app" by migrate-tenant.ts
@@ -93,6 +106,27 @@ export async function middleware(request: NextRequest) {
   // Treat "app" subdomain as default, and resolve aliases for branded subdomains
   const rawSlug = (!subdomain || subdomain === "app") ? DEFAULT_SLUG : subdomain;
   const tenantSlug = SLUG_ALIASES[rawSlug] || rawSlug;
+
+  // --- Cron-authenticated paths ---
+  // If the request carries a matching CRON_SECRET, let it through with
+  // x-cron-mode set and skip admin-cookie validation. The downstream route
+  // uses x-cron-mode to fan out across every tenant instead of treating
+  // this as a single-tenant dashboard call.
+  const isCronPath = CRON_API_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p),
+  );
+  if (isCronPath) {
+    const cronSecret = process.env.CRON_SECRET;
+    const authHeader = request.headers.get("authorization");
+    if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+      const requestHeaders = new Headers(request.headers);
+      requestHeaders.set(TENANT_SLUG_HEADER, tenantSlug);
+      requestHeaders.set(CRON_MODE_HEADER, "true");
+      return NextResponse.next({ request: { headers: requestHeaders } });
+    }
+    // No secret set or mismatch — fall through to normal admin-auth path
+    // so the dashboard "Run billing now" button still works.
+  }
 
   // --- Portal routes ---
   const isPortalPage = pathname.startsWith("/portal");
