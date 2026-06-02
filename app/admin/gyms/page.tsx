@@ -73,8 +73,10 @@ export default function ManageGymsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editGym, setEditGym] = useState<Record<string, string | boolean>>({});
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function loadData() {
+    setLoadError(null);
     try {
       const [clientsRes, linksRes, tiersRes] = await Promise.all([
         fetch("/api/admin/clients"),
@@ -84,6 +86,9 @@ export default function ManageGymsPage() {
       if (clientsRes.ok) {
         const data = await clientsRes.json();
         setClients(data.clients || []);
+      } else {
+        const body = await clientsRes.text().catch(() => "");
+        setLoadError(`Failed to load gyms (${clientsRes.status}): ${body || clientsRes.statusText}`);
       }
       if (linksRes.ok) {
         const data = await linksRes.json();
@@ -93,8 +98,8 @@ export default function ManageGymsPage() {
         const data = await tiersRes.json();
         setTiers(data.tiers || []);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -462,6 +467,11 @@ export default function ManageGymsPage() {
         {/* Existing Gyms Section */}
         <div>
           <h2 className="text-lg font-semibold mb-3">Active Gyms</h2>
+          {loadError && (
+            <div className="mb-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              {loadError}
+            </div>
+          )}
           {loading ? (
             <p className="text-sm text-gray-500">Loading...</p>
           ) : clients.length === 0 ? (
