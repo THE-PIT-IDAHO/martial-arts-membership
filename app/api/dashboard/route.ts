@@ -154,11 +154,15 @@ export async function GET(req: Request) {
       return false;
     });
 
-    // Get today's attendance records per class for interactive features
+    // Get today's attendance records per class for interactive features.
+    // Scope by member.clientId so a stray row created against another
+    // tenant's data (or a class that was moved between tenants in the
+    // past) can never show on this dashboard.
     const todayAttendances = await prisma.attendance.findMany({
       where: {
         attendanceDate: { gte: todayStart, lte: todayEnd },
         classSessionId: { in: todaysClasses.map((c) => c.id) },
+        member: { clientId },
       },
       select: {
         id: true,

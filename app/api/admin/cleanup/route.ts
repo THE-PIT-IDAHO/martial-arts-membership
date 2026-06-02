@@ -43,6 +43,14 @@ export async function POST() {
       },
     });
 
+    // Hard safety: actually deleting clients is gated behind an env flag.
+    // Without it we only LOG the candidates (no destructive call). The flag
+    // exists because the GET/cron path was broken for months — the first
+    // successful cron run would otherwise nuke every expired-trial gym in
+    // one shot with no warning, and there's no undo.
+    const destructive = process.env.CLEANUP_DESTRUCTIVE === "true";
+
+    const wouldDelete: string[] = [];
     const deleted: string[] = [];
     const errors: string[] = [];
 
@@ -63,10 +71,17 @@ export async function POST() {
       const deleteAfter = new Date(endDate.getTime() + graceMs);
       if (now < deleteAfter) continue;
 
+      const label = `${client.name} (${client.slug}) — ${graceDays}d grace, ended ${endDate.toISOString()}`;
+      if (!destructive) {
+        wouldDelete.push(label);
+        console.log(`[Cleanup] DRY RUN — would delete: ${label}`);
+        continue;
+      }
+
       try {
         await deleteClientAndData(client.id);
-        deleted.push(`${client.name} (${client.slug}) — ${graceDays}d grace`);
-        console.log(`[Cleanup] Deleted: ${client.name} (${client.slug}), ended ${endDate.toISOString()}, grace ${graceDays}d`);
+        deleted.push(label);
+        console.log(`[Cleanup] Deleted: ${label}`);
       } catch (err) {
         console.error(`[Cleanup] Failed to delete ${client.name}:`, err);
         errors.push(client.name);
@@ -75,8 +90,11 @@ export async function POST() {
 
     return NextResponse.json({
       checked: candidates.length,
+      destructive,
       deleted: deleted.length,
+      wouldDelete: wouldDelete.length,
       deletedGyms: deleted.length > 0 ? deleted : undefined,
+      wouldDeleteGyms: wouldDelete.length > 0 ? wouldDelete : undefined,
       errors: errors.length > 0 ? errors : undefined,
     });
   } catch (error) {
