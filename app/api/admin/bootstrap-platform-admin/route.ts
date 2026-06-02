@@ -15,26 +15,12 @@ import { getAdminSessionFromRequest } from "@/lib/admin-auth";
 //
 // GET so it can be triggered from a browser address bar.
 export async function GET(req: NextRequest) {
-  const expectedEmail = process.env.BOOTSTRAP_ADMIN_EMAIL;
-  if (!expectedEmail) {
-    return NextResponse.json(
-      { error: "BOOTSTRAP_ADMIN_EMAIL env var is not set; endpoint disabled" },
-      { status: 503 },
-    );
-  }
-
+  // Always look up the session first so the response can tell the user
+  // which email they're signed in as. That's the value they need to
+  // paste into BOOTSTRAP_ADMIN_EMAIL.
   const session = await getAdminSessionFromRequest(req);
   if (!session) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  }
-  if (session.role !== "OWNER") {
-    return NextResponse.json(
-      { error: `Your role is ${session.role}, must be OWNER` },
-      { status: 403 },
-    );
-  }
-  if (!session.clientId) {
-    return NextResponse.json({ error: "Session has no clientId" }, { status: 400 });
   }
 
   const user = await prisma.user.findUnique({
@@ -44,9 +30,31 @@ export async function GET(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
+
+  const expectedEmail = process.env.BOOTSTRAP_ADMIN_EMAIL;
+  if (!expectedEmail) {
+    return NextResponse.json(
+      {
+        error: "BOOTSTRAP_ADMIN_EMAIL env var is not set; endpoint disabled",
+        yourEmail: user.email,
+        hint: `Set BOOTSTRAP_ADMIN_EMAIL=${user.email} in Vercel env vars, then re-hit this URL.`,
+      },
+      { status: 503 },
+    );
+  }
+
+  if (session.role !== "OWNER") {
+    return NextResponse.json(
+      { error: `Your role is ${session.role}, must be OWNER`, yourEmail: user.email },
+      { status: 403 },
+    );
+  }
+  if (!session.clientId) {
+    return NextResponse.json({ error: "Session has no clientId" }, { status: 400 });
+  }
   if (user.email.toLowerCase() !== expectedEmail.toLowerCase()) {
     return NextResponse.json(
-      { error: `Signed-in email (${user.email}) does not match BOOTSTRAP_ADMIN_EMAIL` },
+      { error: `Signed-in email (${user.email}) does not match BOOTSTRAP_ADMIN_EMAIL (${expectedEmail})` },
       { status: 403 },
     );
   }
