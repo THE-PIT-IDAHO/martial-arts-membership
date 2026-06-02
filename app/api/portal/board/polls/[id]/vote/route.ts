@@ -21,8 +21,20 @@ export async function POST(
       return NextResponse.json({ error: "At least one option must be selected" }, { status: 400 });
     }
 
-    const poll = await prisma.boardPoll.findUnique({
-      where: { id: pollId },
+    // Scope by the auth'd member's tenant. BoardPoll has no clientId
+    // column, but its parent channel does, so we filter via the channel
+    // relation. Without this a member could vote on (and enumerate) any
+    // gym's poll just by guessing the poll id.
+    const me = await prisma.member.findUnique({
+      where: { id: auth.memberId },
+      select: { clientId: true },
+    });
+    if (!me) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const poll = await prisma.boardPoll.findFirst({
+      where: { id: pollId, channel: { clientId: me.clientId } },
       include: {
         options: { include: { votes: true } },
       },
@@ -70,9 +82,9 @@ export async function POST(
       )
     );
 
-    // Return updated poll
-    const updatedPoll = await prisma.boardPoll.findUnique({
-      where: { id: pollId },
+    // Return updated poll (re-scoped for the same reason as above)
+    const updatedPoll = await prisma.boardPoll.findFirst({
+      where: { id: pollId, channel: { clientId: me.clientId } },
       include: {
         options: {
           orderBy: { order: "asc" },

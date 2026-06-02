@@ -11,7 +11,24 @@ export async function GET(
 
   const { conversationId } = await params;
 
-  // Verify member is part of this conversation
+  // Verify member is part of this conversation AND that the conversation
+  // belongs to their tenant. Membership check alone isn't enough — if an
+  // admin had ever added a member to a cross-tenant conversation by
+  // mistake, the unique-key check would happily pass.
+  const me = await prisma.member.findUnique({
+    where: { id: auth.memberId },
+    select: { clientId: true },
+  });
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const conversation = await prisma.directConversation.findFirst({
+    where: { id: conversationId, clientId: me.clientId },
+    select: { id: true },
+  });
+  if (!conversation) {
+    return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+  }
+
   const membership = await prisma.directConversationMember.findUnique({
     where: {
       conversationId_memberId: {

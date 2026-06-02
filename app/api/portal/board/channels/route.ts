@@ -16,11 +16,15 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    // Fetch member profile with their styles and memberships
+    // Fetch member profile with their styles and memberships.
+    // clientId is required to scope every downstream query — otherwise the
+    // channels.findMany below pulls every gym's channels and only filters
+    // by visibility rules, which exposes cross-tenant board data.
     const member = await prisma.member.findUnique({
       where: { id: auth.memberId },
       select: {
         id: true,
+        clientId: true,
         primaryStyle: true,
         rank: true,
         status: true,
@@ -40,7 +44,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Build set of style IDs this member is actually enrolled in
-    const styles = await prisma.style.findMany({ select: { id: true, name: true } });
+    const styles = await prisma.style.findMany({
+      where: { clientId: member.clientId },
+      select: { id: true, name: true },
+    });
     const memberStyleIds = new Set<string>();
 
     // Match by primaryStyle name — this is the member's actual training style
@@ -67,19 +74,20 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Build set of rank IDs this member holds
+    // Build set of rank IDs this member holds. Rank has no clientId
+    // column of its own, but is scoped through its parent Style.
     const memberRankIds = new Set<string>();
     if (member.rank) {
-      // rank is stored as a name string — find matching rank records
       const matchingRanks = await prisma.rank.findMany({
-        where: { name: member.rank },
+        where: { name: member.rank, style: { clientId: member.clientId } },
         select: { id: true },
       });
       for (const r of matchingRanks) memberRankIds.add(r.id);
     }
 
-    // Fetch all channels
+    // Fetch this tenant's channels only.
     const channels = await prisma.boardChannel.findMany({
+      where: { clientId: member.clientId },
       orderBy: { createdAt: "asc" },
       include: {
         _count: { select: { posts: true, polls: true } },

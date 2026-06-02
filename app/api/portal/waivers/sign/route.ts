@@ -7,9 +7,16 @@ export async function GET(request: NextRequest) {
   const auth = await getAuthenticatedMember(request);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Get default active template
+  // Scope template lookup to the member's tenant so we don't surface
+  // another gym's default waiver to this member.
+  const me = await prisma.member.findUnique({
+    where: { id: auth.memberId },
+    select: { clientId: true },
+  });
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const template = await prisma.waiverTemplate.findFirst({
-    where: { isDefault: true, isActive: true },
+    where: { isDefault: true, isActive: true, clientId: me.clientId },
     select: { id: true, name: true, content: true },
   });
 

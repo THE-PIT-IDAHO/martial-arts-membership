@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
     where: { id: auth.memberId },
     select: {
       id: true,
+      clientId: true,
       firstName: true,
       lastName: true,
       email: true,
@@ -100,7 +101,7 @@ export async function GET(req: NextRequest) {
     if (enrolled.active === false) continue;
 
     const style = await prisma.style.findFirst({
-      where: { name: enrolled.name },
+      where: { name: enrolled.name, clientId: member.clientId },
       select: { beltConfig: true },
     });
 
@@ -196,10 +197,11 @@ export async function GET(req: NextRequest) {
                 });
             }
 
-            // Fallback to Rank model's total classRequirement
+            // Fallback to Rank model's total classRequirement. Scope
+            // through Style.clientId since Rank has no clientId column.
             if (classRequirements.length === 0) {
               const rankModel = await prisma.rank.findFirst({
-                where: { name: nextRank.name },
+                where: { name: nextRank.name, style: { clientId: member.clientId } },
                 select: { classRequirement: true },
               });
               if (rankModel?.classRequirement) {

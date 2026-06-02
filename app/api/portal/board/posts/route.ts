@@ -16,6 +16,7 @@ async function getVisibleChannelIds(memberId: string): Promise<Set<string> | nul
     where: { id: memberId },
     select: {
       id: true,
+      clientId: true,
       primaryStyle: true,
       rank: true,
       status: true,
@@ -30,8 +31,13 @@ async function getVisibleChannelIds(memberId: string): Promise<Set<string> | nul
 
   if (!member) return new Set();
 
-  // Build member's style IDs — based on actual enrolled styles
-  const styles = await prisma.style.findMany({ select: { id: true, name: true } });
+  // Build member's style IDs — based on actual enrolled styles.
+  // Scope by clientId so a style at a different gym with the same name
+  // can't match into this member's set.
+  const styles = await prisma.style.findMany({
+    where: { clientId: member.clientId },
+    select: { id: true, name: true },
+  });
   const memberStyleIds = new Set<string>();
 
   if (member.primaryStyle) {
@@ -55,18 +61,19 @@ async function getVisibleChannelIds(memberId: string): Promise<Set<string> | nul
     }
   }
 
-  // Build member's rank IDs
+  // Build member's rank IDs. Rank scopes through Style.clientId.
   const memberRankIds = new Set<string>();
   if (member.rank) {
     const matchingRanks = await prisma.rank.findMany({
-      where: { name: member.rank },
+      where: { name: member.rank, style: { clientId: member.clientId } },
       select: { id: true },
     });
     for (const r of matchingRanks) memberRankIds.add(r.id);
   }
 
-  // Fetch all channels and filter
+  // Only this tenant's channels.
   const channels = await prisma.boardChannel.findMany({
+    where: { clientId: member.clientId },
     select: { id: true, visibility: true },
   });
 

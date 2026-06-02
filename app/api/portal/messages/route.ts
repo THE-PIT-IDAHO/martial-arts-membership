@@ -71,6 +71,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "conversationId and content required" }, { status: 400 });
   }
 
+  // Same belt-and-suspenders as the GET handler: verify the conversation
+  // is in this member's tenant before checking conversation membership.
+  const me = await prisma.member.findUnique({
+    where: { id: auth.memberId },
+    select: { clientId: true },
+  });
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const conversation = await prisma.directConversation.findFirst({
+    where: { id: conversationId, clientId: me.clientId },
+    select: { id: true },
+  });
+  if (!conversation) {
+    return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+  }
+
   // Verify member is part of this conversation
   const membership = await prisma.directConversationMember.findUnique({
     where: {
@@ -91,6 +107,7 @@ export async function POST(req: NextRequest) {
       senderType: "member",
       senderId: auth.memberId,
       content: content.trim(),
+      clientId: me.clientId,
     },
   });
 
