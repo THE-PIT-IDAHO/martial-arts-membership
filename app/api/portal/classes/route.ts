@@ -11,6 +11,17 @@ export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Scope every query below to the auth'd member's home tenant. Without
+  // this the portal returned class sessions across every gym in the
+  // platform — a member at one gym could see and book another gym's
+  // classes by ID.
+  const me = await prisma.member.findUnique({
+    where: { id: auth.memberId },
+    select: { clientId: true },
+  });
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const memberClientId = me.clientId;
+
   const { searchParams } = new URL(req.url);
   const dateStr = searchParams.get("date");
   // Client's UTC offset in minutes west of UTC (Date.prototype.getTimezoneOffset).
@@ -37,6 +48,7 @@ export async function GET(req: NextRequest) {
   // Get all classes (show schedule regardless of bookingEnabled)
   const classes = await prisma.classSession.findMany({
     where: {
+      clientId: memberClientId,
       OR: [
         // One-time classes on this date
         {

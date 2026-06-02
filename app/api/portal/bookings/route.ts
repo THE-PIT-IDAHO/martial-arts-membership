@@ -73,6 +73,19 @@ async function handleBookingPost(req: NextRequest) {
   const bookingTz = await getGymTimezone();
   const parsedDate = new Date(localMidnightUtc(bookingDate, bookingTz));
 
+  // Verify the booking member and the class belong to the same tenant.
+  // Without this, an authenticated portal user could pass any classSessionId
+  // — including one from a completely different gym — and the endpoint
+  // would happily create a booking + attendance row against the foreign
+  // class. (How we got Patrick-Star-at-other-gym onto a Pit class roster.)
+  const bookingMember = await prisma.member.findUnique({
+    where: { id: bookingMemberId },
+    select: { clientId: true },
+  });
+  if (!bookingMember) {
+    return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  }
+
   // Get class info
   const cls = await prisma.classSession.findUnique({
     where: { id: classSessionId },
@@ -85,10 +98,13 @@ async function handleBookingPost(req: NextRequest) {
       bookingEnabled: true,
       bookingCutoffMins: true,
       bookingAdvanceDays: true,
+      clientId: true,
     },
   });
 
-  if (!cls) {
+  if (!cls || cls.clientId !== bookingMember.clientId) {
+    // 404 (not 403) so the response shape can't be used to enumerate
+    // class IDs across tenants.
     return NextResponse.json({ error: "Class not found" }, { status: 404 });
   }
 
