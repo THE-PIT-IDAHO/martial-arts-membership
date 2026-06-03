@@ -186,8 +186,13 @@ export async function GET(req: Request) {
         const currentIdx = ranks.findIndex((r) => r.name.toLowerCase() === es.rank!.toLowerCase());
         if (currentIdx < 0 || currentIdx >= ranks.length - 1) continue;
 
+        const currentRank = ranks[currentIdx];
         const nextRank = ranks[currentIdx + 1];
-        const requirements = (nextRank.classRequirements || []).filter(
+        // Requirements stored on a rank = needed to GRADUATE FROM that rank.
+        // For a member at currentRank, that's the bar they have to clear to
+        // be promoted to nextRank. Same convention as the admin member
+        // profile and /api/portal/auth/me.
+        const requirements = (currentRank.classRequirements || []).filter(
           (r) => r.label && r.minCount > 0,
         );
 
@@ -204,22 +209,27 @@ export async function GET(req: Request) {
           resetDate: resetCutoff,
           // Honor the per-event opt-out: when the admin unchecked
           // "Attach Attendance Windows" on this event, ignore the
-          // rank's window and let the reset date stand alone.
-          window: event && !event.applyAttendanceWindow ? null : nextRank.attendanceWindow,
+          // rank's window and let the reset date stand alone. Pull the
+          // window from currentRank now that reqs live there too.
+          window: event && !event.applyAttendanceWindow ? null : currentRank.attendanceWindow,
         });
+        // Permissive style gate (matches admin/portal): explicit style tag,
+        // IMPORTED bulk-import rows, or class with no style attached at all.
         const styleAtts = memberAtts.filter((a) => {
           if (!a.attendanceDate) return false;
           if (startCutoff && a.attendanceDate < startCutoff) return false;
           if (a.attendanceDate > windowEnd) return false;
           if (a.source === "IMPORTED") return true;
           if (!a.classSession) return false;
-          if (a.classSession.styleNames) {
+          const cs = a.classSession;
+          if (cs.styleNames) {
             try {
-              const names: string[] = JSON.parse(a.classSession.styleNames);
-              return names.some((n) => n.toLowerCase() === es.name.toLowerCase());
+              const names: string[] = JSON.parse(cs.styleNames);
+              if (names.some((n) => n.toLowerCase() === es.name.toLowerCase())) return true;
             } catch { /* ignore */ }
           }
-          return (a.classSession.styleName || "").toLowerCase() === es.name.toLowerCase();
+          if ((cs.styleName || "").toLowerCase() === es.name.toLowerCase()) return true;
+          return !cs.styleName && !cs.styleNames;
         });
 
         const classReqs = requirements.map((req) => {

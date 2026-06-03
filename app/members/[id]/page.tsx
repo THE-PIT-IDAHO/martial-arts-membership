@@ -4252,32 +4252,21 @@ export default function MemberProfilePage() {
                           return false;
                         };
 
-                        // Pull requirements for the rank the member is working
-                        // TOWARD (next rank), not their current rank. The portal
-                        // /portal/auth/me and /api/promotions/eligible both use
-                        // the next-rank convention; this card was using current-
-                        // rank, so the admin profile showed different numbers
-                        // than the member's own dashboard for the same style.
+                        // Class requirements stored on a rank represent what's
+                        // needed to GRADUATE FROM that rank (i.e. advance to
+                        // the next one). So for a member sitting at "Yellow
+                        // Belt", we display Yellow Belt's classRequirements —
+                        // that's what they need to satisfy to promote.
                         const selectedStyle = availableStyles.find((style) => style.name.toLowerCase() === s.name.toLowerCase());
                         let classRequirements: Array<{ label: string; minCount: number | null }> = [];
                         if (selectedStyle?.beltConfig && s.rank) {
                           try {
                             const beltConfig = JSON.parse(selectedStyle.beltConfig);
-                            const ranks: Array<{ name: string; order: number; classRequirements?: Array<{ label: string; minCount: number | null }> }> =
-                              beltConfig.ranks || [];
-                            const sortedRanks = [...ranks].sort((a, b) => a.order - b.order);
-                            const currentIdx = sortedRanks.findIndex(
-                              (r) => r.name.toLowerCase() === (s.rank?.toLowerCase() || ""),
-                            );
-                            // Only show progress if they have a next rank to work
-                            // toward (not at the highest belt already).
-                            if (currentIdx >= 0 && currentIdx < sortedRanks.length - 1) {
-                              const nextRank = sortedRanks[currentIdx + 1];
-                              if (nextRank.classRequirements) {
-                                classRequirements = nextRank.classRequirements.filter(
-                                  (req) => req.label && req.minCount != null && req.minCount > 0,
-                                );
-                              }
+                            const rankData = beltConfig.ranks?.find((r: any) => r.name.toLowerCase() === (s.rank?.toLowerCase() || ""));
+                            if (rankData?.classRequirements) {
+                              classRequirements = rankData.classRequirements.filter(
+                                (req: any) => req.label && req.minCount != null && req.minCount > 0
+                              );
                             }
                           } catch { /* ignore */ }
                         }
@@ -4315,14 +4304,6 @@ export default function MemberProfilePage() {
                                 {classRequirements.map((req, idx) => {
                                   // "*" is the "Any Class (counts all)" sentinel
                                   const isAnyClass = req.label === "*";
-                                  // Mirror /api/promotions/eligible and
-                                  // /api/portal/auth/me exactly: attendance
-                                  // counts iff it's IMPORTED or the class is
-                                  // explicitly tagged with this style. No
-                                  // "class has no style → counts anyway"
-                                  // fallback — that's what was inflating the
-                                  // admin numbers (46/43) above what the
-                                  // member's own portal showed.
                                   const attended = (member?.attendances || []).filter(
                                     (att) => {
                                       // Honor attendanceResetDate: skip any
@@ -4338,34 +4319,19 @@ export default function MemberProfilePage() {
                                           if (attYmd < s.attendanceResetDate) return false;
                                         }
                                       }
-                                      // Style gate (matches portal/promotions)
-                                      const cs = att.classSession;
-                                      let styleMatch = att.source === "IMPORTED";
-                                      if (!styleMatch && cs) {
-                                        if (cs.styleNames) {
-                                          try {
-                                            const names = JSON.parse(cs.styleNames);
-                                            if (Array.isArray(names) && names.some((n: string) => n.toLowerCase() === s.name.toLowerCase())) {
-                                              styleMatch = true;
-                                            }
-                                          } catch { /* ignore */ }
-                                        }
-                                        if (!styleMatch && cs.styleName?.toLowerCase() === s.name.toLowerCase()) {
-                                          styleMatch = true;
-                                        }
-                                      }
-                                      if (!styleMatch) return false;
-                                      // Type gate
-                                      if (isAnyClass) return true;
-                                      if (!cs) return false;
-                                      if (cs.classType?.toLowerCase() === req.label.toLowerCase()) return true;
-                                      if (cs.classTypes) {
+                                      let typesMatch = isAnyClass;
+                                      if (!typesMatch && att.classSession?.classTypes) {
                                         try {
-                                          const types: string[] = JSON.parse(cs.classTypes);
-                                          if (types.some((t) => t.toLowerCase() === req.label.toLowerCase())) return true;
+                                          const types: string[] = JSON.parse(att.classSession.classTypes);
+                                          typesMatch = types.some(t => t.toLowerCase() === req.label.toLowerCase());
                                         } catch { /* ignore */ }
                                       }
-                                      return false;
+                                      if (!typesMatch) {
+                                        typesMatch = att.classSession?.classType?.toLowerCase() === req.label.toLowerCase();
+                                      }
+                                      // Class has no explicit style: count for any matching type (not restricted to a style)
+                                      const classHasNoStyle = !att.classSession?.styleName && !att.classSession?.styleNames;
+                                      return typesMatch && (matchesStyle(att) || att.source === "IMPORTED" || classHasNoStyle);
                                     }
                                   ).length;
                                   const progress = req.minCount ? Math.min(100, (attended / req.minCount) * 100) : 0;
