@@ -169,6 +169,23 @@ export default function InvoicesPage() {
     }
   }
 
+  async function chargeInvoice(invoice: Invoice) {
+    const who = `${invoice.member.firstName} ${invoice.member.lastName}`.trim();
+    if (!confirm(`Charge ${formatCents(invoice.amountCents)} to ${who}'s card on file?`)) return;
+    try {
+      const res = await fetch(`/api/invoices/${invoice.id}/charge`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.success) {
+        await loadInvoices();
+      } else {
+        alert(`Charge failed: ${body.error || res.statusText}`);
+        await loadInvoices();
+      }
+    } catch (err) {
+      alert(`Charge failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   async function refundInvoice(invoice: Invoice) {
     if (!invoice.externalPaymentId || !invoice.paymentProcessor) {
       alert("This invoice was not paid through a payment processor and cannot be refunded automatically. Use Void instead.");
@@ -338,6 +355,13 @@ export default function InvoicesPage() {
                       <div className="flex items-center justify-end gap-1">
                         {(inv.status === "PENDING" || inv.status === "PAST_DUE") && (
                           <>
+                            <button
+                              onClick={() => chargeInvoice(inv)}
+                              className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 hover:bg-blue-200"
+                              title="Retry auto-charge against the card on file"
+                            >
+                              Charge
+                            </button>
                             <button
                               onClick={() => { setMarkPaidInvoice(inv); setMarkPaidMethod("CASH"); }}
                               className="rounded-md bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 hover:bg-green-200"
