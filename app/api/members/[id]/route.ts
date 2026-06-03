@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { logAudit, computeChanges } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
 import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
+import { parseLocalDate } from "@/lib/dates";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -266,8 +267,16 @@ export async function PATCH(req: Request, { params }: Params) {
     if (phone !== undefined) updateData.phone = phone;
     if (status !== undefined) updateData.status = status;
 
-    if (dateOfBirth !== undefined)
-      updateData.dateOfBirth = toDateOrNull(dateOfBirth);
+    if (dateOfBirth !== undefined) {
+      // DOB is a calendar date, not a moment. parseLocalDate anchors
+      // "YYYY-MM-DD" at local noon so it survives the UTC round-trip
+      // without shifting to the previous/next day. (Bare new Date("2000-
+      // 05-15") parses as UTC midnight.) Keep toDateOrNull for fields
+      // that are real timestamps (waiverSignedAt etc.) below.
+      updateData.dateOfBirth = dateOfBirth
+        ? parseLocalDate(String(dateOfBirth))
+        : null;
+    }
     if (address !== undefined) updateData.address = address;
     if (city !== undefined) updateData.city = city;
     if (state !== undefined) updateData.state = state;

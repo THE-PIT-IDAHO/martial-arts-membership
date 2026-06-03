@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
+import { parseLocalDate } from "@/lib/dates";
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
@@ -386,7 +387,13 @@ export async function PATCH(req: NextRequest) {
   for (const field of allowedFields) {
     if (field in body) {
       if (field === "dateOfBirth") {
-        updateData[field] = body[field] ? new Date(body[field]) : null;
+        // parseLocalDate anchors "YYYY-MM-DD" at local noon so the calendar
+        // day survives both the JS Date conversion AND any later
+        // toLocaleDateString render. Using `new Date("2000-05-15")` was
+        // parsing as UTC midnight, which then displays as the previous
+        // day in any negative-UTC timezone (Colten saw 5/15 save and re-
+        // render as 5/14 or 5/16 depending on the render path).
+        updateData[field] = body[field] ? parseLocalDate(body[field]) : null;
       } else {
         updateData[field] = body[field];
       }

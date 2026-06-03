@@ -2,6 +2,21 @@
 
 import { useEffect, useState } from "react";
 
+// Render a stored DOB ("YYYY-MM-DD" or "YYYY-MM-DDT00:00:00.000Z") as a
+// calendar date without timezone drift. `new Date(iso).toLocaleDateString`
+// reinterprets a stored UTC midnight as the previous calendar day in any
+// negative-UTC zone — Colten's portal was showing 5/14 for a 5/15 DOB.
+function formatBirthday(value: string): string {
+  const ymd = value.split("T")[0];
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return value;
+  // Local-time constructor → no UTC shift; toLocaleDateString reads
+  // those local components directly.
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    month: "long", day: "numeric", year: "numeric",
+  });
+}
+
 interface Profile {
   id: string;
   firstName: string;
@@ -193,7 +208,7 @@ export default function PortalProfilePage() {
           <div className="p-4 space-y-3">
             <InfoRow label="Name" value={`${profile.firstName} ${profile.lastName}`} />
             {profile.dateOfBirth && (
-              <InfoRow label="Date of Birth" value={new Date(profile.dateOfBirth).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} />
+              <InfoRow label="Date of Birth" value={formatBirthday(profile.dateOfBirth)} />
             )}
             <InfoRow label="Email" value={profile.email} />
             <InfoRow label="Phone" value={profile.phone} />
