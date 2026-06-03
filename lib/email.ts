@@ -177,12 +177,14 @@ export async function sendEmail(params: {
     const resend = getResendClient();
     if (!resend) {
       errorText = "Resend client not configured (RESEND_API_KEY missing)";
+      console.warn(`[Email] skipped: ${errorText} (event=${params.eventType || "?"})`);
       return false;
     }
 
     const globalEnabled = await getSetting("notify_email_enabled", params.clientId);
     if (globalEnabled === "false") {
-      errorText = "Email notifications globally disabled";
+      errorText = "Email notifications globally disabled (Account → Preferences master toggle)";
+      console.warn(`[Email] skipped: ${errorText} (event=${params.eventType || "?"}, clientId=${params.clientId || "?"})`);
       return false;
     }
 
@@ -195,6 +197,7 @@ export async function sendEmail(params: {
     const recipients = Array.isArray(params.to) ? params.to : [params.to];
     if (recipients.length === 0) {
       errorText = "No recipients";
+      console.warn(`[Email] skipped: ${errorText} (event=${params.eventType || "?"})`);
       return false;
     }
 
@@ -213,7 +216,18 @@ export async function sendEmail(params: {
       }));
     }
 
-    await resend.emails.send(emailPayload);
+    // Resend SDK returns { data, error } and does NOT throw on API
+    // errors — only on network/code issues. Without inspecting the
+    // return value, suppression-list and validation rejections looked
+    // like silent successes (which is how Josh's reset failures got
+    // logged as "Email provider rejected" with no Vercel log line).
+    const response = await resend.emails.send(emailPayload);
+    if (response && typeof response === "object" && "error" in response && response.error) {
+      const errObj = response.error as { message?: string; name?: string };
+      errorText = errObj.message || errObj.name || JSON.stringify(response.error);
+      console.error(`[Email] Resend rejected (event=${params.eventType || "?"}): ${errorText}`);
+      return false;
+    }
     success = true;
     return true;
   } catch (error) {
