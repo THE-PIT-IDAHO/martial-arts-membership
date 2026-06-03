@@ -4252,17 +4252,32 @@ export default function MemberProfilePage() {
                           return false;
                         };
 
-                        // Get class requirements from beltConfig (case-insensitive matching)
+                        // Pull requirements for the rank the member is working
+                        // TOWARD (next rank), not their current rank. The portal
+                        // /portal/auth/me and /api/promotions/eligible both use
+                        // the next-rank convention; this card was using current-
+                        // rank, so the admin profile showed different numbers
+                        // than the member's own dashboard for the same style.
                         const selectedStyle = availableStyles.find((style) => style.name.toLowerCase() === s.name.toLowerCase());
                         let classRequirements: Array<{ label: string; minCount: number | null }> = [];
                         if (selectedStyle?.beltConfig && s.rank) {
                           try {
                             const beltConfig = JSON.parse(selectedStyle.beltConfig);
-                            const rankData = beltConfig.ranks?.find((r: any) => r.name.toLowerCase() === (s.rank?.toLowerCase() || ""));
-                            if (rankData?.classRequirements) {
-                              classRequirements = rankData.classRequirements.filter(
-                                (req: any) => req.label && req.minCount != null && req.minCount > 0
-                              );
+                            const ranks: Array<{ name: string; order: number; classRequirements?: Array<{ label: string; minCount: number | null }> }> =
+                              beltConfig.ranks || [];
+                            const sortedRanks = [...ranks].sort((a, b) => a.order - b.order);
+                            const currentIdx = sortedRanks.findIndex(
+                              (r) => r.name.toLowerCase() === (s.rank?.toLowerCase() || ""),
+                            );
+                            // Only show progress if they have a next rank to work
+                            // toward (not at the highest belt already).
+                            if (currentIdx >= 0 && currentIdx < sortedRanks.length - 1) {
+                              const nextRank = sortedRanks[currentIdx + 1];
+                              if (nextRank.classRequirements) {
+                                classRequirements = nextRank.classRequirements.filter(
+                                  (req) => req.label && req.minCount != null && req.minCount > 0,
+                                );
+                              }
                             }
                           } catch { /* ignore */ }
                         }
@@ -4300,14 +4315,18 @@ export default function MemberProfilePage() {
                                 {classRequirements.map((req, idx) => {
                                   // "*" is the "Any Class (counts all)" sentinel
                                   const isAnyClass = req.label === "*";
+                                  // Mirror /api/promotions/eligible and
+                                  // /api/portal/auth/me exactly: attendance
+                                  // counts iff it's IMPORTED or the class is
+                                  // explicitly tagged with this style. No
+                                  // "class has no style → counts anyway"
+                                  // fallback — that's what was inflating the
+                                  // admin numbers (46/43) above what the
+                                  // member's own portal showed.
                                   const attended = (member?.attendances || []).filter(
                                     (att) => {
                                       // Honor attendanceResetDate: skip any
                                       // attendance dated before the reset.
-                                      // Without this, hitting "Reset Classes"
-                                      // wouldn't visibly change the bars here
-                                      // even though the dashboard / promotions
-                                      // page already exclude pre-reset rows.
                                       if (s.attendanceResetDate) {
                                         const attDate = att.attendanceDate
                                           ? new Date(att.attendanceDate)
@@ -4319,19 +4338,34 @@ export default function MemberProfilePage() {
                                           if (attYmd < s.attendanceResetDate) return false;
                                         }
                                       }
-                                      let typesMatch = isAnyClass;
-                                      if (!typesMatch && att.classSession?.classTypes) {
+                                      // Style gate (matches portal/promotions)
+                                      const cs = att.classSession;
+                                      let styleMatch = att.source === "IMPORTED";
+                                      if (!styleMatch && cs) {
+                                        if (cs.styleNames) {
+                                          try {
+                                            const names = JSON.parse(cs.styleNames);
+                                            if (Array.isArray(names) && names.some((n: string) => n.toLowerCase() === s.name.toLowerCase())) {
+                                              styleMatch = true;
+                                            }
+                                          } catch { /* ignore */ }
+                                        }
+                                        if (!styleMatch && cs.styleName?.toLowerCase() === s.name.toLowerCase()) {
+                                          styleMatch = true;
+                                        }
+                                      }
+                                      if (!styleMatch) return false;
+                                      // Type gate
+                                      if (isAnyClass) return true;
+                                      if (!cs) return false;
+                                      if (cs.classType?.toLowerCase() === req.label.toLowerCase()) return true;
+                                      if (cs.classTypes) {
                                         try {
-                                          const types: string[] = JSON.parse(att.classSession.classTypes);
-                                          typesMatch = types.some(t => t.toLowerCase() === req.label.toLowerCase());
+                                          const types: string[] = JSON.parse(cs.classTypes);
+                                          if (types.some((t) => t.toLowerCase() === req.label.toLowerCase())) return true;
                                         } catch { /* ignore */ }
                                       }
-                                      if (!typesMatch) {
-                                        typesMatch = att.classSession?.classType?.toLowerCase() === req.label.toLowerCase();
-                                      }
-                                      // Class has no explicit style: count for any matching type (not restricted to a style)
-                                      const classHasNoStyle = !att.classSession?.styleName && !att.classSession?.styleNames;
-                                      return typesMatch && (matchesStyle(att) || att.source === "IMPORTED" || classHasNoStyle);
+                                      return false;
                                     }
                                   ).length;
                                   const progress = req.minCount ? Math.min(100, (attended / req.minCount) * 100) : 0;
