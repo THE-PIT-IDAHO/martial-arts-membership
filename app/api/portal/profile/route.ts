@@ -168,66 +168,80 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          // Get next rank + attendance progress
+          // Reqs stored on a rank = needed to GRADUATE FROM that rank, so
+          // for a member sitting at currentRank we display currentRank's
+          // requirements (what they're working to satisfy). nextRank is
+          // kept only for the "Next: X" header label. Same convention as
+          // the admin member profile, /api/promotions/eligible, and
+          // /api/portal/auth/me. The /portal/styles page actually
+          // fetches THIS route (not /api/portal/auth/me), which is why
+          // Colten still saw the old next-rank numbers after the prior
+          // fix landed.
           if (currentRankIndex < sortedRanks.length - 1) {
-            const nextRank = sortedRanks[currentRankIndex + 1];
-            nextRankName = nextRank.name;
+            nextRankName = sortedRanks[currentRankIndex + 1].name;
+          }
 
-            const styleAttendances = (member.attendances || []).filter((att) => {
-              if (enrolled.attendanceResetDate) {
-                const attDate = att.attendanceDate
-                  ? new Date(att.attendanceDate).toISOString().split("T")[0]
-                  : att.checkedInAt
-                    ? new Date(att.checkedInAt).toISOString().split("T")[0]
-                    : null;
-                if (attDate && attDate < enrolled.attendanceResetDate) return false;
-              }
-              if (att.source === "IMPORTED") return true;
-              if (!att.classSession) return false;
-              if (att.classSession.styleNames) {
-                try {
-                  const names: string[] = JSON.parse(att.classSession.styleNames);
-                  return names.some((n) => n.toLowerCase() === enrolled.name.toLowerCase());
-                } catch { /* ignore */ }
-              }
-              return att.classSession.styleName?.toLowerCase() === enrolled.name.toLowerCase();
-            });
-
-            if (nextRank.classRequirements && Array.isArray(nextRank.classRequirements)) {
-              classRequirements = nextRank.classRequirements
-                .filter((req) => req.label && req.minCount != null && req.minCount > 0)
-                .map((req) => {
-                  const isAny = req.label === "*";
-                  const attended = styleAttendances.filter((att) => {
-                    if (!att.classSession) return false;
-                    if (isAny) return true;
-                    if (att.classSession.classType?.toLowerCase() === req.label.toLowerCase()) return true;
-                    if (att.classSession.classTypes) {
-                      try {
-                        const types: string[] = JSON.parse(att.classSession.classTypes);
-                        return types.some((t) => t.toLowerCase() === req.label.toLowerCase());
-                      } catch { /* ignore */ }
-                    }
-                    return false;
-                  }).length;
-                  return { label: isAny ? "Any Class" : req.label, attended, required: req.minCount, met: attended >= req.minCount };
-                });
+          // Permissive style gate (matches admin/promotions): explicit
+          // style tag, IMPORTED bulk-import rows, or class with no style
+          // attached at all. Bulk-import attendance lives on stub class
+          // sessions with a classType but no styleName — the strict
+          // filter was dropping all of those.
+          const styleAttendances = (member.attendances || []).filter((att) => {
+            if (enrolled.attendanceResetDate) {
+              const attDate = att.attendanceDate
+                ? new Date(att.attendanceDate).toISOString().split("T")[0]
+                : att.checkedInAt
+                  ? new Date(att.checkedInAt).toISOString().split("T")[0]
+                  : null;
+              if (attDate && attDate < enrolled.attendanceResetDate) return false;
             }
+            if (att.source === "IMPORTED") return true;
+            if (!att.classSession) return false;
+            const cs = att.classSession;
+            if (cs.styleNames) {
+              try {
+                const names: string[] = JSON.parse(cs.styleNames);
+                if (names.some((n) => n.toLowerCase() === enrolled.name.toLowerCase())) return true;
+              } catch { /* ignore */ }
+            }
+            if (cs.styleName?.toLowerCase() === enrolled.name.toLowerCase()) return true;
+            return !cs.styleName && !cs.styleNames;
+          });
 
-            if (classRequirements.length === 0) {
-              const rankModel = await prisma.rank.findFirst({
-                where: { name: nextRank.name },
-                select: { classRequirement: true },
+          if (currentRank.classRequirements && Array.isArray(currentRank.classRequirements)) {
+            classRequirements = currentRank.classRequirements
+              .filter((req) => req.label && req.minCount != null && req.minCount > 0)
+              .map((req) => {
+                const isAny = req.label === "*";
+                const attended = styleAttendances.filter((att) => {
+                  if (!att.classSession) return false;
+                  if (isAny) return true;
+                  if (att.classSession.classType?.toLowerCase() === req.label.toLowerCase()) return true;
+                  if (att.classSession.classTypes) {
+                    try {
+                      const types: string[] = JSON.parse(att.classSession.classTypes);
+                      return types.some((t) => t.toLowerCase() === req.label.toLowerCase());
+                    } catch { /* ignore */ }
+                  }
+                  return false;
+                }).length;
+                return { label: isAny ? "Any Class" : req.label, attended, required: req.minCount, met: attended >= req.minCount };
               });
-              if (rankModel?.classRequirement) {
-                const totalAttended = styleAttendances.length;
-                classRequirements = [{
-                  label: "Classes",
-                  attended: totalAttended,
-                  required: rankModel.classRequirement,
-                  met: totalAttended >= rankModel.classRequirement,
-                }];
-              }
+          }
+
+          if (classRequirements.length === 0) {
+            const rankModel = await prisma.rank.findFirst({
+              where: { name: currentRank.name },
+              select: { classRequirement: true },
+            });
+            if (rankModel?.classRequirement) {
+              const totalAttended = styleAttendances.length;
+              classRequirements = [{
+                label: "Classes",
+                attended: totalAttended,
+                required: rankModel.classRequirement,
+                met: totalAttended >= rankModel.classRequirement,
+              }];
             }
           }
         }
