@@ -102,8 +102,15 @@ export async function GET(req: NextRequest) {
 
     const style = await prisma.style.findFirst({
       where: { name: enrolled.name, clientId: member.clientId },
-      select: { beltConfig: true },
+      select: { beltConfig: true, showProgressInPortal: true },
     });
+
+    // Portal-progress visibility: per-member override on stylesNotes
+    // wins over the per-style default; both fall back to hidden.
+    const enrolledOverride = (enrolled as { showProgressInPortal?: boolean }).showProgressInPortal;
+    const styleDefault = style?.showProgressInPortal ?? false;
+    const progressVisibleToMember =
+      typeof enrolledOverride === "boolean" ? enrolledOverride : styleDefault;
 
     let beltLayers: Record<string, unknown> | null = null;
     let nextRankName: string | null = null;
@@ -244,7 +251,7 @@ export async function GET(req: NextRequest) {
       rankName: enrolled.rank,
       beltLayers,
       nextRankName,
-      classRequirements,
+      classRequirements: progressVisibleToMember ? classRequirements : [],
       allRanks,
     });
   }

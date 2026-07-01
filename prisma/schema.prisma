@@ -452,6 +452,12 @@ model Style {
   // Per-style promotion fee in cents. Takes precedence over the global
   // default in Settings (promotion_fee_cents). Null = use the global fallback.
   promotionFeeCents    Int?
+  // Default visibility of class-requirement progress bars on the member
+  // portal for members enrolled in this style. Individual members can
+  // override via stylesNotes[].showProgressInPortal (true/false); if
+  // undefined they inherit this. Hidden by default — admins can flip on
+  // per-style or per-member as they see fit.
+  showProgressInPortal Boolean  @default(false)
   clientId             String   @default("default-client")
   ranks                Rank[]
   promotions           Promotion[]

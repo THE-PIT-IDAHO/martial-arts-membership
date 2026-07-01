@@ -174,7 +174,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   try {
     await getClientId(req); // validate tenant
     const body = await req.json();
-    const { name, shortName, description, beltSystemEnabled, beltConfig, gradingDates, testNamingConvention, curriculumDisclaimer, promotionFeeCents } = body;
+    const { name, shortName, description, beltSystemEnabled, beltConfig, gradingDates, testNamingConvention, curriculumDisclaimer, promotionFeeCents, showProgressInPortal } = body;
 
     if (name !== undefined && typeof name !== "string") {
       return new NextResponse("Name must be a string", { status: 400 });
@@ -212,6 +212,9 @@ export async function PATCH(req: Request, { params }: RouteParams) {
         promotionFeeCents === null || promotionFeeCents === ""
           ? null
           : Number(promotionFeeCents);
+    }
+    if (typeof showProgressInPortal === "boolean") {
+      data.showProgressInPortal = showProgressInPortal;
     }
 
     const style = await prisma.style.update({

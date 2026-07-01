@@ -12,6 +12,7 @@ type Style = {
   description?: string | null;
   beltSystemEnabled?: boolean;
   promotionFeeCents?: number | null;
+  showProgressInPortal?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -38,6 +39,7 @@ export default function StyleEditPage(props: PageProps) {
   const [description, setDescription] = useState("");
   const [beltSystemEnabled, setBeltSystemEnabled] = useState(false);
   const [promotionFeeDollars, setPromotionFeeDollars] = useState("");
+  const [showProgressInPortal, setShowProgressInPortal] = useState(false);
 
   useEffect(() => {
     async function fetchStyle() {
@@ -61,6 +63,7 @@ export default function StyleEditPage(props: PageProps) {
         setPromotionFeeDollars(
           s.promotionFeeCents != null ? (s.promotionFeeCents / 100).toFixed(2) : "",
         );
+        setShowProgressInPortal(!!s.showProgressInPortal);
       } catch (err: any) {
         console.error(err);
         setError(err.message || "Failed to load style");
@@ -94,6 +97,7 @@ export default function StyleEditPage(props: PageProps) {
             promotionFeeDollars.trim() === ""
               ? null
               : Math.round(Number(promotionFeeDollars) * 100),
+          showProgressInPortal,
         }),
       });
 
@@ -242,6 +246,25 @@ export default function StyleEditPage(props: PageProps) {
                 className="text-xs font-medium text-gray-700"
               >
                 This style uses a belt/rank system
+              </label>
+            </div>
+
+            <div className="flex items-start gap-2">
+              <input
+                id="showProgressInPortal"
+                type="checkbox"
+                checked={showProgressInPortal}
+                onChange={(e) => setShowProgressInPortal(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              <label
+                htmlFor="showProgressInPortal"
+                className="text-xs font-medium text-gray-700"
+              >
+                Show class-requirement progress on the member portal
+                <span className="ml-1 block text-[11px] font-normal text-gray-500">
+                  Default for members enrolled in this style. Admins always see progress on the member profile; this toggle only controls what the member sees in their portal. Individual members can be overridden on their profile.
+                </span>
               </label>
             </div>
 

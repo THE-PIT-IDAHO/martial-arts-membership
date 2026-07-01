@@ -103,9 +103,18 @@ export async function GET(req: NextRequest) {
       },
       select: {
         beltConfig: true,
+        showProgressInPortal: true,
         ranks: { orderBy: { order: "asc" }, select: { id: true, name: true, order: true, pdfDocument: true, thumbnail: true } },
       },
     });
+
+    // Per-member override wins over the per-style default. Both are
+    // optional (undefined = fall through) and hidden is the ultimate
+    // default so a brand-new style with no toggle set stays private.
+    const enrolledOverride = (enrolled as { showProgressInPortal?: boolean }).showProgressInPortal;
+    const styleDefault = style?.showProgressInPortal ?? false;
+    const progressVisibleToMember =
+      typeof enrolledOverride === "boolean" ? enrolledOverride : styleDefault;
 
     let beltLayers: Record<string, unknown> | null = null;
     let nextRankName: string | null = null;
@@ -330,7 +339,10 @@ export async function GET(req: NextRequest) {
       beltLayers,
       beltThumbnail,
       nextRankName,
-      classRequirements,
+      // Progress-bar visibility gate. Empty list = no bars rendered
+      // on the portal. Admin profile still computes and displays the
+      // real numbers from its own filter.
+      classRequirements: progressVisibleToMember ? classRequirements : [],
       documents,
     });
   }

@@ -56,7 +56,7 @@ export async function POST(req: Request) {
   try {
     const clientId = await getClientId(req);
     const body = await req.json();
-    const { name, shortName, description, beltSystemEnabled, testNamingConvention } = body;
+    const { name, shortName, description, beltSystemEnabled, testNamingConvention, showProgressInPortal } = body;
 
     if (!name || typeof name !== "string") {
       return new NextResponse("Name is required", { status: 400 });
@@ -74,6 +74,7 @@ export async function POST(req: Request) {
         description: description?.trim() || null,
         beltSystemEnabled: beltSystemEnabled ?? false,
         testNamingConvention: testNamingConvention || "INTO_RANK",
+        showProgressInPortal: showProgressInPortal ?? false,
         clientId,
       },
     });

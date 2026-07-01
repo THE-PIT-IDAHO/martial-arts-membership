@@ -163,6 +163,10 @@ type StyleEntry = {
   lastPromotionDate?: string;  // Date of last rank promotion (for attendance window calculation)
   active?: boolean;  // Whether this style is currently active for the member
   attendanceResetDate?: string;  // Date when attendance was reset (e.g., after membership cancellation)
+  // Per-member override for portal progress-bar visibility on this style.
+  // undefined = inherit from Style.showProgressInPortal, true = force show,
+  // false = force hide. Admin profile always shows progress regardless.
+  showProgressInPortal?: boolean;
 };
 
 type StyleDocument = {
@@ -1400,6 +1404,10 @@ export default function MemberProfilePage() {
                     obj.attendanceResetDate !== undefined && obj.attendanceResetDate !== null
                       ? String(obj.attendanceResetDate)
                       : undefined,
+                  showProgressInPortal:
+                    typeof obj.showProgressInPortal === "boolean"
+                      ? obj.showProgressInPortal
+                      : undefined,
                   active:
                     obj.active !== undefined
                       ? Boolean(obj.active)
@@ -1642,7 +1650,9 @@ export default function MemberProfilePage() {
         startDate: s.startDate || undefined,
         lastPromotionDate: s.lastPromotionDate || undefined,
         active: s.active,
-        attendanceResetDate: s.attendanceResetDate || undefined
+        attendanceResetDate: s.attendanceResetDate || undefined,
+        showProgressInPortal:
+          typeof s.showProgressInPortal === "boolean" ? s.showProgressInPortal : undefined,
       }))
       .filter((s) => s.name !== "");
 
@@ -2127,6 +2137,8 @@ export default function MemberProfilePage() {
           lastPromotionDate: s.lastPromotionDate || undefined,
           active: s.active,
           attendanceResetDate: s.attendanceResetDate || undefined,
+          showProgressInPortal:
+            typeof s.showProgressInPortal === "boolean" ? s.showProgressInPortal : undefined,
         }))
         .filter((s) => s.name !== "");
 
@@ -4565,6 +4577,37 @@ export default function MemberProfilePage() {
                           <label htmlFor={`style-active-${i}`} className="text-xs font-medium text-gray-700">
                             Style is active
                           </label>
+                        </div>
+                        <div className="space-y-1 pt-1 border-t border-gray-100">
+                          <label className="block text-xs font-medium text-gray-700">
+                            Portal Progress Visibility
+                            <span className="ml-1 block text-[11px] font-normal text-gray-500">
+                              Whether class-progress bars show on this member's portal for this style. Admin always sees them here.
+                            </span>
+                          </label>
+                          <select
+                            value={
+                              typeof s.showProgressInPortal === "boolean"
+                                ? (s.showProgressInPortal ? "show" : "hide")
+                                : "inherit"
+                            }
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const bool = v === "show" ? true : v === "hide" ? false : undefined;
+                              updateStyle(
+                                i,
+                                "showProgressInPortal",
+                                // updateStyle accepts string | boolean; pass boolean
+                                // when we have one, empty string to clear override.
+                                bool === undefined ? ("" as string) : bool,
+                              );
+                            }}
+                            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          >
+                            <option value="inherit">Use style default</option>
+                            <option value="show">Always show</option>
+                            <option value="hide">Always hide</option>
+                          </select>
                         </div>
                         <div className="flex gap-2 pt-3 border-t">
                           <button
