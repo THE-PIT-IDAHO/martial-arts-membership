@@ -4514,6 +4514,29 @@ export default function MemberProfilePage() {
                           />
                         </div>
                         <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-700">
+                            Attendance Reset Date
+                            <span className="ml-1 font-normal text-gray-400">
+                              (attendance before this date is excluded from progress)
+                            </span>
+                          </label>
+                          <input
+                            type="date"
+                            value={s.attendanceResetDate || ""}
+                            onChange={(e) => updateStyle(i, "attendanceResetDate", e.target.value)}
+                            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                          {s.attendanceResetDate && (
+                            <button
+                              type="button"
+                              onClick={() => updateStyle(i, "attendanceResetDate", "")}
+                              className="text-[10px] text-gray-500 hover:text-primary underline"
+                            >
+                              Clear (count all attendance)
+                            </button>
+                          )}
+                        </div>
+                        <div className="space-y-1">
                           <label className="block text-xs font-medium text-gray-700">Belt Size</label>
                           <input
                             value={s.beltSize || ""}
