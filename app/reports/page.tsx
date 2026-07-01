@@ -1111,44 +1111,106 @@ export default function ReportsPage() {
               return new Date(a.lastAttendance).getTime() - new Date(b.lastAttendance).getTime();
             });
 
-          // Build per-member attendance counts by class type (ALL TIME)
-          // Only count attendance that matches the member's primary style OR is imported (source === "IMPORTED")
-          // This matches how the member profile calculates style requirements
+          // Build per-member attendance counts by class type, mirroring the
+          // admin member profile source-of-truth. Complaint that reports and
+          // the admin didn't agree came down to three gaps here:
+          //   1. Only single-style enrollment (primaryStyle) matched. A
+          //      member enrolled in multiple styles via stylesNotes had
+          //      their non-primary attendance silently dropped.
+          //   2. Only single classType matched — classTypes JSON array
+          //      (multi-tag classes) was ignored.
+          //   3. No attendanceResetDate filter. Pre-promotion attendance
+          //      inflated counts vs the admin's post-reset progress bars.
+          //
+          // Now: build per-member { styles: [{name, resetDate}], any-reset
+          // floor } once, then for each attendance count it once iff any
+          // enrolled style's admin-profile filter would include it.
 
-          // First, build a map of member ID to primary style
-          const memberStyleMap: Record<string, string> = {};
+          type EnrolledStyle = { name: string; resetDate: string | null };
+          const memberStylesMap: Record<string, EnrolledStyle[]> = {};
           members.forEach((m: any) => {
-            memberStyleMap[m.id] = m.primaryStyle || "";
+            const styles: EnrolledStyle[] = [];
+            if (m.stylesNotes) {
+              try {
+                const arr = JSON.parse(m.stylesNotes);
+                if (Array.isArray(arr)) {
+                  for (const s of arr) {
+                    if (s?.name && s.active !== false) {
+                      styles.push({
+                        name: String(s.name),
+                        resetDate: s.attendanceResetDate ? String(s.attendanceResetDate).split("T")[0] : null,
+                      });
+                    }
+                  }
+                }
+              } catch { /* ignore */ }
+            }
+            // Fallback to primaryStyle if stylesNotes was empty/unparseable
+            if (styles.length === 0 && m.primaryStyle) {
+              styles.push({ name: m.primaryStyle, resetDate: null });
+            }
+            memberStylesMap[m.id] = styles;
           });
 
           const memberAttendanceCounts: Record<string, { total: number; [key: string]: number }> = {};
           allAttendances.forEach((a: any) => {
             const memberId = a.memberId;
-            const memberPrimaryStyle = memberStyleMap[memberId] || "";
-            const classStyleName = a.classSession?.styleName || "";
-            const classStyleNames = a.classSession?.styleNames ? JSON.parse(a.classSession.styleNames) : [];
+            const enrolled = memberStylesMap[memberId] || [];
+            if (enrolled.length === 0) return;
+
+            const cs = a.classSession;
             const isImported = a.source === "IMPORTED";
+            const classStyleName: string = cs?.styleName || "";
+            let classStyleNames: string[] = [];
+            if (cs?.styleNames) {
+              try {
+                const parsed = JSON.parse(cs.styleNames);
+                if (Array.isArray(parsed)) classStyleNames = parsed.map(String);
+              } catch { /* ignore */ }
+            }
+            const classHasNoStyle = !classStyleName && classStyleNames.length === 0;
 
-            // Check if this attendance matches the member's primary style
-            // Match if: styleName matches, OR styleNames array contains the style, OR it's imported
-            const matchesStyle =
-              isImported ||
-              (memberPrimaryStyle && (
-                classStyleName === memberPrimaryStyle ||
-                classStyleNames.includes(memberPrimaryStyle)
-              ));
+            // Attendance date for reset-filter comparison (YYYY-MM-DD).
+            const attDateStr: string | null = a.attendanceDate
+              ? String(a.attendanceDate).split("T")[0]
+              : a.checkedInAt
+                ? String(a.checkedInAt).split("T")[0]
+                : null;
 
-            if (!matchesStyle) return; // Skip if doesn't match member's style
+            // Passes if ANY enrolled style's filter would include it:
+            // style match (or IMPORTED or classHasNoStyle) AND att date
+            // >= that style's resetDate.
+            const passes = enrolled.some((es) => {
+              const nameMatch =
+                isImported ||
+                classHasNoStyle ||
+                classStyleName.toLowerCase() === es.name.toLowerCase() ||
+                classStyleNames.some((n) => n.toLowerCase() === es.name.toLowerCase());
+              if (!nameMatch) return false;
+              if (es.resetDate && attDateStr && attDateStr < es.resetDate) return false;
+              return true;
+            });
+            if (!passes) return;
 
             if (!memberAttendanceCounts[memberId]) {
               memberAttendanceCounts[memberId] = { total: 0 };
             }
             memberAttendanceCounts[memberId].total++;
-            const classType = a.classSession?.classType || "Other";
-            if (memberAttendanceCounts[memberId][classType] !== undefined) {
-              memberAttendanceCounts[memberId][classType]++;
-            } else {
-              memberAttendanceCounts[memberId][classType] = 1;
+
+            // Emit a hit for EVERY classType tag on the class (matches
+            // admin's classTypes JSON handling). Falls back to single
+            // classType, then "Other".
+            let typeTags: string[] = [];
+            if (cs?.classTypes) {
+              try {
+                const arr = JSON.parse(cs.classTypes);
+                if (Array.isArray(arr)) typeTags = arr.map(String);
+              } catch { /* ignore */ }
+            }
+            if (typeTags.length === 0 && cs?.classType) typeTags = [cs.classType];
+            if (typeTags.length === 0) typeTags = ["Other"];
+            for (const t of typeTags) {
+              memberAttendanceCounts[memberId][t] = (memberAttendanceCounts[memberId][t] || 0) + 1;
             }
           });
 
