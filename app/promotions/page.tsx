@@ -124,7 +124,7 @@ const BTN_NEUTRAL =
   "rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50";
 
 export default function PromotionsPage() {
-  const [tab, setTab] = useState<"eligible" | "events" | "history">("events");
+  const [tab, setTab] = useState<"eligible" | "events" | "history">("eligible");
   const [loading, setLoading] = useState(true);
   const [eligible, setEligible] = useState<EligibleRow[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
@@ -133,7 +133,19 @@ export default function PromotionsPage() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
-  const [showOnlyEligible, setShowOnlyEligible] = useState(false);
+  // "Eligible only" checkbox remembers its last state across visits.
+  // Defaults to ON so the Quick Promote tab opens with the useful view.
+  // Persist to localStorage on change — no toggle = stays checked; user
+  // unchecked = stays unchecked; re-check = back on. Reads on client
+  // mount (avoid SSR mismatch by starting from the default).
+  const [showOnlyEligible, setShowOnlyEligible] = useState(true);
+  useEffect(() => {
+    const saved = localStorage.getItem("promotions.showOnlyEligible");
+    if (saved !== null) setShowOnlyEligible(saved === "true");
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("promotions.showOnlyEligible", String(showOnlyEligible));
+  }, [showOnlyEligible]);
   const [styleFilter, setStyleFilter] = useState<Set<string>>(new Set());
 
   // Per-row fee overrides edited inline in the Ready-to-Promote table.
@@ -345,7 +357,7 @@ export default function PromotionsPage() {
         </div>
 
         <div className="flex items-center gap-1 border-b border-gray-200 mb-4">
-          {(["events", "eligible", "history"] as const).map((t) => (
+          {(["eligible", "events", "history"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -354,7 +366,7 @@ export default function PromotionsPage() {
                 tab === t ? "border-primary text-primary" : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
-              {t === "events" ? "Events" : t === "eligible" ? "Quick Promote" : "Past Events"}
+              {t === "eligible" ? "Quick Promote" : t === "events" ? "Events" : "Past Events"}
             </button>
           ))}
         </div>

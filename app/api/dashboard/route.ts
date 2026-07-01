@@ -653,11 +653,11 @@ export async function GET(req: Request) {
             }
           }
 
-          // Cap at 50 so a huge roster doesn't blow up the dashboard
-          // payload, but well above the previous 10 which was cutting
-          // off newly-eligible members (Kelton pushed Dominick past
-          // the cap after his bulk-import counted).
-          if (eligibleForPromotion.length >= 50) break;
+          // Hard cap kept high so dashboard shows ALL eligible members
+          // (frontend then paginates: top 10 in the box, rest via the
+          // "View all" modal). 500 is well above any realistic gym
+          // roster and just prevents runaway payload size.
+          if (eligibleForPromotion.length >= 500) break;
         }
       }
     } catch (err) {

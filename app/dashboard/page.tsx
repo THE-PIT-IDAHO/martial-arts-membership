@@ -1248,7 +1248,7 @@ export default function DashboardPage() {
                       <h2 className="text-sm font-semibold text-green-700">Promotion Eligible</h2>
                       <button
                         onClick={() => router.push("/promotions")}
-                        className="text-xs text-primary hover:text-primaryDark font-medium"
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                       >
                         Promotions
                       </button>
@@ -1259,7 +1259,7 @@ export default function DashboardPage() {
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-50">
-                        {data.eligibleForPromotion.map((p, i) => (
+                        {data.eligibleForPromotion.slice(0, 5).map((p, i) => (
                           <div
                             key={`${p.memberId}-${p.styleName}-${i}`}
                             className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
