@@ -719,6 +719,12 @@ export default function MemberProfilePage() {
   const [changePlanPriceDollars, setChangePlanPriceDollars] = useState<string>("0.00");
   const [changePlanRecurringDollars, setChangePlanRecurringDollars] = useState<string>("0.00");
   const [changePlanShowConfirm, setChangePlanShowConfirm] = useState(false);
+  // Whether to actually charge (upgrade) or credit (downgrade) the
+  // computed prorate amount. Default ON for upgrades, OFF for
+  // downgrades — admin can toggle in the modal. Direction (positive =
+  // charge, negative = credit) is tracked with changePlanIsCredit.
+  const [changePlanApplyProrate, setChangePlanApplyProrate] = useState(true);
+  const [changePlanIsCredit, setChangePlanIsCredit] = useState(false);
 
   // activity
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -6331,23 +6337,36 @@ export default function MemberProfilePage() {
                             // Set recurring price to new plan's standard price
                             setChangePlanRecurringDollars((newPriceCents / 100).toFixed(2));
                             const priceDiffCents = newPriceCents - oldPriceCents;
+                            const isUpgrade = priceDiffCents > 0;
+                            const isDowngrade = priceDiffCents < 0;
+                            setChangePlanIsCredit(isDowngrade);
+                            // Default: prorate ON for upgrades, OFF for
+                                                        // downgrades (opt-in credit) — admin can flip.
+                            setChangePlanApplyProrate(isUpgrade);
 
-                            // Get billing cycle days
+                            // Calendar-aware billing cycle length. Adds
+                            // the cycle to lastPayment (or today as a
+                            // fallback) and takes the actual day count —
+                            // handles month lengths + leap years, unlike
+                            // the old fixed 30/91/182/365 approximation.
                             const billingCycle = currentMembership.membershipPlan.billingCycle?.toUpperCase() || "MONTHLY";
-                            let cycleDays = 30; // default to monthly
-                            switch (billingCycle) {
-                              case "DAILY": cycleDays = 1; break;
-                              case "WEEKLY": cycleDays = 7; break;
-                              case "MONTHLY": cycleDays = 30; break;
-                              case "QUARTERLY": cycleDays = 91; break;
-                              case "SEMI_ANNUALLY":
-                              case "SEMI-ANNUALLY":
-                              case "SEMIANNUALLY": cycleDays = 182; break;
-                              case "YEARLY":
-                              case "ANNUALLY": cycleDays = 365; break;
-                            }
-
-                            // Calculate days remaining and days in cycle
+                            const addCycle = (d: Date): Date => {
+                              const r = new Date(d);
+                              switch (billingCycle) {
+                                case "DAILY": r.setDate(r.getDate() + 1); break;
+                                case "WEEKLY": r.setDate(r.getDate() + 7); break;
+                                case "MONTHLY": r.setMonth(r.getMonth() + 1); break;
+                                case "QUARTERLY": r.setMonth(r.getMonth() + 3); break;
+                                case "SEMI_ANNUALLY":
+                                case "SEMI-ANNUALLY":
+                                case "SEMIANNUALLY": r.setMonth(r.getMonth() + 6); break;
+                                case "YEARLY":
+                                case "ANNUALLY": r.setFullYear(r.getFullYear() + 1); break;
+                                default: r.setMonth(r.getMonth() + 1);
+                              }
+                              return r;
+                            };
+                            const msPerDay = 1000 * 60 * 60 * 24;
                             const today = new Date();
                             today.setHours(0, 0, 0, 0);
 
@@ -6358,61 +6377,66 @@ export default function MemberProfilePage() {
                               ? new Date(currentMembership.lastPaymentDate)
                               : null;
 
-                            let daysInCycle = cycleDays;
-                            let daysRemaining = cycleDays;
-
-                            if (nextPayment && lastPayment) {
-                              // Use actual payment dates if available
-                              nextPayment.setHours(0, 0, 0, 0);
-                              lastPayment.setHours(0, 0, 0, 0);
-                              daysInCycle = Math.max(1, Math.ceil((nextPayment.getTime() - lastPayment.getTime()) / (1000 * 60 * 60 * 24)));
-                              daysRemaining = Math.max(0, Math.ceil((nextPayment.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+                            let cycleStart: Date;
+                            let cycleEnd: Date;
+                            if (lastPayment && nextPayment) {
+                              // Prefer the real billing window.
+                              cycleStart = new Date(lastPayment); cycleStart.setHours(0, 0, 0, 0);
+                              cycleEnd = new Date(nextPayment); cycleEnd.setHours(0, 0, 0, 0);
                             } else if (nextPayment) {
-                              // Only next payment available - estimate cycle from billing cycle
-                              nextPayment.setHours(0, 0, 0, 0);
-                              daysInCycle = cycleDays;
-                              daysRemaining = Math.max(0, Math.ceil((nextPayment.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
+                              cycleEnd = new Date(nextPayment); cycleEnd.setHours(0, 0, 0, 0);
+                              // Walk one cycle backward from nextPayment.
+                              const back = new Date(cycleEnd);
+                              switch (billingCycle) {
+                                case "DAILY": back.setDate(back.getDate() - 1); break;
+                                case "WEEKLY": back.setDate(back.getDate() - 7); break;
+                                case "MONTHLY": back.setMonth(back.getMonth() - 1); break;
+                                case "QUARTERLY": back.setMonth(back.getMonth() - 3); break;
+                                case "SEMI_ANNUALLY":
+                                case "SEMI-ANNUALLY":
+                                case "SEMIANNUALLY": back.setMonth(back.getMonth() - 6); break;
+                                case "YEARLY":
+                                case "ANNUALLY": back.setFullYear(back.getFullYear() - 1); break;
+                                default: back.setMonth(back.getMonth() - 1);
+                              }
+                              cycleStart = back;
                             } else if (lastPayment) {
-                              // Only last payment available - calculate next based on cycle
-                              lastPayment.setHours(0, 0, 0, 0);
-                              daysInCycle = cycleDays;
-                              const daysSincePayment = Math.ceil((today.getTime() - lastPayment.getTime()) / (1000 * 60 * 60 * 24));
-                              daysRemaining = Math.max(0, cycleDays - (daysSincePayment % cycleDays));
+                              cycleStart = new Date(lastPayment); cycleStart.setHours(0, 0, 0, 0);
+                              cycleEnd = addCycle(cycleStart);
                             } else {
-                              // No payment dates - use start date to estimate position in cycle
+                              // Nothing to anchor on — use start date +
+                              // walk cycles forward until we bracket today.
                               const startDate = new Date(currentMembership.startDate);
                               startDate.setHours(0, 0, 0, 0);
-                              const msPerDay = 1000 * 60 * 60 * 24;
-                              const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / msPerDay);
-                              daysInCycle = cycleDays;
-
-                              // Calculate days into the current cycle
-                              const daysIntoCycle = daysSinceStart % cycleDays;
-                              // Days remaining in current cycle (if at day 0, full cycle; if at day 29 of 30-day cycle, 1 day left)
-                              daysRemaining = cycleDays - daysIntoCycle;
-                              // Cap at cycleDays - 1 if we've been in the membership for at least one full day
-                              // This prevents showing full price when we're actually deep into a cycle
-                              if (daysSinceStart > 0 && daysRemaining === cycleDays) {
-                                // Edge case: we're exactly on a cycle boundary, treat as end of cycle
-                                daysRemaining = 0;
+                              cycleStart = startDate;
+                              cycleEnd = addCycle(cycleStart);
+                              while (cycleEnd <= today) {
+                                cycleStart = cycleEnd;
+                                cycleEnd = addCycle(cycleStart);
                               }
                             }
 
-                            // If new price is same or less, no charge
-                            if (priceDiffCents <= 0) {
-                              setChangePlanPriceDollars("0.00");
-                            } else {
-                              // Prorated price = price difference * (days remaining / days in cycle)
-                              const proratedCents = Math.round(priceDiffCents * (daysRemaining / daysInCycle));
-                              setChangePlanPriceDollars((Math.max(0, proratedCents) / 100).toFixed(2));
-                            }
+                            const daysInCycle = Math.max(1, Math.round((cycleEnd.getTime() - cycleStart.getTime()) / msPerDay));
+                            let daysRemaining = Math.round((cycleEnd.getTime() - today.getTime()) / msPerDay);
+                            if (daysRemaining < 0) daysRemaining = 0;
+                            if (daysRemaining > daysInCycle) daysRemaining = daysInCycle;
+
+                            // Prorated amount = |priceDiff| * (remaining / cycle).
+                            // Sign is tracked separately via changePlanIsCredit
+                            // so the modal + backend know upgrade vs downgrade.
+                            const absCents = Math.round(Math.abs(priceDiffCents) * (daysRemaining / daysInCycle));
+                            setChangePlanPriceDollars((absCents / 100).toFixed(2));
                           } else {
                             setChangePlanPriceDollars("0.00");
                             setChangePlanRecurringDollars("0.00");
+                            setChangePlanIsCredit(false);
+                            setChangePlanApplyProrate(true);
                           }
                         } else {
                           setChangePlanPriceDollars("0.00");
                           setChangePlanRecurringDollars("0.00");
+                          setChangePlanIsCredit(false);
+                          setChangePlanApplyProrate(true);
                         }
                       }}
                       className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
@@ -6513,10 +6537,11 @@ export default function MemberProfilePage() {
                   {(() => {
                     const currentMembership = member?.memberships?.find(m => m.id === changePlanModalMembershipId);
                     const newPlan = availablePlans.find(p => p.id === changePlanSelectedPlanId);
-                    const chargeAmount = parseFloat(changePlanPriceDollars) || 0;
+                    const prorateAmount = parseFloat(changePlanPriceDollars) || 0;
                     const recurringAmount = parseFloat(changePlanRecurringDollars) || 0;
                     const standardPrice = (newPlan?.priceCents ?? 0) / 100;
                     const isCustomRecurring = Math.abs(recurringAmount - standardPrice) > 0.001;
+                    const willApply = changePlanApplyProrate && prorateAmount > 0;
                     return (
                       <>
                         <div className="text-center py-2">
@@ -6544,18 +6569,37 @@ export default function MemberProfilePage() {
                           </div>
                           <div className="border-t border-gray-200 pt-2 mt-2">
                             <div className="flex justify-between">
-                              <span className="text-gray-500">Charge Amount:</span>
-                              <span className={`font-semibold ${chargeAmount > 0 ? "text-green-600" : "text-gray-600"}`}>
-                                {chargeAmount > 0 ? `$${chargeAmount.toFixed(2)}` : "No charge"}
+                              <span className="text-gray-500">
+                                {changePlanIsCredit ? "Prorated Credit:" : "Prorated Charge:"}
+                              </span>
+                              <span className={`font-semibold ${prorateAmount > 0 ? (changePlanIsCredit ? "text-blue-600" : "text-green-600") : "text-gray-600"}`}>
+                                {prorateAmount > 0 ? `$${prorateAmount.toFixed(2)}` : "$0.00"}
                               </span>
                             </div>
+                            {prorateAmount > 0 && (
+                              <label className="mt-2 flex items-start gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={changePlanApplyProrate}
+                                  onChange={(e) => setChangePlanApplyProrate(e.target.checked)}
+                                  className="mt-0.5 rounded border-gray-300 text-primary focus:ring-primary"
+                                />
+                                <span className="text-gray-700">
+                                  {changePlanIsCredit
+                                    ? `Give member a $${prorateAmount.toFixed(2)} account credit for the unused portion of this cycle`
+                                    : `Charge $${prorateAmount.toFixed(2)} now for the remaining portion of this cycle`}
+                                </span>
+                              </label>
+                            )}
                           </div>
                         </div>
 
                         <p className="text-xs text-gray-600 text-center">
-                          {chargeAmount > 0
-                            ? "This will change the membership and charge the account."
-                            : "This will change the membership with no additional charge."}
+                          {willApply
+                            ? (changePlanIsCredit
+                                ? "This will change the membership and credit the member's account."
+                                : "This will change the membership and charge the card on file.")
+                            : "This will change the membership with no proration."}
                         </p>
                       </>
                     );
@@ -6568,6 +6612,14 @@ export default function MemberProfilePage() {
                         if (!changePlanSelectedPlanId) return;
                         setChangePlanSubmitting(true);
                         try {
+                          const prorateCents = (() => {
+                            // Skip if admin unchecked the "apply" toggle.
+                            if (!changePlanApplyProrate) return 0;
+                            const abs = Math.round((parseFloat(changePlanPriceDollars) || 0) * 100);
+                            if (abs <= 0) return 0;
+                            // Negative = credit (downgrade), positive = charge (upgrade).
+                            return changePlanIsCredit ? -abs : abs;
+                          })();
                           const res = await fetch(`/api/memberships/${changePlanModalMembershipId}`, {
                             method: "PATCH",
                             headers: { "Content-Type": "application/json" },
@@ -6580,6 +6632,7 @@ export default function MemberProfilePage() {
                                 // Only set custom price if different from standard
                                 return recurring !== standard ? recurring : null;
                               })(),
+                              prorateAmountCents: prorateCents,
                             }),
                           });
                           if (res.ok) {

@@ -4,6 +4,8 @@ import { parseLocalDate } from "@/lib/dates";
 import { isUnderContract, calculateEarlyTerminationFee, calculateCancellationEffectiveDate } from "@/lib/contracts";
 import { logAudit } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
+import { generateInvoiceNumber } from "@/lib/billing";
+import { chargeStoredPaymentMethod, getActiveProcessor, getCurrency } from "@/lib/payment";
 import {
   getFirstRankFromBeltConfig,
   getPdfNamesFromBeltConfig,
@@ -292,7 +294,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { startDate, endDate, status, customPriceCents, lastPaymentDate, nextPaymentDate, pauseEndDate, membershipPlanId, cancellationReason } = body;
+    const { startDate, endDate, status, customPriceCents, lastPaymentDate, nextPaymentDate, pauseEndDate, membershipPlanId, cancellationReason, prorateAmountCents } = body;
 
     // Handle plan change (upgrade/downgrade)
     if (membershipPlanId) {
@@ -469,6 +471,105 @@ export async function PATCH(
         await syncMemberStyles(updatedMembership.memberId);
       } catch (syncError) {
         console.error("Error syncing member styles after plan change:", syncError);
+      }
+
+      // Apply proration: positive amount = charge the member for the
+      // upgrade cost, negative = credit them for the downgrade unused
+      // portion. Amount is decided by the admin in the UI (they can
+      // opt in/out of the prorate on upgrade and credit on downgrade)
+      // — we just persist whatever they asked for. Skipped when 0.
+      const prorate = typeof prorateAmountCents === "number" && Number.isFinite(prorateAmountCents)
+        ? Math.round(prorateAmountCents)
+        : 0;
+      if (prorate > 0) {
+        // Upgrade charge: create a PENDING invoice + attempt auto-charge
+        // against the stored payment method. If the charge fails, the
+        // invoice stays PENDING and enters the normal past-due / dunning
+        // flow — same behavior as auto-billing.
+        try {
+          const invoiceNumber = generateInvoiceNumber();
+          const now = new Date();
+          const dueDate = new Date(now);
+          dueDate.setDate(dueDate.getDate() + 7);
+          const cycleEnd = new Date(now);
+          cycleEnd.setDate(cycleEnd.getDate() + 30);
+          await prisma.invoice.create({
+            data: {
+              invoiceNumber,
+              membershipId: updatedMembership.id,
+              memberId: updatedMembership.memberId,
+              amountCents: prorate,
+              billingPeriodStart: now,
+              billingPeriodEnd: cycleEnd,
+              dueDate,
+              notes: `Prorated upgrade: ${currentMembership.membershipPlan.id} → ${newPlan.id}`,
+              clientId,
+            },
+          });
+
+          const activeProcessor = await getActiveProcessor();
+          if (activeProcessor) {
+            const currency = await getCurrency();
+            try {
+              const chargeResult = await chargeStoredPaymentMethod({
+                memberId: updatedMembership.memberId,
+                amountCents: prorate,
+                currency,
+                description: `Prorated upgrade charge — invoice ${invoiceNumber}`,
+                invoiceId: invoiceNumber,
+              });
+              if (chargeResult.success && chargeResult.externalPaymentId) {
+                await prisma.invoice.updateMany({
+                  where: { invoiceNumber },
+                  data: {
+                    status: "PAID",
+                    paidAt: new Date(),
+                    paymentMethod: (chargeResult.processor || activeProcessor).toUpperCase(),
+                    externalPaymentId: chargeResult.externalPaymentId,
+                    paymentProcessor: chargeResult.processor || activeProcessor,
+                    ...(chargeResult.processor === "stripe"
+                      ? { stripePaymentIntentId: chargeResult.externalPaymentId }
+                      : {}),
+                  },
+                });
+              }
+            } catch (chargeErr) {
+              console.error("Prorate charge failed:", chargeErr);
+              // Invoice stays PENDING — admin can retry via /invoices Charge button
+            }
+          }
+
+          await logAudit({
+            entityType: "Membership",
+            entityId: updatedMembership.id,
+            action: "PRORATE_CHARGE",
+            summary: `Prorated upgrade charge of $${(prorate / 100).toFixed(2)} (invoice ${invoiceNumber})`,
+            clientId,
+          }).catch(() => { /* audit failure shouldn't block */ });
+        } catch (invoiceErr) {
+          console.error("Failed to create prorate invoice:", invoiceErr);
+        }
+      } else if (prorate < 0) {
+        // Downgrade credit: bump the member's account credit balance by
+        // the absolute value. That balance is applied on the next
+        // billing run before the card is charged, so the credit flows
+        // naturally into their upcoming payment.
+        const creditCents = Math.abs(prorate);
+        try {
+          await prisma.member.update({
+            where: { id: updatedMembership.memberId },
+            data: { accountCreditCents: { increment: creditCents } },
+          });
+          await logAudit({
+            entityType: "Membership",
+            entityId: updatedMembership.id,
+            action: "PRORATE_CREDIT",
+            summary: `Downgrade credit of $${(creditCents / 100).toFixed(2)} applied to account balance`,
+            clientId,
+          }).catch(() => { /* audit failure shouldn't block */ });
+        } catch (creditErr) {
+          console.error("Failed to apply prorate credit:", creditErr);
+        }
       }
 
       // Fetch the updated member with all memberships to return to the client
