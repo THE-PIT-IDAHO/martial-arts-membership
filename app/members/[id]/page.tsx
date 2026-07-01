@@ -1382,6 +1382,18 @@ export default function MemberProfilePage() {
                     obj.lastPromotionDate !== undefined && obj.lastPromotionDate !== null
                       ? String(obj.lastPromotionDate)
                       : undefined,
+                  // attendanceResetDate was silently dropped here — set by
+                  // promotions/promotion-events + reset-classes but never
+                  // read back into the admin's style state. The result was
+                  // s.attendanceResetDate === undefined on the profile,
+                  // which skipped the reset-date filter on the Progress
+                  // bars entirely and inflated post-promotion counts with
+                  // pre-promotion classes (Colten showing 9/48 vs the
+                  // portal's correct 4/48 post-promotion).
+                  attendanceResetDate:
+                    obj.attendanceResetDate !== undefined && obj.attendanceResetDate !== null
+                      ? String(obj.attendanceResetDate)
+                      : undefined,
                   active:
                     obj.active !== undefined
                       ? Boolean(obj.active)
