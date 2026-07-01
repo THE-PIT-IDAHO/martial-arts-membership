@@ -471,10 +471,14 @@ export async function GET(req: Request) {
       });
 
       if (stylesWithBelts.length > 0) {
-        // Get active members with styles and attendance
+        // Get active members with styles and attendance. Match the
+        // status filter to /api/promotions/eligible so a member tagged
+        // "ACTIVE,COACH" (comma-separated statuses) still gets picked
+        // up here — exact-match "ACTIVE" was silently dropping those.
         const membersWithStyles = await prisma.member.findMany({
           where: {
-            status: "ACTIVE",
+            status: { contains: "ACTIVE" },
+            NOT: { status: { contains: "INACTIVE" } },
             stylesNotes: { not: null },
             clientId,
           },
@@ -649,7 +653,11 @@ export async function GET(req: Request) {
             }
           }
 
-          if (eligibleForPromotion.length >= 10) break;
+          // Cap at 50 so a huge roster doesn't blow up the dashboard
+          // payload, but well above the previous 10 which was cutting
+          // off newly-eligible members (Kelton pushed Dominick past
+          // the cap after his bulk-import counted).
+          if (eligibleForPromotion.length >= 50) break;
         }
       }
     } catch (err) {
