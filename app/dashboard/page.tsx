@@ -1168,69 +1168,81 @@ export default function DashboardPage() {
               {/* Alerts & Notices */}
               <div className="space-y-4">
                 {/* Past Due Members */}
-                {isSectionVisible("pastdue") && data.billing.pastDueInvoices.length > 0 && (
+                {isSectionVisible("pastdue") && (
                   <div className="rounded-lg border border-red-200 bg-white">
                     <div className="flex items-center justify-between border-b border-red-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-red-700">Past Due</h2>
                       <span className="text-xs text-red-400">{data.billing.pastDueCount} invoice{data.billing.pastDueCount !== 1 ? "s" : ""}</span>
                     </div>
-                    <div className="divide-y divide-gray-50">
-                      {data.billing.pastDueInvoices.map((inv) => (
-                        <div
-                          key={inv.id}
-                          className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => router.push(`/members/${inv.member.id}`)}
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {inv.member.firstName} {inv.member.lastName}
-                            </p>
-                            <p className="text-xs text-gray-400">{inv.membership.membershipPlan.name}</p>
+                    {data.billing.pastDueInvoices.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-xs text-gray-400">
+                        No past-due invoices.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {data.billing.pastDueInvoices.map((inv) => (
+                          <div
+                            key={inv.id}
+                            className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
+                            onClick={() => router.push(`/members/${inv.member.id}`)}
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {inv.member.firstName} {inv.member.lastName}
+                              </p>
+                              <p className="text-xs text-gray-400">{inv.membership.membershipPlan.name}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs font-semibold text-red-600">{formatCents(inv.amountCents)}</p>
+                              <p className="text-[10px] text-gray-400">Due {formatShortDate(inv.dueDate)}</p>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-xs font-semibold text-red-600">{formatCents(inv.amountCents)}</p>
-                            <p className="text-[10px] text-gray-400">Due {formatShortDate(inv.dueDate)}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* Upcoming Billings */}
-                {isSectionVisible("billing") && data.billing.upcomingBillings.length > 0 && (
+                {isSectionVisible("billing") && (
                   <div className="rounded-lg border border-gray-200 bg-white">
                     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-gray-900">Upcoming Billings</h2>
                       <span className="text-xs text-gray-400">Next 7 days</span>
                     </div>
-                    <div className="divide-y divide-gray-50">
-                      {data.billing.upcomingBillings.map((ms) => (
-                        <div
-                          key={ms.id}
-                          className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => router.push(`/members/${ms.member.id}`)}
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {ms.member.firstName} {ms.member.lastName}
-                            </p>
-                            <p className="text-xs text-gray-400">{ms.membershipPlan.name}</p>
+                    {data.billing.upcomingBillings.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-xs text-gray-400">
+                        No billings scheduled in the next 7 days.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {data.billing.upcomingBillings.map((ms) => (
+                          <div
+                            key={ms.id}
+                            className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
+                            onClick={() => router.push(`/members/${ms.member.id}`)}
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {ms.member.firstName} {ms.member.lastName}
+                              </p>
+                              <p className="text-xs text-gray-400">{ms.membershipPlan.name}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs font-semibold text-gray-700">
+                                {formatCents(ms.customPriceCents ?? ms.membershipPlan.priceCents ?? 0)}
+                              </p>
+                              <p className="text-[10px] text-gray-400">{formatShortDate(ms.nextPaymentDate)}</p>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-xs font-semibold text-gray-700">
-                              {formatCents(ms.customPriceCents ?? ms.membershipPlan.priceCents ?? 0)}
-                            </p>
-                            <p className="text-[10px] text-gray-400">{formatShortDate(ms.nextPaymentDate)}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* Promotion Eligible */}
-                {isSectionVisible("promotions") && data.eligibleForPromotion.length > 0 && (
+                {isSectionVisible("promotions") && (
                   <div className="rounded-lg border border-green-200 bg-white">
                     <div className="flex items-center justify-between border-b border-green-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-green-700">Promotion Eligible</h2>
@@ -1241,58 +1253,70 @@ export default function DashboardPage() {
                         Promotions
                       </button>
                     </div>
-                    <div className="divide-y divide-gray-50">
-                      {data.eligibleForPromotion.map((p, i) => (
-                        <div
-                          key={`${p.memberId}-${p.styleName}-${i}`}
-                          className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => router.push(`/members/${p.memberId}`)}
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{p.memberName}</p>
-                            <p className="text-xs text-gray-400">
-                              {p.styleName}: {p.currentRank} → {p.nextRank}
-                            </p>
+                    {data.eligibleForPromotion.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-xs text-gray-400">
+                        No members are currently promotion-eligible.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {data.eligibleForPromotion.map((p, i) => (
+                          <div
+                            key={`${p.memberId}-${p.styleName}-${i}`}
+                            className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
+                            onClick={() => router.push(`/members/${p.memberId}`)}
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{p.memberName}</p>
+                              <p className="text-xs text-gray-400">
+                                {p.styleName}: {p.currentRank} → {p.nextRank}
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
+                              Ready
+                            </span>
                           </div>
-                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
-                            Ready
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* Trial Members */}
-                {isSectionVisible("trials") && data.activeTrials && data.activeTrials.length > 0 && (
+                {isSectionVisible("trials") && (
                   <div className="rounded-lg border border-purple-200 bg-white">
                     <div className="flex items-center justify-between border-b border-purple-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-purple-700">Trial Members</h2>
-                      <span className="text-xs text-purple-400">{data.activeTrials.length} active</span>
+                      <span className="text-xs text-purple-400">{data.activeTrials?.length ?? 0} active</span>
                     </div>
-                    <div className="divide-y divide-gray-50">
-                      {data.activeTrials.map((t) => (
-                        <div
-                          key={t.id}
-                          className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => router.push(`/members/${t.memberId}`)}
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{t.memberName}</p>
-                            <p className="text-xs text-gray-400">
-                              {t.classesUsed}/{t.maxClasses} classes used
-                            </p>
+                    {!data.activeTrials || data.activeTrials.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-xs text-gray-400">
+                        No active trial members.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {data.activeTrials.map((t) => (
+                          <div
+                            key={t.id}
+                            className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
+                            onClick={() => router.push(`/members/${t.memberId}`)}
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{t.memberName}</p>
+                              <p className="text-xs text-gray-400">
+                                {t.classesUsed}/{t.maxClasses} classes used
+                              </p>
+                            </div>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                              t.daysRemaining <= 2
+                                ? "bg-red-100 text-red-700"
+                                : "bg-purple-100 text-purple-700"
+                            }`}>
+                              {t.daysRemaining}d left
+                            </span>
                           </div>
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            t.daysRemaining <= 2
-                              ? "bg-red-100 text-red-700"
-                              : "bg-purple-100 text-purple-700"
-                          }`}>
-                            {t.daysRemaining}d left
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1330,7 +1354,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Low Stock Items */}
-                {isSectionVisible("lowstock") && data.lowStockItems.length > 0 && (
+                {isSectionVisible("lowstock") && (
                   <div className="rounded-lg border border-yellow-200 bg-white">
                     <div className="flex items-center justify-between border-b border-yellow-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-yellow-700">Low Stock</h2>
@@ -1341,20 +1365,26 @@ export default function DashboardPage() {
                         View Inventory
                       </button>
                     </div>
-                    <div className="divide-y divide-gray-50">
-                      {data.lowStockItems.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => router.push("/pos/items")}
-                        >
-                          <p className="text-sm font-medium text-gray-900">{item.name}</p>
-                          <span className="text-xs font-semibold text-yellow-600">
-                            {item.stock} left (threshold: {item.threshold})
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                    {data.lowStockItems.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-xs text-gray-400">
+                        No items below their reorder threshold.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {data.lowStockItems.map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
+                            onClick={() => router.push("/pos/items")}
+                          >
+                            <p className="text-sm font-medium text-gray-900">{item.name}</p>
+                            <span className="text-xs font-semibold text-yellow-600">
+                              {item.stock} left (threshold: {item.threshold})
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
