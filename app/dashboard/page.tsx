@@ -233,6 +233,16 @@ export default function DashboardPage() {
 
   const isSectionVisible = (id: string) => sections.find(s => s.id === id)?.visible !== false;
 
+  // Section display order comes from the sections state array — reordering
+  // it in the Customize modal changes the CSS `order` value on each
+  // section's grid item, and the browser reflows without unmounting
+  // anything. Missing ids get a fallback higher than any real index so
+  // new/unknown sections don't jump to the top.
+  const sectionOrder: Record<string, number> = Object.fromEntries(
+    sections.map((s, i) => [s.id, i]),
+  );
+  const orderOf = (id: string) => sectionOrder[id] ?? 999;
+
   function saveSections(updated: DashboardSection[]) {
     setSections(updated);
     localStorage.setItem("dashboard.sections", JSON.stringify(updated));
@@ -648,8 +658,15 @@ export default function DashboardPage() {
           <div className="text-sm text-gray-500">Failed to load dashboard data.</div>
         ) : (
           <>
+            {/* One main grid holds every dashboard section. Section order
+                comes from the sections state array, applied via CSS
+                `order` on each grid child, so reordering in the
+                Customize modal reflows the boxes without any React
+                remount. Full-width sections (stats, schedule, charts)
+                use lg:col-span-2 so they still occupy both columns. */}
+            <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
             {/* Stat Cards */}
-            <div className="grid gap-4 grid-cols-2 md:grid-cols-6" style={{ display: isSectionVisible("stats") ? undefined : "none" }}>
+            <div className="lg:col-span-2 grid gap-4 grid-cols-2 md:grid-cols-6" style={{ order: orderOf("stats"), display: isSectionVisible("stats") ? undefined : "none" }}>
               <div
                 className="rounded-lg border border-gray-200 bg-white p-4 cursor-pointer hover:border-primary transition-colors"
                 onClick={() => router.push("/members")}
@@ -722,10 +739,8 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Main Content Grid */}
-            <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
               {/* Today's Schedule + Attendance Detail (side-by-side) */}
-              <div className="lg:col-span-2 grid gap-4 grid-cols-1 lg:grid-cols-2" style={{ display: isSectionVisible("schedule") ? undefined : "none" }}>
+              <div className="lg:col-span-2 grid gap-4 grid-cols-1 lg:grid-cols-2" style={{ order: orderOf("schedule"), display: isSectionVisible("schedule") ? undefined : "none" }}>
                 {/* Schedule List */}
                 <div className="rounded-lg border border-gray-200 bg-white">
                   <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -1051,7 +1066,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Revenue Summary */}
-              <div className="rounded-lg border border-gray-200 bg-white" style={{ display: isSectionVisible("revenue") ? undefined : "none" }}>
+              <div className="rounded-lg border border-gray-200 bg-white" style={{ order: orderOf("revenue"), display: isSectionVisible("revenue") ? undefined : "none" }}>
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                   <h2 className="text-sm font-semibold text-gray-900">Revenue</h2>
                   <span className="text-xs text-gray-400">This Month</span>
@@ -1088,7 +1103,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Tasks */}
-              <div className="rounded-lg border border-gray-200 bg-white" style={{ display: isSectionVisible("tasks") ? undefined : "none" }}>
+              <div className="rounded-lg border border-gray-200 bg-white" style={{ order: orderOf("tasks"), display: isSectionVisible("tasks") ? undefined : "none" }}>
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                   <h2 className="text-sm font-semibold text-gray-900">Tasks</h2>
                   <button
@@ -1130,7 +1145,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Recent Check-ins */}
-              <div className="rounded-lg border border-gray-200 bg-white" style={{ display: isSectionVisible("checkins") ? undefined : "none" }}>
+              <div className="rounded-lg border border-gray-200 bg-white" style={{ order: orderOf("checkins"), display: isSectionVisible("checkins") ? undefined : "none" }}>
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                   <h2 className="text-sm font-semibold text-gray-900">Recent Check-ins</h2>
                   <span className="text-xs text-gray-400">Today</span>
@@ -1178,7 +1193,7 @@ export default function DashboardPage() {
                   Soon, etc.) and stack cleanly on mobile. */}
                 {/* Past Due Members */}
                 {isSectionVisible("pastdue") && (
-                  <div className="rounded-lg border border-red-200 bg-white">
+                  <div className="rounded-lg border border-red-200 bg-white" style={{ order: orderOf("pastdue") }}>
                     <div className="flex items-center justify-between border-b border-red-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-red-700">Past Due</h2>
                       <span className="text-xs text-red-400">{data.billing.pastDueCount} invoice{data.billing.pastDueCount !== 1 ? "s" : ""}</span>
@@ -1214,7 +1229,7 @@ export default function DashboardPage() {
 
                 {/* Upcoming Billings */}
                 {isSectionVisible("billing") && (
-                  <div className="rounded-lg border border-gray-200 bg-white">
+                  <div className="rounded-lg border border-gray-200 bg-white" style={{ order: orderOf("billing") }}>
                     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-gray-900">Upcoming Billings</h2>
                       <span className="text-xs text-gray-400">Next 7 days</span>
@@ -1252,7 +1267,7 @@ export default function DashboardPage() {
 
                 {/* Promotion Eligible */}
                 {isSectionVisible("promotions") && (
-                  <div className="rounded-lg border border-green-200 bg-white">
+                  <div className="rounded-lg border border-green-200 bg-white" style={{ order: orderOf("promotions") }}>
                     <div className="flex items-center justify-between border-b border-green-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-green-700">Promotion Eligible</h2>
                       <button
@@ -1292,7 +1307,7 @@ export default function DashboardPage() {
 
                 {/* Trial Members */}
                 {isSectionVisible("trials") && (
-                  <div className="rounded-lg border border-purple-200 bg-white">
+                  <div className="rounded-lg border border-purple-200 bg-white" style={{ order: orderOf("trials") }}>
                     <div className="flex items-center justify-between border-b border-purple-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-purple-700">Trial Members</h2>
                       <span className="text-xs text-purple-400">{data.activeTrials?.length ?? 0} active</span>
@@ -1330,7 +1345,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* Expiring Memberships */}
-                <div className="rounded-lg border border-gray-200 bg-white" style={{ display: isSectionVisible("expiring") ? undefined : "none" }}>
+                <div className="rounded-lg border border-gray-200 bg-white" style={{ order: orderOf("expiring"), display: isSectionVisible("expiring") ? undefined : "none" }}>
                   <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                     <h2 className="text-sm font-semibold text-gray-900">Expired Memberships</h2>
                     <span className="text-xs text-gray-400">Non-recurring</span>
@@ -1367,7 +1382,7 @@ export default function DashboardPage() {
                     membership-status boxes pair up side-by-side. */}
                 <div
                   className="rounded-lg border border-amber-200 bg-white"
-                  style={{ display: isSectionVisible("expiringsoon") ? undefined : "none" }}
+                  style={{ order: orderOf("expiringsoon"), display: isSectionVisible("expiringsoon") ? undefined : "none" }}
                 >
                   <div className="flex items-center justify-between border-b border-amber-100 px-4 py-3">
                     <h2 className="text-sm font-semibold text-amber-700">Expiring Soon</h2>
@@ -1418,7 +1433,7 @@ export default function DashboardPage() {
 
                 {/* Low Stock Items */}
                 {isSectionVisible("lowstock") && (
-                  <div className="rounded-lg border border-yellow-200 bg-white">
+                  <div className="rounded-lg border border-yellow-200 bg-white" style={{ order: orderOf("lowstock") }}>
                     <div className="flex items-center justify-between border-b border-yellow-100 px-4 py-3">
                       <h2 className="text-sm font-semibold text-yellow-700">Low Stock</h2>
                       <button
@@ -1452,7 +1467,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* New Members This Week */}
-                <div className="rounded-lg border border-gray-200 bg-white" style={{ display: isSectionVisible("newmembers") ? undefined : "none" }}>
+                <div className="rounded-lg border border-gray-200 bg-white" style={{ order: orderOf("newmembers"), display: isSectionVisible("newmembers") ? undefined : "none" }}>
                   <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                     <h2 className="text-sm font-semibold text-gray-900">New This Week</h2>
                     <button
@@ -1485,10 +1500,13 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </div>
-            </div>
 
-            {/* Analytics Charts */}
-            {isSectionVisible("charts") && <DashboardCharts />}
+            {/* Analytics Charts — inside the main grid so its section order
+                is honored alongside the other boxes. */}
+            <div className="lg:col-span-2" style={{ order: orderOf("charts"), display: isSectionVisible("charts") ? undefined : "none" }}>
+              <DashboardCharts />
+            </div>
+            </div>
           </>
         )}
       </div>
