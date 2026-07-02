@@ -393,6 +393,39 @@ export async function GET(req: Request) {
       take: 5,
     });
 
+    // --- Expiring soon: non-recurring memberships ending in the next 30 days ---
+    // Separate from the "Expired" box above — this one is the heads-up
+    // window, so the admin can reach out before the membership actually
+    // lapses. Same autoRenew=false filter (recurring plans auto-charge
+    // on nextPaymentDate and don't count as "expiring").
+    const thirtyDaysOut = new Date(todayStart);
+    thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
+    const expiringSoonMemberships = await prisma.membership.findMany({
+      where: {
+        status: "ACTIVE",
+        endDate: { gte: todayStart, lte: thirtyDaysOut },
+        membershipPlan: { autoRenew: false },
+        member: { clientId },
+      },
+      select: {
+        id: true,
+        endDate: true,
+        member: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        membershipPlan: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      orderBy: { endDate: "asc" },
+    });
+
     // --- Billing ---
     const pastDueCount = await prisma.invoice.count({
       where: { status: "PAST_DUE", member: { clientId } },
@@ -741,6 +774,7 @@ export async function GET(req: Request) {
       },
       appointments: todaysAppointments,
       expiringMemberships,
+      expiringSoonMemberships,
       lowStockItems,
       eligibleForPromotion,
       activeTrials: trialsData,
