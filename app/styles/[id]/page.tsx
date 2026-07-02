@@ -157,15 +157,15 @@ export default function StyleEditPage(props: PageProps) {
           <div className="flex items-center gap-2">
             <Link
               href="/styles"
-              className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
             >
-              ← Back to Styles
+              Back to Styles
             </Link>
             <Link
               href={`/styles/belt-designer?styleId=${id}&styleName=${encodeURIComponent(
                 style?.name || ""
               )}`}
-              className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primaryDark"
+              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
             >
               Belt Designer
             </Link>
@@ -239,7 +239,7 @@ export default function StyleEditPage(props: PageProps) {
                 type="checkbox"
                 checked={beltSystemEnabled}
                 onChange={(e) => setBeltSystemEnabled(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary accent-primary"
               />
               <label
                 htmlFor="beltSystemEnabled"
@@ -255,7 +255,7 @@ export default function StyleEditPage(props: PageProps) {
                 type="checkbox"
                 checked={showProgressInPortal}
                 onChange={(e) => setShowProgressInPortal(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary accent-primary"
               />
               <label
                 htmlFor="showProgressInPortal"
@@ -296,7 +296,7 @@ export default function StyleEditPage(props: PageProps) {
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="text-xs text-primary hover:text-primaryDark disabled:cursor-not-allowed"
+                className="rounded-md border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {deleting ? "Deleting…" : "Delete Style"}
               </button>
@@ -304,7 +304,7 @@ export default function StyleEditPage(props: PageProps) {
               <button
                 type="submit"
                 disabled={!name.trim() || saving}
-                className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primaryDark disabled:cursor-not-allowed disabled:bg-gray-300"
+                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {saving ? "Saving…" : "Save Changes"}
               </button>

@@ -198,7 +198,7 @@ export default function NewStylePage() {
               id="beltSystemEnabled"
               checked={beltSystemEnabled}
               onChange={(e) => setBeltSystemEnabled(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary"
+              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary accent-primary"
               disabled={creating}
             />
             <label
