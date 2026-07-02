@@ -94,11 +94,14 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           </div>
         </div>
       </header>
+      {/* Menu bar sits directly under the header now (was a fixed
+          bottom nav). Component name kept for git history — it's
+          just no longer at the bottom. */}
+      <BottomNav />
       <AccountSwitcher />
-      <main className="pb-20">
+      <main>
         {children}
       </main>
-      <BottomNav />
     </div>
   );
 }

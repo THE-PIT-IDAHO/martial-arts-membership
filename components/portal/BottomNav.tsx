@@ -107,12 +107,17 @@ export default function BottomNav() {
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 pb-safe">
+    // Moved from fixed-bottom to sticky-top so the menu lives right
+    // under the portal header. `top-12` matches the header's ~48px
+    // height so both stack cleanly and stay pinned when the page
+    // scrolls. Border flipped from top to bottom to visually separate
+    // it from the main content area.
+    <nav className="sticky top-12 z-40 bg-white border-b border-gray-200">
       {/* flex-1 + min-w-0 lets every tab share the available width evenly
           and shrink as small as needed on narrow phones (e.g. iPhone SE,
           older Androids). The old min-w-[64px] forced ~384px total for 6
           tabs, which overflowed and cut off the Profile button. */}
-      <div className="flex items-stretch h-16 max-w-lg mx-auto px-1">
+      <div className="flex items-stretch h-14 max-w-lg mx-auto px-1">
         {visibleTabs.map((tab) => {
           const active = isActive(tab);
           return (
