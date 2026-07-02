@@ -697,6 +697,49 @@ export async function GET(req: Request) {
       console.error("Promotion eligibility check error:", err);
     }
 
+    // --- Unread Member Messages ---
+    // Every unread member-sent DirectMessage in this tenant, grouped
+    // by conversation so we only surface the latest snippet per thread.
+    // Admin can click through to /communication to reply.
+    const unreadMemberMessages = await prisma.directMessage.findMany({
+      where: {
+        clientId,
+        senderType: "member",
+        isRead: false,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        conversationId: true,
+        content: true,
+        createdAt: true,
+        senderId: true,
+      },
+    });
+    // Collapse to one row per conversation (most recent unread wins).
+    const seenConvos = new Set<string>();
+    const uniqueUnread = unreadMemberMessages.filter((m) => {
+      if (seenConvos.has(m.conversationId)) return false;
+      seenConvos.add(m.conversationId);
+      return true;
+    });
+    const senderIds = [...new Set(uniqueUnread.map((m) => m.senderId).filter((v): v is string => !!v))];
+    const senders = senderIds.length > 0
+      ? await prisma.member.findMany({
+          where: { id: { in: senderIds }, clientId },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const senderMap = new Map(senders.map((m) => [m.id, `${m.firstName} ${m.lastName}`.trim()]));
+    const newMessages = uniqueUnread.map((m) => ({
+      id: m.id,
+      conversationId: m.conversationId,
+      senderName: m.senderId ? senderMap.get(m.senderId) || "Member" : "Member",
+      snippet: m.content.length > 90 ? m.content.slice(0, 90).trimEnd() + "…" : m.content,
+      createdAt: m.createdAt,
+    }));
+
     // --- Low Stock Items ---
     const allPosItems = await prisma.pOSItem.findMany({
       where: { isActive: true, clientId },
@@ -778,6 +821,7 @@ export async function GET(req: Request) {
       lowStockItems,
       eligibleForPromotion,
       activeTrials: trialsData,
+      newMessages,
     });
   } catch (error) {
     console.error("Error fetching dashboard data:", error);

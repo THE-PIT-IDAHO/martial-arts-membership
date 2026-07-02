@@ -120,6 +120,13 @@ type DashboardData = {
     member: { id: string; firstName: string; lastName: string };
     membershipPlan: { name: string };
   }>;
+  newMessages?: Array<{
+    id: string;
+    conversationId: string;
+    senderName: string;
+    snippet: string;
+    createdAt: string;
+  }>;
   lowStockItems: Array<{
     id: string;
     name: string;
@@ -181,6 +188,7 @@ const DEFAULT_SECTIONS: DashboardSection[] = [
   { id: "trials", label: "Trial Members", visible: true },
   { id: "expiring", label: "Expired Memberships", visible: true },
   { id: "expiringsoon", label: "Expiring Soon (Next 30 Days)", visible: true },
+  { id: "messages", label: "New Messages", visible: true },
   { id: "lowstock", label: "Low Stock Items", visible: true },
   { id: "newmembers", label: "New Members This Week", visible: true },
   { id: "charts", label: "Analytics Charts", visible: true },
@@ -1430,6 +1438,46 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </div>
+
+                {/* New Messages — unread member-sent messages, one row per
+                    conversation. Row click jumps to the Dojo Board where
+                    the admin can reply. */}
+                {isSectionVisible("messages") && (
+                  <div className="rounded-lg border border-blue-200 bg-white" style={{ order: orderOf("messages") }}>
+                    <div className="flex items-center justify-between border-b border-blue-100 px-4 py-3">
+                      <h2 className="text-sm font-semibold text-blue-700">New Messages</h2>
+                      <button
+                        onClick={() => router.push("/communication")}
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                      >
+                        Open Board
+                      </button>
+                    </div>
+                    {(!data.newMessages || data.newMessages.length === 0) ? (
+                      <div className="px-4 py-6 text-center text-xs text-gray-400">
+                        No new messages.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {data.newMessages.slice(0, 5).map((m) => (
+                          <div
+                            key={m.id}
+                            className="flex items-start justify-between gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
+                            onClick={() => router.push(`/communication?conversationId=${m.conversationId}`)}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-gray-900 truncate">{m.senderName}</p>
+                              <p className="text-xs text-gray-500 truncate">{m.snippet}</p>
+                            </div>
+                            <span className="text-[10px] text-gray-400 whitespace-nowrap flex-shrink-0">
+                              {formatShortDate(m.createdAt)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Low Stock Items */}
                 {isSectionVisible("lowstock") && (
