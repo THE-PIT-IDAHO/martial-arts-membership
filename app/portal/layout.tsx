@@ -1,11 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import BottomNav from "@/components/portal/BottomNav";
 import AccountSwitcher from "@/components/portal/AccountSwitcher";
 
 const PUBLIC_PATHS = ["/portal/login", "/portal/verify", "/portal/enroll", "/portal/set-password"];
+
+// Pages that have their own menu-bar tab. Anything ELSE the member
+// lands on (bookings, attendance, family, styles, testing, …) is a
+// sub-page reached from Home, so we surface a Back-to-Home button so
+// the member always has a fast way out.
+const TOP_NAV_ROUTES = [
+  "/portal",
+  "/portal/checkin",
+  "/portal/classes",
+  "/portal/messages",
+  "/portal/store",
+  "/portal/profile",
+];
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -99,6 +113,22 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           just no longer at the bottom. */}
       <BottomNav />
       <AccountSwitcher />
+      {/* Back-to-Home button appears on any sub-page (any route not
+          reachable directly from the top menu). Keeps the member from
+          getting stranded on a detail page with no obvious way back. */}
+      {pathname && !TOP_NAV_ROUTES.includes(pathname) && (
+        <div className="max-w-lg mx-auto px-4 pt-3">
+          <Link
+            href="/portal"
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+            </svg>
+            Back to Home
+          </Link>
+        </div>
+      )}
       <main>
         {children}
       </main>
