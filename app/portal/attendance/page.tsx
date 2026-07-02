@@ -7,6 +7,7 @@ interface AttendanceRecord {
   attendanceDate: string;
   checkedInAt: string;
   source: string;
+  confirmed: boolean;
   classSession?: {
     name: string;
     styleName?: string;
@@ -84,9 +85,16 @@ export default function PortalAttendancePage() {
                   return (
                     <div key={r.id} className="bg-white rounded-xl border border-gray-200 p-3 flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {r.classSession?.name || "Open Training"}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-medium text-gray-900">
+                            {r.classSession?.name || "Open Training"}
+                          </p>
+                          {r.confirmed && (
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
+                              Confirmed
+                            </span>
+                          )}
+                        </div>
                         {r.classSession?.styleName && (
                           <p className="text-xs text-gray-400">{r.classSession.styleName}</p>
                         )}
