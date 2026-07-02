@@ -1172,6 +1172,62 @@ export default function DashboardPage() {
                 )}
               </div>
 
+              {/* Expiring Soon — non-recurring memberships ending in the next 30
+                  days. Full-width (spans both columns of the grid) so the
+                  membership + expiry can breathe on wider screens. */}
+              <div
+                className="lg:col-span-2 rounded-lg border border-amber-200 bg-white"
+                style={{ display: isSectionVisible("expiringsoon") ? undefined : "none" }}
+              >
+                <div className="flex items-center justify-between border-b border-amber-100 px-4 py-3">
+                  <h2 className="text-sm font-semibold text-amber-700">Expiring Soon</h2>
+                  <span className="text-xs text-amber-400">Next 30 days</span>
+                </div>
+                {(!data.expiringSoonMemberships || data.expiringSoonMemberships.length === 0) ? (
+                  <div className="p-4 text-center text-sm text-gray-400">
+                    No memberships expiring in the next 30 days.
+                  </div>
+                ) : (
+                  <div className="grid gap-x-4 divide-y divide-gray-50 sm:grid-cols-2 sm:divide-y-0">
+                    {data.expiringSoonMemberships.map((ms) => {
+                      // Days until expiration — colors the badge so a 7-day
+                      // window reads more urgent than a 25-day window.
+                      const daysLeft = Math.max(
+                        0,
+                        Math.ceil((new Date(ms.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+                      );
+                      return (
+                        <div
+                          key={ms.id}
+                          className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-50 sm:border-b-0"
+                          onClick={() => router.push(`/members/${ms.member.id}`)}
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {ms.member.firstName} {ms.member.lastName}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {ms.membershipPlan.name} · Expires {formatShortDate(ms.endDate)}
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                              daysLeft <= 7
+                                ? "bg-red-100 text-red-700"
+                                : daysLeft <= 14
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {daysLeft === 0 ? "Today" : `${daysLeft}d left`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* Alerts & Notices */}
               <div className="space-y-4">
                 {/* Past Due Members */}
@@ -1356,57 +1412,6 @@ export default function DashboardPage() {
                           </span>
                         </div>
                       ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Expiring Soon — non-recurring memberships ending in the next 30 days */}
-                <div className="rounded-lg border border-amber-200 bg-white" style={{ display: isSectionVisible("expiringsoon") ? undefined : "none" }}>
-                  <div className="flex items-center justify-between border-b border-amber-100 px-4 py-3">
-                    <h2 className="text-sm font-semibold text-amber-700">Expiring Soon</h2>
-                    <span className="text-xs text-amber-400">Next 30 days</span>
-                  </div>
-                  {data.expiringSoonMemberships.length === 0 ? (
-                    <div className="p-4 text-center text-sm text-gray-400">
-                      No memberships expiring in the next 30 days.
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-gray-50">
-                      {data.expiringSoonMemberships.map((ms) => {
-                        // Days until expiration — used for the badge color
-                        // so 7-days-out reads more urgent than 25-days-out.
-                        const daysLeft = Math.max(
-                          0,
-                          Math.ceil((new Date(ms.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
-                        );
-                        return (
-                          <div
-                            key={ms.id}
-                            className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
-                            onClick={() => router.push(`/members/${ms.member.id}`)}
-                          >
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">
-                                {ms.member.firstName} {ms.member.lastName}
-                              </p>
-                              <p className="text-xs text-gray-400">
-                                {ms.membershipPlan.name} · Expires {formatShortDate(ms.endDate)}
-                              </p>
-                            </div>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                daysLeft <= 7
-                                  ? "bg-red-100 text-red-700"
-                                  : daysLeft <= 14
-                                    ? "bg-amber-100 text-amber-700"
-                                    : "bg-gray-100 text-gray-700"
-                              }`}
-                            >
-                              {daysLeft === 0 ? "Today" : `${daysLeft}d left`}
-                            </span>
-                          </div>
-                        );
-                      })}
                     </div>
                   )}
                 </div>
