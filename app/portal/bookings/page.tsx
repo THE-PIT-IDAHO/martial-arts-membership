@@ -121,11 +121,11 @@ export default function PortalBookingsPage() {
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-1.5">
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                      b.status === "WAITLISTED" ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"
-                    }`}>
-                      {b.status === "WAITLISTED" ? `Waitlist #${b.waitlistPosition}` : "Confirmed"}
-                    </span>
+                    {b.status === "WAITLISTED" && (
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">
+                        Waitlist #{b.waitlistPosition}
+                      </span>
+                    )}
                     <button
                       onClick={() => handleCancel(b.id)}
                       disabled={isCancelling}

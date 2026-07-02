@@ -120,11 +120,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         <div className="max-w-lg mx-auto px-4 pt-3">
           <Link
             href="/portal"
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+            className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-            </svg>
             Back to Home
           </Link>
         </div>
