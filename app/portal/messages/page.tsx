@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 interface Conversation {
@@ -15,8 +16,12 @@ interface Conversation {
 }
 
 export default function PortalMessagesPage() {
+  const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     fetch("/api/portal/messages")
@@ -26,6 +31,33 @@ export default function PortalMessagesPage() {
         setLoading(false);
       });
   }, []);
+
+  async function sendNewMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!draft.trim() || sending) return;
+    setSending(true);
+    try {
+      // POST without conversationId → server creates (or reuses) the
+      // member's solo conversation and delivers the message straight
+      // into it. Response includes the resulting conversationId so we
+      // navigate directly into the thread.
+      const res = await fetch("/api/portal/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: draft.trim() }),
+      });
+      if (res.ok) {
+        const msg = await res.json();
+        setDraft("");
+        setComposeOpen(false);
+        if (msg.conversationId) {
+          router.push(`/portal/messages/${msg.conversationId}`);
+        }
+      }
+    } finally {
+      setSending(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -37,7 +69,49 @@ export default function PortalMessagesPage() {
 
   return (
     <div className="px-4 pt-6 pb-4 max-w-lg mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-4">Messages</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
+        <button
+          type="button"
+          onClick={() => setComposeOpen(true)}
+          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+        >
+          New Message
+        </button>
+      </div>
+
+      {composeOpen && (
+        <form
+          onSubmit={sendNewMessage}
+          className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-3 space-y-2"
+        >
+          <p className="text-xs font-semibold text-gray-700">Message to Gym Staff</p>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={3}
+            placeholder="Type your message…"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => { setComposeOpen(false); setDraft(""); }}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!draft.trim() || sending}
+              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+            >
+              {sending ? "Sending…" : "Send"}
+            </button>
+          </div>
+        </form>
+      )}
 
       {conversations.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
@@ -47,7 +121,7 @@ export default function PortalMessagesPage() {
             </svg>
           </div>
           <p className="text-gray-500">No messages yet.</p>
-          <p className="text-gray-400 text-sm mt-1">Your gym will reach out to you here.</p>
+          <p className="text-gray-400 text-sm mt-1">Tap New Message to start a conversation with your gym.</p>
         </div>
       ) : (
         <div className="space-y-2">
