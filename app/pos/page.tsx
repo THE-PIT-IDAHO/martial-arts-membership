@@ -175,7 +175,10 @@ export default function POSPage() {
   // Payment splits
   type PaymentSplitEntry = {
     id: string;
-    method: "CASH" | "CARD" | "CHECK" | "ACCOUNT" | "SAVED_CARD";
+    // COMP = the amount is comped (complimentary) — no external
+    // payment processed. Recorded on the transaction so it shows up
+    // in reporting as free-of-charge rather than blending into cash.
+    method: "CASH" | "CARD" | "CHECK" | "ACCOUNT" | "SAVED_CARD" | "COMP";
     amountCents: number;
     label: string;
   };
@@ -1001,6 +1004,7 @@ export default function POSPage() {
             case "CHECK": return "Check";
             case "ACCOUNT": return "Account Credit";
             case "CARD": return "Credit Card";
+            case "COMP": return "Comp (Complimentary)";
             case "SAVED_CARD":
               return savedCard
                 ? `${savedCard.brand.charAt(0).toUpperCase() + savedCard.brand.slice(1)} ····${savedCard.last4}`
@@ -2038,6 +2042,14 @@ export default function POSPage() {
                               const remaining = Math.max(0, effectiveTotal - otherAllocated);
                               newAmount = Math.min(selectedMember.accountCreditCents, remaining);
                             }
+                            // Auto-fill COMP with the remaining balance — comping
+                            // is normally "cover whatever's left" so this saves
+                            // the admin from typing the amount.
+                            if (m === "COMP") {
+                              const effectiveTotal = Math.max(0, totalCents - (redeemedGift?.appliedCents || 0));
+                              const otherAllocated = prev.filter(o => o.id !== s.id).reduce((sum, o) => sum + o.amountCents, 0);
+                              newAmount = Math.max(0, effectiveTotal - otherAllocated);
+                            }
                             return { ...s, method: m, amountCents: newAmount, label: m !== "CARD" ? "" : s.label };
                           }));
                         }}
@@ -2047,6 +2059,7 @@ export default function POSPage() {
                         <option value="CARD">CARD</option>
                         <option value="CHECK">CHECK</option>
                         <option value="ACCOUNT">ACCOUNT</option>
+                        <option value="COMP">COMP (Complimentary)</option>
                       </select>
                       <div className="relative w-24">
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
@@ -2125,8 +2138,8 @@ export default function POSPage() {
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     {(savedCard
-                      ? ["SAVED_CARD", "CASH", "CARD", "CHECK", "ACCOUNT", "GIFT"] as const
-                      : ["CASH", "CARD", "CHECK", "ACCOUNT", "GIFT"] as const
+                      ? ["SAVED_CARD", "CASH", "CARD", "CHECK", "ACCOUNT", "GIFT", "COMP"] as const
+                      : ["CASH", "CARD", "CHECK", "ACCOUNT", "GIFT", "COMP"] as const
                     ).map(method => (
                       <button
                         key={method}
@@ -2160,7 +2173,9 @@ export default function POSPage() {
                           ? redeemedGift ? `GIFT (-${formatCents(redeemedGift.appliedCents)})` : "GIFT CERT"
                           : method === "ACCOUNT" && selectedMember
                             ? `ACCOUNT (${selectedMember.accountCreditCents >= 0 ? "$" : "-$"}${(Math.abs(selectedMember.accountCreditCents) / 100).toFixed(2)})`
-                            : method}
+                            : method === "COMP"
+                              ? "COMP"
+                              : method}
                       </button>
                     ))}
                   </div>

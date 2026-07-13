@@ -1,5 +1,9 @@
 export type PaymentSplit = {
-  method: "CASH" | "CARD" | "CHECK" | "ACCOUNT" | "OTHER" | "SAVED_CARD";
+  // COMP = complimentary (free-of-charge) portion of the sale. Not
+  // processed by any provider, doesn't deduct account credit — just
+  // recorded on the transaction so reporting can distinguish comped
+  // amounts from real revenue.
+  method: "CASH" | "CARD" | "CHECK" | "ACCOUNT" | "OTHER" | "SAVED_CARD" | "COMP";
   amountCents: number;
   label?: string;
 };
