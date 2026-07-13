@@ -70,6 +70,7 @@ export async function POST(req: Request) {
       totalCents: txn.totalCents,
       pdfBase64,
       fileName,
+      clientId,
     });
 
     return NextResponse.json({ sent: true });
