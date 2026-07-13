@@ -717,6 +717,13 @@ export default function MemberProfilePage() {
 
   // change plan modal
   const [changePlanModalMembershipId, setChangePlanModalMembershipId] = useState<string | null>(null);
+  // Comp Credit modal — lets admin add (or deduct) account credit
+  // without going through a POS sale. Audited server-side.
+  const [showCompCreditModal, setShowCompCreditModal] = useState(false);
+  const [compCreditDollars, setCompCreditDollars] = useState("");
+  const [compCreditNote, setCompCreditNote] = useState("");
+  const [compCreditSubmitting, setCompCreditSubmitting] = useState(false);
+  const [compCreditError, setCompCreditError] = useState<string | null>(null);
   const [changePlanSelectedPlanId, setChangePlanSelectedPlanId] = useState<string>("");
   const [changePlanSubmitting, setChangePlanSubmitting] = useState(false);
   const [availablePlans, setAvailablePlans] = useState<Array<{ id: string; name: string; priceCents: number | null; billingCycle: string }>>([]);
@@ -2482,10 +2489,10 @@ export default function MemberProfilePage() {
                 Personal info, relationships, styles, payments, and activity.
               </p>
 
-              {/* Account balance badges */}
-              {member && member.accountCreditCents !== undefined && member.accountCreditCents !== 0 && (
-                <div className="mt-2">
-                  {member.accountCreditCents < 0 ? (
+              {/* Account balance badges + Comp Credit action */}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {member && member.accountCreditCents !== undefined && member.accountCreditCents !== 0 && (
+                  member.accountCreditCents < 0 ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
@@ -2496,9 +2503,16 @@ export default function MemberProfilePage() {
                     <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
                       Account Credit: ${(member.accountCreditCents / 100).toFixed(2)}
                     </span>
-                  )}
-                </div>
-              )}
+                  )
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowCompCreditModal(true)}
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                >
+                  Comp Credit
+                </button>
+              </div>
 
               {/* Photo edit buttons - only show when editing */}
               {editingPhoto && (
@@ -6345,6 +6359,108 @@ export default function MemberProfilePage() {
           </div>
           );
         })()}
+
+        {/* Comp Credit Modal */}
+        {showCompCreditModal && member && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4 p-4 space-y-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Comp Account Credit</h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  Give complimentary account credit to {member.firstName} {member.lastName}. No sale is
+                  created and the member is not charged. Enter a negative amount to remove credit.
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Amount</label>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={compCreditDollars}
+                    onChange={(e) => setCompCreditDollars(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full rounded-md border border-gray-300 pl-5 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason (optional)</label>
+                <input
+                  type="text"
+                  value={compCreditNote}
+                  onChange={(e) => setCompCreditNote(e.target.value)}
+                  placeholder="e.g. Referral reward, birthday gift"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              {compCreditError && (
+                <div className="rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-800">
+                  {compCreditError}
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCompCreditModal(false);
+                    setCompCreditDollars("");
+                    setCompCreditNote("");
+                    setCompCreditError(null);
+                  }}
+                  disabled={compCreditSubmitting}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={compCreditSubmitting || !compCreditDollars.trim()}
+                  onClick={async () => {
+                    const dollars = parseFloat(compCreditDollars);
+                    if (!Number.isFinite(dollars) || dollars === 0) {
+                      setCompCreditError("Enter a non-zero amount.");
+                      return;
+                    }
+                    const amountCents = Math.round(dollars * 100);
+                    setCompCreditSubmitting(true);
+                    setCompCreditError(null);
+                    try {
+                      const res = await fetch(`/api/members/${member.id}/comp-credit`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ amountCents, note: compCreditNote.trim() || undefined }),
+                      });
+                      const data = await res.json().catch(() => ({}));
+                      if (!res.ok) {
+                        setCompCreditError(data?.error || "Failed to apply credit");
+                        return;
+                      }
+                      addActivity(
+                        `Comp credit ${amountCents > 0 ? "added" : "removed"}: $${(Math.abs(amountCents) / 100).toFixed(2)}${compCreditNote ? ` (${compCreditNote})` : ""}`,
+                        "MEMBERSHIP",
+                      );
+                      setShowCompCreditModal(false);
+                      setCompCreditDollars("");
+                      setCompCreditNote("");
+                      // Refresh the member so the balance badge updates.
+                      fetchMember();
+                    } catch (err) {
+                      setCompCreditError(err instanceof Error ? err.message : "Failed to apply credit");
+                    } finally {
+                      setCompCreditSubmitting(false);
+                    }
+                  }}
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                >
+                  {compCreditSubmitting ? "Applying…" : "Apply Credit"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Change Plan Modal */}
         {changePlanModalMembershipId && (
