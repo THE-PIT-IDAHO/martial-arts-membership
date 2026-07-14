@@ -1286,7 +1286,12 @@ export default function CalendarPage() {
     }
   }
 
-  // Get next rank requirements for a member's style
+  // Get the current rank's class requirements for a member's style. Reqs
+  // stored on a rank represent what's needed to GRADUATE FROM that rank
+  // — same convention as admin member profile, portal, promotions
+  // eligibility, and dashboard. Reading nextRank's list here (as this
+  // code did previously) meant the sign-in window showed a different
+  // requirement label / minCount than the member's own profile.
   function getNextRankRequirements(member: MemberWithStyles, classType: string | null): { styleName: string; requirement: ClassRequirement; fulfilled: number } | null {
     if (!classType || !member.styles || member.styles.length === 0) return null;
 
@@ -1321,17 +1326,18 @@ export default function CalendarPage() {
         const beltConfig = JSON.parse(style.beltConfig);
         if (!beltConfig.ranks || !Array.isArray(beltConfig.ranks)) continue;
 
-        // Find current rank
-        const currentRank = beltConfig.ranks.find((r: { name: string }) => r.name === memberStyle.rank);
-        if (!currentRank) continue;
+        // Find the member's current rank. Case-insensitive since the
+        // beltConfig entry might differ in casing from what got stored
+        // on the member's styleNotes.
+        const currentRank = beltConfig.ranks.find(
+          (r: { name: string }) => r.name.toLowerCase() === (memberStyle.rank || "").toLowerCase(),
+        );
+        if (!currentRank || !currentRank.classRequirements) continue;
 
-        // Find next rank
-        const nextRank = beltConfig.ranks.find((r: { order: number }) => r.order === currentRank.order + 1);
-        if (!nextRank || !nextRank.classRequirements) continue;
-
-        // Check if next rank has a requirement for this class type.
-        // "*" is the "Any Class (counts all)" sentinel and matches every class type.
-        const requirement = nextRank.classRequirements.find((req: ClassRequirement) =>
+        // Check if the CURRENT rank has a requirement for this class type.
+        // "*" is the "Any Class (counts all)" sentinel and matches every
+        // class type.
+        const requirement = currentRank.classRequirements.find((req: ClassRequirement) =>
           (req.label === "*" || req.label?.toLowerCase() === classType.toLowerCase()) && req.minCount && req.minCount > 0
         );
 
