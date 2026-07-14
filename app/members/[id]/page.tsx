@@ -6,6 +6,7 @@ import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
 import { formatPaymentMethod } from "@/lib/payment-utils";
 import { getTodayString, parseLocalDate } from "@/lib/dates";
+import { getStyleProgress, type AttendanceRow } from "@/lib/rank-progress";
 
 // Belt rendering helpers (mirrored from portal/styles)
 function TintedLayer({ src, color }: { src: string; color: string }) {
@@ -4296,24 +4297,23 @@ export default function MemberProfilePage() {
                           return false;
                         };
 
-                        // Class requirements stored on a rank represent what's
-                        // needed to GRADUATE FROM that rank (i.e. advance to
-                        // the next one). So for a member sitting at "Yellow
-                        // Belt", we display Yellow Belt's classRequirements —
-                        // that's what they need to satisfy to promote.
+                        // Rank progress comes from the shared lib so this
+                        // card, the calendar sign-in window, portal /styles,
+                        // portal dashboard, promotions eligible, and dashboard
+                        // eligible box all report the same numbers for the
+                        // same member. Convention: reqs stored on a rank =
+                        // needed to GRADUATE FROM that rank.
                         const selectedStyle = availableStyles.find((style) => style.name.toLowerCase() === s.name.toLowerCase());
-                        let classRequirements: Array<{ label: string; minCount: number | null }> = [];
-                        if (selectedStyle?.beltConfig && s.rank) {
-                          try {
-                            const beltConfig = JSON.parse(selectedStyle.beltConfig);
-                            const rankData = beltConfig.ranks?.find((r: any) => r.name.toLowerCase() === (s.rank?.toLowerCase() || ""));
-                            if (rankData?.classRequirements) {
-                              classRequirements = rankData.classRequirements.filter(
-                                (req: any) => req.label && req.minCount != null && req.minCount > 0
-                              );
-                            }
-                          } catch { /* ignore */ }
-                        }
+                        const styleProgress = getStyleProgress(
+                          (member?.attendances || []) as AttendanceRow[],
+                          {
+                            name: s.name,
+                            rank: s.rank,
+                            attendanceResetDate: s.attendanceResetDate,
+                          },
+                          selectedStyle?.beltConfig ?? null,
+                        );
+                        const rankRequirements = styleProgress.requirements;
 
                         const beltLayers = getBeltLayersForRank(selectedStyle?.beltConfig, s.rank);
 
@@ -4342,54 +4342,21 @@ export default function MemberProfilePage() {
                               </div>
                             )}
                             {/* Progress bars for class requirements */}
-                            {classRequirements.length > 0 && (
+                            {rankRequirements.length > 0 && (
                               <div className="space-y-1.5 pt-1">
                                 <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Progress</span>
-                                {classRequirements.map((req, idx) => {
-                                  // "*" is the "Any Class (counts all)" sentinel
-                                  const isAnyClass = req.label === "*";
-                                  const attended = (member?.attendances || []).filter(
-                                    (att) => {
-                                      // Honor attendanceResetDate: skip any
-                                      // attendance dated before the reset.
-                                      if (s.attendanceResetDate) {
-                                        const attDate = att.attendanceDate
-                                          ? new Date(att.attendanceDate)
-                                          : att.checkedInAt
-                                            ? new Date(att.checkedInAt)
-                                            : null;
-                                        if (attDate) {
-                                          const attYmd = `${attDate.getFullYear()}-${String(attDate.getMonth() + 1).padStart(2, "0")}-${String(attDate.getDate()).padStart(2, "0")}`;
-                                          if (attYmd < s.attendanceResetDate) return false;
-                                        }
-                                      }
-                                      let typesMatch = isAnyClass;
-                                      if (!typesMatch && att.classSession?.classTypes) {
-                                        try {
-                                          const types: string[] = JSON.parse(att.classSession.classTypes);
-                                          typesMatch = types.some(t => t.toLowerCase() === req.label.toLowerCase());
-                                        } catch { /* ignore */ }
-                                      }
-                                      if (!typesMatch) {
-                                        typesMatch = att.classSession?.classType?.toLowerCase() === req.label.toLowerCase();
-                                      }
-                                      // Class has no explicit style: count for any matching type (not restricted to a style)
-                                      const classHasNoStyle = !att.classSession?.styleName && !att.classSession?.styleNames;
-                                      return typesMatch && (matchesStyle(att) || att.source === "IMPORTED" || classHasNoStyle);
-                                    }
-                                  ).length;
-                                  const progress = req.minCount ? Math.min(100, (attended / req.minCount) * 100) : 0;
-                                  const isComplete = req.minCount ? attended >= req.minCount : false;
+                                {rankRequirements.map((req, idx) => {
+                                  const pct = req.required ? Math.min(100, (req.attended / req.required) * 100) : 0;
                                   return (
                                     <div key={idx} className="space-y-0.5">
                                       <div className="flex items-center justify-between text-xs">
-                                        <span className="font-medium text-gray-600">{isAnyClass ? "Any Class" : req.label}</span>
-                                        <span className={`font-bold ${isComplete ? 'text-green-600' : 'text-gray-800'}`}>{attended}/{req.minCount}</span>
+                                        <span className="font-medium text-gray-600">{req.label}</span>
+                                        <span className={`font-bold ${req.met ? "text-green-600" : "text-gray-800"}`}>{req.attended}/{req.required}</span>
                                       </div>
                                       <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
                                         <div
-                                          className={`h-full rounded-full transition-all ${isComplete ? 'bg-green-500' : 'bg-primary'}`}
-                                          style={{ width: `${progress}%` }}
+                                          className={`h-full rounded-full transition-all ${req.met ? "bg-green-500" : "bg-primary"}`}
+                                          style={{ width: `${pct}%` }}
                                         />
                                       </div>
                                     </div>
@@ -4398,25 +4365,38 @@ export default function MemberProfilePage() {
                               </div>
                             )}
                             {/* Fallback: single requirement from Rank model */}
-                            {classRequirements.length === 0 && s.rank && (() => {
+                            {rankRequirements.length === 0 && s.rank && (() => {
                               const selectedRank = selectedStyle?.ranks?.find((r) => r.name.toLowerCase() === (s.rank?.toLowerCase() || ""));
                               if (selectedRank?.classRequirement != null) {
-                                const styleAttendance = (member?.attendances || []).filter(
+                                // Legacy total-count fallback. Use the shared
+                                // style filter so it stays in sync with the
+                                // main path.
+                                const styleAttendance = ((member?.attendances || []) as AttendanceRow[]).filter(
                                   (att) => {
-                                    // Same reset-date guard as the multi-req path above.
+                                    // Same reset-date + style semantics as the
+                                    // shared lib — implemented inline to keep
+                                    // this fallback path minimal.
                                     if (s.attendanceResetDate) {
-                                      const attDate = att.attendanceDate
-                                        ? new Date(att.attendanceDate)
-                                        : att.checkedInAt
-                                          ? new Date(att.checkedInAt)
-                                          : null;
-                                      if (attDate) {
-                                        const attYmd = `${attDate.getFullYear()}-${String(attDate.getMonth() + 1).padStart(2, "0")}-${String(attDate.getDate()).padStart(2, "0")}`;
-                                        if (attYmd < s.attendanceResetDate) return false;
+                                      const attRaw = att.attendanceDate || att.checkedInAt;
+                                      if (attRaw) {
+                                        const d = new Date(attRaw);
+                                        if (!Number.isNaN(d.getTime())) {
+                                          const attYmd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                                          if (attYmd < s.attendanceResetDate) return false;
+                                        }
                                       }
                                     }
-                                    const classHasNoStyle = !att.classSession?.styleName && !att.classSession?.styleNames;
-                                    return matchesStyle(att) || att.source === "IMPORTED" || classHasNoStyle;
+                                    if (att.source === "IMPORTED") return true;
+                                    const cs = att.classSession;
+                                    if (!cs) return false;
+                                    if (cs.styleName?.toLowerCase() === s.name.toLowerCase()) return true;
+                                    if (cs.styleNames) {
+                                      try {
+                                        const names: string[] = JSON.parse(cs.styleNames);
+                                        if (names.some((n) => n.toLowerCase() === s.name.toLowerCase())) return true;
+                                      } catch { /* ignore */ }
+                                    }
+                                    return !cs.styleName && !cs.styleNames;
                                   }
                                 );
                                 const progress = Math.min(100, (styleAttendance.length / selectedRank.classRequirement) * 100);

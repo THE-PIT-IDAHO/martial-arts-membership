@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { getGymTimezone, getDayOfWeekInTimezone, localMidnightUtc, formatDateInTimezone, getLocalParts } from "@/lib/dates";
+import { getStyleProgress, attendanceCountsForStyle, type AttendanceRow } from "@/lib/rank-progress";
 
 // GET /api/dashboard
 export async function GET(req: Request) {
@@ -575,89 +576,38 @@ export async function GET(req: Request) {
             const currentIdx = sortedRanks.findIndex((r) => r.name.toLowerCase() === (ms.rank || "").toLowerCase());
             if (currentIdx < 0 || currentIdx >= sortedRanks.length - 1) continue;
 
-            const nextRank = sortedRanks[currentIdx + 1];
+            // Delegate progress computation to the shared lib so this
+            // dashboard box reports the exact same numbers as the admin
+            // member profile, portal, promotions, and calendar sign-in.
+            const progress = getStyleProgress(
+              member.attendances as AttendanceRow[],
+              {
+                name: ms.name,
+                rank: ms.rank,
+                attendanceResetDate: ms.attendanceResetDate,
+              },
+              styleConfig.beltConfig,
+            );
+            let classRequirements = progress.requirements.map((r) => ({
+              label: r.label,
+              count: r.attended,
+              required: r.required,
+            }));
 
-            // Filter attendance for this style, mirroring admin +
-            // /api/portal/profile + /api/promotions/eligible so the four
-            // views agree on who's eligible:
-            //  - honor attendanceResetDate (compared in gym-local YMD),
-            //  - IMPORTED bulk-import rows always count,
-            //  - explicit styleName / styleNames match this style,
-            //  - class with NO style attached at all still counts
-            //    (open mat, general fitness — matches admin behavior).
-            const styleAttendances = member.attendances.filter((att) => {
-              if (ms.attendanceResetDate) {
-                const attDate = att.attendanceDate
-                  ? formatDateInTimezone(new Date(att.attendanceDate), tz)
-                  : att.checkedInAt
-                    ? formatDateInTimezone(new Date(att.checkedInAt), tz)
-                    : null;
-                if (attDate && attDate < ms.attendanceResetDate) return false;
-              }
-              if (att.source === "IMPORTED") return true;
-              if (!att.classSession) return false;
-              const cs = att.classSession;
-              if (cs.styleNames) {
-                try {
-                  const names: string[] = JSON.parse(cs.styleNames);
-                  if (names.some((n) => n.toLowerCase() === ms.name.toLowerCase())) return true;
-                } catch { /* ignore */ }
-              }
-              if (cs.styleName?.toLowerCase() === ms.name.toLowerCase()) return true;
-              return !cs.styleName && !cs.styleNames;
-            });
-
-            // Class requirements. Reqs stored on a rank represent what's
-            // needed to GRADUATE FROM that rank, so a member at
-            // currentRank needs to satisfy CURRENT rank's requirements
-            // to be eligible for nextRank. This was previously reading
-            // nextRank's requirements — wrong direction, and members
-            // who genuinely met the bar didn't surface on the dashboard.
-            let classRequirements: { label: string; count: number; required: number }[] = [];
-            const currentRankFromConfig = sortedRanks[currentIdx];
-
-            if (styleConfig.beltConfig) {
-              try {
-                const bc = typeof styleConfig.beltConfig === "string"
-                  ? JSON.parse(styleConfig.beltConfig)
-                  : styleConfig.beltConfig;
-                if (bc.ranks && Array.isArray(bc.ranks)) {
-                  const currentBeltRank = bc.ranks.find(
-                    (r: any) => (r.name || "").toLowerCase() === (currentRankFromConfig.name || "").toLowerCase()
-                  );
-                  if (currentBeltRank?.classRequirements && Array.isArray(currentBeltRank.classRequirements)) {
-                    classRequirements = currentBeltRank.classRequirements
-                      .filter((req: any) => req.label && req.minCount > 0)
-                      .map((req: any) => {
-                        // "*" is the "Any Class (counts all)" sentinel.
-                        const isAny = req.label === "*";
-                        const count = styleAttendances.filter((a) => {
-                          if (isAny) return true;
-                          if (!a.classSession) return false;
-                          if (a.classSession.classType?.toLowerCase() === req.label.toLowerCase()) return true;
-                          if (a.classSession.classTypes) {
-                            try {
-                              const types: string[] = JSON.parse(a.classSession.classTypes);
-                              return types.some((t) => t.toLowerCase() === req.label.toLowerCase());
-                            } catch { /* ignore */ }
-                          }
-                          return false;
-                        }).length;
-                        return { label: isAny ? "Any Class" : req.label, count, required: req.minCount };
-                      });
-                  }
-                }
-              } catch { /* ignore */ }
-            }
-
-            // Fallback to Rank.classRequirement (numeric total on the
-            // current rank). Prisma's Rank rows are keyed to the top-
-            // level belt names, so look up the current rank there.
+            // Legacy fallback: single numeric requirement on the Rank
+            // row (styles that predate the classRequirements JSON).
             if (classRequirements.length === 0) {
               const currentRankRow = styleConfig.ranks.find(
-                (r) => r.name.toLowerCase() === (currentRankFromConfig.name || "").toLowerCase()
+                (r) => r.name.toLowerCase() === sortedRanks[currentIdx].name.toLowerCase()
               );
               if (currentRankRow?.classRequirement) {
+                const styleAttendances = (member.attendances as AttendanceRow[]).filter(
+                  (att) => attendanceCountsForStyle(att, {
+                    name: ms.name,
+                    rank: ms.rank,
+                    attendanceResetDate: ms.attendanceResetDate,
+                  }),
+                );
                 classRequirements = [{
                   label: "Classes",
                   count: styleAttendances.length,
@@ -666,15 +616,10 @@ export async function GET(req: Request) {
               }
             }
 
-            // Eligibility requires AT LEAST ONE configured requirement AND that
-            // every one of them is met. If a rank has no requirements set up
-            // (no beltConfig.classRequirements and no Rank.classRequirement),
-            // there's no measurable basis for "eligible" — leave it to the
-            // instructor's discretion via the Promotions page instead of
-            // surfacing false positives on the dashboard.
             const allMet = classRequirements.length > 0
               && classRequirements.every((r) => r.count >= r.required);
             if (allMet) {
+              const nextRank = sortedRanks[currentIdx + 1];
               eligibleForPromotion.push({
                 memberId: member.id,
                 memberName: `${member.firstName} ${member.lastName}`,

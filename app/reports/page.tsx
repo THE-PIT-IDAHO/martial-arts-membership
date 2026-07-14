@@ -5,6 +5,13 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
 import {
+  countAttendanceByType,
+  attendanceCountsForStyle,
+  parseEnrolledStyles,
+  type AttendanceRow,
+  type EnrolledStyle,
+} from "@/lib/rank-progress";
+import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
@@ -1111,113 +1118,42 @@ export default function ReportsPage() {
               return new Date(a.lastAttendance).getTime() - new Date(b.lastAttendance).getTime();
             });
 
-          // Build per-member attendance counts by class type, mirroring the
-          // admin member profile source-of-truth. Complaint that reports and
-          // the admin didn't agree came down to three gaps here:
-          //   1. Only single-style enrollment (primaryStyle) matched. A
-          //      member enrolled in multiple styles via stylesNotes had
-          //      their non-primary attendance silently dropped.
-          //   2. Only single classType matched — classTypes JSON array
-          //      (multi-tag classes) was ignored.
-          //   3. No attendanceResetDate filter. Pre-promotion attendance
-          //      inflated counts vs the admin's post-reset progress bars.
-          //
-          // Now: build per-member { styles: [{name, resetDate}], any-reset
-          // floor } once, then for each attendance count it once iff any
-          // enrolled style's admin-profile filter would include it.
-
-          type EnrolledStyle = { name: string; resetDate: string | null };
-          const memberStylesMap: Record<string, EnrolledStyle[]> = {};
+          // Per-member per-classType counts via the shared rank-progress lib
+          // — same filter used by admin profile, portal, promotions, dashboard,
+          // and the calendar sign-in window. Ensures the reports column shows
+          // the same number the admin sees on the member profile.
+          const memberEnrolledStyles: Record<string, EnrolledStyle[]> = {};
           members.forEach((m: any) => {
-            const styles: EnrolledStyle[] = [];
-            if (m.stylesNotes) {
-              try {
-                const arr = JSON.parse(m.stylesNotes);
-                if (Array.isArray(arr)) {
-                  for (const s of arr) {
-                    if (s?.name && s.active !== false) {
-                      styles.push({
-                        name: String(s.name),
-                        resetDate: s.attendanceResetDate ? String(s.attendanceResetDate).split("T")[0] : null,
-                      });
-                    }
-                  }
-                }
-              } catch { /* ignore */ }
+            let enrolled = parseEnrolledStyles(m.stylesNotes ?? null).filter((s) => s.active !== false);
+            if (enrolled.length === 0 && m.primaryStyle) {
+              enrolled = [{ name: m.primaryStyle }];
             }
-            // Fallback to primaryStyle if stylesNotes was empty/unparseable
-            if (styles.length === 0 && m.primaryStyle) {
-              styles.push({ name: m.primaryStyle, resetDate: null });
-            }
-            memberStylesMap[m.id] = styles;
+            memberEnrolledStyles[m.id] = enrolled;
           });
 
-          const memberAttendanceCounts: Record<string, { total: number; [key: string]: number }> = {};
-          allAttendances.forEach((a: any) => {
-            const memberId = a.memberId;
-            const enrolled = memberStylesMap[memberId] || [];
-            if (enrolled.length === 0) return;
+          const attsByMember: Record<string, AttendanceRow[]> = {};
+          for (const a of allAttendances as AttendanceRow[] & { memberId?: string }[]) {
+            const memberId = (a as { memberId?: string }).memberId;
+            if (!memberId) continue;
+            if (!attsByMember[memberId]) attsByMember[memberId] = [];
+            attsByMember[memberId].push(a);
+          }
 
-            const cs = a.classSession;
-            const isImported = a.source === "IMPORTED";
-            const classStyleName: string = cs?.styleName || "";
-            let classStyleNames: string[] = [];
-            if (cs?.styleNames) {
-              try {
-                const parsed = JSON.parse(cs.styleNames);
-                if (Array.isArray(parsed)) classStyleNames = parsed.map(String);
-              } catch { /* ignore */ }
-            }
-            const classHasNoStyle = !classStyleName && classStyleNames.length === 0;
-
-            // Attendance date for reset-filter comparison (YYYY-MM-DD).
-            const attDateStr: string | null = a.attendanceDate
-              ? String(a.attendanceDate).split("T")[0]
-              : a.checkedInAt
-                ? String(a.checkedInAt).split("T")[0]
-                : null;
-
-            // Passes if ANY enrolled style's filter would include it:
-            // style match (or IMPORTED or classHasNoStyle) AND att date
-            // >= that style's resetDate.
-            const passes = enrolled.some((es) => {
-              const nameMatch =
-                isImported ||
-                classHasNoStyle ||
-                classStyleName.toLowerCase() === es.name.toLowerCase() ||
-                classStyleNames.some((n) => n.toLowerCase() === es.name.toLowerCase());
-              if (!nameMatch) return false;
-              if (es.resetDate && attDateStr && attDateStr < es.resetDate) return false;
-              return true;
-            });
-            if (!passes) return;
-
-            if (!memberAttendanceCounts[memberId]) {
-              memberAttendanceCounts[memberId] = { total: 0 };
-            }
-            memberAttendanceCounts[memberId].total++;
-
-            // Emit a hit for EVERY classType tag on the class (matches
-            // admin's classTypes JSON handling). Falls back to single
-            // classType, then "Other".
-            let typeTags: string[] = [];
-            if (cs?.classTypes) {
-              try {
-                const arr = JSON.parse(cs.classTypes);
-                if (Array.isArray(arr)) typeTags = arr.map(String);
-              } catch { /* ignore */ }
-            }
-            if (typeTags.length === 0 && cs?.classType) typeTags = [cs.classType];
-            if (typeTags.length === 0) typeTags = ["Other"];
-            for (const t of typeTags) {
-              memberAttendanceCounts[memberId][t] = (memberAttendanceCounts[memberId][t] || 0) + 1;
-            }
-          });
-
-          // Enrich members with attendance counts
           members.forEach((m: any) => {
-            const counts = memberAttendanceCounts[m.id] || { total: 0 };
-            m.attendanceCounts = counts;
+            const enrolled = memberEnrolledStyles[m.id] || [];
+            const atts = attsByMember[m.id] || [];
+            if (enrolled.length === 0) {
+              m.attendanceCounts = { total: 0 };
+              return;
+            }
+            const perType = countAttendanceByType(atts, enrolled);
+            // Total = unique attendances that pass ANY enrolled-style filter
+            // (not the sum of classType hits, which would double-count a
+            // multi-tag class).
+            const total = atts.filter((a) =>
+              enrolled.some((s) => attendanceCountsForStyle(a, s)),
+            ).length;
+            m.attendanceCounts = { total, ...perType };
           });
 
           // Calculate check-ins for different periods

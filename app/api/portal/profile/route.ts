@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/dates";
+import { getStyleProgress, attendanceCountsForStyle, type AttendanceRow } from "@/lib/rank-progress";
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
@@ -177,74 +178,32 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          // Reqs stored on a rank = needed to GRADUATE FROM that rank, so
-          // for a member sitting at currentRank we display currentRank's
-          // requirements (what they're working to satisfy). nextRank is
-          // kept only for the "Next: X" header label. Same convention as
-          // the admin member profile, /api/promotions/eligible, and
-          // /api/portal/auth/me. The /portal/styles page actually
-          // fetches THIS route (not /api/portal/auth/me), which is why
-          // Colten still saw the old next-rank numbers after the prior
-          // fix landed.
-          if (currentRankIndex < sortedRanks.length - 1) {
-            nextRankName = sortedRanks[currentRankIndex + 1].name;
-          }
+          // Single-source rank-progress computation lives in
+          // lib/rank-progress so every view (admin profile, portal,
+          // promotions, calendar sign-in window, reports) reports the
+          // same number for the same member. Convention: reqs stored
+          // on a rank are what's needed to GRADUATE FROM that rank.
+          const progress = getStyleProgress(
+            (member.attendances || []) as AttendanceRow[],
+            enrolled,
+            style.beltConfig,
+          );
+          nextRankName = progress.nextRankName;
+          classRequirements = progress.requirements;
 
-          // Permissive style gate (matches admin/promotions): explicit
-          // style tag, IMPORTED bulk-import rows, or class with no style
-          // attached at all. Bulk-import attendance lives on stub class
-          // sessions with a classType but no styleName — the strict
-          // filter was dropping all of those.
-          const styleAttendances = (member.attendances || []).filter((att) => {
-            if (enrolled.attendanceResetDate) {
-              const attDate = att.attendanceDate
-                ? new Date(att.attendanceDate).toISOString().split("T")[0]
-                : att.checkedInAt
-                  ? new Date(att.checkedInAt).toISOString().split("T")[0]
-                  : null;
-              if (attDate && attDate < enrolled.attendanceResetDate) return false;
-            }
-            if (att.source === "IMPORTED") return true;
-            if (!att.classSession) return false;
-            const cs = att.classSession;
-            if (cs.styleNames) {
-              try {
-                const names: string[] = JSON.parse(cs.styleNames);
-                if (names.some((n) => n.toLowerCase() === enrolled.name.toLowerCase())) return true;
-              } catch { /* ignore */ }
-            }
-            if (cs.styleName?.toLowerCase() === enrolled.name.toLowerCase()) return true;
-            return !cs.styleName && !cs.styleNames;
-          });
-
-          if (currentRank.classRequirements && Array.isArray(currentRank.classRequirements)) {
-            classRequirements = currentRank.classRequirements
-              .filter((req) => req.label && req.minCount != null && req.minCount > 0)
-              .map((req) => {
-                const isAny = req.label === "*";
-                const attended = styleAttendances.filter((att) => {
-                  if (!att.classSession) return false;
-                  if (isAny) return true;
-                  if (att.classSession.classType?.toLowerCase() === req.label.toLowerCase()) return true;
-                  if (att.classSession.classTypes) {
-                    try {
-                      const types: string[] = JSON.parse(att.classSession.classTypes);
-                      return types.some((t) => t.toLowerCase() === req.label.toLowerCase());
-                    } catch { /* ignore */ }
-                  }
-                  return false;
-                }).length;
-                return { label: isAny ? "Any Class" : req.label, attended, required: req.minCount, met: attended >= req.minCount };
-              });
-          }
-
+          // Legacy fallback: a numeric total requirement stored on
+          // the Rank row when the beltConfig has no per-type
+          // requirements. Kept for old styles that predate the
+          // classRequirements JSON.
           if (classRequirements.length === 0) {
             const rankModel = await prisma.rank.findFirst({
               where: { name: currentRank.name },
               select: { classRequirement: true },
             });
             if (rankModel?.classRequirement) {
-              const totalAttended = styleAttendances.length;
+              const totalAttended = ((member.attendances || []) as AttendanceRow[]).filter(
+                (att) => attendanceCountsForStyle(att, enrolled),
+              ).length;
               classRequirements = [{
                 label: "Classes",
                 attended: totalAttended,

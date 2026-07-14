@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
+import {
+  getStyleProgress,
+  attendanceCountsForStyle,
+  type AttendanceRow,
+} from "@/lib/rank-progress";
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
@@ -144,85 +149,27 @@ export async function GET(req: NextRequest) {
           const currentRank = sortedRanks[currentRankIndex];
           beltLayers = { ...defaultStyleLayers, ...(currentRank.layers || {}), fabric: true };
 
-          // Get next rank if not at highest (used purely for the "Next: X" label
-          // shown above the progress bars). The REQUIREMENTS shown are the
-          // current rank's — those represent what needs to be satisfied to
-          // graduate FROM this rank to the next. Same convention as the admin
-          // member profile and /api/promotions/eligible.
-          if (currentRankIndex < sortedRanks.length - 1) {
-            nextRankName = sortedRanks[currentRankIndex + 1].name;
-          }
+          // Single-source rank-progress computation lives in
+          // lib/rank-progress so every view agrees on the numbers.
+          const progress = getStyleProgress(
+            (member.attendances || []) as AttendanceRow[],
+            enrolled,
+            style.beltConfig,
+          );
+          nextRankName = progress.nextRankName;
+          classRequirements = progress.requirements;
 
-          // Count attendance for this style since reset date.
-          // Permissive style gate (matches admin): a class counts if it's
-          // explicitly tagged with this style, is IMPORTED (bulk-import
-          // attendance, no styleName set on the stub class session), or
-          // is a class with no style attached at all (open mat etc.).
-          const styleAttendances = (member.attendances || []).filter((att) => {
-            // Filter by reset date
-            if (enrolled.attendanceResetDate) {
-              const attDate = att.attendanceDate
-                ? new Date(att.attendanceDate).toISOString().split("T")[0]
-                : att.checkedInAt
-                  ? new Date(att.checkedInAt).toISOString().split("T")[0]
-                  : null;
-              if (attDate && attDate < enrolled.attendanceResetDate) return false;
-            }
-
-            if (att.source === "IMPORTED") return true;
-            if (!att.classSession) return false;
-
-            const cs = att.classSession;
-            // Explicit style match
-            if (cs.styleNames) {
-              try {
-                const names: string[] = JSON.parse(cs.styleNames);
-                if (names.some((n) => n.toLowerCase() === enrolled.name.toLowerCase())) return true;
-              } catch { /* ignore */ }
-            }
-            if (cs.styleName?.toLowerCase() === enrolled.name.toLowerCase()) return true;
-            // Fallback: class has no style attached at all → counts toward any style
-            return !cs.styleName && !cs.styleNames;
-          });
-
-          // Build class requirements from CURRENT rank's config
-          if (currentRank.classRequirements && Array.isArray(currentRank.classRequirements)) {
-            classRequirements = currentRank.classRequirements
-              .filter((req) => req.label && req.minCount != null && req.minCount > 0)
-              .map((req) => {
-                const isAny = req.label === "*";
-                const attended = styleAttendances.filter((att) => {
-                  if (!att.classSession) return false;
-                  if (isAny) return true;
-                  // Check classType
-                  if (att.classSession.classType?.toLowerCase() === req.label.toLowerCase()) return true;
-                  // Check classTypes (JSON array)
-                  if (att.classSession.classTypes) {
-                    try {
-                      const types: string[] = JSON.parse(att.classSession.classTypes);
-                      return types.some((t) => t.toLowerCase() === req.label.toLowerCase());
-                    } catch { /* ignore */ }
-                  }
-                  return false;
-                }).length;
-                return {
-                  label: isAny ? "Any Class" : req.label,
-                  attended,
-                  required: req.minCount,
-                  met: attended >= req.minCount,
-                };
-              });
-          }
-
-          // Fallback to Rank model's total classRequirement. Scope
-          // through Style.clientId since Rank has no clientId column.
+          // Legacy fallback: numeric total requirement on the Rank
+          // row when beltConfig has no per-type requirements.
           if (classRequirements.length === 0) {
             const rankModel = await prisma.rank.findFirst({
               where: { name: currentRank.name, style: { clientId: member.clientId } },
               select: { classRequirement: true },
             });
             if (rankModel?.classRequirement) {
-              const totalAttended = styleAttendances.length;
+              const totalAttended = ((member.attendances || []) as AttendanceRow[]).filter(
+                (att) => attendanceCountsForStyle(att, enrolled),
+              ).length;
               classRequirements = [{
                 label: "Classes",
                 attended: totalAttended,

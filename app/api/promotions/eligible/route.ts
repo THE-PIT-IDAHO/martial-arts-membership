@@ -11,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { computePromotionFee } from "@/lib/promotion-fee";
 import { effectiveAttendanceStart, type AttendanceWindow } from "@/lib/attendance-window";
+import { getStyleProgress, type AttendanceRow } from "@/lib/rank-progress";
 
 type StyleEntry = {
   name: string;
@@ -188,18 +189,10 @@ export async function GET(req: Request) {
 
         const currentRank = ranks[currentIdx];
         const nextRank = ranks[currentIdx + 1];
-        // Requirements stored on a rank = needed to GRADUATE FROM that rank.
-        // For a member at currentRank, that's the bar they have to clear to
-        // be promoted to nextRank. Same convention as the admin member
-        // profile and /api/portal/auth/me.
-        const requirements = (currentRank.classRequirements || []).filter(
-          (r) => r.label && r.minCount > 0,
-        );
 
-        // Filter member's attendance to this style. The window has two
-        // bounds: lastReset (member's last promotion) and the rank's
-        // attendanceWindow (e.g. "6 months back from event date") —
-        // whichever is more recent wins, since both are floors.
+        // Attendance window: reset date + optional per-rank window
+        // (e.g. "6 months back from event date") — whichever floor is
+        // more recent wins. Then bound by windowEnd (event date or now).
         const memberAtts = attendanceByMember.get(member.id) || [];
         const resetCutoff = es.attendanceResetDate
           ? new Date(es.attendanceResetDate + "T00:00:00")
@@ -207,53 +200,34 @@ export async function GET(req: Request) {
         const startCutoff = effectiveAttendanceStart({
           endDate: windowEnd,
           resetDate: resetCutoff,
-          // Honor the per-event opt-out: when the admin unchecked
-          // "Attach Attendance Windows" on this event, ignore the
-          // rank's window and let the reset date stand alone. Pull the
-          // window from currentRank now that reqs live there too.
           window: event && !event.applyAttendanceWindow ? null : currentRank.attendanceWindow,
         });
-        // Permissive style gate (matches admin/portal): explicit style tag,
-        // IMPORTED bulk-import rows, or class with no style attached at all.
-        const styleAtts = memberAtts.filter((a) => {
+
+        // Bound attendance to the [startCutoff, windowEnd] range first,
+        // then defer the standard style/type filtering to the shared
+        // lib. Passing startCutoff as the enrolled.attendanceResetDate
+        // lets the lib apply the exact same reset semantics used
+        // everywhere else.
+        const boundedAtts: AttendanceRow[] = memberAtts.filter((a) => {
           if (!a.attendanceDate) return false;
-          if (startCutoff && a.attendanceDate < startCutoff) return false;
           if (a.attendanceDate > windowEnd) return false;
-          if (a.source === "IMPORTED") return true;
-          if (!a.classSession) return false;
-          const cs = a.classSession;
-          if (cs.styleNames) {
-            try {
-              const names: string[] = JSON.parse(cs.styleNames);
-              if (names.some((n) => n.toLowerCase() === es.name.toLowerCase())) return true;
-            } catch { /* ignore */ }
-          }
-          if ((cs.styleName || "").toLowerCase() === es.name.toLowerCase()) return true;
-          return !cs.styleName && !cs.styleNames;
-        });
+          return true;
+        }) as AttendanceRow[];
 
-        const classReqs = requirements.map((req) => {
-          const isAny = req.label === "*";
-          const attended = styleAtts.filter((a) => {
-            if (isAny) return true;
-            if (!a.classSession) return false;
-            if (a.classSession.classType?.toLowerCase() === req.label.toLowerCase()) return true;
-            if (a.classSession.classTypes) {
-              try {
-                const types: string[] = JSON.parse(a.classSession.classTypes);
-                return types.some((t) => t.toLowerCase() === req.label.toLowerCase());
-              } catch { /* ignore */ }
-            }
-            return false;
-          }).length;
-          return {
-            label: isAny ? "Any Class" : req.label,
-            attended,
-            required: req.minCount,
-            met: attended >= req.minCount,
-          };
-        });
+        const effectiveResetYmd = startCutoff
+          ? `${startCutoff.getFullYear()}-${String(startCutoff.getMonth() + 1).padStart(2, "0")}-${String(startCutoff.getDate()).padStart(2, "0")}`
+          : undefined;
 
+        const progress = getStyleProgress(
+          boundedAtts,
+          {
+            name: es.name,
+            rank: es.rank,
+            attendanceResetDate: effectiveResetYmd,
+          },
+          style.beltConfig,
+        );
+        const classReqs = progress.requirements;
         const allMet = classReqs.length === 0 ? true : classReqs.every((r) => r.met);
 
         const fee = await computePromotionFee({
