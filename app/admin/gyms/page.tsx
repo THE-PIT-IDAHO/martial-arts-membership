@@ -75,6 +75,38 @@ export default function ManageGymsPage() {
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // Inline rename for pricing tiers on this page. Full field editing
+  // still lives on /admin/pricing -- this is just the rename shortcut
+  // so admins on the gyms page can disambiguate tiers (e.g. two 'Free
+  // Testing' rows) without navigating away.
+  const [renamingTierId, setRenamingTierId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [savingRename, setSavingRename] = useState(false);
+
+  async function handleRenameTier(id: string) {
+    const name = renameValue.trim();
+    if (!name) return;
+    setSavingRename(true);
+    try {
+      const res = await fetch("/api/admin/pricing", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, name }),
+      });
+      if (res.ok) {
+        setRenamingTierId(null);
+        setRenameValue("");
+        loadData();
+      } else {
+        alert("Failed to rename tier");
+      }
+    } catch {
+      alert("Failed to rename tier");
+    } finally {
+      setSavingRename(false);
+    }
+  }
+
   async function loadData() {
     setLoadError(null);
     try {
@@ -286,6 +318,83 @@ export default function ManageGymsPage() {
         <div>
           <h1 className="text-2xl font-bold">Manage Gyms</h1>
           <p className="text-sm text-gray-500">Create signup links and manage trial gym accounts</p>
+        </div>
+
+        {/* Pricing Tiers Section -- inline rename only. For price /
+            limit / payment-processor edits, use /admin/pricing. */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Pricing Tiers</h2>
+            <a
+              href="/admin/pricing"
+              className="text-xs font-semibold text-primary hover:text-primaryDark"
+            >
+              Full tier settings →
+            </a>
+          </div>
+          {tiers.length === 0 ? (
+            <p className="text-sm text-gray-500">No pricing tiers yet.</p>
+          ) : (
+            <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
+              {tiers.map(t => {
+                const isRenaming = renamingTierId === t.id;
+                const badge = t.founderOnly
+                  ? { label: "Founder", cls: "bg-purple-100 text-purple-700" }
+                  : t.inviteOnly
+                    ? { label: "Invite only", cls: "bg-yellow-100 text-yellow-700" }
+                    : { label: "Public", cls: "bg-gray-100 text-gray-600" };
+                return (
+                  <div key={t.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      {isRenaming ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={renameValue}
+                            onChange={ev => setRenameValue(ev.target.value)}
+                            autoFocus
+                            className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRenameTier(t.id)}
+                            disabled={savingRename || !renameValue.trim()}
+                            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                          >
+                            {savingRename ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setRenamingTierId(null); setRenameValue(""); }}
+                            className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">{t.name}</span>
+                          <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${badge.cls}`}>{badge.label}</span>
+                          <span className="text-xs text-gray-500">
+                            {t.priceCents > 0 ? `$${(t.priceCents / 100).toFixed(2)}/mo` : "Free"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {!isRenaming && (
+                      <button
+                        type="button"
+                        onClick={() => { setRenamingTierId(t.id); setRenameValue(t.name); }}
+                        className="text-xs text-primary hover:text-primaryDark font-semibold"
+                      >
+                        Rename
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Signup Links Section */}
