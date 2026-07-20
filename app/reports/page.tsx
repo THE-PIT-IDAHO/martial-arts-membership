@@ -2293,16 +2293,19 @@ export default function ReportsPage() {
                               if (isClassTypeColumn(colId)) {
                                 return getClassTypeName(colId);
                               }
-                              // Handle style rank columns
+                              // Per-style columns: use short labels since the
+                              // header pane repeats the style name via the
+                              // "Showing X Ranks" subhead. Prevents columns
+                              // like "Kore BJJ - Adults Next Rank" from
+                              // taking up half the table width.
                               if (isStyleRankColumn(colId)) {
-                                return `${getStyleRankName(colId)} Rank`;
+                                return "Current Rank";
                               }
-                              // Per-style extras
                               if (isStyleBeltSizeColumn(colId)) {
-                                return `${getStyleBeltSizeName(colId)} Belt Size`;
+                                return "Belt Size";
                               }
                               if (isStyleNextRankColumn(colId)) {
-                                return `${getStyleNextRankName(colId)} Next Rank`;
+                                return "Next Rank";
                               }
                               // Handle base columns
                               switch (colId) {
