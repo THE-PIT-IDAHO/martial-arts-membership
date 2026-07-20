@@ -56,6 +56,10 @@ type ReportDataFields = {
   showStyleBreakdown: boolean;
   showRankDistribution: boolean;
   showUpcomingPromotions: boolean;
+  // Per-selected-style extras — surface a Belt Size and/or Next Rank
+  // column for every style listed in selectedStylesForRank.
+  showBeltSizeByStyle: boolean;
+  showNextRankByStyle: boolean;
 
   // Memberships & Payments
   showMembershipTypes: boolean;
@@ -143,6 +147,8 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showStyleBreakdown: false,
   showRankDistribution: false,
   showUpcomingPromotions: false,
+  showBeltSizeByStyle: false,
+  showNextRankByStyle: false,
   showMembershipTypes: false,
   showMembershipPlans: false,
   showMonthlyPayments: false,
@@ -252,6 +258,8 @@ const COLUMN_FIELDS = [
       { key: "showBeltRanks", label: "Belt Rank" },
       { key: "showPrimaryStyle", label: "Primary Style" },
       { key: "showRanksByStyle", label: "Ranks by Style" },
+      { key: "showBeltSizeByStyle", label: "Belt Size (per selected style)" },
+      { key: "showNextRankByStyle", label: "Next Rank (per selected style)" },
     ],
   },
   {
@@ -415,8 +423,14 @@ type PaymentSummary = {
 // Base column identifiers for the member list table
 type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
 
-// Column ID can be a base column or a class type column (prefixed with "classType:")
-type ColumnId = BaseColumnId | `classType:${string}` | `styleRank:${string}`;
+// Column ID can be a base column, a class type column, or one of the
+// per-style extras (current rank / belt size / next rank).
+type ColumnId =
+  | BaseColumnId
+  | `classType:${string}`
+  | `styleRank:${string}`
+  | `styleBeltSize:${string}`
+  | `styleNextRank:${string}`;
 
 // Default column order (base columns only - class type columns are appended dynamically)
 const DEFAULT_COLUMN_ORDER: BaseColumnId[] = [
@@ -473,6 +487,22 @@ function getClassTypeName(colId: ColumnId): string {
 }
 
 // Helper to check if a column is a style rank column
+function isStyleBeltSizeColumn(colId: ColumnId): colId is `styleBeltSize:${string}` {
+  return colId.startsWith("styleBeltSize:");
+}
+
+function getStyleBeltSizeName(colId: ColumnId): string {
+  return colId.replace("styleBeltSize:", "");
+}
+
+function isStyleNextRankColumn(colId: ColumnId): colId is `styleNextRank:${string}` {
+  return colId.startsWith("styleNextRank:");
+}
+
+function getStyleNextRankName(colId: ColumnId): string {
+  return colId.replace("styleNextRank:", "");
+}
+
 function isStyleRankColumn(colId: ColumnId): colId is `styleRank:${string}` {
   return colId.startsWith("styleRank:");
 }
@@ -717,7 +747,12 @@ export default function ReportsPage() {
   const [attendanceData, setAttendanceData] = useState<AttendanceSummary | null>(null);
   const [revenueData, setRevenueData] = useState<RevenueSummary | null>(null);
   const [paymentData, setPaymentData] = useState<PaymentSummary | null>(null);
-  const [availableStyles, setAvailableStyles] = useState<{ id: string; name: string }[]>([]);
+  const [availableStyles, setAvailableStyles] = useState<{
+    id: string;
+    name: string;
+    beltConfig?: string | null;
+    ranks?: Array<{ id: string; name: string; order: number }>;
+  }[]>([]);
   const [availableRanks, setAvailableRanks] = useState<{ id: string; name: string; styleId: string; styleName: string; order: number }[]>([]);
   const [availableClassTypes, setAvailableClassTypes] = useState<string[]>([]);
   const [availableMembershipTypes, setAvailableMembershipTypes] = useState<{ id: string; name: string }[]>([]);
@@ -764,8 +799,24 @@ export default function ReportsPage() {
     const styleRankColumns: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
       (style) => `styleRank:${style}` as ColumnId
     );
+    const styleBeltSizeColumns: ColumnId[] = activeReport.fields.showBeltSizeByStyle
+      ? (activeReport.selectedStylesForRank || []).map(
+          (style) => `styleBeltSize:${style}` as ColumnId
+        )
+      : [];
+    const styleNextRankColumns: ColumnId[] = activeReport.fields.showNextRankByStyle
+      ? (activeReport.selectedStylesForRank || []).map(
+          (style) => `styleNextRank:${style}` as ColumnId
+        )
+      : [];
     const allBaseColumns: ColumnId[] = [...DEFAULT_COLUMN_ORDER];
-    const allColumns: ColumnId[] = [...allBaseColumns, ...styleRankColumns, ...classTypeColumns];
+    const allColumns: ColumnId[] = [
+      ...allBaseColumns,
+      ...styleRankColumns,
+      ...styleBeltSizeColumns,
+      ...styleNextRankColumns,
+      ...classTypeColumns,
+    ];
 
     // Get saved column order, filter to valid columns, then append missing ones
     const savedOrder = activeReport.columnOrder || [];
@@ -2135,20 +2186,36 @@ export default function ReportsPage() {
                         </div>
                         <div className="overflow-x-auto">
                           {(() => {
-                            // Build the full list of available columns including class type and style rank columns
+                            // Build the full list of available columns including class type, style rank, and per-style extras
                             const classTypeColumns: ColumnId[] = (activeReport.selectedClassTypes || []).map(
                               (ct) => `classType:${ct}` as ColumnId
                             );
                             const styleRankColumns: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
                               (style) => `styleRank:${style}` as ColumnId
                             );
+                            const styleBeltSizeColumns: ColumnId[] = activeReport.fields.showBeltSizeByStyle
+                              ? (activeReport.selectedStylesForRank || []).map(
+                                  (style) => `styleBeltSize:${style}` as ColumnId
+                                )
+                              : [];
+                            const styleNextRankColumns: ColumnId[] = activeReport.fields.showNextRankByStyle
+                              ? (activeReport.selectedStylesForRank || []).map(
+                                  (style) => `styleNextRank:${style}` as ColumnId
+                                )
+                              : [];
 
                             // Get saved column order, or use default + dynamic columns
                             const savedOrder = activeReport.columnOrder || [];
 
                             // Build column order: start with saved order, then add any missing columns
                             const allBaseColumns: ColumnId[] = [...DEFAULT_COLUMN_ORDER];
-                            const allColumns: ColumnId[] = [...allBaseColumns, ...styleRankColumns, ...classTypeColumns];
+                            const allColumns: ColumnId[] = [
+                              ...allBaseColumns,
+                              ...styleRankColumns,
+                              ...styleBeltSizeColumns,
+                              ...styleNextRankColumns,
+                              ...classTypeColumns,
+                            ];
 
                             // Filter saved order to only include valid columns, then append any missing ones
                             const columnOrder: ColumnId[] = [
@@ -2166,6 +2233,18 @@ export default function ReportsPage() {
                               if (isStyleRankColumn(colId)) {
                                 const styleName = getStyleRankName(colId);
                                 return (activeReport.selectedStylesForRank || []).includes(styleName);
+                              }
+                              // Handle style belt-size columns
+                              if (isStyleBeltSizeColumn(colId)) {
+                                const styleName = getStyleBeltSizeName(colId);
+                                return activeReport.fields.showBeltSizeByStyle
+                                  && (activeReport.selectedStylesForRank || []).includes(styleName);
+                              }
+                              // Handle style next-rank columns
+                              if (isStyleNextRankColumn(colId)) {
+                                const styleName = getStyleNextRankName(colId);
+                                return activeReport.fields.showNextRankByStyle
+                                  && (activeReport.selectedStylesForRank || []).includes(styleName);
                               }
                               // Handle base columns
                               switch (colId) {
@@ -2217,6 +2296,13 @@ export default function ReportsPage() {
                               // Handle style rank columns
                               if (isStyleRankColumn(colId)) {
                                 return `${getStyleRankName(colId)} Rank`;
+                              }
+                              // Per-style extras
+                              if (isStyleBeltSizeColumn(colId)) {
+                                return `${getStyleBeltSizeName(colId)} Belt Size`;
+                              }
+                              if (isStyleNextRankColumn(colId)) {
+                                return `${getStyleNextRankName(colId)} Next Rank`;
                               }
                               // Handle base columns
                               switch (colId) {
@@ -2319,6 +2405,73 @@ export default function ReportsPage() {
                                           } catch {}
                                         }
                                         return "—";
+                                      }
+                                      // Handle style belt-size columns — read
+                                      // beltSize from the member's stylesNotes
+                                      // entry for the matching style.
+                                      if (isStyleBeltSizeColumn(colId)) {
+                                        const styleName = getStyleBeltSizeName(colId);
+                                        if (m.stylesNotes) {
+                                          try {
+                                            const arr = JSON.parse(m.stylesNotes);
+                                            if (Array.isArray(arr)) {
+                                              const entry = arr.find((s: any) => s?.name === styleName);
+                                              if (entry?.beltSize) return String(entry.beltSize);
+                                            }
+                                          } catch {}
+                                        }
+                                        return "—";
+                                      }
+                                      // Handle style next-rank columns — find
+                                      // the member's current rank in the
+                                      // style's ranks list (from availableStyles,
+                                      // ordered by .order) and return the next
+                                      // one. Returns "—" if at the top rank or
+                                      // no matching style is enrolled.
+                                      if (isStyleNextRankColumn(colId)) {
+                                        const styleName = getStyleNextRankName(colId);
+                                        let currentRank: string | null = null;
+                                        if (m.stylesNotes) {
+                                          try {
+                                            const arr = JSON.parse(m.stylesNotes);
+                                            if (Array.isArray(arr)) {
+                                              const entry = arr.find((s: any) => s?.name === styleName);
+                                              if (entry?.rank) currentRank = String(entry.rank);
+                                            }
+                                          } catch {}
+                                        }
+                                        if (!currentRank && m.primaryStyle === styleName) {
+                                          currentRank = m.rank || null;
+                                        }
+                                        if (!currentRank) return "—";
+                                        const styleDef = availableStyles.find(
+                                          (s) => s.name.toLowerCase() === styleName.toLowerCase(),
+                                        );
+                                        // Prefer the granular beltConfig ranks
+                                        // (matches how the progress bars work);
+                                        // fall back to Style.ranks otherwise.
+                                        let progressionRanks: Array<{ name: string; order: number }> = [];
+                                        const beltConfig = (styleDef as { beltConfig?: string | null } | undefined)?.beltConfig;
+                                        if (beltConfig) {
+                                          try {
+                                            const parsed = JSON.parse(beltConfig);
+                                            if (Array.isArray(parsed?.ranks)) {
+                                              progressionRanks = [...parsed.ranks].sort(
+                                                (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0),
+                                              );
+                                            }
+                                          } catch {}
+                                        }
+                                        if (progressionRanks.length === 0 && styleDef?.ranks) {
+                                          progressionRanks = [...styleDef.ranks].sort(
+                                            (a, b) => (a.order ?? 0) - (b.order ?? 0),
+                                          );
+                                        }
+                                        const idx = progressionRanks.findIndex(
+                                          (r) => r.name.toLowerCase() === currentRank!.toLowerCase(),
+                                        );
+                                        if (idx < 0 || idx >= progressionRanks.length - 1) return "—";
+                                        return progressionRanks[idx + 1].name;
                                       }
                                       // Handle base columns
                                       switch (colId) {
