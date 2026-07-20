@@ -19,6 +19,22 @@ export default function ContractsPage() {
   const [viewingPdf, setViewingPdf] = useState<{ url: string; title: string } | null>(null);
   const [resending, setResending] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  // Default: newest contracts first -- matches how the API returns them
+  // and is the most useful when someone opens the page fresh. Clicking
+  // the same header again flips direction.
+  const [sortColumn, setSortColumn] = useState<"member" | "plan" | "date">("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(col: "member" | "plan" | "date") {
+    if (sortColumn === col) {
+      setSortDir(prev => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(col);
+      // Dates feel natural starting newest-first (desc); text columns
+      // feel natural starting A-Z (asc).
+      setSortDir(col === "date" ? "desc" : "asc");
+    }
+  }
 
   useEffect(() => {
     loadContracts();
@@ -45,6 +61,20 @@ export default function ContractsPage() {
         return name.includes(q) || c.planName.toLowerCase().includes(q);
       })
     : contracts;
+
+  const sorted = [...filtered].sort((a, b) => {
+    let cmp = 0;
+    if (sortColumn === "member") {
+      const an = `${a.member.lastName} ${a.member.firstName}`.toLowerCase();
+      const bn = `${b.member.lastName} ${b.member.firstName}`.toLowerCase();
+      cmp = an.localeCompare(bn);
+    } else if (sortColumn === "plan") {
+      cmp = (a.planName || "").toLowerCase().localeCompare((b.planName || "").toLowerCase());
+    } else {
+      cmp = new Date(a.signedAt).getTime() - new Date(b.signedAt).getTime();
+    }
+    return sortDir === "asc" ? cmp : -cmp;
+  });
 
   function viewPdf(contract: Contract) {
     // Blob-stored contracts return an http URL in pdfData that cannot be
@@ -141,14 +171,14 @@ export default function ContractsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Member</th>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Plan / Service</th>
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Date Signed</th>
+                  <SortableTh label="Member" col="member" active={sortColumn} dir={sortDir} onClick={toggleSort} />
+                  <SortableTh label="Plan / Service" col="plan" active={sortColumn} dir={sortDir} onClick={toggleSort} />
+                  <SortableTh label="Date Signed" col="date" active={sortColumn} dir={sortDir} onClick={toggleSort} />
                   <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map(c => (
+                {sorted.map(c => (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2">
                       <Link href={`/members/${c.member.id}`} className="text-primary hover:underline text-xs font-medium">
@@ -224,5 +254,35 @@ export default function ContractsPage() {
         </div>
       )}
     </AppLayout>
+  );
+}
+
+function SortableTh({
+  label,
+  col,
+  active,
+  dir,
+  onClick,
+}: {
+  label: string;
+  col: "member" | "plan" | "date";
+  active: "member" | "plan" | "date";
+  dir: "asc" | "desc";
+  onClick: (col: "member" | "plan" | "date") => void;
+}) {
+  // No visual indicator per the user's request -- header just acts
+  // like a toggle button. `active` + `dir` still get passed in so the
+  // component could grow one later without a signature change.
+  void active; void dir;
+  return (
+    <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase">
+      <button
+        type="button"
+        onClick={() => onClick(col)}
+        className="text-primary hover:text-primaryDark cursor-pointer select-none uppercase text-[11px] font-semibold"
+      >
+        {label}
+      </button>
+    </th>
   );
 }
