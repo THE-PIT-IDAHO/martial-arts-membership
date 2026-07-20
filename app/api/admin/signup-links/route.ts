@@ -46,6 +46,10 @@ export async function POST(req: Request) {
         allowSquare: body.allowSquare || false,
         priceCents: body.priceCents !== undefined && body.priceCents !== "" ? parseInt(body.priceCents) || 0 : 0,
         trialMonths: body.trialMonths !== undefined && body.trialMonths !== "" ? parseInt(body.trialMonths) || 0 : 0,
+        // grantsTierId: which invite-only tier gyms created via this
+        // link get added to their grantedTierIds. The admin UI passes
+        // the picked tier's id here iff that tier was invite-only.
+        grantsTierId: body.grantsTierId || null,
         expiresAt,
         note: body.note?.trim() || null,
       },
@@ -81,6 +85,7 @@ export async function PATCH(req: Request) {
     if (fields.maxReports !== undefined) data.maxReports = parse(fields.maxReports, 3);
     if (fields.maxPOSItems !== undefined) data.maxPOSItems = parse(fields.maxPOSItems, 10);
     if (fields.trialMonths !== undefined) data.trialMonths = fields.trialMonths !== "" ? parseInt(fields.trialMonths) || 0 : 0;
+    if (fields.grantsTierId !== undefined) data.grantsTierId = fields.grantsTierId || null;
     if (fields.note !== undefined) data.note = fields.note?.trim() || null;
     if (fields.active !== undefined) data.active = fields.active;
 

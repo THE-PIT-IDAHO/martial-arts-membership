@@ -21,6 +21,8 @@ type Tier = {
   allowStripe: boolean;
   allowPaypal: boolean;
   allowSquare: boolean;
+  founderOnly: boolean;
+  inviteOnly: boolean;
   isActive: boolean;
   sortOrder: number;
 };
@@ -48,6 +50,7 @@ export default function PricingTiersPage() {
       maxMembers: "10", maxStyles: "3", maxRanksPerStyle: "10", maxMembershipPlans: "3",
       maxClasses: "5", maxUsers: "2", maxLocations: "1", maxReports: "3", maxPOSItems: "10",
       allowStripe: false, allowPaypal: false, allowSquare: false,
+      founderOnly: false, inviteOnly: false,
     });
   }
 
@@ -67,6 +70,7 @@ export default function PricingTiersPage() {
       maxReports: tier.maxReports >= 999999 ? "" : String(tier.maxReports),
       maxPOSItems: tier.maxPOSItems >= 999999 ? "" : String(tier.maxPOSItems),
       allowStripe: tier.allowStripe, allowPaypal: tier.allowPaypal, allowSquare: tier.allowSquare,
+      founderOnly: tier.founderOnly, inviteOnly: tier.inviteOnly,
     });
     setEditingId(tier.id);
     setShowCreate(true);
@@ -154,6 +158,20 @@ export default function PricingTiersPage() {
                   {p.label}
                 </label>
               ))}
+            </div>
+            {/* Visibility gates. Founder-only pins the tier to the
+                platform-admin gym; invite-only hides it from
+                everyone unless a signup link explicitly grants it. */}
+            <h3 className="text-sm font-bold text-gray-800 mb-3">Visibility</h3>
+            <div className="flex flex-wrap gap-4 mb-4">
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input type="checkbox" checked={!!form.founderOnly} onChange={e => setF("founderOnly", e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600" />
+                Founder only <span className="text-xs text-gray-400">(software owner)</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input type="checkbox" checked={!!form.inviteOnly} onChange={e => setF("inviteOnly", e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600" />
+                Invite only <span className="text-xs text-gray-400">(signup link required)</span>
+              </label>
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={handleSave} disabled={saving || !form.name} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">

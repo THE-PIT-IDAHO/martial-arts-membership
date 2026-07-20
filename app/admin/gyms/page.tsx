@@ -54,7 +54,7 @@ export default function ManageGymsPage() {
   const [links, setLinks] = useState<SignupLink[]>([]);
   const [loading, setLoading] = useState(true);
 
-  type PricingTier = { id: string; name: string; priceCents: number; maxMembers: number; maxStyles: number; maxRanksPerStyle: number; maxMembershipPlans: number; maxClasses: number; maxUsers: number; maxLocations: number; maxReports: number; maxPOSItems: number; allowStripe: boolean; allowPaypal: boolean; allowSquare: boolean };
+  type PricingTier = { id: string; name: string; priceCents: number; maxMembers: number; maxStyles: number; maxRanksPerStyle: number; maxMembershipPlans: number; maxClasses: number; maxUsers: number; maxLocations: number; maxReports: number; maxPOSItems: number; allowStripe: boolean; allowPaypal: boolean; allowSquare: boolean; inviteOnly?: boolean; founderOnly?: boolean };
   const [tiers, setTiers] = useState<PricingTier[]>([]);
 
   // Create link form
@@ -133,6 +133,11 @@ export default function ManageGymsPage() {
           priceCents: tier.priceCents,
           trialMonths: linkTrialMonths,
           expiresInDays: linkExpiresInDays ? parseInt(linkExpiresInDays) : null,
+          // If the chosen tier is invite-only, entitle the gym
+          // created via this link to see + select it on their Plan
+          // tab. Otherwise leave grantsTierId unset -- the public
+          // tiers don't need an explicit grant to appear.
+          grantsTierId: tier.inviteOnly ? tier.id : null,
           note: linkNote || tier.name,
         }),
       });

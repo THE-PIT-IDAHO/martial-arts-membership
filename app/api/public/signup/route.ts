@@ -108,6 +108,12 @@ export async function POST(req: Request) {
           allowPaypal: link.allowPaypal,
           allowSquare: link.allowSquare,
           priceCents: link.priceCents,
+          // Carry the link's tier grant into the new Client's
+          // entitlements so their Plan tab shows the invite-only
+          // tier that was tied to the invite (e.g. "Free Testing").
+          // Stored as a JSON array so more grants can be added later
+          // without a schema change.
+          grantedTierIds: link.grantsTierId ? JSON.stringify([link.grantsTierId]) : null,
           trialExpiresAt,
         },
       });

@@ -32,6 +32,13 @@ model Client {
   allowSquare     Boolean          @default(false)
   priceCents      Int              @default(0)
   isPlatformAdmin Boolean          @default(false)
+  // JSON string of tier ids this Client is specifically entitled to
+  // see in the Your Plan picker beyond the public catalog. Feeds the
+  // invite-only tier flow: signup links can grant a tier id, and it
+  // ends up here on the created Client so their Plan tab includes it.
+  // Kept as a raw String to avoid a join table for what is a tiny,
+  // append-only list.
+  grantedTierIds  String?
   trialExpiresAt  DateTime?
   canceledAt      DateTime?
   createdAt       DateTime         @default(now())
@@ -67,6 +74,12 @@ model SignupLink {
   active         Boolean   @default(true)
   useCount       Int       @default(0)
   note           String?
+  // If set, gyms created via this link get the referenced tier
+  // added to their Client.grantedTierIds. That is how the invite-
+  // only "Free Testing" tier reaches invited gyms without becoming
+  // visible to everyone. Nullable so links that don't grant any
+  // invite-only tier just skip it.
+  grantsTierId   String?
   createdAt      DateTime  @default(now())
 }
 
@@ -95,6 +108,12 @@ model PricingTier {
   // internal "Founder" tier so it doesn't show up in the plan
   // picker of every other gym on the platform.
   founderOnly     Boolean  @default(false)
+  // When true, this tier is hidden from every gym by default and
+  // only appears in the plan picker of gyms that were explicitly
+  // entitled to it (see Client.grantedTierIds). Used for the
+  // "Free Testing" tier: only clients invited via a signup link
+  // that grants this tier get to see and select it.
+  inviteOnly      Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
