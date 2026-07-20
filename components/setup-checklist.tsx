@@ -157,14 +157,15 @@ export function SetupChecklist({ alwaysShow = false }: { alwaysShow?: boolean } 
                     <div className="text-xs text-gray-500 mt-0.5">{task.hint}</div>
                   )}
                 </div>
-                {!task.done && (
-                  <Link
-                    href={task.href}
-                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark whitespace-nowrap"
-                  >
-                    Go
-                  </Link>
-                )}
+                {/* Go stays visible even after a task ticks off so
+                    owners can still jump to the page later without
+                    hunting through the sidebar. */}
+                <Link
+                  href={task.href}
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark whitespace-nowrap"
+                >
+                  Go
+                </Link>
               </li>
             );
           })}
