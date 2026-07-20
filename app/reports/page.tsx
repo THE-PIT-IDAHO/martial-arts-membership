@@ -1631,31 +1631,9 @@ export default function ReportsPage() {
             >
               Manage Reports
             </button>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
-            >
-              Print / Export
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const reportType = enabledReports.find(r => r.id === activeTab)?.type || "members";
-                const typeMap: Record<string, string> = {
-                  membership: "memberships",
-                  attendance: "attendance",
-                  revenue: "revenue",
-                  retention: "members",
-                  custom: "members",
-                };
-                const endpoint = typeMap[reportType] || "members";
-                window.open(`/api/export/${endpoint}`, "_blank");
-              }}
-              className="text-xs rounded-md border border-gray-300 bg-white px-3 py-1 font-semibold text-gray-700 hover:bg-gray-50"
-            >
-              Download CSV
-            </button>
+            {/* Print + Download CSV moved to the per-report toolbar so
+                each report exports its own filtered columns + rows
+                instead of always dumping the generic 'members' CSV. */}
           </div>
         </div>
 
@@ -2168,6 +2146,222 @@ export default function ReportsPage() {
                             )}
                           </h4>
                           <div className="flex items-center gap-2 text-sm">
+                            <button
+                              type="button"
+                              onClick={() => window.print()}
+                              className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
+                            >
+                              Print
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Client-side CSV export of exactly the rows +
+                                // columns currently shown for this report.
+                                // Filtered members (pre-pagination) are the
+                                // export set so the file has everything, not
+                                // just the current page.
+                                // Rebuild column order the same way the
+                                // table below does, so CSV columns match
+                                // what's on screen for this report.
+                                const csvClassTypeCols: ColumnId[] = (activeReport.selectedClassTypes || []).map(
+                                  (ct) => `classType:${ct}` as ColumnId,
+                                );
+                                const csvStyleRankCols: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
+                                  (style) => `styleRank:${style}` as ColumnId,
+                                );
+                                const csvStyleBeltSizeCols: ColumnId[] = activeReport.fields.showBeltSizeByStyle
+                                  ? (activeReport.selectedStylesForRank || []).map(
+                                      (style) => `styleBeltSize:${style}` as ColumnId,
+                                    )
+                                  : [];
+                                const csvStyleNextRankCols: ColumnId[] = activeReport.fields.showNextRankByStyle
+                                  ? (activeReport.selectedStylesForRank || []).map(
+                                      (style) => `styleNextRank:${style}` as ColumnId,
+                                    )
+                                  : [];
+                                const csvSavedOrder = activeReport.columnOrder || [];
+                                const csvAllColumns: ColumnId[] = [
+                                  ...DEFAULT_COLUMN_ORDER,
+                                  ...csvStyleRankCols,
+                                  ...csvStyleBeltSizeCols,
+                                  ...csvStyleNextRankCols,
+                                  ...csvClassTypeCols,
+                                ];
+                                const csvColumnOrder: ColumnId[] = [
+                                  ...csvSavedOrder.filter((col) => csvAllColumns.includes(col)),
+                                  ...csvAllColumns.filter((col) => !csvSavedOrder.includes(col)),
+                                ];
+                                const enabledColIds = csvColumnOrder.filter((colId) => {
+                                  if (isClassTypeColumn(colId)) {
+                                    return (activeReport.selectedClassTypes || []).includes(getClassTypeName(colId));
+                                  }
+                                  if (isStyleRankColumn(colId)) {
+                                    return (activeReport.selectedStylesForRank || []).includes(getStyleRankName(colId));
+                                  }
+                                  if (isStyleBeltSizeColumn(colId)) {
+                                    return activeReport.fields.showBeltSizeByStyle
+                                      && (activeReport.selectedStylesForRank || []).includes(getStyleBeltSizeName(colId));
+                                  }
+                                  if (isStyleNextRankColumn(colId)) {
+                                    return activeReport.fields.showNextRankByStyle
+                                      && (activeReport.selectedStylesForRank || []).includes(getStyleNextRankName(colId));
+                                  }
+                                  switch (colId) {
+                                    case "firstName":
+                                    case "lastName":
+                                    case "status": return true;
+                                    case "memberNumber": return activeReport.fields.showMemberNumber;
+                                    case "email": return activeReport.fields.showMemberEmails;
+                                    case "phone": return activeReport.fields.showMemberPhones;
+                                    case "style": return activeReport.fields.showPrimaryStyle;
+                                    case "rank": return activeReport.fields.showBeltRanks;
+                                    case "joinDate": return activeReport.fields.showJoinDate;
+                                    case "waiver": return activeReport.fields.showWaiverStatus;
+                                    case "membershipType": return activeReport.fields.showMembershipTypes;
+                                    case "membershipPlan": return activeReport.fields.showMembershipPlans;
+                                    case "monthlyPayment": return activeReport.fields.showMonthlyPayments;
+                                    case "nextPaymentDate": return activeReport.fields.showNextPaymentDate;
+                                    case "lastPaymentDate": return activeReport.fields.showLastPaymentDate;
+                                    case "autoRenew": return activeReport.fields.showAutoRenewStatus;
+                                    case "expirationDate": return activeReport.fields.showMembershipExpiring;
+                                    case "totalClasses": return activeReport.fields.showTotalClassCount;
+                                    default: return false;
+                                  }
+                                });
+
+                                const headerFor = (colId: ColumnId): string => {
+                                  if (isClassTypeColumn(colId)) return getClassTypeName(colId);
+                                  if (isStyleRankColumn(colId)) return "Current Rank";
+                                  if (isStyleBeltSizeColumn(colId)) return "Belt Size";
+                                  if (isStyleNextRankColumn(colId)) return "Next Rank";
+                                  if (colId === "rank") return "Primary Rank";
+                                  if (colId === "totalClasses") return "Total Classes";
+                                  return COLUMN_LABELS[colId as BaseColumnId] || String(colId);
+                                };
+
+                                const cellText = (m: any, colId: ColumnId): string => {
+                                  if (isClassTypeColumn(colId)) {
+                                    return String(m.attendanceCounts?.[getClassTypeName(colId)] || 0);
+                                  }
+                                  if (isStyleRankColumn(colId)) {
+                                    const styleName = getStyleRankName(colId);
+                                    if (m.primaryStyle === styleName) return m.rank || "";
+                                    if (m.stylesNotes) {
+                                      try {
+                                        const arr = JSON.parse(m.stylesNotes);
+                                        if (Array.isArray(arr)) {
+                                          const e = arr.find((s: any) => s?.name === styleName);
+                                          if (e?.rank) return String(e.rank);
+                                        }
+                                      } catch {}
+                                    }
+                                    return "";
+                                  }
+                                  if (isStyleBeltSizeColumn(colId)) {
+                                    const styleName = getStyleBeltSizeName(colId);
+                                    if (m.stylesNotes) {
+                                      try {
+                                        const arr = JSON.parse(m.stylesNotes);
+                                        if (Array.isArray(arr)) {
+                                          const e = arr.find((s: any) => s?.name === styleName);
+                                          if (e?.beltSize) return String(e.beltSize);
+                                        }
+                                      } catch {}
+                                    }
+                                    return "";
+                                  }
+                                  if (isStyleNextRankColumn(colId)) {
+                                    const styleName = getStyleNextRankName(colId);
+                                    let currentRank: string | null = null;
+                                    if (m.stylesNotes) {
+                                      try {
+                                        const arr = JSON.parse(m.stylesNotes);
+                                        if (Array.isArray(arr)) {
+                                          const e = arr.find((s: any) => s?.name === styleName);
+                                          if (e?.rank) currentRank = String(e.rank);
+                                        }
+                                      } catch {}
+                                    }
+                                    if (!currentRank && m.primaryStyle === styleName) currentRank = m.rank || null;
+                                    if (!currentRank) return "";
+                                    const styleDef = availableStyles.find(
+                                      (s) => s.name.toLowerCase() === styleName.toLowerCase(),
+                                    );
+                                    let progression: Array<{ name: string; order: number }> = [];
+                                    const beltConfig = (styleDef as { beltConfig?: string | null } | undefined)?.beltConfig;
+                                    if (beltConfig) {
+                                      try {
+                                        const parsed = JSON.parse(beltConfig);
+                                        if (Array.isArray(parsed?.ranks)) {
+                                          progression = [...parsed.ranks].sort(
+                                            (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0),
+                                          );
+                                        }
+                                      } catch {}
+                                    }
+                                    if (progression.length === 0 && styleDef?.ranks) {
+                                      progression = [...styleDef.ranks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                                    }
+                                    const idx = progression.findIndex(
+                                      (r) => r.name.toLowerCase() === currentRank!.toLowerCase(),
+                                    );
+                                    if (idx < 0 || idx >= progression.length - 1) return "";
+                                    return progression[idx + 1].name;
+                                  }
+                                  switch (colId) {
+                                    case "firstName": return m.firstName || "";
+                                    case "lastName": return m.lastName || "";
+                                    case "status": return m.status || "";
+                                    case "memberNumber": return m.memberNumber ? String(m.memberNumber) : "";
+                                    case "email": return m.email || "";
+                                    case "phone": return m.phone || "";
+                                    case "style": return m.primaryStyle || "";
+                                    case "rank": return m.rank || "";
+                                    case "joinDate": return m.startDate ? new Date(m.startDate).toLocaleDateString() : "";
+                                    case "waiver": return m.waiverSigned ? "Signed" : "Not Signed";
+                                    case "membershipType": return m.membershipTypeName || "";
+                                    case "membershipPlan": return m.membershipPlanName || "";
+                                    case "monthlyPayment": return `$${((m.monthlyPaymentCents || 0) / 100).toFixed(2)}`;
+                                    case "nextPaymentDate": return m.nextPaymentDate ? new Date(m.nextPaymentDate).toLocaleDateString() : "";
+                                    case "lastPaymentDate": return m.lastPaymentDate ? new Date(m.lastPaymentDate).toLocaleDateString() : "";
+                                    case "autoRenew": return m.autoRenew ? "Yes" : "No";
+                                    case "expirationDate": return m.membershipEndDate ? new Date(m.membershipEndDate).toLocaleDateString() : "";
+                                    case "totalClasses": return String(m.attendanceCounts?.total || 0);
+                                    default: return "";
+                                  }
+                                };
+
+                                const escapeCsv = (v: string): string => {
+                                  if (v.includes(",") || v.includes('"') || v.includes("\n")) {
+                                    return `"${v.replace(/"/g, '""')}"`;
+                                  }
+                                  return v;
+                                };
+
+                                const rows = [
+                                  enabledColIds.map((c) => escapeCsv(headerFor(c))).join(","),
+                                  ...sortedMembers.map((m) =>
+                                    enabledColIds.map((c) => escapeCsv(cellText(m, c))).join(","),
+                                  ),
+                                ];
+                                const csvBody = rows.join("\r\n");
+                                const bom = "﻿"; // Excel recognizes UTF-8 with BOM
+                                const blob = new Blob([bom + csvBody], { type: "text/csv;charset=utf-8;" });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement("a");
+                                a.href = url;
+                                const safeName = (activeReport.name || "report").replace(/[^a-z0-9-_ ]/gi, "").trim() || "report";
+                                a.download = `${safeName}.csv`;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                              }}
+                              className="text-xs rounded-md border border-gray-300 bg-white px-3 py-1 font-semibold text-gray-700 hover:bg-gray-50"
+                            >
+                              Download CSV
+                            </button>
                             <label className="text-gray-500">Show:</label>
                             <select
                               value={membersPerPage}
