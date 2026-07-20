@@ -36,11 +36,15 @@ export async function GET(req: Request) {
       orderBy: { signedAt: "desc" },
     });
 
-    // Decide "current" vs "lapsed" from the linked membership. Contracts
-    // with no membership tie (standalone service/POS contracts) count as
-    // current -- they have no lifecycle of their own to expire against.
-    // SignedContract has no formal relation on membershipId, so we batch
-    // the lookup ourselves.
+    // Decide "current" vs "lapsed" from the linked membership.
+    //   - Contract tied to a membership: current iff that membership is
+    //     still ACTIVE and its endDate hasn't passed.
+    //   - Contract with no membershipId (standalone service / POS /
+    //     legacy): lapsed unless the MEMBER still has any other active
+    //     membership on file. Old signup PDFs for people who have since
+    //     cancelled shouldn't crowd the primary list.
+    // SignedContract has no formal relation on membershipId, so we
+    // batch the lookups ourselves.
     const membershipIds = Array.from(
       new Set(contracts.map((c) => c.membershipId).filter((v): v is string => !!v))
     );
@@ -53,18 +57,39 @@ export async function GET(req: Request) {
     const membershipById = new Map(memberships.map((m) => [m.id, m]));
     const now = new Date();
 
+    // For null-membershipId contracts, look up whether the member has
+    // ANY active membership. One query covers every such contract on
+    // the page.
+    const membersNeedingLookup = Array.from(
+      new Set(contracts.filter((c) => !c.membershipId).map((c) => c.member.id))
+    );
+    const activeByMember = new Set<string>();
+    if (membersNeedingLookup.length) {
+      const activeMemberships = await prisma.membership.findMany({
+        where: {
+          memberId: { in: membersNeedingLookup },
+          status: "ACTIVE",
+          OR: [{ endDate: null }, { endDate: { gt: now } }],
+        },
+        select: { memberId: true },
+      });
+      for (const m of activeMemberships) activeByMember.add(m.memberId);
+    }
+
     const withStatus = contracts.map((c) => {
-      let isCurrent = true;
+      let isCurrent: boolean;
       if (c.membershipId) {
         const m = membershipById.get(c.membershipId);
         if (!m) {
-          // Membership was deleted -- treat as lapsed.
-          isCurrent = false;
+          isCurrent = false; // membership row was deleted
         } else {
           const active = m.status === "ACTIVE";
           const notEnded = !m.endDate || m.endDate > now;
           isCurrent = active && notEnded;
         }
+      } else {
+        // Fall back to "does the member have any active membership?"
+        isCurrent = activeByMember.has(c.member.id);
       }
       // Don't leak the raw membershipId to the client -- it's an
       // implementation detail we only needed for the join above.
