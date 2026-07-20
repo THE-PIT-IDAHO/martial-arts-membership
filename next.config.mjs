@@ -15,7 +15,12 @@ const nextConfig = {
         // Security headers for all routes
         source: "/(.*)",
         headers: [
-          { key: "X-Frame-Options", value: "DENY" },
+          // SAMEORIGIN (not DENY) so our own pages can iframe their own
+          // routes -- e.g. the contract viewer modal embedding the
+          // /api/contracts/:id/pdf proxy. Still blocks cross-site
+          // clickjacking because different tenant subdomains count as
+          // different origins for the X-Frame-Options check.
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-DNS-Prefetch-Control", value: "on" },
