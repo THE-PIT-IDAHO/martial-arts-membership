@@ -30,7 +30,7 @@ type SetupStatus = {
   totalCount: number;
 };
 
-export function SetupChecklist() {
+export function SetupChecklist({ alwaysShow = false }: { alwaysShow?: boolean } = {}) {
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
@@ -51,9 +51,13 @@ export function SetupChecklist() {
 
   if (loading) return null;
   if (!status || !status.visible) return null;
-  if (status.hidden) return null;
-  // Everything done -- retire the card automatically.
-  if (status.completedCount >= status.totalCount) return null;
+  // alwaysShow ignores the "hidden" flag and the auto-hide-when-done
+  // behaviour -- used by the dedicated /setup page so the user can
+  // always see and re-review the checklist there.
+  if (!alwaysShow) {
+    if (status.hidden) return null;
+    if (status.completedCount >= status.totalCount) return null;
+  }
 
   const pct = Math.round((status.completedCount / status.totalCount) * 100);
 

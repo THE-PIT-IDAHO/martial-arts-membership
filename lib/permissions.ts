@@ -19,6 +19,7 @@ export const ALL_PERMISSION_KEYS = [
   "account",
   "audit-log",
   "manage-gyms",
+  "setup",
 ] as const;
 
 export type PermissionKey = (typeof ALL_PERMISSION_KEYS)[number];
@@ -73,6 +74,7 @@ const ROUTE_PERMISSION_MAP: [string, string][] = [
   ["/account", "account"],
   ["/settings", "account"],
   ["/audit-log", "audit-log"],
+  ["/setup", "setup"],
 ];
 
 export function getPermissionForRoute(pathname: string): string | null {
