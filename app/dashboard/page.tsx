@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 import dynamic from "next/dynamic";
 import { checkMemberRequirements, type ReqMember, type ReqStyle } from "@/lib/class-requirements";
+import { SetupChecklist } from "@/components/setup-checklist";
 
 const DashboardCharts = dynamic(() => import("@/components/dashboard-charts"), { ssr: false });
 
@@ -642,6 +643,11 @@ export default function DashboardPage() {
   return (
     <AppLayout>
       <div className="space-y-4">
+        {/* Setup checklist -- renders itself into nothing once the gym
+            is fully set up (or the owner hides the card). Kept above
+            the header so new owners see it first. */}
+        <SetupChecklist />
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
