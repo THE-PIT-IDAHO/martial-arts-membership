@@ -41,6 +41,7 @@ export async function POST(req: Request) {
         allowStripe: body.allowStripe || false,
         allowPaypal: body.allowPaypal || false,
         allowSquare: body.allowSquare || false,
+        founderOnly: body.founderOnly || false,
         sortOrder: count,
       },
     });
@@ -78,6 +79,7 @@ export async function PATCH(req: Request) {
     if (fields.allowStripe !== undefined) data.allowStripe = !!fields.allowStripe;
     if (fields.allowPaypal !== undefined) data.allowPaypal = !!fields.allowPaypal;
     if (fields.allowSquare !== undefined) data.allowSquare = !!fields.allowSquare;
+    if (fields.founderOnly !== undefined) data.founderOnly = !!fields.founderOnly;
     if (fields.isActive !== undefined) data.isActive = !!fields.isActive;
     if (fields.sortOrder !== undefined) data.sortOrder = parseInt(fields.sortOrder) || 0;
 

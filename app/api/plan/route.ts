@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 
-// GET /api/plan — get current plan and available tiers
+// GET /api/plan — get current plan and available tiers.
+// Founder-only tiers are filtered out unless the calling tenant is
+// a platform-admin Client (so the software owner's internal tier
+// doesn't show up in the plan picker of every other gym).
 export async function GET(req: Request) {
   try {
     const clientId = await getClientId(req);
@@ -15,7 +18,7 @@ export async function GET(req: Request) {
           maxMembershipPlans: true, maxClasses: true, maxUsers: true,
           maxLocations: true, maxReports: true, maxPOSItems: true,
           allowStripe: true, allowPaypal: true, allowSquare: true,
-          priceCents: true, trialExpiresAt: true,
+          priceCents: true, trialExpiresAt: true, isPlatformAdmin: true,
         },
       }),
       prisma.pricingTier.findMany({
@@ -28,18 +31,28 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
-    // Find current tier by matching limits
+    const visibleTiers = client.isPlatformAdmin
+      ? tiers
+      : tiers.filter((t) => !t.founderOnly);
+
+    // Find current tier by matching limits. Match against the full
+    // list (not visibleTiers) so the founder gym can still see their
+    // current tier's name reflected even in odd hydration states.
     const currentTier = tiers.find(t =>
       t.maxMembers === client.maxMembers &&
       t.maxStyles === client.maxStyles &&
       t.priceCents === client.priceCents
     ) || null;
 
+    // Strip the isPlatformAdmin flag before returning -- the client
+    // doesn't need it, and it's the kind of thing worth not leaking.
+    const { isPlatformAdmin: _ipa, ...clientPublic } = client;
+
     return NextResponse.json({
-      current: client,
+      current: clientPublic,
       currentTierId: currentTier?.id || null,
       currentTierName: currentTier?.name || "Custom",
-      tiers,
+      tiers: visibleTiers,
     });
   } catch (error) {
     console.error("Error fetching plan:", error);
@@ -57,9 +70,20 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "tierId required" }, { status: 400 });
     }
 
-    const tier = await prisma.pricingTier.findUnique({ where: { id: tierId } });
+    const [tier, client] = await Promise.all([
+      prisma.pricingTier.findUnique({ where: { id: tierId } }),
+      prisma.client.findUnique({
+        where: { id: clientId },
+        select: { isPlatformAdmin: true },
+      }),
+    ]);
     if (!tier || !tier.isActive) {
       return NextResponse.json({ error: "Tier not found" }, { status: 404 });
+    }
+    // Defense in depth: a non-platform-admin gym crafting a PATCH
+    // with a founder tier's id shouldn't be able to escalate.
+    if (tier.founderOnly && !client?.isPlatformAdmin) {
+      return NextResponse.json({ error: "Tier not available" }, { status: 403 });
     }
 
     await prisma.client.update({

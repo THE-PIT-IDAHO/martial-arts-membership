@@ -90,6 +90,11 @@ model PricingTier {
   allowSquare     Boolean  @default(false)
   isActive        Boolean  @default(true)
   sortOrder       Int      @default(0)
+  // When true, this tier is only visible to platform-admin gyms
+  // (see Client.isPlatformAdmin) -- used for the software owner's
+  // internal "Founder" tier so it doesn't show up in the plan
+  // picker of every other gym on the platform.
+  founderOnly     Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
