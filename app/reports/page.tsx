@@ -1614,6 +1614,28 @@ export default function ReportsPage() {
 
   return (
     <AppLayout>
+      {/* Print scoping: when the user hits "Print" on a report, we only
+          want the report card contents to show up on paper -- not the app
+          sidebar, page header, tab strip, section title/edit buttons, or
+          the list toolbar. The visibility trick blanks everything outside
+          .report-print-area in one shot (so we don't have to sprinkle
+          print:hidden on AppLayout / shared chrome), and print:hidden on
+          the internal toolbars strips them too. */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          body * { visibility: hidden !important; }
+          .report-print-area, .report-print-area * { visibility: visible !important; }
+          .report-print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .report-print-area .rounded-lg { border: none !important; box-shadow: none !important; }
+        }
+      ` }} />
       <div className="space-y-4">
         {/* Header with action buttons */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1680,15 +1702,19 @@ export default function ReportsPage() {
             <div className="text-sm text-gray-500">Loading report data...</div>
           </div>
         ) : activeReport ? (
-          <div className="space-y-4">
+          <div className="space-y-4 report-print-area">
             <ReportSection
               title={activeReport.name}
               dateRangeLabel={getDateRangeLabel(activeReport.dateRange, activeReport.customStartDate, activeReport.customEndDate)}
               onEdit={() => openEditModal(activeReport.id)}
               onDelete={() => { if (confirm(`Delete "${activeReport.name}"?`)) deleteReport(activeReport.id); }}
             >
-              {/* Membership Stats */}
-              {(activeReport.fields.showTotalMembers || activeReport.fields.showActiveMembers || activeReport.fields.showProspects ||
+              {/* Membership Stats — only on the built-in default reports.
+                  User-created (custom) reports don't render this block
+                  because those users want just the member list they built,
+                  not the gym-wide summary counts on top. */}
+              {activeReport.type !== "custom" &&
+                (activeReport.fields.showTotalMembers || activeReport.fields.showActiveMembers || activeReport.fields.showProspects ||
                 activeReport.fields.showInactiveMembers || activeReport.fields.showBannedMembers || activeReport.fields.showCoaches ||
                 activeReport.fields.showParents || activeReport.fields.showNewMembers || activeReport.fields.showCanceledMembers) && membershipData && (
                 <div className="mb-6">
@@ -2131,7 +2157,7 @@ export default function ReportsPage() {
 
                     return (
                       <>
-                        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 print:hidden">
                           <h4 className="text-xs font-medium text-gray-500 uppercase">
                             Member List ({filteredMembers.length})
                             {activeFilters.length > 0 && (
@@ -2791,7 +2817,7 @@ export default function ReportsPage() {
                         </div>
                         {/* Pagination Controls */}
                         {totalPages > 1 && (
-                          <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+                          <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100 print:hidden">
                             <div className="text-sm text-gray-500">
                               Showing {startIndex + 1} to {endIndex} of {totalMembers} members
                             </div>
@@ -4003,7 +4029,7 @@ function StatCard({ label, value, color, large }: { label: string; value: string
 function ReportSection({ title, dateRangeLabel, onEdit, onDelete, children }: { title: string; dateRangeLabel: string; onEdit: () => void; onDelete: () => void; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 print:hidden">
         <div>
           <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
           <p className="text-xs text-gray-500">{dateRangeLabel}</p>
