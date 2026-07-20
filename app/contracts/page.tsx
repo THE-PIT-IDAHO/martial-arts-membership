@@ -9,6 +9,7 @@ type Contract = {
   planName: string;
   fileName: string | null;
   signedAt: string;
+  isCurrent: boolean;
   member: { id: string; firstName: string; lastName: string };
 };
 
@@ -75,6 +76,9 @@ export default function ContractsPage() {
     }
     return sortDir === "asc" ? cmp : -cmp;
   });
+
+  const currentContracts = sorted.filter(c => c.isCurrent);
+  const lapsedContracts = sorted.filter(c => !c.isCurrent);
 
   function viewPdf(contract: Contract) {
     // Blob-stored contracts return an http URL in pdfData that cannot be
@@ -158,7 +162,12 @@ export default function ContractsPage() {
           />
         </div>
 
-        {/* Table */}
+        {/* Tables — split into current + lapsed. "Lapsed" means the
+            linked membership is no longer ACTIVE (cancelled, suspended,
+            expired) or its endDate has passed. Contracts with no
+            membership tie are treated as current since they have no
+            lifecycle to expire against. Both tables share sort state
+            so clicking any red column header re-sorts both together. */}
         {loading ? (
           <p className="text-sm text-gray-500">Loading contracts...</p>
         ) : filtered.length === 0 ? (
@@ -167,61 +176,56 @@ export default function ContractsPage() {
             <p className="text-xs text-gray-400 mt-1">Contracts are created when members sign membership or service agreements during checkout.</p>
           </div>
         ) : (
-          <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <SortableTh label="Member" col="member" active={sortColumn} dir={sortDir} onClick={toggleSort} />
-                  <SortableTh label="Plan / Service" col="plan" active={sortColumn} dir={sortDir} onClick={toggleSort} />
-                  <SortableTh label="Date Signed" col="date" active={sortColumn} dir={sortDir} onClick={toggleSort} />
-                  <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {sorted.map(c => (
-                  <tr key={c.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2">
-                      <Link href={`/members/${c.member.id}`} className="text-primary hover:underline text-xs font-medium">
-                        {c.member.firstName} {c.member.lastName}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-600">{c.planName}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{new Date(c.signedAt).toLocaleDateString()}</td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => viewPdf(c)}
-                          className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark"
-                        >
-                          View
-                        </button>
-                        <button
-                          onClick={() => downloadPdf(c)}
-                          className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark"
-                        >
-                          Download
-                        </button>
-                        <button
-                          onClick={() => resendEmail(c)}
-                          disabled={resending === c.id}
-                          className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
-                        >
-                          {resending === c.id ? "Sending..." : "Email"}
-                        </button>
-                        <button
-                          onClick={() => deleteContract(c)}
-                          disabled={deleting === c.id}
-                          className="rounded-md border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
-                        >
-                          {deleting === c.id ? "..." : "Delete"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-gray-900">
+                Current Contracts <span className="text-xs font-normal text-gray-400">({currentContracts.length})</span>
+              </h2>
+              {currentContracts.length === 0 ? (
+                <div className="rounded-lg border border-gray-200 bg-white p-4 text-center text-xs text-gray-500">
+                  No active contracts.
+                </div>
+              ) : (
+                <ContractsTable
+                  rows={currentContracts}
+                  sortColumn={sortColumn}
+                  sortDir={sortDir}
+                  onToggleSort={toggleSort}
+                  onView={viewPdf}
+                  onDownload={downloadPdf}
+                  onEmail={resendEmail}
+                  onDelete={deleteContract}
+                  resendingId={resending}
+                  deletingId={deleting}
+                />
+              )}
+            </section>
+
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-gray-500">
+                Lapsed / No Longer Valid <span className="text-xs font-normal text-gray-400">({lapsedContracts.length})</span>
+              </h2>
+              {lapsedContracts.length === 0 ? (
+                <div className="rounded-lg border border-gray-200 bg-white p-4 text-center text-xs text-gray-500">
+                  No lapsed contracts.
+                </div>
+              ) : (
+                <ContractsTable
+                  rows={lapsedContracts}
+                  sortColumn={sortColumn}
+                  sortDir={sortDir}
+                  onToggleSort={toggleSort}
+                  onView={viewPdf}
+                  onDownload={downloadPdf}
+                  onEmail={resendEmail}
+                  onDelete={deleteContract}
+                  resendingId={resending}
+                  deletingId={deleting}
+                  muted
+                />
+              )}
+            </section>
+          </>
         )}
       </div>
 
@@ -284,5 +288,89 @@ function SortableTh({
         {label}
       </button>
     </th>
+  );
+}
+
+function ContractsTable({
+  rows,
+  sortColumn,
+  sortDir,
+  onToggleSort,
+  onView,
+  onDownload,
+  onEmail,
+  onDelete,
+  resendingId,
+  deletingId,
+  muted = false,
+}: {
+  rows: Contract[];
+  sortColumn: "member" | "plan" | "date";
+  sortDir: "asc" | "desc";
+  onToggleSort: (col: "member" | "plan" | "date") => void;
+  onView: (c: Contract) => void;
+  onDownload: (c: Contract) => void;
+  onEmail: (c: Contract) => Promise<void> | void;
+  onDelete: (c: Contract) => Promise<void> | void;
+  resendingId: string | null;
+  deletingId: string | null;
+  muted?: boolean;
+}) {
+  return (
+    <div className={`rounded-lg border border-gray-200 bg-white overflow-x-auto ${muted ? "opacity-80" : ""}`}>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-gray-200 bg-gray-50">
+            <SortableTh label="Member" col="member" active={sortColumn} dir={sortDir} onClick={onToggleSort} />
+            <SortableTh label="Plan / Service" col="plan" active={sortColumn} dir={sortDir} onClick={onToggleSort} />
+            <SortableTh label="Date Signed" col="date" active={sortColumn} dir={sortDir} onClick={onToggleSort} />
+            <th className="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {rows.map(c => (
+            <tr key={c.id} className="hover:bg-gray-50">
+              <td className="px-3 py-2">
+                <Link href={`/members/${c.member.id}`} className="text-primary hover:underline text-xs font-medium">
+                  {c.member.firstName} {c.member.lastName}
+                </Link>
+              </td>
+              <td className="px-3 py-2 text-xs text-gray-600">{c.planName}</td>
+              <td className="px-3 py-2 text-xs text-gray-500">{new Date(c.signedAt).toLocaleDateString()}</td>
+              <td className="px-3 py-2 text-right">
+                <div className="flex items-center justify-end gap-1">
+                  <button
+                    onClick={() => onView(c)}
+                    className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark"
+                  >
+                    View
+                  </button>
+                  <button
+                    onClick={() => onDownload(c)}
+                    className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark"
+                  >
+                    Download
+                  </button>
+                  <button
+                    onClick={() => onEmail(c)}
+                    disabled={resendingId === c.id}
+                    className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                  >
+                    {resendingId === c.id ? "Sending..." : "Email"}
+                  </button>
+                  <button
+                    onClick={() => onDelete(c)}
+                    disabled={deletingId === c.id}
+                    className="rounded-md border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                  >
+                    {deletingId === c.id ? "..." : "Delete"}
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
