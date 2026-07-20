@@ -54,7 +54,7 @@ export default function ManageGymsPage() {
   const [links, setLinks] = useState<SignupLink[]>([]);
   const [loading, setLoading] = useState(true);
 
-  type PricingTier = { id: string; name: string; priceCents: number; maxMembers: number; maxStyles: number; maxRanksPerStyle: number; maxMembershipPlans: number; maxClasses: number; maxUsers: number; maxLocations: number; maxReports: number; maxPOSItems: number; allowStripe: boolean; allowPaypal: boolean; allowSquare: boolean; inviteOnly?: boolean; founderOnly?: boolean };
+  type PricingTier = { id: string; name: string; priceCents: number; maxMembers: number; maxStyles: number; maxRanksPerStyle: number; maxMembershipPlans: number; maxClasses: number; maxUsers: number; maxLocations: number; maxReports: number; maxPOSItems: number; allowStripe: boolean; allowPaypal: boolean; allowSquare: boolean; isActive?: boolean; inviteOnly?: boolean; founderOnly?: boolean };
   const [tiers, setTiers] = useState<PricingTier[]>([]);
 
   // Create link form
@@ -324,13 +324,24 @@ export default function ManageGymsPage() {
             limit / payment-processor edits, use /admin/pricing. */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Pricing Tiers</h2>
-            <a
-              href="/admin/pricing"
-              className="text-xs font-semibold text-primary hover:text-primaryDark"
-            >
-              Full tier settings →
-            </a>
+            <h2 className="text-lg font-semibold">
+              Pricing Tiers <span className="text-xs font-normal text-gray-400">({tiers.length})</span>
+            </h2>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={loadData}
+                className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+              >
+                Refresh
+              </button>
+              <a
+                href="/admin/pricing"
+                className="text-xs font-semibold text-primary hover:text-primaryDark"
+              >
+                Full tier settings →
+              </a>
+            </div>
           </div>
           {tiers.length === 0 ? (
             <p className="text-sm text-gray-500">No pricing tiers yet.</p>
@@ -375,6 +386,11 @@ export default function ManageGymsPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-gray-900">{t.name}</span>
                           <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${badge.cls}`}>{badge.label}</span>
+                          {t.isActive === false && (
+                            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                              Inactive
+                            </span>
+                          )}
                           <span className="text-xs text-gray-500">
                             {t.priceCents > 0 ? `$${(t.priceCents / 100).toFixed(2)}/mo` : "Free"}
                           </span>
@@ -421,9 +437,13 @@ export default function ManageGymsPage() {
                       const members = t.maxMembers >= 999999 ? "Unlimited" : t.maxMembers;
                       const classes = t.maxClasses >= 999999 ? "Unlimited" : t.maxClasses;
                       const styles = t.maxStyles >= 999999 ? "Unlimited" : t.maxStyles;
+                      // Flag inactive tiers in the label so if one is
+                      // missing on the picker it's because it was
+                      // deactivated on /admin/pricing, not lost.
+                      const inactive = t.isActive === false ? " — INACTIVE" : "";
                       return (
                         <option key={t.id} value={t.id}>
-                          {t.name} — {t.priceCents > 0 ? `$${(t.priceCents / 100).toFixed(2)}/mo` : "Free"} ({members} members, {styles} styles, {classes} class types)
+                          {t.name} — {t.priceCents > 0 ? `$${(t.priceCents / 100).toFixed(2)}/mo` : "Free"} ({members} members, {styles} styles, {classes} class types){inactive}
                         </option>
                       );
                     })}
