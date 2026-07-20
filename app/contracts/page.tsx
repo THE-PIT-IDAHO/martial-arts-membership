@@ -17,7 +17,6 @@ export default function ContractsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewingPdf, setViewingPdf] = useState<{ url: string; title: string } | null>(null);
-  const [loadingPdf, setLoadingPdf] = useState<string | null>(null);
   const [resending, setResending] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -47,21 +46,16 @@ export default function ContractsPage() {
       })
     : contracts;
 
-  async function viewPdf(contract: Contract) {
-    setLoadingPdf(contract.id);
-    try {
-      const res = await fetch(`/api/contracts/${contract.id}`);
-      if (!res.ok) { alert("Failed to load contract"); return; }
-      const data = await res.json();
-      if (!data.contract?.pdfData) { alert("No PDF stored for this contract"); return; }
-      const pdfUrl = `data:application/pdf;base64,${data.contract.pdfData}`;
-      const memberName = `${contract.member.firstName} ${contract.member.lastName}`;
-      setViewingPdf({ url: pdfUrl, title: contract.fileName || `${memberName} - ${contract.planName}.pdf` });
-    } catch {
-      alert("Failed to load contract PDF");
-    } finally {
-      setLoadingPdf(null);
-    }
+  function viewPdf(contract: Contract) {
+    // Blob-stored contracts return an http URL in pdfData that cannot be
+    // fetched from the browser (private token). The /pdf route is a server
+    // proxy that streams the bytes back as application/pdf after auth, so
+    // the iframe just points at it and both storage backends work.
+    const memberName = `${contract.member.firstName} ${contract.member.lastName}`;
+    setViewingPdf({
+      url: `/api/contracts/${contract.id}/pdf`,
+      title: contract.fileName || `${memberName} - ${contract.planName}.pdf`,
+    });
   }
 
   async function deleteContract(contract: Contract) {
@@ -99,21 +93,17 @@ export default function ContractsPage() {
     }
   }
 
-  async function downloadPdf(contract: Contract) {
-    try {
-      const res = await fetch(`/api/contracts/${contract.id}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      if (!data.contract?.pdfData) { alert("No PDF stored"); return; }
-      const memberName = `${contract.member.firstName} ${contract.member.lastName}`;
-      const fileName = contract.fileName || `${memberName} - ${contract.planName}.pdf`;
-      const link = document.createElement("a");
-      link.href = `data:application/pdf;base64,${data.contract.pdfData}`;
-      link.download = fileName;
-      link.click();
-    } catch {
-      alert("Failed to download");
-    }
+  function downloadPdf(contract: Contract) {
+    // Same-origin proxy URL + the `download` attribute overrides the
+    // response's inline Content-Disposition and saves it with our name.
+    const memberName = `${contract.member.firstName} ${contract.member.lastName}`;
+    const fileName = contract.fileName || `${memberName} - ${contract.planName}.pdf`;
+    const link = document.createElement("a");
+    link.href = `/api/contracts/${contract.id}/pdf`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   return (
@@ -171,10 +161,9 @@ export default function ContractsPage() {
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => viewPdf(c)}
-                          disabled={loadingPdf === c.id}
-                          className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                          className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark"
                         >
-                          {loadingPdf === c.id ? "..." : "View"}
+                          View
                         </button>
                         <button
                           onClick={() => downloadPdf(c)}
