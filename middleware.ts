@@ -173,9 +173,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Check route-level permission
+  // Check route-level permission. OWNER always passes -- they have
+  // full access by definition. This also avoids the "old session
+  // JWT doesn't have a permission key we added after login" trap:
+  // /api/auth/me recomputes permissions for the client, but the
+  // JWT snapshot the middleware sees is still frozen at login time,
+  // so without this bypass an OWNER would get redirected off a new
+  // route (e.g. /setup) until they logged out and back in.
   const requiredPerm = getPermissionForRoute(pathname);
-  if (requiredPerm && !session.permissions.includes(requiredPerm)) {
+  if (
+    requiredPerm &&
+    session.role !== "OWNER" &&
+    !session.permissions.includes(requiredPerm)
+  ) {
     const isApi = pathname.startsWith("/api/");
     if (isApi) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
