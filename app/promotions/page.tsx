@@ -575,22 +575,19 @@ function EligibleTab(props: {
                           </span>
                         )}
                         {/* Latest published test grade for this
-                            (member, style). Only shown once the
-                            admin has clicked Mark Complete on a test
-                            for the same style -- drafts never leak
-                            here because the API filters by
-                            resultsPublishedAt. Gives the admin a
-                            quick "yes / no / mixed" signal alongside
-                            the attendance requirements before they
-                            click Promote. */}
-                        {r.latestTest && (
+                            (member, style). Only rendered when the
+                            coach actually marked the test PASSED or
+                            FAILED -- INCOMPLETE (neither box
+                            checked) leaves the badge off entirely
+                            per the "if neither is checked, no
+                            option" rule, since it isn't a real
+                            promote / don't-promote signal. */}
+                        {r.latestTest && (r.latestTest.status === "PASSED" || r.latestTest.status === "FAILED") && (
                           <span
                             className={`ml-1 inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
                               r.latestTest.status === "PASSED"
                                 ? "bg-green-100 text-green-700"
-                                : r.latestTest.status === "FAILED"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-gray-100 text-gray-600"
+                                : "bg-red-100 text-red-700"
                             }`}
                             title={
                               `Latest test: ${r.latestTest.status}` +
