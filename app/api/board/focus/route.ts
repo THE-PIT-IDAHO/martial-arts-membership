@@ -2,12 +2,19 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 
+// Every method now scopes WeeklyFocus reads / writes by clientId.
+// Before this fix, getClientId was called only for validation and
+// the queries themselves saw the whole platform -- GET returned the
+// most recent active focus from ANY gym, POST deactivated every
+// other gym's active focus, DELETE cleared them all, and CREATE
+// left clientId as the default-client fallback.
+
 // GET /api/board/focus — get the current active weekly focus
 export async function GET(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const focus = await prisma.weeklyFocus.findFirst({
-      where: { isActive: true },
+      where: { isActive: true, clientId },
       orderBy: { createdAt: "desc" },
     });
 
@@ -21,10 +28,11 @@ export async function GET(req: Request) {
         return NextResponse.json({ focus: null });
       }
 
-      // If marked as posted, verify the board post still exists
+      // If marked as posted, verify the board post still exists AND
+      // belongs to the same tenant.
       if (focus.boardPostId) {
-        const postExists = await prisma.boardPost.findUnique({
-          where: { id: focus.boardPostId },
+        const postExists = await prisma.boardPost.findFirst({
+          where: { id: focus.boardPostId, channel: { clientId } },
           select: { id: true },
         });
 
@@ -51,7 +59,7 @@ export async function GET(req: Request) {
 // POST /api/board/focus — create a new weekly focus (deactivates previous)
 export async function POST(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { title, description, videoUrl, rankTestItemId } = body;
 
@@ -59,9 +67,9 @@ export async function POST(req: Request) {
       return new NextResponse("Title is required", { status: 400 });
     }
 
-    // Deactivate all current active focuses
+    // Deactivate current active focuses for THIS tenant only.
     await prisma.weeklyFocus.updateMany({
-      where: { isActive: true },
+      where: { isActive: true, clientId },
       data: { isActive: false },
     });
 
@@ -73,6 +81,7 @@ export async function POST(req: Request) {
         videoUrl: videoUrl?.trim() || null,
         rankTestItemId: rankTestItemId || null,
         isActive: true,
+        clientId,
       },
     });
 
@@ -86,9 +95,9 @@ export async function POST(req: Request) {
 // DELETE /api/board/focus — clear the current weekly focus
 export async function DELETE(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     await prisma.weeklyFocus.updateMany({
-      where: { isActive: true },
+      where: { isActive: true, clientId },
       data: { isActive: false },
     });
 

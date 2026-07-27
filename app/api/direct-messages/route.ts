@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
-// GET /api/direct-messages — list all conversations for admin view
-export async function GET() {
+// GET /api/direct-messages — list conversations for the calling tenant only.
+// Previously returned every conversation on the platform to any admin --
+// a cross-tenant read of member PII + message bodies.
+export async function GET(req: Request) {
   try {
+    const clientId = await getClientId(req);
+
     const conversations = await prisma.directConversation.findMany({
+      where: { clientId },
       include: {
         members: {
           include: {
@@ -19,14 +25,18 @@ export async function GET() {
       orderBy: { updatedAt: "desc" },
     });
 
-    // Get all member IDs across all conversations
+    // Get all member IDs across all conversations (also tenant-scoped
+    // so a rogue foreign memberId on an old row can't leak profile
+    // fields for someone in another gym).
     const allMemberIds = [
       ...new Set(conversations.flatMap((c) => c.members.map((m) => m.memberId))),
     ];
-    const members = await prisma.member.findMany({
-      where: { id: { in: allMemberIds } },
-      select: { id: true, firstName: true, lastName: true, photoUrl: true, status: true, dateOfBirth: true },
-    });
+    const members = allMemberIds.length
+      ? await prisma.member.findMany({
+          where: { id: { in: allMemberIds }, clientId },
+          select: { id: true, firstName: true, lastName: true, photoUrl: true, status: true, dateOfBirth: true },
+        })
+      : [];
     const memberMap = new Map(members.map((m) => [m.id, m]));
 
     // Count unread messages per conversation (member-sent, unread by admin)
@@ -71,6 +81,7 @@ export async function GET() {
 // POST /api/direct-messages — create a new conversation and send first message
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { memberIds, content, membersVisible } = body;
 
@@ -81,11 +92,16 @@ export async function POST(req: Request) {
       return new NextResponse("content is required", { status: 400 });
     }
 
-    // Auto-expand for minors: look up PARENT/GUARDIAN relationships
+    // Verify every provided memberId belongs to this tenant. Prevents
+    // an attacker from creating a conversation attached to members
+    // in another gym.
     const selectedMembers = await prisma.member.findMany({
-      where: { id: { in: memberIds } },
+      where: { id: { in: memberIds }, clientId },
       select: { id: true, dateOfBirth: true, minorCommsMode: true },
     });
+    if (selectedMembers.length !== memberIds.length) {
+      return new NextResponse("One or more memberIds are invalid for this tenant", { status: 400 });
+    }
 
     const finalMemberIds = new Set<string>(memberIds);
 
@@ -96,7 +112,10 @@ export async function POST(req: Request) {
       );
       if (age >= 18) continue;
 
-      // Find PARENT or GUARDIAN relationships where this member is the child
+      // Find PARENT or GUARDIAN relationships where this member is
+      // the child. MemberRelationship has no clientId of its own; we
+      // already verified `member.id` belongs to this tenant above,
+      // so the toMemberId constraint already scopes us implicitly.
       const parentRels = await prisma.memberRelationship.findMany({
         where: {
           OR: [
@@ -118,8 +137,10 @@ export async function POST(req: Request) {
 
     const sortedIds = [...finalMemberIds].sort();
 
-    // Check if a conversation with the exact same member set already exists
+    // Check if a conversation with the exact same member set already
+    // exists WITHIN THIS TENANT. Previously searched every gym.
     const existingConversations = await prisma.directConversation.findMany({
+      where: { clientId },
       include: { members: true },
     });
 
@@ -134,6 +155,7 @@ export async function POST(req: Request) {
     if (!conversation) {
       conversation = await prisma.directConversation.create({
         data: {
+          clientId,
           membersVisible: membersVisible !== false,
           members: {
             create: sortedIds.map((id) => ({ memberId: id })),
@@ -147,6 +169,7 @@ export async function POST(req: Request) {
     await prisma.directMessage.create({
       data: {
         conversationId: conversation.id,
+        clientId,
         senderType: "admin",
         content: content.trim(),
       },

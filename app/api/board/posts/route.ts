@@ -38,7 +38,7 @@ export async function GET(req: Request) {
 // POST /api/board/posts
 export async function POST(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const body = await req.json();
     const {
       type,
@@ -59,6 +59,16 @@ export async function POST(req: Request) {
 
     if (!channelId) {
       return new NextResponse("Channel ID is required", { status: 400 });
+    }
+
+    // Verify the channel belongs to this tenant BEFORE writing. Prevents
+    // posting into another gym's channel by supplying its id.
+    const channel = await prisma.boardChannel.findFirst({
+      where: { id: channelId, clientId },
+      select: { id: true },
+    });
+    if (!channel) {
+      return new NextResponse("Channel not found in this tenant", { status: 404 });
     }
 
     // Create the post with optional files

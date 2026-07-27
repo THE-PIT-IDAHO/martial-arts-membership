@@ -342,8 +342,12 @@ export async function PATCH(req: Request, { params }: Params) {
         oldStyleRanks.set(style.name.toLowerCase(), style.rank);
       }
 
-      // Fetch all styles to get beltConfig (needed for rank order comparison)
+      // Fetch styles for THIS tenant to get beltConfig (needed for
+      // rank order comparison). Previously read every gym's style
+      // catalog and matched by name -- foreign styles with the same
+      // name would silently join in.
       const allStyles = await prisma.style.findMany({
+        where: { clientId },
         select: { name: true, beltConfig: true },
       });
 

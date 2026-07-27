@@ -1,6 +1,27 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
+
+// All handlers verify the parent RankTest belongs to the caller's
+// tenant. RankTest has no clientId of its own -- reach it via
+// rank.style.clientId. Before this fix, all four methods let any
+// authenticated admin read / add / edit / delete categories on any
+// gym's rank test just by passing the ids.
+async function assertRankTestTenant(id: string, clientId: string) {
+  const rt = await prisma.rankTest.findUnique({
+    where: { id },
+    select: { rank: { select: { style: { select: { clientId: true } } } } },
+  });
+  return !!rt && rt.rank?.style?.clientId === clientId;
+}
+async function assertCategoryTenant(categoryId: string, clientId: string) {
+  const cat = await prisma.rankTestCategory.findUnique({
+    where: { id: categoryId },
+    select: { rankTest: { select: { rank: { select: { style: { select: { clientId: true } } } } } } },
+  });
+  return !!cat && cat.rankTest?.rank?.style?.clientId === clientId;
+}
 
 // GET /api/rank-tests/[id]/categories - Get all categories for a rank test
 export async function GET(
@@ -8,7 +29,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
+
+    if (!(await assertRankTestTenant(id, clientId))) {
+      return new NextResponse("Rank test not found", { status: 404 });
+    }
 
     const categories = await prisma.rankTestCategory.findMany({
       where: { rankTestId: id },
@@ -33,12 +59,17 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
     const body = await req.json();
     const { name, description, sortOrder } = body;
 
     if (!name) {
       return new NextResponse("Name is required", { status: 400 });
+    }
+
+    if (!(await assertRankTestTenant(id, clientId))) {
+      return new NextResponse("Rank test not found", { status: 404 });
     }
 
     // Check for duplicate — skip if category with same name already exists on this test.
@@ -98,11 +129,16 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { categoryId, name, description, sortOrder, visibleOnTest } = body;
 
     if (!categoryId) {
       return new NextResponse("categoryId is required", { status: 400 });
+    }
+
+    if (!(await assertCategoryTenant(categoryId, clientId))) {
+      return new NextResponse("Category not found", { status: 404 });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -134,11 +170,16 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const categoryId = searchParams.get("categoryId");
 
     if (!categoryId) {
       return new NextResponse("categoryId is required", { status: 400 });
+    }
+
+    if (!(await assertCategoryTenant(categoryId, clientId))) {
+      return new NextResponse("Category not found", { status: 404 });
     }
 
     await prisma.rankTestCategory.delete({

@@ -1,17 +1,49 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
+
+// All handlers verify the target category / item belongs to the
+// caller's tenant. RankTestItem reaches clientId via
+// category.rankTest.rank.style.clientId. Before this fix all three
+// methods let any admin add / edit / delete items on any gym's
+// curriculum.
+async function assertCategoryTenant(categoryId: string, clientId: string) {
+  const cat = await prisma.rankTestCategory.findUnique({
+    where: { id: categoryId },
+    select: { rankTest: { select: { rank: { select: { style: { select: { clientId: true } } } } } } },
+  });
+  return !!cat && cat.rankTest?.rank?.style?.clientId === clientId;
+}
+async function assertItemTenant(itemId: string, clientId: string) {
+  const item = await prisma.rankTestItem.findUnique({
+    where: { id: itemId },
+    select: {
+      category: {
+        select: {
+          rankTest: { select: { rank: { select: { style: { select: { clientId: true } } } } } },
+        },
+      },
+    },
+  });
+  return !!item && item.category?.rankTest?.rank?.style?.clientId === clientId;
+}
 
 // POST /api/rank-tests/[id]/items - Add an item to a category
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params: _params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { categoryId, name, description, type, required, reps, sets, rounds, roundDuration, duration, distance, timeLimit, timeLimitOperator, videoUrl, imageUrl, showTitleInPdf } = body;
 
     if (!categoryId) {
       return new NextResponse("categoryId is required", { status: 400 });
+    }
+
+    if (!(await assertCategoryTenant(categoryId, clientId))) {
+      return new NextResponse("Category not found", { status: 404 });
     }
 
     // Get count for sort order
@@ -49,14 +81,19 @@ export async function POST(
 // PATCH /api/rank-tests/[id]/items - Update an item
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params: _params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { itemId, name, description, type, required, reps, sets, rounds, roundDuration, duration, distance, timeLimit, timeLimitOperator, videoUrl, imageUrl, sortOrder, showTitleInPdf } = body;
 
     if (!itemId) {
       return new NextResponse("itemId is required", { status: 400 });
+    }
+
+    if (!(await assertItemTenant(itemId, clientId))) {
+      return new NextResponse("Item not found", { status: 404 });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -92,14 +129,19 @@ export async function PATCH(
 // DELETE /api/rank-tests/[id]/items - Delete an item
 export async function DELETE(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params: _params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
     const itemId = searchParams.get("itemId");
 
     if (!itemId) {
       return new NextResponse("itemId is required", { status: 400 });
+    }
+
+    if (!(await assertItemTenant(itemId, clientId))) {
+      return new NextResponse("Item not found", { status: 404 });
     }
 
     await prisma.rankTestItem.delete({

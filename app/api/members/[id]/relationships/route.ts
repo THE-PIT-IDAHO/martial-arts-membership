@@ -115,6 +115,18 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     );
   }
 
+  // Verify targetMember also belongs to this tenant. Without this,
+  // a caller could create a MemberRelationship pointing at a member
+  // in another gym, which would then leak private profile data via
+  // the sibling-expansion loop below (it reads across relations).
+  const targetCheck = await prisma.member.findUnique({
+    where: { id: targetMemberId },
+    select: { clientId: true },
+  });
+  if (!targetCheck || targetCheck.clientId !== clientId) {
+    return NextResponse.json({ error: "Target member not found" }, { status: 404 });
+  }
+
   // Determine canonical relationship + direction
   let rel = relationship as string;
 
@@ -242,6 +254,14 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       { error: "Relationship not found" },
       { status: 404 }
     );
+  }
+
+  // Require the relationship to actually involve THIS member (whose
+  // tenant we already verified). Prevents a call at
+  // /api/members/<mine>/relationships from body-supplying an id that
+  // deletes an unrelated relationship in another gym.
+  if (rel.fromMemberId !== memberId && rel.toMemberId !== memberId) {
+    return NextResponse.json({ error: "Relationship not found" }, { status: 404 });
   }
 
   await prisma.memberRelationship.delete({ where: { id } });

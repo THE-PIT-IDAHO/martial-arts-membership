@@ -3,10 +3,17 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { getGymTimezone, getDayOfWeekInTimezone, getLocalParts, localMidnightUtc, formatDateInTimezone } from "@/lib/dates";
 
+// All methods scope by clientId now. Before this fix:
+//   * POST would pin the "first type:all channel" (any tenant), grab
+//     the most recent active WeeklyFocus (any tenant), and create a
+//     BoardPost with no clientId.
+//   * PATCH updated any tenant's posted focus + its board post.
+//   * DELETE deleted any tenant's posted focus + board post.
+
 // POST /api/board/focus/post — post the active focus to the board feed
 export async function POST(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { pinnedUntilDay, pinnedUntilHour, channelId } = body;
 
@@ -18,7 +25,7 @@ export async function POST(req: Request) {
     }
 
     const focus = await prisma.weeklyFocus.findFirst({
-      where: { isActive: true },
+      where: { isActive: true, clientId },
       orderBy: { createdAt: "desc" },
     });
 
@@ -28,7 +35,7 @@ export async function POST(req: Request) {
 
     // Calculate the next occurrence of the chosen weekday+hour in gym TZ
     const now = new Date();
-    const tz = await getGymTimezone();
+    const tz = await getGymTimezone(clientId);
     const localNow = getLocalParts(now, tz);
     const currentDay = getDayOfWeekInTimezone(now, tz);
     let daysUntil = pinnedUntilDay - currentDay;
@@ -42,11 +49,20 @@ export async function POST(req: Request) {
     const targetLocalYmd = formatDateInTimezone(new Date(targetLocalMs), tz);
     const pinnedUntil = new Date(localMidnightUtc(targetLocalYmd, tz) + pinnedUntilHour * 60 * 60 * 1000);
 
-    // Find the target channel
-    let targetChannelId = channelId;
-    if (!targetChannelId) {
+    // Find the target channel -- must belong to this tenant. Prevents
+    // posting into another gym's channel by supplying its id.
+    let targetChannelId = channelId as string | undefined;
+    if (targetChannelId) {
+      const ch = await prisma.boardChannel.findFirst({
+        where: { id: targetChannelId, clientId },
+        select: { id: true },
+      });
+      if (!ch) {
+        return new NextResponse("Channel not found in this tenant", { status: 404 });
+      }
+    } else {
       const allChannel = await prisma.boardChannel.findFirst({
-        where: { type: "all" },
+        where: { type: "all", clientId },
       });
       if (allChannel) targetChannelId = allChannel.id;
     }
@@ -62,7 +78,7 @@ export async function POST(req: Request) {
       content += `Video: ${focus.videoUrl}`;
     }
 
-    // Create the board post
+    // Create the board post (tenant scoping comes from the channel).
     const post = await prisma.boardPost.create({
       data: {
         type: "notice",
@@ -96,7 +112,7 @@ export async function POST(req: Request) {
 // PATCH /api/board/focus/post — update the pin time on an already-posted focus
 export async function PATCH(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { pinnedUntilDay, pinnedUntilHour } = body;
 
@@ -105,12 +121,21 @@ export async function PATCH(req: Request) {
     }
 
     const focus = await prisma.weeklyFocus.findFirst({
-      where: { isActive: true, postedAt: { not: null } },
+      where: { isActive: true, postedAt: { not: null }, clientId },
       orderBy: { createdAt: "desc" },
     });
 
     if (!focus || !focus.boardPostId) {
       return new NextResponse("No posted focus to update", { status: 404 });
+    }
+
+    // Verify board post belongs to this tenant before updating.
+    const post = await prisma.boardPost.findFirst({
+      where: { id: focus.boardPostId, channel: { clientId } },
+      select: { id: true },
+    });
+    if (!post) {
+      return new NextResponse("Posted focus not found", { status: 404 });
     }
 
     // Calculate the next occurrence of the chosen weekday+hour
@@ -147,9 +172,9 @@ export async function PATCH(req: Request) {
 // DELETE /api/board/focus/post — unpost the focus from the board
 export async function DELETE(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const focus = await prisma.weeklyFocus.findFirst({
-      where: { isActive: true, postedAt: { not: null } },
+      where: { isActive: true, postedAt: { not: null }, clientId },
       orderBy: { createdAt: "desc" },
     });
 
@@ -157,12 +182,18 @@ export async function DELETE(req: Request) {
       return new NextResponse("No posted focus to remove", { status: 404 });
     }
 
-    // Delete the board post
-    await prisma.boardPost.delete({
-      where: { id: focus.boardPostId },
-    }).catch(() => {
-      // Post may already be deleted
+    // Verify tenant ownership before deleting the board post.
+    const post = await prisma.boardPost.findFirst({
+      where: { id: focus.boardPostId, channel: { clientId } },
+      select: { id: true },
     });
+    if (post) {
+      await prisma.boardPost.delete({
+        where: { id: focus.boardPostId },
+      }).catch(() => {
+        // Post may already be deleted
+      });
+    }
 
     // Clear posted state
     await prisma.weeklyFocus.update({

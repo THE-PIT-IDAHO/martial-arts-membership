@@ -41,7 +41,7 @@ export async function GET(req: Request) {
 // POST /api/board/polls
 export async function POST(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const body = await req.json();
     const {
       question,
@@ -64,6 +64,17 @@ export async function POST(req: Request) {
 
     if (!options || !Array.isArray(options) || options.length < 2) {
       return new NextResponse("At least 2 options are required", { status: 400 });
+    }
+
+    // Verify the channel belongs to this tenant. BoardPoll reaches
+    // clientId via channel, so blocking a foreign channelId here is
+    // what prevents cross-tenant poll injection.
+    const channel = await prisma.boardChannel.findFirst({
+      where: { id: channelId, clientId },
+      select: { id: true },
+    });
+    if (!channel) {
+      return new NextResponse("Channel not found in this tenant", { status: 404 });
     }
 
     // Create the poll with options

@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
+
+// Every handler here verifies conversation.clientId matches the
+// caller's tenant. Before the fix, all three methods (GET / POST /
+// PATCH) were completely open -- an admin in gym A could read,
+// post to, and mark-read any conversation in gym B just by knowing
+// (or guessing) the id.
 
 // GET /api/direct-messages/[conversationId] — fetch conversation thread
 export async function GET(
@@ -7,6 +14,7 @@ export async function GET(
   { params }: { params: Promise<{ conversationId: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { conversationId } = await params;
 
     const conversation = await prisma.directConversation.findUnique({
@@ -16,7 +24,7 @@ export async function GET(
       },
     });
 
-    if (!conversation) {
+    if (!conversation || conversation.clientId !== clientId) {
       return new NextResponse("Conversation not found", { status: 404 });
     }
 
@@ -25,22 +33,25 @@ export async function GET(
       orderBy: { createdAt: "asc" },
     });
 
-    // Fetch member details
+    // Fetch member details -- scoped so a stray member row on the
+    // conversation from another tenant can't leak profile data.
     const memberIds = conversation.members.map((m) => m.memberId);
-    const members = await prisma.member.findMany({
-      where: { id: { in: memberIds } },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        photoUrl: true,
-        status: true,
-        email: true,
-        phone: true,
-        dateOfBirth: true,
-        minorCommsMode: true,
-      },
-    });
+    const members = memberIds.length
+      ? await prisma.member.findMany({
+          where: { id: { in: memberIds }, clientId },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            photoUrl: true,
+            status: true,
+            email: true,
+            phone: true,
+            dateOfBirth: true,
+            minorCommsMode: true,
+          },
+        })
+      : [];
 
     return NextResponse.json({
       messages,
@@ -59,6 +70,7 @@ export async function POST(
   { params }: { params: Promise<{ conversationId: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { conversationId } = await params;
     const body = await req.json();
     const { senderType, senderId, content } = body;
@@ -70,9 +82,18 @@ export async function POST(
       return new NextResponse("content is required", { status: 400 });
     }
 
+    const conversation = await prisma.directConversation.findUnique({
+      where: { id: conversationId },
+      select: { clientId: true },
+    });
+    if (!conversation || conversation.clientId !== clientId) {
+      return new NextResponse("Conversation not found", { status: 404 });
+    }
+
     const message = await prisma.directMessage.create({
       data: {
         conversationId,
+        clientId,
         senderType,
         senderId: senderId || null,
         content: content.trim(),
@@ -97,7 +118,16 @@ export async function PATCH(
   { params }: { params: Promise<{ conversationId: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { conversationId } = await params;
+
+    const conversation = await prisma.directConversation.findUnique({
+      where: { id: conversationId },
+      select: { clientId: true },
+    });
+    if (!conversation || conversation.clientId !== clientId) {
+      return new NextResponse("Conversation not found", { status: 404 });
+    }
 
     await prisma.directMessage.updateMany({
       where: {

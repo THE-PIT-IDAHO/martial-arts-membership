@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendPromotionCongratsEmail } from "@/lib/notifications";
 import { addRankPdfsToMember } from "@/lib/belt-config";
+import { getClientId } from "@/lib/tenant";
 
 type MemberStyle = {
   name: string;
@@ -18,11 +19,14 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
     const body = await req.json();
     const { participantIds, promotionDate } = body;
 
-    // Get the event with participants
+    // Get the event with participants -- must belong to this tenant.
+    // Legacy endpoint used to load any gym's event by id and mutate
+    // its members.
     const event = await prisma.promotionEvent.findUnique({
       where: { id },
       include: {
@@ -30,7 +34,7 @@ export async function POST(
       },
     });
 
-    if (!event) {
+    if (!event || event.clientId !== clientId) {
       return new NextResponse("Promotion event not found", { status: 404 });
     }
 
@@ -59,10 +63,12 @@ export async function POST(
     const promotedDate = promotionDate || new Date().toISOString().split("T")[0];
     const results: { memberId: string; memberName: string; success: boolean; error?: string }[] = [];
 
-    // Batch-load all members up front to avoid an N+1 query inside the loop.
+    // Batch-load all members up front to avoid an N+1 query inside
+    // the loop. Scoped to the tenant so a stray foreign memberId on
+    // a participant row can't reach into another gym's member data.
     const memberIds = Array.from(new Set(participantsToPromote.map((p) => p.memberId)));
     const memberRows = await prisma.member.findMany({
-      where: { id: { in: memberIds } },
+      where: { id: { in: memberIds }, clientId },
       select: { id: true, stylesNotes: true, primaryStyle: true, styleDocuments: true },
     });
     const memberMap = new Map(memberRows.map((m) => [m.id, m]));

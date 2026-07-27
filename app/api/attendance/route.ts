@@ -241,11 +241,22 @@ export async function DELETE(req: Request) {
     const dateStr = searchParams.get("date");
 
     if (id) {
-      // Look up the attendance record first so we can cancel the matching booking
+      // Look up the attendance record first so we can cancel the matching
+      // booking AND verify the row's member belongs to this tenant.
+      // Without the tenant check, `?id=xxx` let anyone delete any
+      // attendance row on the platform.
       const att = await prisma.attendance.findUnique({
         where: { id },
-        select: { memberId: true, classSessionId: true, attendanceDate: true },
+        select: {
+          memberId: true,
+          classSessionId: true,
+          attendanceDate: true,
+          member: { select: { clientId: true } },
+        },
       });
+      if (!att || att.member?.clientId !== clientId) {
+        return new NextResponse("Attendance not found", { status: 404 });
+      }
 
       await prisma.attendance.delete({
         where: { id },

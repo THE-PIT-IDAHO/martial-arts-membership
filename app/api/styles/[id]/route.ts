@@ -172,7 +172,17 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   const { id } = await params;
 
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
+    // Verify the style being updated belongs to this tenant. Before
+    // this fix, getClientId was called for its side effect only and
+    // any admin could overwrite beltConfig on any gym's style.
+    const existing = await prisma.style.findUnique({
+      where: { id },
+      select: { clientId: true },
+    });
+    if (!existing || existing.clientId !== clientId) {
+      return new NextResponse("Style not found", { status: 404 });
+    }
     const body = await req.json();
     const { name, shortName, description, beltSystemEnabled, beltConfig, gradingDates, testNamingConvention, curriculumDisclaimer, promotionFeeCents, showProgressInPortal } = body;
 
@@ -332,20 +342,25 @@ export async function DELETE(_req: Request, { params }: RouteParams) {
   const { id } = await params;
 
   try {
-    await getClientId(_req); // validate tenant
-    // First, get the style name before deleting
+    const clientId = await getClientId(_req);
+    // Verify tenant ownership before deleting. Previously the tenant
+    // check was skipped AND the member sync below matched by style
+    // name across ALL tenants -- so deleting our "Kempo" style also
+    // stripped the primaryStyle / stylesNotes of every Kempo student
+    // in every other gym on the platform.
     const style = await prisma.style.findUnique({
       where: { id },
-      select: { name: true },
+      select: { name: true, clientId: true },
     });
 
-    if (!style) {
+    if (!style || style.clientId !== clientId) {
       return new NextResponse("Style not found", { status: 404 });
     }
 
-    // Get all members who might have this style
+    // Get all members WITHIN THIS TENANT who might have this style.
     const members = await prisma.member.findMany({
       where: {
+        clientId,
         OR: [
           { primaryStyle: style.name },
           { stylesNotes: { contains: style.name } },

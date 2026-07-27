@@ -55,9 +55,12 @@ export async function POST(req: Request) {
       } catch { /* ignore parse errors */ }
     }
 
-    // Update all styles' beltConfig that reference the old class type
+    // Update all styles' beltConfig that reference the old class type.
+    // Scoped to this tenant -- previously mutated every gym's beltConfig
+    // whose ranks happened to reference the same label.
     const styles = await prisma.style.findMany({
       where: {
+        clientId,
         beltConfig: {
           not: null,
         },

@@ -185,12 +185,15 @@ export async function PATCH(req: Request, { params }: Params) {
       }
     }
 
-    // If classType was changed, update all styles' beltConfig that reference the old class type
+    // If classType was changed, update all styles' beltConfig that
+    // reference the old class type. Scoped to this tenant --
+    // previously the migration ran over every gym's styles whose
+    // beltConfig JSON happened to reference the same label.
     const newClassType = classType?.trim() || null;
     if (oldClassType && newClassType && oldClassType !== newClassType) {
-      // Find all styles with beltConfig that might contain classRequirements
       const styles = await prisma.style.findMany({
         where: {
+          clientId,
           beltConfig: {
             not: null,
           },

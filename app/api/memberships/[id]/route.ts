@@ -17,13 +17,17 @@ import {
 // Any style not covered by an active/canceled membership should be inactive
 // Rank documents are removed for inactive styles and added for active styles
 async function syncMemberStyles(memberId: string) {
-  // Get member's current styles and documents
+  // Get member's current styles and documents (also the tenant id
+  // so every Style.findMany below stays scoped to this gym --
+  // otherwise "allowedStyles: null" plans pulled the full platform
+  // style catalog into the member's stylesNotes).
   const member = await prisma.member.findUnique({
     where: { id: memberId },
-    select: { stylesNotes: true, styleDocuments: true },
+    select: { clientId: true, stylesNotes: true, styleDocuments: true },
   });
 
   if (!member?.stylesNotes) return;
+  const clientId = member.clientId;
 
   // Get all active/canceled memberships for this member (NOT paused - paused = inactive)
   const activeMemberships = await prisma.membership.findMany({
@@ -56,11 +60,12 @@ async function syncMemberStyles(memberId: string) {
   let coveredStyles: Array<{ id: string; name: string; beltConfig: string | null }> = [];
   if (coversAllStyles) {
     coveredStyles = await prisma.style.findMany({
+      where: { clientId },
       select: { id: true, name: true, beltConfig: true },
     });
   } else if (coveredStyleIds.length > 0) {
     coveredStyles = await prisma.style.findMany({
-      where: { id: { in: Array.from(new Set(coveredStyleIds)) } },
+      where: { id: { in: Array.from(new Set(coveredStyleIds)) }, clientId },
       select: { id: true, name: true, beltConfig: true },
     });
   }
@@ -120,9 +125,11 @@ async function syncMemberStyles(memberId: string) {
     return style;
   });
 
-  // Remove rank documents for styles that became inactive
-  // Fetch all styles once for efficient lookup
+  // Remove rank documents for styles that became inactive.
+  // Scoped to this tenant so we don't pull foreign style rows into
+  // the lookup and accidentally match them by name.
   const allStyles = await prisma.style.findMany({
+    where: { clientId },
     select: { name: true, beltConfig: true },
   });
 
@@ -209,10 +216,13 @@ async function setAttendanceResetDate(memberId: string, styleNames: string[]) {
   }
 }
 
-// Helper function to get style names covered by a membership plan
-async function getStyleNamesForMembership(membershipPlanId: string): Promise<string[]> {
-  const plan = await prisma.membershipPlan.findUnique({
-    where: { id: membershipPlanId },
+// Helper function to get style names covered by a membership plan.
+// Takes the tenant explicitly so every downstream Style query stays
+// scoped -- otherwise a plan with allowedStyles=null returned the
+// entire platform's style catalog.
+async function getStyleNamesForMembership(membershipPlanId: string, clientId: string): Promise<string[]> {
+  const plan = await prisma.membershipPlan.findFirst({
+    where: { id: membershipPlanId, clientId },
     select: { allowedStyles: true },
   });
 
@@ -222,15 +232,16 @@ async function getStyleNamesForMembership(membershipPlanId: string): Promise<str
     const styleIds: string[] = JSON.parse(plan.allowedStyles);
     if (styleIds.length > 0) {
       const styles = await prisma.style.findMany({
-        where: { id: { in: styleIds } },
+        where: { id: { in: styleIds }, clientId },
         select: { name: true },
       });
       return styles.map(s => s.name);
     }
     return [];
   } else {
-    // allowedStyles is null - this plan covers ALL styles
+    // allowedStyles is null - this plan covers ALL styles for the tenant
     const allStyles = await prisma.style.findMany({
+      where: { clientId },
       select: { name: true },
     });
     return allStyles.map(s => s.name);
@@ -318,9 +329,12 @@ export async function PATCH(
         return new NextResponse("Membership not found", { status: 404 });
       }
 
-      // Get the new plan with allowedStyles
-      const newPlan = await prisma.membershipPlan.findUnique({
-        where: { id: membershipPlanId },
+      // Get the new plan with allowedStyles. Scoped to this tenant
+      // so a hand-crafted PATCH can't repoint a membership at
+      // another gym's plan (auto-billing would then charge that
+      // plan's price next cycle).
+      const newPlan = await prisma.membershipPlan.findFirst({
+        where: { id: membershipPlanId, clientId },
         select: { id: true, billingCycle: true, priceCents: true, allowedStyles: true },
       });
 
@@ -362,9 +376,11 @@ export async function PATCH(
           const includedStyleIds: string[] = JSON.parse(newPlan.allowedStyles);
 
           if (includedStyleIds.length > 0) {
-            // Get the styles with their beltConfig
+            // Get the styles with their beltConfig, scoped to this
+            // tenant so a malformed allowedStyles list can't reach a
+            // Style row in another gym.
             const stylesWithConfig = await prisma.style.findMany({
-              where: { id: { in: includedStyleIds } },
+              where: { id: { in: includedStyleIds }, clientId },
               select: { id: true, name: true, beltConfig: true },
             });
 
@@ -872,7 +888,7 @@ export async function PATCH(
 
           // PAUSED or EXPIRED: Reset attendance for rank requirements for affected styles
           // This ensures attendance count starts fresh when membership is reinstated
-          const affectedStyleNames = await getStyleNamesForMembership(membership.membershipPlanId);
+          const affectedStyleNames = await getStyleNamesForMembership(membership.membershipPlanId, clientId);
           if (affectedStyleNames.length > 0) {
             await setAttendanceResetDate(membership.memberId, affectedStyleNames);
           }
@@ -1010,7 +1026,7 @@ export async function DELETE(
         });
 
         // Reset attendance for rank requirements for affected styles
-        const affectedStyleNames = await getStyleNamesForMembership(membership.membershipPlanId);
+        const affectedStyleNames = await getStyleNamesForMembership(membership.membershipPlanId, clientId);
         if (affectedStyleNames.length > 0) {
           await setAttendanceResetDate(memberId, affectedStyleNames);
         }

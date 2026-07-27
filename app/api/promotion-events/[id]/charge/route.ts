@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
 // POST /api/promotion-events/[id]/charge - Charge promotion fee to participants
 export async function POST(
@@ -7,11 +8,14 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const clientId = await getClientId(req);
     const { id } = await params;
     const body = await req.json();
     const { participantIds, paymentMethod = "ACCOUNT" } = body;
 
-    // Get the event with cost
+    // Get the event with cost -- must belong to this tenant. Before
+    // the fix, any authenticated admin could charge participants of
+    // any gym's promotion event.
     const event = await prisma.promotionEvent.findUnique({
       where: { id },
       include: {
@@ -19,7 +23,7 @@ export async function POST(
       },
     });
 
-    if (!event) {
+    if (!event || event.clientId !== clientId) {
       return new NextResponse("Promotion event not found", { status: 404 });
     }
 
@@ -88,6 +92,7 @@ export async function POST(
             totalCents: finalCents,
             paymentMethod,
             notes: `Promotion fee for ${event.name} - ${event.styleName}${discountPercent > 0 ? ` (${discountPercent}% membership discount)` : ""}`,
+            clientId,
             updatedAt: new Date(),
             POSLineItem: {
               create: {
