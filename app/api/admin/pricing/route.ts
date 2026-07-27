@@ -63,20 +63,31 @@ export async function PATCH(req: Request) {
     const { id, ...fields } = body;
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
+    // Blank/empty input on any limit field means "unlimited" here
+    // (mirrors POST). Before this fix, PATCH did `parseInt("") || 10`
+    // which reset unlimited tiers -- e.g. Founder -- to trial defaults
+    // whenever the edit form was saved, because openEdit renders
+    // 999999 as an empty input.
+    const asLimit = (raw: unknown): number => {
+      if (raw === undefined || raw === null || raw === "") return 999999;
+      const n = parseInt(String(raw));
+      return Number.isFinite(n) && n > 0 ? n : 999999;
+    };
+
     const data: Record<string, unknown> = {};
     if (fields.name !== undefined) data.name = fields.name;
     if (fields.description !== undefined) data.description = fields.description || null;
     if (fields.priceCents !== undefined) data.priceCents = parseInt(fields.priceCents) || 0;
     if (fields.billingPeriod !== undefined) data.billingPeriod = fields.billingPeriod;
-    if (fields.maxMembers !== undefined) data.maxMembers = parseInt(fields.maxMembers) || 10;
-    if (fields.maxStyles !== undefined) data.maxStyles = parseInt(fields.maxStyles) || 3;
-    if (fields.maxRanksPerStyle !== undefined) data.maxRanksPerStyle = parseInt(fields.maxRanksPerStyle) || 10;
-    if (fields.maxMembershipPlans !== undefined) data.maxMembershipPlans = parseInt(fields.maxMembershipPlans) || 3;
-    if (fields.maxClasses !== undefined) data.maxClasses = parseInt(fields.maxClasses) || 5;
-    if (fields.maxUsers !== undefined) data.maxUsers = parseInt(fields.maxUsers) || 2;
-    if (fields.maxLocations !== undefined) data.maxLocations = parseInt(fields.maxLocations) || 1;
-    if (fields.maxReports !== undefined) data.maxReports = parseInt(fields.maxReports) || 3;
-    if (fields.maxPOSItems !== undefined) data.maxPOSItems = parseInt(fields.maxPOSItems) || 10;
+    if (fields.maxMembers !== undefined) data.maxMembers = asLimit(fields.maxMembers);
+    if (fields.maxStyles !== undefined) data.maxStyles = asLimit(fields.maxStyles);
+    if (fields.maxRanksPerStyle !== undefined) data.maxRanksPerStyle = asLimit(fields.maxRanksPerStyle);
+    if (fields.maxMembershipPlans !== undefined) data.maxMembershipPlans = asLimit(fields.maxMembershipPlans);
+    if (fields.maxClasses !== undefined) data.maxClasses = asLimit(fields.maxClasses);
+    if (fields.maxUsers !== undefined) data.maxUsers = asLimit(fields.maxUsers);
+    if (fields.maxLocations !== undefined) data.maxLocations = asLimit(fields.maxLocations);
+    if (fields.maxReports !== undefined) data.maxReports = asLimit(fields.maxReports);
+    if (fields.maxPOSItems !== undefined) data.maxPOSItems = asLimit(fields.maxPOSItems);
     if (fields.allowStripe !== undefined) data.allowStripe = !!fields.allowStripe;
     if (fields.allowPaypal !== undefined) data.allowPaypal = !!fields.allowPaypal;
     if (fields.allowSquare !== undefined) data.allowSquare = !!fields.allowSquare;
