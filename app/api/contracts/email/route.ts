@@ -61,6 +61,9 @@ export async function POST(req: Request) {
           content: base64Content,
         },
       ],
+      clientId,
+      memberId,
+      eventType: "CONTRACT_EMAIL",
     });
 
     return NextResponse.json({ sent });

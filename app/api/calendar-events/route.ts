@@ -22,6 +22,7 @@ export async function GET(req: Request) {
 // POST /api/calendar-events
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const {
       title, description,
@@ -33,6 +34,17 @@ export async function POST(req: Request) {
 
     if (!title) {
       return new NextResponse("Title is required", { status: 400 });
+    }
+
+    // Verify locationId + spaceId belong to this tenant before create
+    // so the row doesn't carry dangling FKs into another gym's data.
+    if (locationId) {
+      const l = await prisma.location.findUnique({ where: { id: locationId }, select: { clientId: true } });
+      if (!l || l.clientId !== clientId) return new NextResponse("Location not found in this tenant", { status: 400 });
+    }
+    if (spaceId) {
+      const s = await prisma.space.findUnique({ where: { id: spaceId }, select: { clientId: true } });
+      if (!s || s.clientId !== clientId) return new NextResponse("Space not found in this tenant", { status: 400 });
     }
 
     const event = await prisma.calendarEvent.create({
@@ -52,7 +64,7 @@ export async function POST(req: Request) {
         locationId: locationId || null,
         spaceId: spaceId || null,
         notes: notes?.trim() || null,
-        clientId: await getClientId(req),
+        clientId,
       },
     });
 

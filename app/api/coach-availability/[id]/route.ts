@@ -33,6 +33,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       }
     }
 
+    // Verify any repointed FK still points at THIS tenant. Without
+    // this, PATCH could switch the row's coach/appointment/location/
+    // space to another gym's record.
+    if (body.coachId) {
+      const c = await prisma.member.findUnique({ where: { id: body.coachId }, select: { clientId: true } });
+      if (!c || c.clientId !== clientId) return new NextResponse("Coach not found in this tenant", { status: 400 });
+    }
+    if (body.appointmentId) {
+      const a = await prisma.appointment.findUnique({ where: { id: body.appointmentId }, select: { clientId: true } });
+      if (!a || a.clientId !== clientId) return new NextResponse("Appointment not found in this tenant", { status: 400 });
+    }
+    if (body.locationId) {
+      const l = await prisma.location.findUnique({ where: { id: body.locationId }, select: { clientId: true } });
+      if (!l || l.clientId !== clientId) return new NextResponse("Location not found in this tenant", { status: 400 });
+    }
+    if (body.spaceId) {
+      const s = await prisma.space.findUnique({ where: { id: body.spaceId }, select: { clientId: true } });
+      if (!s || s.clientId !== clientId) return new NextResponse("Space not found in this tenant", { status: 400 });
+    }
+
     const availability = await prisma.coachAvailability.update({
       where: { id },
       data,

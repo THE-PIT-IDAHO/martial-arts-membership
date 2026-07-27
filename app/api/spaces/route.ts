@@ -27,6 +27,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
+    // Verify locationId belongs to this tenant before creating the
+    // space so the row doesn't end up with a dangling FK.
+    if (locationId) {
+      const l = await prisma.location.findUnique({ where: { id: locationId }, select: { clientId: true } });
+      if (!l || l.clientId !== clientId) {
+        return NextResponse.json({ error: "Location not found in this tenant" }, { status: 400 });
+      }
+    }
+
     const space = await prisma.space.create({
       data: {
         name: name.trim(),

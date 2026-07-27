@@ -678,7 +678,7 @@ export async function sendLowStockAlertEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [gymEmail], subject, html });
+  await sendEmail({ to: [gymEmail], subject, html, clientId: params.clientId, eventType: "LOW_STOCK" });
 }
 
 // --- 15. Dunning / Payment Retry ---
@@ -750,7 +750,7 @@ export async function sendPromotionEligibilityAlertEmail(params: {
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [gymEmail], subject, html });
+  await sendEmail({ to: [gymEmail], subject, html, clientId: params.clientId, eventType: "PROMOTION_ELIGIBLE" });
 }
 
 // --- 17. Birthday Email ---

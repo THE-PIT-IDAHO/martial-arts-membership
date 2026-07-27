@@ -21,6 +21,18 @@ export async function POST(request: Request) {
       );
     }
 
+    // Verify memberId belongs to this tenant before creating the row.
+    // Without this, an admin can POST a foreign gym's memberId and
+    // the SignedWaiver ends up stamped clientId=A but memberId FK -> B
+    // (dangling cross-tenant relationship; audit log leaks the id).
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { clientId: true },
+    });
+    if (!member || member.clientId !== clientId) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+
     // Get template (or use default) — scoped to this tenant. Without
     // the clientId guard, a member could sign a template that belongs
     // to a different gym entirely.

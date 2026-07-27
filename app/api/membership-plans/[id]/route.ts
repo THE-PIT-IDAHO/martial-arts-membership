@@ -162,9 +162,12 @@ export async function PATCH(
           },
         });
 
-        // Get the styles with their first rank
+        // Get the styles with their first rank -- scoped to this
+        // tenant so a caller can't smuggle a foreign styleId into
+        // the plan's allowedStyles and have it copied onto current
+        // members' stylesNotes.
         const stylesWithRanks = await prisma.style.findMany({
-          where: { id: { in: includedStyleIds } },
+          where: { id: { in: includedStyleIds }, clientId },
           include: {
             ranks: {
               orderBy: { order: "asc" },

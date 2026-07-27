@@ -40,6 +40,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       }
     }
 
+    // Verify repointed locationId / spaceId still belongs to this
+    // tenant so PATCH can't reassign to another gym's row.
+    if (body.locationId) {
+      const l = await prisma.location.findUnique({ where: { id: body.locationId }, select: { clientId: true } });
+      if (!l || l.clientId !== clientId) return new NextResponse("Location not found in this tenant", { status: 400 });
+    }
+    if (body.spaceId) {
+      const s = await prisma.space.findUnique({ where: { id: body.spaceId }, select: { clientId: true } });
+      if (!s || s.clientId !== clientId) return new NextResponse("Space not found in this tenant", { status: 400 });
+    }
+
     const event = await prisma.calendarEvent.update({
       where: { id },
       data,

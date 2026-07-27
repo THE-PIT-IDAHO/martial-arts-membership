@@ -34,6 +34,32 @@ export async function POST(req: Request) {
       return new NextResponse("Coach, start time, and end time are required", { status: 400 });
     }
 
+    // Verify every body FK belongs to this tenant. Otherwise the row
+    // ends up with foreign coach/appointment/location/space FKs and
+    // your calendar renders another gym's coach.
+    const coach = await prisma.member.findUnique({ where: { id: coachId }, select: { clientId: true } });
+    if (!coach || coach.clientId !== clientId) {
+      return new NextResponse("Coach not found in this tenant", { status: 400 });
+    }
+    if (appointmentId) {
+      const a = await prisma.appointment.findUnique({ where: { id: appointmentId }, select: { clientId: true } });
+      if (!a || a.clientId !== clientId) {
+        return new NextResponse("Appointment not found in this tenant", { status: 400 });
+      }
+    }
+    if (locationId) {
+      const l = await prisma.location.findUnique({ where: { id: locationId }, select: { clientId: true } });
+      if (!l || l.clientId !== clientId) {
+        return new NextResponse("Location not found in this tenant", { status: 400 });
+      }
+    }
+    if (spaceId) {
+      const s = await prisma.space.findUnique({ where: { id: spaceId }, select: { clientId: true } });
+      if (!s || s.clientId !== clientId) {
+        return new NextResponse("Space not found in this tenant", { status: 400 });
+      }
+    }
+
     const availability = await prisma.coachAvailability.create({
       data: {
         coachId,
