@@ -72,18 +72,27 @@ export async function PATCH(req: Request) {
     const { id, ...fields } = body;
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-    const parse = (v: unknown, def: number) => v !== undefined && v !== "" ? parseInt(String(v)) || def : undefined;
+    // Blank / missing / non-positive means "unlimited" (999999),
+    // matching the POST handler + the edit form's blank-placeholder
+    // UX. The old behavior returned undefined for blank input which
+    // Prisma treats as skip, so you couldn't CLEAR a limit to make
+    // a link unlimited from the edit form.
+    const asLimit = (raw: unknown): number => {
+      if (raw === undefined || raw === null || raw === "") return 999999;
+      const n = parseInt(String(raw));
+      return Number.isFinite(n) && n > 0 ? n : 999999;
+    };
     const data: Record<string, unknown> = {};
 
-    if (fields.maxMembers !== undefined) data.maxMembers = parse(fields.maxMembers, 10);
-    if (fields.maxStyles !== undefined) data.maxStyles = parse(fields.maxStyles, 3);
-    if (fields.maxRanksPerStyle !== undefined) data.maxRanksPerStyle = parse(fields.maxRanksPerStyle, 10);
-    if (fields.maxMembershipPlans !== undefined) data.maxMembershipPlans = parse(fields.maxMembershipPlans, 3);
-    if (fields.maxClasses !== undefined) data.maxClasses = parse(fields.maxClasses, 5);
-    if (fields.maxUsers !== undefined) data.maxUsers = parse(fields.maxUsers, 2);
-    if (fields.maxLocations !== undefined) data.maxLocations = parse(fields.maxLocations, 1);
-    if (fields.maxReports !== undefined) data.maxReports = parse(fields.maxReports, 3);
-    if (fields.maxPOSItems !== undefined) data.maxPOSItems = parse(fields.maxPOSItems, 10);
+    if (fields.maxMembers !== undefined) data.maxMembers = asLimit(fields.maxMembers);
+    if (fields.maxStyles !== undefined) data.maxStyles = asLimit(fields.maxStyles);
+    if (fields.maxRanksPerStyle !== undefined) data.maxRanksPerStyle = asLimit(fields.maxRanksPerStyle);
+    if (fields.maxMembershipPlans !== undefined) data.maxMembershipPlans = asLimit(fields.maxMembershipPlans);
+    if (fields.maxClasses !== undefined) data.maxClasses = asLimit(fields.maxClasses);
+    if (fields.maxUsers !== undefined) data.maxUsers = asLimit(fields.maxUsers);
+    if (fields.maxLocations !== undefined) data.maxLocations = asLimit(fields.maxLocations);
+    if (fields.maxReports !== undefined) data.maxReports = asLimit(fields.maxReports);
+    if (fields.maxPOSItems !== undefined) data.maxPOSItems = asLimit(fields.maxPOSItems);
     if (fields.trialMonths !== undefined) data.trialMonths = fields.trialMonths !== "" ? parseInt(fields.trialMonths) || 0 : 0;
     if (fields.grantsTierId !== undefined) data.grantsTierId = fields.grantsTierId || null;
     if (fields.note !== undefined) data.note = fields.note?.trim() || null;

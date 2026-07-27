@@ -65,6 +65,9 @@ export default function ManageGymsPage() {
   const [linkNote, setLinkNote] = useState("");
   const [creatingLink, setCreatingLink] = useState(false);
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+  const [editLink, setEditLink] = useState<Record<string, string | boolean>>({});
+  const [savingLink, setSavingLink] = useState(false);
 
   // Edit gym
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -155,6 +158,55 @@ export default function ManageGymsPage() {
     navigator.clipboard.writeText(url);
     setCopiedLinkId(id);
     setTimeout(() => setCopiedLinkId(null), 2000);
+  }
+
+  async function deleteLink(id: string) {
+    if (!confirm("Delete this signup link? This can't be undone.")) return;
+    await fetch(`/api/admin/signup-links?id=${id}`, { method: "DELETE" });
+    loadData();
+  }
+
+  function openEditLink(link: SignupLink) {
+    setEditingLinkId(link.id);
+    setEditLink({
+      maxMembers: link.maxMembers >= 999999 ? "" : String(link.maxMembers),
+      maxStyles: link.maxStyles >= 999999 ? "" : String(link.maxStyles),
+      maxRanksPerStyle: link.maxRanksPerStyle >= 999999 ? "" : String(link.maxRanksPerStyle),
+      maxMembershipPlans: link.maxMembershipPlans >= 999999 ? "" : String(link.maxMembershipPlans),
+      maxClasses: link.maxClasses >= 999999 ? "" : String(link.maxClasses),
+      maxUsers: link.maxUsers >= 999999 ? "" : String(link.maxUsers),
+      maxLocations: link.maxLocations >= 999999 ? "" : String(link.maxLocations),
+      maxReports: link.maxReports >= 999999 ? "" : String(link.maxReports),
+      maxPOSItems: link.maxPOSItems >= 999999 ? "" : String(link.maxPOSItems),
+      allowStripe: link.allowStripe,
+      allowPaypal: link.allowPaypal,
+      allowSquare: link.allowSquare,
+      priceCents: link.priceCents > 0 ? String(link.priceCents) : "",
+      trialMonths: link.trialMonths > 0 ? String(link.trialMonths) : "",
+      note: link.note || "",
+    });
+  }
+
+  async function handleSaveLink() {
+    if (!editingLinkId) return;
+    setSavingLink(true);
+    try {
+      const res = await fetch("/api/admin/signup-links", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingLinkId, ...editLink }),
+      });
+      if (res.ok) {
+        setEditingLinkId(null);
+        loadData();
+      } else {
+        alert("Failed to update link");
+      }
+    } catch {
+      alert("Failed to update link");
+    } finally {
+      setSavingLink(false);
+    }
   }
 
   function openEdit(client: GymClient) {
@@ -305,6 +357,69 @@ export default function ManageGymsPage() {
               {links.map(link => {
                 const expired = link.expiresAt && new Date() > new Date(link.expiresAt);
 
+                if (editingLinkId === link.id) {
+                  const e = editLink;
+                  const setE = (key: string, val: string | boolean) => setEditLink(prev => ({ ...prev, [key]: val }));
+                  return (
+                    <div key={link.id} className="rounded-lg border border-primary bg-white p-5">
+                      <h3 className="text-sm font-bold text-gray-800 mb-3">Limits <span className="text-xs font-normal text-gray-500">(blank = unlimited)</span></h3>
+                      <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+                        {[
+                          { label: "Members", key: "maxMembers" },
+                          { label: "Styles", key: "maxStyles" },
+                          { label: "Ranks/Style", key: "maxRanksPerStyle" },
+                          { label: "Membership Plans", key: "maxMembershipPlans" },
+                          { label: "Class Types", key: "maxClasses" },
+                          { label: "Staff Accounts", key: "maxUsers" },
+                          { label: "Locations", key: "maxLocations" },
+                          { label: "Custom Reports", key: "maxReports" },
+                          { label: "POS Items", key: "maxPOSItems" },
+                        ].map(f => (
+                          <div key={f.key}>
+                            <label className="block text-[11px] font-medium text-gray-600 mb-1">{f.label}</label>
+                            <input type="number" value={e[f.key] as string || ""} onChange={ev => setE(f.key, ev.target.value)} min="1" placeholder="Unlimited" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                          </div>
+                        ))}
+                      </div>
+                      <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Payment Processors</h3>
+                      <div className="flex flex-wrap gap-4">
+                        {[
+                          { label: "Stripe", key: "allowStripe" },
+                          { label: "PayPal", key: "allowPaypal" },
+                          { label: "Square", key: "allowSquare" },
+                        ].map(p => (
+                          <label key={p.key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                            <input type="checkbox" checked={!!e[p.key]} onChange={ev => setE(p.key, ev.target.checked)} className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600" />
+                            {p.label}
+                          </label>
+                        ))}
+                      </div>
+                      <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Pricing & Duration</h3>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-medium text-gray-600 mb-1">Price ($/month)</label>
+                          <input type="number" value={e.priceCents as string || ""} onChange={ev => setE("priceCents", ev.target.value)} placeholder="Free" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-medium text-gray-600 mb-1">Trial (weeks)</label>
+                          <input type="number" value={e.trialMonths as string || ""} onChange={ev => setE("trialMonths", ev.target.value)} placeholder="No expiration" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div />
+                      </div>
+                      <div className="mt-3">
+                        <label className="block text-[11px] font-medium text-gray-600 mb-1">Note</label>
+                        <input type="text" value={e.note as string || ""} onChange={ev => setE("note", ev.target.value)} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                      </div>
+                      <div className="mt-4 flex justify-end gap-2">
+                        <button onClick={handleSaveLink} disabled={savingLink} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                          {savingLink ? "Saving..." : "Save"}
+                        </button>
+                        <button onClick={() => setEditingLinkId(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+                      </div>
+                    </div>
+                  );
+                }
+
                 // Find matching tier name
                 const tierName = tiers.find(t =>
                   t.maxMembers === link.maxMembers && t.maxStyles === link.maxStyles && t.priceCents === link.priceCents
@@ -337,12 +452,18 @@ export default function ManageGymsPage() {
                         >
                           {copiedLinkId === link.id ? "Copied!" : "Copy Link"}
                         </button>
-                        {/* Edit / Delete removed: any tier-level
-                            change (price, limits, invite-only flag,
-                            etc.) should be made in /admin/pricing on
-                            the tier itself, not on individual signup
-                            links. Create a new link if the offer
-                            needs to change. */}
+                        <button
+                          onClick={() => openEditLink(link)}
+                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => deleteLink(link.id)}
+                          className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
                   </div>
