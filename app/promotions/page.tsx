@@ -27,6 +27,12 @@ type EligibleRow = {
   allRequirementsMet: boolean;
   attendanceResetDate: string | null;
   lastPromotionDate: string | null;
+  latestTest: {
+    status: string;
+    score: number | null;
+    testingForRank: string | null;
+    publishedAt: string;
+  } | null;
   fee: {
     baseCostCents: number;
     discountCents: number;
@@ -566,6 +572,33 @@ function EligibleTab(props: {
                         {r.allRequirementsMet && (
                           <span className="ml-1 inline-block px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-[10px] font-semibold uppercase">
                             Eligible
+                          </span>
+                        )}
+                        {/* Latest published test grade for this
+                            (member, style). Only shown once the
+                            admin has clicked Mark Complete on a test
+                            for the same style -- drafts never leak
+                            here because the API filters by
+                            resultsPublishedAt. Gives the admin a
+                            quick "yes / no / mixed" signal alongside
+                            the attendance requirements before they
+                            click Promote. */}
+                        {r.latestTest && (
+                          <span
+                            className={`ml-1 inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
+                              r.latestTest.status === "PASSED"
+                                ? "bg-green-100 text-green-700"
+                                : r.latestTest.status === "FAILED"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-gray-100 text-gray-600"
+                            }`}
+                            title={
+                              `Latest test: ${r.latestTest.status}` +
+                              (r.latestTest.score != null ? ` (${r.latestTest.score}%)` : "") +
+                              ` — published ${new Date(r.latestTest.publishedAt).toLocaleDateString()}`
+                            }
+                          >
+                            Test: {r.latestTest.status}{r.latestTest.score != null ? ` ${r.latestTest.score}%` : ""}
                           </span>
                         )}
                       </div>

@@ -78,6 +78,24 @@ export async function PATCH(
       updateData.styleName = styleName;
     }
 
+    // Event-level "Mark Complete" is the umbrella publish action:
+    // stamp resultsPublishedAt on every participant that hasn't been
+    // published yet AND has a real graded status. REGISTERED /
+    // NO_SHOW rows are left alone -- they weren't graded, there's
+    // nothing to publish. Idempotent (only touches unpublished rows).
+    const isMarkingComplete =
+      typeof updateData.status === "string" && updateData.status === "COMPLETED";
+    if (isMarkingComplete) {
+      await prisma.testingParticipant.updateMany({
+        where: {
+          testingEventId: id,
+          resultsPublishedAt: null,
+          status: { in: ["PASSED", "FAILED", "INCOMPLETE"] },
+        },
+        data: { resultsPublishedAt: new Date() },
+      });
+    }
+
     const event = await prisma.testingEvent.update({
       where: { id },
       data: updateData,

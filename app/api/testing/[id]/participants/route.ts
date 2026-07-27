@@ -117,6 +117,12 @@ export async function PATCH(
       updateData.itemScores = typeof itemScores === "string" ? itemScores : JSON.stringify(itemScores);
     }
 
+    // publish: true stamps resultsPublishedAt (Mark Complete on a
+    // single participant). publish: false clears it (undo). The
+    // portal only shows the participant + PDF when this is set.
+    if (body.publish === true) updateData.resultsPublishedAt = new Date();
+    if (body.publish === false) updateData.resultsPublishedAt = null;
+
     const participant = await prisma.testingParticipant.update({
       where: { id: participantId },
       data: updateData,

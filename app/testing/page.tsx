@@ -51,6 +51,7 @@ type TestingParticipant = {
   adminNotes?: string | null;
   resultPdfUrl?: string | null;
   itemScores?: string | null;
+  resultsPublishedAt?: string | null;
 };
 
 type RankTestItem = {
@@ -579,6 +580,10 @@ export default function TestingPage() {
   };
 
   const handleCompleteEvent = async (eventId: string) => {
+    if (!confirm(
+      "Mark this event complete?\n\n" +
+      "This publishes every graded participant's result: members can now view + download their test PDF from the portal, and the grade shows up as an indicator on the promotions page. Ungraded participants are left alone."
+    )) return;
     try {
       const res = await fetch(`/api/testing/${eventId}`, {
         method: "PATCH",
@@ -587,10 +592,73 @@ export default function TestingPage() {
       });
 
       if (res.ok) {
+        // Previously only loadEvents() ran, which refreshed the tab
+        // list but left selectedEvent stale -- UI kept showing the
+        // event as SCHEDULED and the button looked broken. Pull the
+        // fresh event too so the badge / button state actually flip.
         await loadEvents();
+        const eventRes = await fetch(`/api/testing/${eventId}`);
+        if (eventRes.ok) {
+          const eventData = await eventRes.json();
+          setSelectedEvent(eventData.event);
+        }
+      } else {
+        alert("Failed to mark event complete");
       }
     } catch (err) {
       console.error("Error completing event:", err);
+      alert("Failed to mark event complete");
+    }
+  };
+
+  // Per-participant Mark Complete (single test). Also usable from the
+  // bulk grading sheet -- pass an array of participant ids to publish
+  // everyone in a sheet at once via callers.
+  const handlePublishParticipant = async (participantId: string) => {
+    if (!selectedEvent) return;
+    try {
+      const res = await fetch(`/api/testing/${selectedEvent.id}/participants`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantId, publish: true }),
+      });
+      if (!res.ok) {
+        alert("Failed to publish test result");
+        return;
+      }
+      const eventRes = await fetch(`/api/testing/${selectedEvent.id}`);
+      if (eventRes.ok) {
+        const eventData = await eventRes.json();
+        setSelectedEvent(eventData.event);
+      }
+      await loadEvents();
+    } catch (err) {
+      console.error("Error publishing participant:", err);
+      alert("Failed to publish test result");
+    }
+  };
+
+  const handlePublishParticipants = async (participantIds: string[]) => {
+    if (!selectedEvent || participantIds.length === 0) return;
+    try {
+      await Promise.all(
+        participantIds.map((participantId) =>
+          fetch(`/api/testing/${selectedEvent.id}/participants`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ participantId, publish: true }),
+          }),
+        ),
+      );
+      const eventRes = await fetch(`/api/testing/${selectedEvent.id}`);
+      if (eventRes.ok) {
+        const eventData = await eventRes.json();
+        setSelectedEvent(eventData.event);
+      }
+      await loadEvents();
+    } catch (err) {
+      console.error("Error publishing participants:", err);
+      alert("Failed to publish some test results");
     }
   };
 
@@ -2266,6 +2334,28 @@ export default function TestingPage() {
                                       >
                                         Grade
                                       </button>
+                                      {/* Per-participant Mark Complete. Only
+                                          shows once the participant has been
+                                          graded -- no point publishing an
+                                          empty REGISTERED row. */}
+                                      {(p.status === "PASSED" || p.status === "FAILED" || p.status === "INCOMPLETE") && (
+                                        p.resultsPublishedAt ? (
+                                          <span
+                                            className="inline-block rounded-md border border-green-500 px-3 py-1 text-xs font-semibold text-green-600 mr-2"
+                                            title={`Published ${new Date(p.resultsPublishedAt).toLocaleDateString()}`}
+                                          >
+                                            Published ✓
+                                          </span>
+                                        ) : (
+                                          <button
+                                            onClick={() => handlePublishParticipant(p.id)}
+                                            className="rounded-md border border-green-500 px-3 py-1 text-xs font-semibold text-green-600 hover:bg-green-50 mr-2"
+                                            title="Publishes this result to the member's portal and shows the grade on the promotions page."
+                                          >
+                                            Mark Complete
+                                          </button>
+                                        )
+                                      )}
                                       <button
                                         onClick={() => openParticipantModal(p)}
                                         className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark mr-2"
@@ -2734,6 +2824,29 @@ export default function TestingPage() {
                                                 >
                                                   Edit Grade
                                                 </button>
+                                                {/* Same per-participant Mark
+                                                    Complete as the open-event
+                                                    view -- lets the admin
+                                                    publish results one at a
+                                                    time from the completed-
+                                                    event tab too. */}
+                                                {(p.status === "PASSED" || p.status === "FAILED" || p.status === "INCOMPLETE") && (
+                                                  p.resultsPublishedAt ? (
+                                                    <span
+                                                      className="inline-block rounded-md border border-green-500 px-3 py-1 text-xs font-semibold text-green-600 mr-2"
+                                                      title={`Published ${new Date(p.resultsPublishedAt).toLocaleDateString()}`}
+                                                    >
+                                                      Published ✓
+                                                    </span>
+                                                  ) : (
+                                                    <button
+                                                      onClick={() => handlePublishParticipant(p.id)}
+                                                      className="rounded-md border border-green-500 px-3 py-1 text-xs font-semibold text-green-600 hover:bg-green-50 mr-2"
+                                                    >
+                                                      Mark Complete
+                                                    </button>
+                                                  )
+                                                )}
                                                 <button
                                                   onClick={() => openParticipantModal(p)}
                                                   className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
@@ -3619,6 +3732,27 @@ export default function TestingPage() {
                 >
                   {savingGrades ? "Saving..." : generatingPdf ? "Generating PDF..." : "Save"}
                 </button>
+                {/* Save & Publish saves the current grades and then
+                    Mark Completes this participant so the member can
+                    view the PDF and the promotions page picks the
+                    grade up as an indicator. Uses the shared publish
+                    handler so state stays consistent with per-row
+                    publish clicks. */}
+                <button
+                  onClick={async () => {
+                    if (!gradingParticipant) return;
+                    if (!confirm(
+                      "Save the current grades and publish the result to the member?\n\n" +
+                      "They'll be able to view and download the PDF on their portal, and the grade will appear on the promotions page."
+                    )) return;
+                    await saveGradingSheet();
+                    await handlePublishParticipant(gradingParticipant.id);
+                  }}
+                  disabled={savingGrades || generatingPdf || !rankTestCurriculum}
+                  className="rounded-md border border-green-500 px-3 py-1 text-xs font-semibold text-green-600 hover:bg-green-50 disabled:opacity-50"
+                >
+                  Save & Mark Complete
+                </button>
                 <button
                   onClick={closeGradingSheet}
                   className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
@@ -4270,6 +4404,41 @@ export default function TestingPage() {
                   className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                 >
                   {savingBulkGrades ? "Saving..." : generatingPdf ? "Generating PDFs..." : "Save All"}
+                </button>
+                {/* Save All & Mark Complete: save every participant
+                    in the bulk sheet, then publish everyone who now
+                    has a graded status (PASSED / FAILED / INCOMPLETE).
+                    REGISTERED rows the admin didn't touch are left
+                    unpublished. */}
+                <button
+                  onClick={async () => {
+                    if (!confirm(
+                      "Save all grades and mark every graded participant complete?\n\n" +
+                      "Their results become visible on the member portal and show up as grades on the promotions page. Ungraded (REGISTERED) rows are left as drafts."
+                    )) return;
+                    await saveBulkGrades();
+                    const idsToPublish = bulkSheets
+                      .flatMap((s) => s.participants)
+                      .filter((p) => {
+                        const manual = bulkManualStatus[p.id];
+                        return (
+                          manual === "PASSED" ||
+                          manual === "FAILED" ||
+                          p.status === "PASSED" ||
+                          p.status === "FAILED" ||
+                          p.status === "INCOMPLETE"
+                        );
+                      })
+                      .filter((p) => !p.resultsPublishedAt)
+                      .map((p) => p.id);
+                    if (idsToPublish.length > 0) {
+                      await handlePublishParticipants(idsToPublish);
+                    }
+                  }}
+                  disabled={savingBulkGrades || generatingPdf || bulkSheets.length === 0}
+                  className="rounded-md border border-green-500 px-3 py-1 text-xs font-semibold text-green-600 hover:bg-green-50 disabled:opacity-50"
+                >
+                  Save All & Mark Complete
                 </button>
                 <button
                   onClick={closeBulkGrading}

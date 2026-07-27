@@ -821,6 +821,14 @@ model TestingParticipant {
   adminNotes     String?      // Admin notes - internal only, not included in PDF
   resultPdfUrl   String?
   itemScores     String?      // JSON string storing individual item scores: { itemId: { score, passed, notes } }
+  // Set when the admin clicks "Mark Complete" on this participant
+  // (either individually, from the bulk grading sheet, or via the
+  // event-level Mark Complete). Null = the result is still in draft:
+  // the member portal hides it and the promotions eligibility panel
+  // shows no test-grade indicator. Once stamped, the PDF becomes
+  // downloadable on the portal and the grade shows up alongside the
+  // member on the Ready-to-Promote list.
+  resultsPublishedAt DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   testingEvent   TestingEvent @relation(fields: [testingEventId], references: [id], onDelete: Cascade)

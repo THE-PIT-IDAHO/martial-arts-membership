@@ -68,10 +68,17 @@ export async function GET(request: NextRequest) {
     registrationStatus: e.participants[0]?.status || null,
   }));
 
-  // Past test results
+  // Past test results -- only rows the admin has explicitly Mark
+  // Completed (resultsPublishedAt IS NOT NULL). Draft grades stay
+  // invisible so a member never sees a partially-scored test before
+  // the coach signs off. The PDF url is only surfaced for the same
+  // reason.
   const pastResults = await prisma.testingParticipant.findMany({
-    where: { memberId: auth.memberId },
-    orderBy: { createdAt: "desc" },
+    where: {
+      memberId: auth.memberId,
+      resultsPublishedAt: { not: null },
+    },
+    orderBy: { resultsPublishedAt: "desc" },
     take: 10,
     select: {
       id: true,
@@ -80,6 +87,8 @@ export async function GET(request: NextRequest) {
       status: true,
       score: true,
       notes: true,
+      resultPdfUrl: true,
+      resultsPublishedAt: true,
       createdAt: true,
       testingEvent: {
         select: { name: true, date: true, styleId: true },
@@ -97,6 +106,8 @@ export async function GET(request: NextRequest) {
     status: r.status,
     score: r.score,
     notes: r.notes,
+    resultPdfUrl: r.resultPdfUrl,
+    publishedAt: r.resultsPublishedAt,
     date: r.createdAt,
   }));
 

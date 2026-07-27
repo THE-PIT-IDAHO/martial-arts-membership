@@ -47,6 +47,15 @@ type EligibleEntry = {
   allRequirementsMet: boolean;
   attendanceResetDate: string | null;
   lastPromotionDate: string | null;
+  // Most recent PUBLISHED test result for this (member, style) --
+  // powered by TestingParticipant.resultsPublishedAt so drafts don't
+  // leak here either. null when no test has been published yet.
+  latestTest: {
+    status: string;   // PASSED / FAILED / INCOMPLETE
+    score: number | null;
+    testingForRank: string | null;
+    publishedAt: string;
+  } | null;
   // Pre-computed fee preview so the modal can show the breakdown instantly.
   fee: {
     baseCostCents: number;
@@ -168,6 +177,45 @@ export async function GET(req: Request) {
       }
     }
 
+    // Latest PUBLISHED test result per (memberId, styleName-lower).
+    // We look up by the event's styleName rather than styleId because
+    // legacy multi-style events may have a null styleId. Ordered by
+    // resultsPublishedAt desc so the first hit for each key wins.
+    const testByKey = new Map<
+      string,
+      { status: string; score: number | null; testingForRank: string | null; publishedAt: Date }
+    >();
+    if (memberIds.length > 0) {
+      const published = await prisma.testingParticipant.findMany({
+        where: {
+          memberId: { in: memberIds },
+          resultsPublishedAt: { not: null },
+        },
+        orderBy: { resultsPublishedAt: "desc" },
+        select: {
+          memberId: true,
+          status: true,
+          score: true,
+          testingForRank: true,
+          resultsPublishedAt: true,
+          testingEvent: { select: { styleName: true } },
+        },
+      });
+      for (const p of published) {
+        const styleName = p.testingEvent?.styleName?.toLowerCase();
+        if (!styleName || !p.resultsPublishedAt) continue;
+        const key = `${p.memberId}::${styleName}`;
+        if (!testByKey.has(key)) {
+          testByKey.set(key, {
+            status: p.status,
+            score: p.score,
+            testingForRank: p.testingForRank,
+            publishedAt: p.resultsPublishedAt,
+          });
+        }
+      }
+    }
+
     const rows: EligibleEntry[] = [];
 
     for (const member of members) {
@@ -236,6 +284,8 @@ export async function GET(req: Request) {
           clientId,
         });
 
+        const testKey = `${member.id}::${style.name.toLowerCase()}`;
+        const test = testByKey.get(testKey);
         rows.push({
           memberId: member.id,
           memberName: `${member.firstName} ${member.lastName}`.trim(),
@@ -249,6 +299,14 @@ export async function GET(req: Request) {
           allRequirementsMet: allMet,
           attendanceResetDate: es.attendanceResetDate || null,
           lastPromotionDate: es.lastPromotionDate || null,
+          latestTest: test
+            ? {
+                status: test.status,
+                score: test.score,
+                testingForRank: test.testingForRank,
+                publishedAt: test.publishedAt.toISOString(),
+              }
+            : null,
           fee: {
             baseCostCents: fee.baseCostCents,
             // discountCents now includes both the plan discount and any

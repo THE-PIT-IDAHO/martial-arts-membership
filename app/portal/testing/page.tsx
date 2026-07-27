@@ -24,6 +24,8 @@ interface TestResult {
   status: string;
   score: number | null;
   notes: string | null;
+  resultPdfUrl: string | null;
+  publishedAt: string | null;
   date: string;
 }
 
@@ -181,6 +183,24 @@ export default function PortalTestingPage() {
                   </div>
                   {result.notes && (
                     <p className="text-xs text-gray-600 mt-1 italic">{result.notes}</p>
+                  )}
+                  {/* PDF becomes available on the portal only after
+                      the admin clicks Mark Complete for this test
+                      (the portal API only returns rows with a
+                      published-at timestamp), so if there's a URL
+                      here it's safe to expose the download link. */}
+                  {result.resultPdfUrl && (
+                    <a
+                      href={result.resultPdfUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                      </svg>
+                      Download Result PDF
+                    </a>
                   )}
                 </div>
               );
