@@ -354,6 +354,20 @@ export async function POST(req: Request) {
 
     const memberNumber = await getNextMemberNumber(clientId);
 
+    // Verify referredByMemberId (if set) belongs to this tenant so
+    // the referral report doesn't grow dangling FKs pointing at
+    // other gyms' members.
+    let referredByMemberIdSafe: string | null = null;
+    if (referredByMemberId) {
+      const ref = await prisma.member.findUnique({
+        where: { id: referredByMemberId },
+        select: { clientId: true },
+      });
+      if (ref && ref.clientId === clientId) {
+        referredByMemberIdSafe = referredByMemberId;
+      }
+    }
+
     const member = await prisma.member.create({
       data: {
         firstName,
@@ -378,7 +392,7 @@ export async function POST(req: Request) {
         waiverSignedAt: toDateOrNull(waiverSignedAt),
         emailOptIn: emailOptIn !== false,
         leadSource: leadSource || null,
-        referredByMemberId: referredByMemberId || null,
+        referredByMemberId: referredByMemberIdSafe,
       },
     });
 

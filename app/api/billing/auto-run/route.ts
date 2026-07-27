@@ -153,8 +153,8 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
     const gracePeriodDays = graceSetting ? parseInt(graceSetting.value) || 7 : 7;
 
     // Check if a payment processor is available for auto-charge
-    const activeProcessor = await getActiveProcessor();
-    const currency = await getCurrency();
+    const activeProcessor = await getActiveProcessor(clientId);
+    const currency = await getCurrency(clientId);
 
     const dueMemberships = await prisma.membership.findMany({
       where: {
@@ -587,8 +587,11 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
 
     // --- Send promotion eligibility alert (fire-and-forget) ---
     try {
+      // Scope to this tenant -- previously matched member styles by
+      // name against every gym's belt configs, so a Kempo student in
+      // gym A could be flagged eligible using gym B's belt requirements.
       const stylesWithBelts = await prisma.style.findMany({
-        where: { beltSystemEnabled: true },
+        where: { clientId, beltSystemEnabled: true },
         select: { name: true, beltConfig: true, ranks: { select: { name: true, order: true, classRequirement: true }, orderBy: { order: "asc" } } },
       });
       if (stylesWithBelts.length > 0) {

@@ -9,7 +9,7 @@ import { getActiveProcessor, getCheckoutStatus } from "@/lib/payment";
  * POS frontend polls this every 2s while the payment popup is open.
  */
 export async function GET(req: NextRequest) {
-  await getClientId(req); // validate tenant
+  const clientId = await getClientId(req);
   const sessionId = req.nextUrl.searchParams.get("session_id");
   const orderId = req.nextUrl.searchParams.get("order_id");
 
@@ -17,13 +17,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "session_id required" }, { status: 400 });
   }
 
-  const processor = await getActiveProcessor();
+  const processor = await getActiveProcessor(clientId);
   if (!processor) {
     return NextResponse.json({ error: "No processor configured" }, { status: 400 });
   }
 
   try {
-    const result = await getCheckoutStatus(sessionId, orderId || undefined);
+    const result = await getCheckoutStatus(clientId, sessionId, orderId || undefined);
 
     let transactionId: string | undefined;
 
@@ -32,9 +32,12 @@ export async function GET(req: NextRequest) {
       if (result.metadata?.transactionId) {
         transactionId = result.metadata.transactionId;
       } else if (result.externalPaymentId) {
-        // For single CARD payments, look up by paymentIntentId (set by webhook)
+        // For single CARD payments, look up by paymentIntentId (set by webhook).
+        // Scope by clientId so a colliding paymentIntentId (extremely
+        // unlikely but possible if the processor rotates keys) can't
+        // reveal another tenant's transaction.
         const txn = await prisma.pOSTransaction.findFirst({
-          where: { paymentIntentId: result.externalPaymentId },
+          where: { paymentIntentId: result.externalPaymentId, clientId },
           select: { id: true, transactionNumber: true },
         });
         if (txn) {

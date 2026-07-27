@@ -66,13 +66,6 @@ async function handleBookingPost(req: NextRequest) {
     return NextResponse.json({ error: "classSessionId and bookingDate required" }, { status: 400 });
   }
 
-  // Store the booking's date as the UTC timestamp of the gym's local midnight
-  // for that date. This way the same booking row is in range for both the
-  // portal classes page (filters by client-local day) and the dashboard
-  // (filters by gym-local day) — no straddling-midnight surprises.
-  const bookingTz = await getGymTimezone();
-  const parsedDate = new Date(localMidnightUtc(bookingDate, bookingTz));
-
   // Verify the booking member and the class belong to the same tenant.
   // Without this, an authenticated portal user could pass any classSessionId
   // — including one from a completely different gym — and the endpoint
@@ -82,6 +75,12 @@ async function handleBookingPost(req: NextRequest) {
     where: { id: bookingMemberId },
     select: { clientId: true },
   });
+
+  // Store the booking's date as the UTC timestamp of the gym's local midnight
+  // for that date -- using THIS member's tenant timezone, not the platform
+  // fallback which could belong to any gym.
+  const bookingTz = await getGymTimezone(bookingMember?.clientId);
+  const parsedDate = new Date(localMidnightUtc(bookingDate, bookingTz));
   if (!bookingMember) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }

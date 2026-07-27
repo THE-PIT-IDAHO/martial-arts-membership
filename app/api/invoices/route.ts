@@ -71,6 +71,25 @@ export async function POST(req: Request) {
       return new NextResponse("membershipId, memberId, and amountCents are required", { status: 400 });
     }
 
+    // Verify member + membership belong to this tenant. Without this
+    // a POST could inject invoices referencing another gym's member
+    // or membership -- those would surface in our revenue reports
+    // and count toward billing state.
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { clientId: true },
+    });
+    if (!member || member.clientId !== clientId) {
+      return new NextResponse("Member not found", { status: 400 });
+    }
+    const membership = await prisma.membership.findUnique({
+      where: { id: membershipId },
+      select: { memberId: true, member: { select: { clientId: true } } },
+    });
+    if (!membership || membership.member.clientId !== clientId) {
+      return new NextResponse("Membership not found", { status: 400 });
+    }
+
     const invoice = await prisma.invoice.create({
       data: {
         invoiceNumber: generateInvoiceNumber(),

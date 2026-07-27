@@ -11,11 +11,49 @@ import {
 export async function POST(req: NextRequest) {
   const body = await req.text();
 
-  // Verify webhook signature. Prefer env var; fall back to Settings row.
+  // Parse body first so we can extract the tenant clientId from
+  // payment.note (JSON we injected during createSquareCheckoutSession).
+  // Then look up THAT tenant's Square webhook signature key.
+  let event: {
+    type: string;
+    data?: {
+      type?: string;
+      id?: string;
+      object?: {
+        payment?: Record<string, unknown>;
+        refund?: Record<string, unknown>;
+      };
+    };
+  };
+
+  try {
+    event = JSON.parse(body);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // Resolve tenant from payment note metadata (best effort). Refund
+  // events don't carry a note themselves; they carry a payment_id
+  // which we could then use to look up the local POSTransaction and
+  // its clientId, but for signature verification we just fall through
+  // to env-var mode when we can't resolve.
+  const paymentNote = (event.data?.object?.payment?.note as string) || "";
+  let tenantClientId: string | undefined;
+  if (paymentNote) {
+    try {
+      const parsed = JSON.parse(paymentNote);
+      if (parsed && typeof parsed === "object" && typeof parsed.clientId === "string") {
+        tenantClientId = parsed.clientId;
+      }
+    } catch { /* not JSON */ }
+  }
+
+  // Verify webhook signature. Prefer env var; if not set, look up
+  // the resolved tenant's signature key.
   let signatureKey: string | undefined = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
-  if (!signatureKey) {
-    const row = await prisma.settings.findFirst({
-      where: { key: "payment_square_webhook_signature_key" },
+  if (!signatureKey && tenantClientId) {
+    const row = await prisma.settings.findUnique({
+      where: { key_clientId: { key: "payment_square_webhook_signature_key", clientId: tenantClientId } },
     });
     signatureKey = row?.value || undefined;
   }
@@ -38,24 +76,6 @@ export async function POST(req: NextRequest) {
       console.error("Square webhook signature verification failed");
       return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
     }
-  }
-
-  let event: {
-    type: string;
-    data?: {
-      type?: string;
-      id?: string;
-      object?: {
-        payment?: Record<string, unknown>;
-        refund?: Record<string, unknown>;
-      };
-    };
-  };
-
-  try {
-    event = JSON.parse(body);
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   const eventType = event.type;

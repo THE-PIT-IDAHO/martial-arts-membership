@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     "Waiver Signed",
   ];
 
-  const tz = (await getSetting("timezone")) || "America/Denver";
+  const tz = (await getSetting("timezone", clientId)) || "America/Denver";
   const dateFmt: Intl.DateTimeFormatOptions = { year: "numeric", month: "2-digit", day: "2-digit" };
 
   const rows = members.map((m) => [

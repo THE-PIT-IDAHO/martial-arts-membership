@@ -57,6 +57,7 @@ export async function POST(
     }
 
     const result = await createRefund(
+      clientId,
       invoice.externalPaymentId,
       invoice.paymentProcessor as ProcessorType,
       refundAmountCents,

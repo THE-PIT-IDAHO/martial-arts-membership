@@ -15,7 +15,7 @@ import { getStripeClient } from "@/lib/stripe";
  * Accepts the same body as the old /api/pos/stripe-checkout route.
  */
 export async function POST(req: Request) {
-  await getClientId(req); // validate tenant
+  const clientId = await getClientId(req);
   const body = await req.json();
   const {
     memberId,
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     transactionId,
   } = body;
 
-  const processor = await getActiveProcessor();
+  const processor = await getActiveProcessor(clientId);
   if (!processor) {
     return NextResponse.json({ error: "No payment processor configured" }, { status: 400 });
   }
@@ -41,7 +41,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Cart is empty" }, { status: 400 });
   }
 
-  const currency = await getCurrency();
+  // Verify memberId belongs to this tenant before any downstream
+  // Stripe customer / Membership row / credit adjustment uses it.
+  if (memberId) {
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { clientId: true },
+    });
+    if (!member || member.clientId !== clientId) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+  }
+
+  const currency = await getCurrency(clientId);
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
   const isSplitPayment = typeof cardAmountCents === "number" && cardAmountCents > 0;
@@ -65,6 +77,7 @@ export async function POST(req: Request) {
   // For split payments or simple single-amount charges, use unified abstraction
   if (isSplitPayment) {
     const result = await createCheckoutSession({
+      clientId,
       amountCents: cardAmountCents,
       currency,
       description: "Card Payment (Split)",
@@ -86,6 +99,7 @@ export async function POST(req: Request) {
   if (processor === "stripe") {
     // Delegate to Stripe-specific route for detailed line items + tax rates
     return handleStripeFullCheckout({
+      clientId,
       memberId,
       memberName,
       lineItems,
@@ -116,6 +130,7 @@ export async function POST(req: Request) {
   const totalCents = Math.max(0, subtotalCents - totalSectionDiscount - giftRedemption + (taxCents || 0));
 
   const result = await createCheckoutSession({
+    clientId,
     amountCents: totalCents,
     currency,
     description: `POS Sale${memberName ? ` — ${memberName}` : ""}`,
@@ -135,6 +150,7 @@ export async function POST(req: Request) {
 
 /** Stripe-specific full checkout with detailed line items and tax rates */
 async function handleStripeFullCheckout(params: {
+  clientId: string;
   memberId?: string;
   memberName?: string;
   lineItems: Array<Record<string, unknown>>;
@@ -148,7 +164,7 @@ async function handleStripeFullCheckout(params: {
   baseUrl: string;
   metadata: Record<string, string>;
 }) {
-  const stripeClient = await getStripeClient();
+  const stripeClient = await getStripeClient(params.clientId);
   if (!stripeClient) {
     return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
   }
@@ -207,8 +223,12 @@ async function handleStripeFullCheckout(params: {
     });
   }
 
-  // Tax rate
-  const taxSetting = await prisma.settings.findFirst({ where: { key: "taxRate" } });
+  // Tax rate -- scoped to this tenant. Previously a findFirst with no
+  // clientId returned whichever tenant's row sorted first, applying
+  // the wrong sales tax to Stripe line items.
+  const taxSetting = await prisma.settings.findUnique({
+    where: { key_clientId: { key: "taxRate", clientId: params.clientId } },
+  });
   const taxRatePercent = taxSetting ? Number(taxSetting.value) : 0;
 
   let finalLineItems = stripeLineItems.map((li) => ({ ...li }));
@@ -231,26 +251,30 @@ async function handleStripeFullCheckout(params: {
     }));
   }
 
-  // Customer
+  // Customer -- verify tenant before creating a Stripe customer or
+  // writing stripeCustomerId back onto the member row. Prevents
+  // attaching a foreign gym's member to our Stripe account.
   let stripeCustomerId: string | undefined;
   if (params.memberId) {
     const member = await prisma.member.findUnique({
       where: { id: params.memberId },
-      select: { stripeCustomerId: true, email: true, firstName: true, lastName: true },
+      select: { clientId: true, stripeCustomerId: true, email: true, firstName: true, lastName: true },
     });
-    if (member?.stripeCustomerId) {
-      stripeCustomerId = member.stripeCustomerId;
-    } else if (member) {
-      const customer = await stripeClient.customers.create({
-        email: member.email || undefined,
-        name: `${member.firstName} ${member.lastName}`,
-        metadata: { memberId: params.memberId },
-      });
-      stripeCustomerId = customer.id;
-      await prisma.member.update({
-        where: { id: params.memberId },
-        data: { stripeCustomerId: customer.id },
-      });
+    if (member && member.clientId === params.clientId) {
+      if (member.stripeCustomerId) {
+        stripeCustomerId = member.stripeCustomerId;
+      } else {
+        const customer = await stripeClient.customers.create({
+          email: member.email || undefined,
+          name: `${member.firstName} ${member.lastName}`,
+          metadata: { memberId: params.memberId },
+        });
+        stripeCustomerId = customer.id;
+        await prisma.member.update({
+          where: { id: params.memberId },
+          data: { stripeCustomerId: customer.id },
+        });
+      }
     }
   }
 
@@ -260,7 +284,9 @@ async function handleStripeFullCheckout(params: {
     success_url: `${params.baseUrl}/pos?payment_success=1&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${params.baseUrl}/pos?payment_cancel=1`,
     ...(stripeCustomerId ? { customer: stripeCustomerId } : {}),
-    metadata: params.metadata,
+    // Inject clientId so the webhook handler can resolve tenant
+    // when the payment completes.
+    metadata: { ...params.metadata, clientId: params.clientId },
   });
 
   return NextResponse.json({

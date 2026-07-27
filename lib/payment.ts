@@ -24,9 +24,14 @@ export type ProcessorType = "stripe" | "paypal" | "square";
 // Active processor detection
 // ---------------------------------------------------------------------------
 
-export async function getActiveProcessor(): Promise<ProcessorType | null> {
-  const row = await prisma.settings.findFirst({
-    where: { key: "payment_active_processor" },
+// Every processor / credential / currency lookup in this file requires
+// a tenant clientId. Without it, findFirst-style lookups would pick
+// whichever tenant's Settings row sorted first -- meaning gym A's
+// charge could route through gym B's Stripe key. That was the single
+// most severe leak the audit found before launch.
+export async function getActiveProcessor(clientId: string): Promise<ProcessorType | null> {
+  const row = await prisma.settings.findUnique({
+    where: { key_clientId: { key: "payment_active_processor", clientId } },
   });
   if (row?.value && row.value !== "none") {
     return row.value as ProcessorType;
@@ -34,6 +39,7 @@ export async function getActiveProcessor(): Promise<ProcessorType | null> {
   // Backward compat: if no active_processor set, check individual enabled flags
   const enabled = await prisma.settings.findMany({
     where: {
+      clientId,
       key: {
         in: [
           "payment_stripe_enabled",
@@ -55,6 +61,7 @@ export async function getActiveProcessor(): Promise<ProcessorType | null> {
 // ---------------------------------------------------------------------------
 
 export type CheckoutSessionParams = {
+  clientId: string; // REQUIRED: which tenant's payment processor to use
   amountCents: number;
   currency: string;
   description: string;
@@ -84,7 +91,7 @@ export type CheckoutSessionResult = {
 export async function createCheckoutSession(
   params: CheckoutSessionParams
 ): Promise<CheckoutSessionResult> {
-  const processor = await getActiveProcessor();
+  const processor = await getActiveProcessor(params.clientId);
   if (!processor) throw new Error("No payment processor configured");
 
   if (processor === "stripe") {
@@ -99,7 +106,7 @@ export async function createCheckoutSession(
 async function createStripeCheckoutSession(
   params: CheckoutSessionParams
 ): Promise<CheckoutSessionResult> {
-  const stripeClient = await getStripeClient();
+  const stripeClient = await getStripeClient(params.clientId);
   if (!stripeClient) throw new Error("Stripe is not configured");
 
   // Get or create Stripe customer
@@ -177,7 +184,11 @@ async function createStripeCheckoutSession(
     line_items: lineItems,
     success_url: params.successUrl,
     cancel_url: params.cancelUrl,
-    metadata: params.metadata || {},
+    // Always inject clientId into the Stripe metadata so the webhook
+    // handler can resolve tenant when the payment completes. Without
+    // this, the webhook falls back to "default-client" and any tenant
+    // lookup it does is wrong.
+    metadata: { ...(params.metadata || {}), clientId: params.clientId },
   });
 
   return {
@@ -190,13 +201,13 @@ async function createStripeCheckoutSession(
 async function createPayPalCheckoutSession(
   params: CheckoutSessionParams
 ): Promise<CheckoutSessionResult> {
-  const config = await getPayPalConfig();
+  const config = await getPayPalConfig(params.clientId);
   if (!config) throw new Error("PayPal is not configured");
 
-  // Encode metadata in custom_id (max 127 chars)
-  const customId = params.metadata
-    ? JSON.stringify(params.metadata).slice(0, 127)
-    : undefined;
+  // Encode metadata in custom_id (max 127 chars). Always include the
+  // tenant clientId so the PayPal webhook can resolve it back.
+  const withTenant = { ...(params.metadata || {}), clientId: params.clientId };
+  const customId = JSON.stringify(withTenant).slice(0, 127);
 
   const result = await createPayPalOrder({
     config,
@@ -218,16 +229,19 @@ async function createPayPalCheckoutSession(
 async function createSquareCheckoutSession(
   params: CheckoutSessionParams
 ): Promise<CheckoutSessionResult> {
-  const config = await getSquareConfig();
+  const config = await getSquareConfig(params.clientId);
   if (!config) throw new Error("Square is not configured");
 
+  // Always include tenant clientId in the note so the Square
+  // webhook can resolve it back.
+  const withTenant = { ...(params.metadata || {}), clientId: params.clientId };
   const result = await createSquarePaymentLink({
     config,
     amountCents: params.amountCents,
     currency: params.currency,
     description: params.description,
     redirectUrl: params.successUrl,
-    note: params.metadata ? JSON.stringify(params.metadata) : undefined,
+    note: JSON.stringify(withTenant),
     referenceId: params.metadata?.transactionId || params.metadata?.invoiceId,
   });
 
@@ -250,25 +264,27 @@ export type CheckoutStatusResult = {
 };
 
 export async function getCheckoutStatus(
+  clientId: string,
   sessionId: string,
   orderId?: string
 ): Promise<CheckoutStatusResult> {
-  const processor = await getActiveProcessor();
+  const processor = await getActiveProcessor(clientId);
   if (!processor) return { status: "failed" };
 
   if (processor === "stripe") {
-    return getStripeCheckoutStatus(sessionId);
+    return getStripeCheckoutStatus(clientId, sessionId);
   } else if (processor === "paypal") {
-    return getPayPalCheckoutStatus(sessionId);
+    return getPayPalCheckoutStatus(clientId, sessionId);
   } else {
-    return getSquareCheckoutStatus(orderId || sessionId);
+    return getSquareCheckoutStatus(clientId, orderId || sessionId);
   }
 }
 
 async function getStripeCheckoutStatus(
+  clientId: string,
   sessionId: string
 ): Promise<CheckoutStatusResult> {
-  const stripeClient = await getStripeClient();
+  const stripeClient = await getStripeClient(clientId);
   if (!stripeClient) return { status: "failed" };
 
   const session = await stripeClient.checkout.sessions.retrieve(sessionId);
@@ -289,9 +305,10 @@ async function getStripeCheckoutStatus(
 }
 
 async function getPayPalCheckoutStatus(
+  clientId: string,
   orderId: string
 ): Promise<CheckoutStatusResult> {
-  const config = await getPayPalConfig();
+  const config = await getPayPalConfig(clientId);
   if (!config) return { status: "failed" };
 
   const orderStatus = await getPayPalOrderStatus(config, orderId);
@@ -315,9 +332,10 @@ async function getPayPalCheckoutStatus(
 }
 
 async function getSquareCheckoutStatus(
+  clientId: string,
   orderId: string
 ): Promise<CheckoutStatusResult> {
-  const config = await getSquareConfig();
+  const config = await getSquareConfig(clientId);
   if (!config) return { status: "failed" };
 
   const order = await getSquarePaymentLinkOrder(config, orderId);
@@ -337,6 +355,7 @@ async function getSquareCheckoutStatus(
 // ---------------------------------------------------------------------------
 
 export async function createRefund(
+  clientId: string,
   externalPaymentId: string,
   processor: ProcessorType,
   amountCents?: number,
@@ -344,7 +363,7 @@ export async function createRefund(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     if (processor === "stripe") {
-      const stripeClient = await getStripeClient();
+      const stripeClient = await getStripeClient(clientId);
       if (!stripeClient)
         return { success: false, error: "Stripe not configured" };
       await stripeClient.refunds.create({
@@ -354,7 +373,7 @@ export async function createRefund(
     }
 
     if (processor === "paypal") {
-      const config = await getPayPalConfig();
+      const config = await getPayPalConfig(clientId);
       if (!config)
         return { success: false, error: "PayPal not configured" };
       // externalPaymentId is the capture ID for PayPal
@@ -363,7 +382,7 @@ export async function createRefund(
     }
 
     if (processor === "square") {
-      const config = await getSquareConfig();
+      const config = await getSquareConfig(clientId);
       if (!config)
         return { success: false, error: "Square not configured" };
       if (!amountCents || !currency)
@@ -396,7 +415,18 @@ export async function chargeStoredPaymentMethod(params: {
   description?: string;
   invoiceId?: string;
 }): Promise<{ success: boolean; externalPaymentId?: string; processor?: ProcessorType; error?: string }> {
-  const processor = await getActiveProcessor();
+  // Resolve the caller-tenant from the member, then use that clientId
+  // for EVERY processor / credential lookup below. This is what makes
+  // sure gym A's charge routes to gym A's Stripe/PayPal/Square keys
+  // regardless of what other tenants have configured.
+  const memberTenant = await prisma.member.findUnique({
+    where: { id: params.memberId },
+    select: { clientId: true },
+  });
+  if (!memberTenant) return { success: false, error: "Member not found" };
+  const clientId = memberTenant.clientId;
+
+  const processor = await getActiveProcessor(clientId);
   if (!processor) return { success: false, error: "No processor configured" };
 
   // Resolve who actually gets billed. By default it's the member themselves,
@@ -413,6 +443,7 @@ export async function chargeStoredPaymentMethod(params: {
   const member = await prisma.member.findUnique({
     where: { id: billedMemberId },
     select: {
+      clientId: true,
       stripeCustomerId: true,
       defaultPaymentMethodId: true,
       paypalPayerId: true,
@@ -420,13 +451,18 @@ export async function chargeStoredPaymentMethod(params: {
     },
   });
   if (!member) return { success: false, error: "Member not found" };
+  // Refuse to charge a payer in a different tenant -- defense in
+  // depth against a stray cross-tenant PAYS_FOR relationship.
+  if (member.clientId !== clientId) {
+    return { success: false, error: "Payer not in this tenant" };
+  }
 
   try {
     if (processor === "stripe") {
       if (!member.stripeCustomerId || !member.defaultPaymentMethodId) {
         return { success: false, error: "No stored Stripe payment method" };
       }
-      const stripeClient = await getStripeClient();
+      const stripeClient = await getStripeClient(clientId);
       if (!stripeClient) return { success: false, error: "Stripe not configured" };
 
       const paymentIntent = await stripeClient.paymentIntents.create({
@@ -459,7 +495,7 @@ export async function chargeStoredPaymentMethod(params: {
       if (!member.defaultPaymentMethodId) {
         return { success: false, error: "No stored PayPal payment token" };
       }
-      const config = await getPayPalConfig();
+      const config = await getPayPalConfig(clientId);
       if (!config) return { success: false, error: "PayPal not configured" };
 
       const result = await chargePayPalVaultedToken({
@@ -485,7 +521,7 @@ export async function chargeStoredPaymentMethod(params: {
       if (!member.squareCustomerId || !member.defaultPaymentMethodId) {
         return { success: false, error: "No stored Square card" };
       }
-      const config = await getSquareConfig();
+      const config = await getSquareConfig(clientId);
       if (!config) return { success: false, error: "Square not configured" };
 
       const result = await chargeSquareStoredCard({
@@ -524,18 +560,21 @@ export async function ensureProcessorCustomer(params: {
   email?: string;
   name: string;
 }): Promise<string | null> {
-  const processor = await getActiveProcessor();
-  if (!processor) return null;
-
+  // Same pattern as chargeStoredPaymentMethod: resolve tenant from
+  // the member so every processor lookup below uses THIS gym's keys.
   const member = await prisma.member.findUnique({
     where: { id: params.memberId },
-    select: { stripeCustomerId: true, paypalPayerId: true, squareCustomerId: true },
+    select: { clientId: true, stripeCustomerId: true, paypalPayerId: true, squareCustomerId: true },
   });
   if (!member) return null;
+  const clientId = member.clientId;
+
+  const processor = await getActiveProcessor(clientId);
+  if (!processor) return null;
 
   if (processor === "stripe") {
     if (member.stripeCustomerId) return member.stripeCustomerId;
-    const stripeClient = await getStripeClient();
+    const stripeClient = await getStripeClient(clientId);
     if (!stripeClient) return null;
     const cust = await stripeClient.customers.create({
       email: params.email || undefined,
@@ -556,7 +595,7 @@ export async function ensureProcessorCustomer(params: {
 
   if (processor === "square") {
     if (member.squareCustomerId) return member.squareCustomerId;
-    const config = await getSquareConfig();
+    const config = await getSquareConfig(clientId);
     if (!config) return null;
     const custId = await getOrCreateSquareCustomer({
       config,
@@ -694,6 +733,15 @@ async function processAdminPOSCheckout(params: {
   const { externalPaymentId, processor, metadata } = params;
   const processorLabel = processor.toUpperCase();
 
+  // Require the tenant clientId in the metadata that the checkout
+  // session was created with. Bail if it's missing rather than
+  // dropping the transaction to the default-client bucket.
+  const clientId = metadata.clientId;
+  if (!clientId) {
+    console.error("processAdminPOSCheckout: missing clientId in metadata; refusing to process", { externalPaymentId });
+    return;
+  }
+
   const memberId = metadata.memberId || null;
   const memberName = metadata.memberName || null;
   const notes = metadata.notes || null;
@@ -751,7 +799,7 @@ async function processAdminPOSCheckout(params: {
       paymentIntentId: externalPaymentId,
       paymentProcessor: processor,
       notes,
-      clientId: "default-client",
+      clientId,
       updatedAt: new Date(),
       POSLineItem: {
         create: lineItemsData.map(
@@ -813,8 +861,11 @@ async function processAdminPOSCheckout(params: {
     }
 
     if (itemType === "membership" && memberId && item.membershipPlanId) {
-      const plan = await prisma.membershipPlan.findUnique({
-        where: { id: item.membershipPlanId as string },
+      // Scope plan lookup to this tenant so a spoofed cart item id
+      // can't attach a foreign plan to our member (auto-billing
+      // would then charge that plan's price on the next cycle).
+      const plan = await prisma.membershipPlan.findFirst({
+        where: { id: item.membershipPlanId as string, clientId },
       });
       if (plan) {
         const startDate = item.membershipStartDate
@@ -867,15 +918,20 @@ async function processAdminPOSCheckout(params: {
           purchasedBy: memberName || "POS",
           recipientName: (item.recipientName as string) || null,
           status: "ACTIVE",
+          // Stamp with the tenant so the gift certificate stays on
+          // this gym instead of dropping to the default-client
+          // fallback (which would let other tenants redeem it).
+          clientId,
         },
       });
     }
   }
 
-  // Handle gift certificate redemption
+  // Handle gift certificate redemption -- scoped to this tenant so
+  // one gym's code can't be redeemed at another gym.
   if (redeemedGiftCode && redeemedGiftAmountCents > 0) {
     const gc = await prisma.giftCertificate.findFirst({
-      where: { code: redeemedGiftCode },
+      where: { code: redeemedGiftCode, clientId },
     });
     if (gc) {
       const newBalance = gc.balanceCents - redeemedGiftAmountCents;
@@ -892,6 +948,11 @@ async function processAdminPOSCheckout(params: {
 
 /**
  * Process portal store checkout from webhook metadata.
+ *
+ * Refuses to run without a tenant clientId in the event metadata.
+ * Every downstream lookup (POSItem, MembershipPlan, Member) is
+ * scoped to that tenant so a stray or spoofed cartItem id can't
+ * touch another gym's inventory / plan / member.
  */
 async function processPortalStoreCheckout(params: {
   externalPaymentId: string;
@@ -903,7 +964,11 @@ async function processPortalStoreCheckout(params: {
   const { externalPaymentId, processor, metadata } = params;
   const processorLabel = processor.toUpperCase();
   const memberId = metadata.memberId || null;
-  const clientId = metadata.clientId || "default-client";
+  const clientId = metadata.clientId;
+  if (!clientId) {
+    console.error("processPortalStoreCheckout: missing clientId in metadata; refusing to process", { externalPaymentId });
+    return;
+  }
   const cartItems: Array<{
     itemId: string;
     quantity: number;
@@ -919,14 +984,14 @@ async function processPortalStoreCheckout(params: {
   const posItemIds = posCartItems.map((ci) => ci.itemId);
   const posItems =
     posItemIds.length > 0
-      ? await prisma.pOSItem.findMany({ where: { id: { in: posItemIds } } })
+      ? await prisma.pOSItem.findMany({ where: { id: { in: posItemIds }, clientId } })
       : [];
   const posItemMap = new Map(posItems.map((i) => [i.id, i]));
 
   const planIds = planCartItems.map((ci) => ci.itemId.replace("plan_", ""));
   const plans =
     planIds.length > 0
-      ? await prisma.membershipPlan.findMany({ where: { id: { in: planIds } } })
+      ? await prisma.membershipPlan.findMany({ where: { id: { in: planIds }, clientId } })
       : [];
   const planMap = new Map(plans.map((p) => [`plan_${p.id}`, p]));
 
@@ -934,9 +999,12 @@ async function processPortalStoreCheckout(params: {
   if (memberId) {
     const member = await prisma.member.findUnique({
       where: { id: memberId },
-      select: { firstName: true, lastName: true },
+      select: { firstName: true, lastName: true, clientId: true },
     });
-    if (member) memberName = `${member.firstName} ${member.lastName}`;
+    // Only trust the memberId when they belong to the same tenant
+    // the checkout was created under. Prevents cross-tenant credit /
+    // membership creation via a spoofed metadata payload.
+    if (member && member.clientId === clientId) memberName = `${member.firstName} ${member.lastName}`;
   }
 
   const lineItemsData = posCartItems
@@ -1170,7 +1238,9 @@ export async function handleRefundCompleted(params: {
 // Currency helper
 // ---------------------------------------------------------------------------
 
-export async function getCurrency(): Promise<string> {
-  const row = await prisma.settings.findFirst({ where: { key: "currency" } });
+export async function getCurrency(clientId: string): Promise<string> {
+  const row = await prisma.settings.findUnique({
+    where: { key_clientId: { key: "currency", clientId } },
+  });
   return (row?.value || "USD").toLowerCase();
 }

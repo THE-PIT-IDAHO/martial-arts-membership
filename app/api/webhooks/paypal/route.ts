@@ -11,16 +11,52 @@ import {
 export async function POST(req: NextRequest) {
   const body = await req.text();
 
-  const config = await getPayPalConfig();
-  if (!config) {
-    return NextResponse.json({ error: "PayPal not configured" }, { status: 500 });
+  // Parse body FIRST to extract the tenant clientId from the
+  // metadata we injected during createPayPalCheckoutSession. Then
+  // fetch that tenant's PayPal config for signature verification.
+  // Body isn't trusted yet -- we only use the parsed metadata to
+  // pick the correct config; verification either succeeds or
+  // rejects.
+  let event: {
+    event_type: string;
+    resource: Record<string, unknown>;
+  };
+
+  try {
+    event = JSON.parse(body);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  // Verify webhook signature. Prefer env var; fall back to Settings row.
+  const resource = event.resource;
+  const customIdRaw = resource.custom_id as string | undefined;
+  let tenantClientId: string | undefined;
+  if (customIdRaw) {
+    try {
+      const parsed = JSON.parse(customIdRaw);
+      if (parsed && typeof parsed === "object" && typeof parsed.clientId === "string") {
+        tenantClientId = parsed.clientId;
+      }
+    } catch { /* customId may not be JSON */ }
+  }
+
+  // No tenant on the event -- can't route it. Log and drop rather
+  // than falling back to any tenant's config.
+  if (!tenantClientId) {
+    console.error("PayPal webhook: could not resolve tenant from custom_id metadata");
+    return NextResponse.json({ received: true });
+  }
+
+  const config = await getPayPalConfig(tenantClientId);
+  if (!config) {
+    return NextResponse.json({ error: "PayPal not configured for this tenant" }, { status: 500 });
+  }
+
+  // Verify webhook signature using THIS tenant's PayPal webhook id.
   let webhookId: string | undefined = process.env.PAYPAL_WEBHOOK_ID;
   if (!webhookId) {
-    const row = await prisma.settings.findFirst({
-      where: { key: "payment_paypal_webhook_id" },
+    const row = await prisma.settings.findUnique({
+      where: { key_clientId: { key: "payment_paypal_webhook_id", clientId: tenantClientId } },
     });
     webhookId = row?.value || undefined;
   }
@@ -44,19 +80,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let event: {
-    event_type: string;
-    resource: Record<string, unknown>;
-  };
-
-  try {
-    event = JSON.parse(body);
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
   const eventType = event.event_type;
-  const resource = event.resource;
 
   // CHECKOUT.ORDER.APPROVED — user approved the payment, we need to capture
   // (Normally captured by the status polling endpoint, but handle here as backup)

@@ -35,17 +35,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invoice already paid" }, { status: 400 });
   }
 
-  const processor = await getActiveProcessor();
-  if (!processor) {
-    return NextResponse.json({ error: "No payment processor configured" }, { status: 400 });
-  }
-
+  // Tenant is derived from the authenticated member -- portal
+  // members are already scoped by getAuthenticatedMember.
   const member = await prisma.member.findUnique({
     where: { id: auth.memberId },
-    select: { id: true, firstName: true, lastName: true, email: true },
+    select: { id: true, clientId: true, firstName: true, lastName: true, email: true },
   });
 
   if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  const clientId = member.clientId;
+
+  const processor = await getActiveProcessor(clientId);
+  if (!processor) {
+    return NextResponse.json({ error: "No payment processor configured" }, { status: 400 });
+  }
 
   // Ensure processor customer exists
   await ensureProcessorCustomer({
@@ -54,7 +57,7 @@ export async function POST(req: NextRequest) {
     name: `${member.firstName} ${member.lastName}`,
   });
 
-  const currency = await getCurrency();
+  const currency = await getCurrency(clientId);
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
   const planName = invoice.membership?.membershipPlan?.name || "Membership";
@@ -63,6 +66,7 @@ export async function POST(req: NextRequest) {
     : planName;
 
   const session = await createCheckoutSession({
+    clientId,
     amountCents: invoice.amountCents,
     currency,
     description,

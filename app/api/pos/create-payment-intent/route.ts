@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
   }
 
-  const stripeClient = await getStripeClient();
+  const stripeClient = await getStripeClient(clientId);
   if (!stripeClient) {
     return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
   }
@@ -43,16 +43,21 @@ export async function POST(req: Request) {
   });
   const currency = currSetting?.value || "usd";
 
-  // Get or create Stripe customer
+  // Get or create Stripe customer -- verify tenant first so a
+  // caller can't attach a foreign gym's member to our Stripe account
+  // by supplying their memberId.
   let stripeCustomerId: string | undefined;
   if (memberId) {
     const member = await prisma.member.findUnique({
       where: { id: memberId },
-      select: { stripeCustomerId: true, email: true, firstName: true, lastName: true },
+      select: { clientId: true, stripeCustomerId: true, email: true, firstName: true, lastName: true },
     });
-    if (member?.stripeCustomerId) {
+    if (!member || member.clientId !== clientId) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+    if (member.stripeCustomerId) {
       stripeCustomerId = member.stripeCustomerId;
-    } else if (member) {
+    } else {
       const customer = await stripeClient.customers.create({
         email: member.email || undefined,
         name: `${member.firstName} ${member.lastName}`,
@@ -89,6 +94,7 @@ export async function POST(req: Request) {
         usage: "off_session",
         metadata: {
           source: "admin_pos",
+          clientId,
           ...(metadata || {}),
         },
       });
@@ -108,6 +114,7 @@ export async function POST(req: Request) {
       ...(stripeCustomerId ? { customer: stripeCustomerId, setup_future_usage: "off_session" } : {}),
       metadata: {
         source: "admin_pos",
+        clientId,
         ...(metadata || {}),
       },
     });

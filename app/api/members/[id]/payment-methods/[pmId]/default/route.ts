@@ -23,7 +23,7 @@ export async function PUT(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "No Stripe customer" }, { status: 400 });
   }
 
-  const stripeClient = await getStripeClient();
+  const stripeClient = await getStripeClient(clientId);
   if (!stripeClient) {
     return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
   }

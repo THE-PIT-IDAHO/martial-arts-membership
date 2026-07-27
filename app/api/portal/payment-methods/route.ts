@@ -11,14 +11,10 @@ export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const processor = await getActiveProcessor();
-  if (!processor) {
-    return NextResponse.json({ paymentMethods: [], defaultId: null, processor: null });
-  }
-
   const member = await prisma.member.findUnique({
     where: { id: auth.memberId },
     select: {
+      clientId: true,
       stripeCustomerId: true,
       defaultPaymentMethodId: true,
       paypalPayerId: true,
@@ -27,7 +23,13 @@ export async function GET(req: NextRequest) {
   });
 
   if (!member) {
-    return NextResponse.json({ paymentMethods: [], defaultId: null, processor });
+    return NextResponse.json({ paymentMethods: [], defaultId: null, processor: null });
+  }
+  const clientId = member.clientId;
+
+  const processor = await getActiveProcessor(clientId);
+  if (!processor) {
+    return NextResponse.json({ paymentMethods: [], defaultId: null, processor: null });
   }
 
   try {
@@ -35,7 +37,7 @@ export async function GET(req: NextRequest) {
       if (!member.stripeCustomerId) {
         return NextResponse.json({ paymentMethods: [], defaultId: null, processor });
       }
-      const stripeClient = await getStripeClient();
+      const stripeClient = await getStripeClient(clientId);
       if (!stripeClient) {
         return NextResponse.json({ paymentMethods: [], defaultId: null, processor });
       }
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
       if (!member.paypalPayerId) {
         return NextResponse.json({ paymentMethods: [], defaultId: null, processor });
       }
-      const config = await getPayPalConfig();
+      const config = await getPayPalConfig(clientId);
       if (!config) {
         return NextResponse.json({ paymentMethods: [], defaultId: null, processor });
       }
@@ -84,7 +86,7 @@ export async function GET(req: NextRequest) {
       if (!member.squareCustomerId) {
         return NextResponse.json({ paymentMethods: [], defaultId: null, processor });
       }
-      const config = await getSquareConfig();
+      const config = await getSquareConfig(clientId);
       if (!config) {
         return NextResponse.json({ paymentMethods: [], defaultId: null, processor });
       }
@@ -116,15 +118,11 @@ export async function POST(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const processor = await getActiveProcessor();
-  if (!processor) {
-    return NextResponse.json({ error: "No payment processor configured" }, { status: 400 });
-  }
-
   const member = await prisma.member.findUnique({
     where: { id: auth.memberId },
     select: {
       id: true,
+      clientId: true,
       firstName: true,
       lastName: true,
       email: true,
@@ -135,12 +133,18 @@ export async function POST(req: NextRequest) {
   });
 
   if (!member) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const clientId = member.clientId;
+
+  const processor = await getActiveProcessor(clientId);
+  if (!processor) {
+    return NextResponse.json({ error: "No payment processor configured" }, { status: 400 });
+  }
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
   try {
     if (processor === "stripe") {
-      const stripeClient = await getStripeClient();
+      const stripeClient = await getStripeClient(clientId);
       if (!stripeClient) {
         return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
       }
@@ -173,7 +177,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (processor === "paypal") {
-      const config = await getPayPalConfig();
+      const config = await getPayPalConfig(clientId);
       if (!config) {
         return NextResponse.json({ error: "PayPal is not configured" }, { status: 400 });
       }
@@ -191,7 +195,7 @@ export async function POST(req: NextRequest) {
     if (processor === "square") {
       // Square requires Web Payments SDK on the frontend for card nonce.
       // For now, return the application ID so the frontend can initialize the SDK.
-      const config = await getSquareConfig();
+      const config = await getSquareConfig(clientId);
       if (!config) {
         return NextResponse.json({ error: "Square is not configured" }, { status: 400 });
       }

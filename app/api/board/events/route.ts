@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   try {
     const clientId = await getClientId(req);
     // "Today" in gym TZ so we don't drop events early in the morning UTC
-    const tz = await getGymTimezone();
+    const tz = await getGymTimezone(clientId);
     const today = new Date(localMidnightUtc(formatDateInTimezone(new Date(), tz), tz));
 
     // Fetch upcoming testing events and promotion events in parallel.
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
     }
 
     const label = sourceType === "testing" ? "Belt Testing" : "Rank Promotion";
-    const tz = (await getSetting("timezone")) || "America/Denver";
+    const tz = (await getSetting("timezone", clientId)) || "America/Denver";
     const dateStr = formatInTimezone(date, tz, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
     const timeStr = time ? ` at ${formatTime12h(time)}` : "";
 

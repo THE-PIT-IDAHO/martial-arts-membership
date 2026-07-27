@@ -81,8 +81,16 @@ function wrapInTemplate(brand: { gymName: string; gymLogo: string }, body: strin
 
 // --- Helpers ---
 
-async function isEnabled(settingKey: string): Promise<boolean> {
-  const s = await getSettings([settingKey]);
+async function isEnabled(
+  settingKey: string,
+  scope: { clientId?: string; memberId?: string },
+): Promise<boolean> {
+  // Per-tenant lookup. Previously ran unscoped and returned whichever
+  // tenant's toggle row happened to sort first, so gym A turning
+  // welcome emails off could silence them for every other gym.
+  const clientId = await resolveClientId(scope);
+  if (!clientId) return false; // no tenant -> refuse to send
+  const s = await getSettings([settingKey], clientId);
   return s[settingKey] !== "false";
 }
 
@@ -155,7 +163,7 @@ export async function sendWelcomeEmail(params: {
   memberId: string;
   memberName: string;
 }) {
-  if (!(await isEnabled("notify_welcome_email"))) return;
+  if (!(await isEnabled("notify_welcome_email", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -184,7 +192,7 @@ export async function sendInvoiceCreatedEmail(params: {
   dueDate: Date;
   planName: string;
 }) {
-  if (!(await isEnabled("notify_invoice_created"))) return;
+  if (!(await isEnabled("notify_invoice_created", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -213,7 +221,7 @@ export async function sendPaymentReceivedEmail(params: {
   invoiceNumber?: string;
   planName?: string;
 }) {
-  if (!(await isEnabled("notify_payment_received"))) return;
+  if (!(await isEnabled("notify_payment_received", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -241,7 +249,7 @@ export async function sendPastDueAlertEmail(params: {
   invoiceNumber?: string;
   dueDate: Date;
 }) {
-  if (!(await isEnabled("notify_past_due"))) return;
+  if (!(await isEnabled("notify_past_due", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -269,7 +277,7 @@ export async function sendPromotionCongratsEmail(params: {
   newRank: string;
   styleName: string;
 }) {
-  if (!(await isEnabled("notify_promotion"))) return;
+  if (!(await isEnabled("notify_promotion", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -296,7 +304,7 @@ export async function sendClassReminderEmail(params: {
   classDate: string;
   classTime: string;
 }) {
-  if (!(await isEnabled("notify_class_reminder"))) return;
+  if (!(await isEnabled("notify_class_reminder", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -323,7 +331,7 @@ export async function sendMembershipExpiryWarningEmail(params: {
   planName: string;
   expiryDate: Date;
 }) {
-  if (!(await isEnabled("notify_membership_expiry"))) return;
+  if (!(await isEnabled("notify_membership_expiry", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -627,7 +635,7 @@ export async function sendCancellationConfirmationEmail(params: {
   effectiveDate: Date;
   earlyTerminationFeeCents?: number;
 }) {
-  if (!(await isEnabled("notify_cancellation"))) return;
+  if (!(await isEnabled("notify_cancellation", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -657,7 +665,7 @@ export async function sendLowStockAlertEmail(params: {
   threshold: number;
   clientId: string;
 }) {
-  if (!(await isEnabled("notify_low_stock"))) return;
+  if (!(await isEnabled("notify_low_stock", params as { memberId?: string; clientId?: string }))) return;
   const brand = await getGymBranding(params.clientId);
   const gymEmail = brand.gymEmail;
   if (!gymEmail) return;
@@ -682,7 +690,7 @@ export async function sendDunningEmail(params: {
   invoiceNumber?: string;
   level: "friendly" | "urgent" | "final" | "suspension";
 }) {
-  if (!(await isEnabled("notify_dunning"))) return;
+  if (!(await isEnabled("notify_dunning", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -712,7 +720,7 @@ export async function sendPromotionEligibilityAlertEmail(params: {
   }>;
   clientId: string;
 }) {
-  if (!(await isEnabled("notify_promotion_eligible"))) return;
+  if (!(await isEnabled("notify_promotion_eligible", params as { memberId?: string; clientId?: string }))) return;
   if (params.eligible.length === 0) return;
   const brand = await getGymBranding(params.clientId);
   const gymEmail = brand.gymEmail;
@@ -751,7 +759,7 @@ export async function sendBirthdayEmail(params: {
   memberId: string;
   memberName: string;
 }) {
-  if (!(await isEnabled("notify_birthday"))) return;
+  if (!(await isEnabled("notify_birthday", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -776,7 +784,7 @@ export async function sendInactiveReengagementEmail(params: {
   memberName: string;
   daysSinceLastClass: number;
 }) {
-  if (!(await isEnabled("notify_inactive_reengagement"))) return;
+  if (!(await isEnabled("notify_inactive_reengagement", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -804,7 +812,7 @@ export async function sendRenewalReminderEmail(params: {
   expiryDate: Date;
   daysRemaining: number;
 }) {
-  if (!(await isEnabled("notify_renewal_reminder"))) return;
+  if (!(await isEnabled("notify_renewal_reminder", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);
@@ -834,7 +842,7 @@ export async function sendTrialExpiringEmail(params: {
   classesUsed: number;
   maxClasses: number;
 }) {
-  if (!(await isEnabled("notify_trial_expiring"))) return;
+  if (!(await isEnabled("notify_trial_expiring", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
   const emails = await resolveRecipientEmails(params.memberId);

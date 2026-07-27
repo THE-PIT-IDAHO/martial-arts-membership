@@ -11,25 +11,90 @@ import { getSetting } from "@/lib/email";
 import { getClientId } from "@/lib/tenant";
 
 // Vercel cron sends GET. Dashboard sends POST. Both delegate here.
-// NOTE: the body of this route still uses unscoped queries in places
-// (lifecycle_last_auto_run findFirst, member sweeps without clientId).
-// Those are separate latent bugs to clean up — for this commit we just
-// want the cron to actually fire so birthday / inactive / renewal /
-// trial-expiring emails resume going out.
+//
+// Previously every query in this file was unscoped: any tenant's
+// dashboard "run lifecycle now" click sent birthday / inactive /
+// renewal / trial-expiring emails for ALL gyms, and one tenant's
+// lifecycle_last_auto_run row blocked every other tenant for the day.
+// Now this route mirrors /api/billing/auto-run -- iterates every
+// tenant when cron-mode, otherwise runs for the single caller-tenant,
+// and every query is scoped by clientId.
 export async function GET(req: Request) {
   return POST(req);
 }
 
+type TenantResult = {
+  clientId: string;
+  skipped?: boolean;
+  message?: string;
+  birthdaysSent?: number;
+  inactiveSent?: number;
+  renewalsSent?: number;
+  trialsSent?: number;
+  autoFinishedEvents?: number;
+  autoFinishErrors?: number;
+  error?: string;
+};
+
 export async function POST(req: Request) {
-  const tz = (await getSetting("timezone")) || "America/Denver";
+  try {
+    const isCronCall = req.headers.get("x-cron-mode") === "true";
+
+    let tenantIds: string[];
+    if (isCronCall) {
+      const candidates = await prisma.client.findMany({ select: { id: true } });
+      tenantIds = candidates.map((c) => c.id);
+    } else {
+      tenantIds = [await getClientId(req)];
+    }
+
+    const results: TenantResult[] = [];
+    for (const clientId of tenantIds) {
+      try {
+        results.push(await processLifecycleForTenant(clientId, req));
+      } catch (err) {
+        console.error(`Lifecycle failed for tenant ${clientId}:`, err);
+        results.push({
+          clientId,
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
+      }
+    }
+
+    if (results.length === 1) {
+      const r = results[0];
+      if (r.error) return NextResponse.json({ error: r.error }, { status: 500 });
+      if (r.skipped) return NextResponse.json({ skipped: true, reason: r.message });
+      return NextResponse.json({
+        success: true,
+        birthdaysSent: r.birthdaysSent || 0,
+        inactiveSent: r.inactiveSent || 0,
+        renewalsSent: r.renewalsSent || 0,
+        trialsSent: r.trialsSent || 0,
+        autoFinishedEvents: r.autoFinishedEvents || 0,
+        autoFinishErrors: r.autoFinishErrors || 0,
+      });
+    }
+    return NextResponse.json({ tenants: results.length, results });
+  } catch (error) {
+    console.error("Lifecycle auto-run error:", error);
+    return new NextResponse("Failed to run lifecycle", { status: 500 });
+  }
+}
+
+async function processLifecycleForTenant(clientId: string, req: Request): Promise<TenantResult> {
+  const tz = (await getSetting("timezone", clientId)) || "America/Denver";
   const today = getTodayInTimezone(tz);
 
-  // Check if already run today
-  const lastRun = await prisma.settings.findFirst({
-    where: { key: "lifecycle_last_auto_run" },
+  // Per-tenant "already run today" guard. Previously used
+  // findFirst({ where: { key } }) which returned whichever tenant's
+  // row happened first, so any one tenant's daily run blocked every
+  // other tenant.
+  const lastRun = await prisma.settings.findUnique({
+    where: { key_clientId: { key: "lifecycle_last_auto_run", clientId } },
   });
   if (lastRun?.value === today) {
-    return NextResponse.json({ skipped: true, reason: "Already run today" });
+    return { clientId, skipped: true, message: "Already run today" };
   }
 
   let birthdaysSent = 0;
@@ -43,7 +108,7 @@ export async function POST(req: Request) {
     const todayDay = new Date().getDate();
 
     const membersWithDOB = await prisma.member.findMany({
-      where: { status: { contains: "ACTIVE" }, dateOfBirth: { not: null } },
+      where: { clientId, status: { contains: "ACTIVE" }, dateOfBirth: { not: null } },
       select: { id: true, firstName: true, lastName: true, dateOfBirth: true },
     });
 
@@ -64,21 +129,19 @@ export async function POST(req: Request) {
 
   // --- 2. Inactive Re-engagement ---
   try {
-    const thresholdSetting = await prisma.settings.findFirst({
-      where: { key: "inactive_threshold_days" },
+    const thresholdSetting = await prisma.settings.findUnique({
+      where: { key_clientId: { key: "inactive_threshold_days", clientId } },
     });
     const thresholdDays = thresholdSetting ? parseInt(thresholdSetting.value) || 30 : 30;
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - thresholdDays);
 
-    // Find active members
     const activeMembers = await prisma.member.findMany({
-      where: { status: { contains: "ACTIVE" } },
+      where: { clientId, status: { contains: "ACTIVE" } },
       select: { id: true, firstName: true, lastName: true },
     });
 
     for (const m of activeMembers) {
-      // Check last attendance
       const lastAttendance = await prisma.attendance.findFirst({
         where: { memberId: m.id },
         orderBy: { attendanceDate: "desc" },
@@ -89,7 +152,6 @@ export async function POST(req: Request) {
         const daysSince = Math.floor(
           (Date.now() - lastAttendance.attendanceDate.getTime()) / (1000 * 60 * 60 * 24)
         );
-        // Only send once per 30-day period (check if divisible by threshold)
         if (daysSince % thresholdDays < 1) {
           sendInactiveReengagementEmail({
             memberId: m.id,
@@ -115,6 +177,7 @@ export async function POST(req: Request) {
       const expiringMemberships = await prisma.membership.findMany({
         where: {
           status: "ACTIVE",
+          member: { clientId },
           endDate: {
             gte: new Date(targetStr + "T00:00:00"),
             lt: new Date(targetStr + "T23:59:59"),
@@ -127,7 +190,6 @@ export async function POST(req: Request) {
       });
 
       for (const ms of expiringMemberships) {
-        // Only for non-auto-renewing plans
         if (ms.membershipPlan.autoRenew) continue;
         sendRenewalReminderEmail({
           memberId: ms.member.id,
@@ -151,6 +213,7 @@ export async function POST(req: Request) {
 
     const expiringTrials = await prisma.trialPass.findMany({
       where: {
+        clientId,
         status: "ACTIVE",
         expiresAt: {
           gte: new Date(twoDayStr + "T00:00:00"),
@@ -176,16 +239,13 @@ export async function POST(req: Request) {
     console.error("Trial expiring email error:", err);
   }
 
-  // Mark as run today
   // --- 5. Auto-finish promotion events ---
-  // Events with autoFinishAt <= today and not yet finished get run
-  // through the finish flow (auto mode, so per-member opt-outs are
-  // honored). Runs per-tenant to keep the auto-promote scope correct.
   let autoFinishedEvents = 0;
   let autoFinishErrors = 0;
   try {
     const dueEvents = await prisma.promotionEvent.findMany({
       where: {
+        clientId,
         finishedAt: null,
         status: { not: "CANCELLED" },
         autoFinishAt: { not: null, lte: new Date() },
@@ -194,8 +254,6 @@ export async function POST(req: Request) {
     });
     for (const ev of dueEvents) {
       try {
-        // Resolve the tenant slug for this event so the inner POST is
-        // routed back to the right Client.
         const client = await prisma.client.findUnique({
           where: { id: ev.clientId },
           select: { slug: true },
@@ -222,22 +280,20 @@ export async function POST(req: Request) {
     console.error("Auto-finish promotion events error:", err);
   }
 
-  const existingLifecycleRun = await prisma.settings.findFirst({ where: { key: "lifecycle_last_auto_run" } });
-  if (existingLifecycleRun) {
-    await prisma.settings.update({ where: { id: existingLifecycleRun.id }, data: { value: today } });
-  } else {
-    const clientId = await getClientId(req);
-    await prisma.settings.create({ data: { key: "lifecycle_last_auto_run", value: today, clientId } });
-  }
+  // Per-tenant "last run today" stamp.
+  await prisma.settings.upsert({
+    where: { key_clientId: { key: "lifecycle_last_auto_run", clientId } },
+    update: { value: today },
+    create: { key: "lifecycle_last_auto_run", value: today, clientId },
+  });
 
-  return NextResponse.json({
-    success: true,
-    date: today,
+  return {
+    clientId,
     birthdaysSent,
     inactiveSent,
     renewalsSent,
     trialsSent,
     autoFinishedEvents,
     autoFinishErrors,
-  });
+  };
 }

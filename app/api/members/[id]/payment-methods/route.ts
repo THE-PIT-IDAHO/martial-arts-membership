@@ -23,7 +23,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ paymentMethods: [], defaultId: null });
   }
 
-  const stripeClient = await getStripeClient();
+  const stripeClient = await getStripeClient(clientId);
   if (!stripeClient) {
     return NextResponse.json({ paymentMethods: [], defaultId: null });
   }
@@ -73,7 +73,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
 
-  const stripeClient = await getStripeClient();
+  const stripeClient = await getStripeClient(clientId);
   if (!stripeClient) {
     return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
   }

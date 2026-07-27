@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     }, { status: 400 });
   }
 
-  const stripeClient = await getStripeClient();
+  const stripeClient = await getStripeClient(clientId);
   if (!stripeClient) {
     return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
   }

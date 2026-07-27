@@ -523,9 +523,9 @@ export async function PATCH(
             },
           });
 
-          const activeProcessor = await getActiveProcessor();
+          const activeProcessor = await getActiveProcessor(clientId);
           if (activeProcessor) {
-            const currency = await getCurrency();
+            const currency = await getCurrency(clientId);
             try {
               const chargeResult = await chargeStoredPaymentMethod({
                 memberId: updatedMembership.memberId,

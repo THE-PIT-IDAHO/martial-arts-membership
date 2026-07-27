@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { sendEmail, resolveRecipientEmails } from "@/lib/email";
 
 // POST /api/contracts/email
 export async function POST(req: Request) {
   try {
-    await getClientId(req); // validate tenant
+    const clientId = await getClientId(req);
     const body = await req.json();
     const { memberId, pdfBase64, contractTitle } = body;
 
@@ -14,6 +15,16 @@ export async function POST(req: Request) {
         { error: "memberId and pdfBase64 are required" },
         { status: 400 }
       );
+    }
+
+    // Verify the target member belongs to this tenant. Without this,
+    // an admin could email an arbitrary PDF to any gym's member.
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { clientId: true },
+    });
+    if (!member || member.clientId !== clientId) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
     }
 
     const emails = await resolveRecipientEmails(memberId);

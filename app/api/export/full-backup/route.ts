@@ -99,7 +99,7 @@ export async function GET(req: Request) {
     };
 
     const json = JSON.stringify(backup, null, 2);
-    const tz = (await getSetting("timezone")) || "America/Denver";
+    const tz = (await getSetting("timezone", clientId)) || "America/Denver";
     const dateStr = getTodayInTimezone(tz);
 
     return new NextResponse(json, {

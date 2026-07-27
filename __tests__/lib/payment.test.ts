@@ -74,7 +74,7 @@ describe("getActiveProcessor", () => {
       value: "stripe",
     });
 
-    const result = await getActiveProcessor();
+    const result = await getActiveProcessor("test-client");
     expect(result).toBe("stripe");
   });
 
@@ -84,7 +84,7 @@ describe("getActiveProcessor", () => {
       value: "paypal",
     });
 
-    const result = await getActiveProcessor();
+    const result = await getActiveProcessor("test-client");
     expect(result).toBe("paypal");
   });
 
@@ -94,7 +94,7 @@ describe("getActiveProcessor", () => {
       value: "square",
     });
 
-    const result = await getActiveProcessor();
+    const result = await getActiveProcessor("test-client");
     expect(result).toBe("square");
   });
 
@@ -105,7 +105,7 @@ describe("getActiveProcessor", () => {
     });
     (prisma.settings.findMany as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
 
-    const result = await getActiveProcessor();
+    const result = await getActiveProcessor("test-client");
     expect(result).toBeNull();
   });
 
@@ -117,7 +117,7 @@ describe("getActiveProcessor", () => {
       { key: "payment_square_enabled", value: "false" },
     ]);
 
-    const result = await getActiveProcessor();
+    const result = await getActiveProcessor("test-client");
     expect(result).toBe("paypal");
   });
 
@@ -125,7 +125,7 @@ describe("getActiveProcessor", () => {
     (prisma.settings.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
     (prisma.settings.findMany as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
 
-    const result = await getActiveProcessor();
+    const result = await getActiveProcessor("test-client");
     expect(result).toBeNull();
   });
 
@@ -136,7 +136,7 @@ describe("getActiveProcessor", () => {
       { key: "payment_paypal_enabled", value: "true" },
     ]);
 
-    const result = await getActiveProcessor();
+    const result = await getActiveProcessor("test-client");
     expect(result).toBe("stripe");
   });
 });
@@ -152,14 +152,14 @@ describe("getCurrency", () => {
       value: "EUR",
     });
 
-    const result = await getCurrency();
+    const result = await getCurrency("test-client");
     expect(result).toBe("eur");
   });
 
   it("defaults to usd when no setting exists", async () => {
     (prisma.settings.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
 
-    const result = await getCurrency();
+    const result = await getCurrency("test-client");
     expect(result).toBe("usd");
   });
 });
@@ -175,7 +175,7 @@ describe("createRefund", () => {
       refunds: { create: mockRefundsCreate },
     });
 
-    const result = await createRefund("pi_123", "stripe");
+    const result = await createRefund("test-client", "pi_123", "stripe");
     expect(result.success).toBe(true);
     expect(mockRefundsCreate).toHaveBeenCalledWith({ payment_intent: "pi_123" });
   });
@@ -183,7 +183,7 @@ describe("createRefund", () => {
   it("returns error when stripe not configured", async () => {
     (getStripeClient as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
 
-    const result = await createRefund("pi_123", "stripe");
+    const result = await createRefund("test-client", "pi_123", "stripe");
     expect(result.success).toBe(false);
     expect(result.error).toBe("Stripe not configured");
   });
@@ -196,7 +196,7 @@ describe("createRefund", () => {
     });
     (refundPayPalCapture as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
 
-    const result = await createRefund("cap_123", "paypal", 5000, "usd");
+    const result = await createRefund("test-client", "cap_123", "paypal", 5000, "usd");
     expect(result.success).toBe(true);
     expect(refundPayPalCapture).toHaveBeenCalled();
   });
@@ -204,7 +204,7 @@ describe("createRefund", () => {
   it("returns error when paypal not configured", async () => {
     (getPayPalConfig as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
 
-    const result = await createRefund("cap_123", "paypal");
+    const result = await createRefund("test-client", "cap_123", "paypal");
     expect(result.success).toBe(false);
     expect(result.error).toBe("PayPal not configured");
   });
@@ -218,7 +218,7 @@ describe("createRefund", () => {
     });
     (refundSquarePayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
 
-    const result = await createRefund("pmt_123", "square", 5000, "usd");
+    const result = await createRefund("test-client", "pmt_123", "square", 5000, "usd");
     expect(result.success).toBe(true);
     expect(refundSquarePayment).toHaveBeenCalled();
   });
@@ -226,7 +226,7 @@ describe("createRefund", () => {
   it("returns error when square not configured", async () => {
     (getSquareConfig as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
 
-    const result = await createRefund("pmt_123", "square", 5000, "usd");
+    const result = await createRefund("test-client", "pmt_123", "square", 5000, "usd");
     expect(result.success).toBe(false);
     expect(result.error).toBe("Square not configured");
   });
@@ -239,7 +239,7 @@ describe("createRefund", () => {
       sandbox: true,
     });
 
-    const result = await createRefund("pmt_123", "square");
+    const result = await createRefund("test-client", "pmt_123", "square");
     expect(result.success).toBe(false);
     expect(result.error).toContain("Amount and currency required");
   });
@@ -249,7 +249,7 @@ describe("createRefund", () => {
       refunds: { create: vi.fn().mockRejectedValueOnce(new Error("Insufficient funds")) },
     });
 
-    const result = await createRefund("pi_123", "stripe");
+    const result = await createRefund("test-client", "pi_123", "stripe");
     expect(result.success).toBe(false);
     expect(result.error).toBe("Insufficient funds");
   });

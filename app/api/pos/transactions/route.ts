@@ -44,6 +44,51 @@ export async function POST(req: Request) {
       return new NextResponse("At least one line item is required", { status: 400 });
     }
 
+    // Verify memberId + every itemId / membershipPlanId / servicePackageId
+    // in the cart belongs to this tenant. Without these checks, a
+    // hand-crafted POST could decrement another gym's inventory,
+    // attach a foreign membership plan to our member, mint a
+    // service credit against a foreign package, or redeem a gift
+    // certificate at the wrong tenant.
+    if (memberId) {
+      const mem = await prisma.member.findUnique({
+        where: { id: memberId },
+        select: { clientId: true },
+      });
+      if (!mem || mem.clientId !== clientId) {
+        return new NextResponse("Member not found", { status: 404 });
+      }
+    }
+    for (const item of lineItems) {
+      if (item.type === "product" && item.itemId) {
+        const posItem = await prisma.pOSItem.findUnique({
+          where: { id: item.itemId },
+          select: { clientId: true },
+        });
+        if (!posItem || posItem.clientId !== clientId) {
+          return new NextResponse("POS item not found", { status: 400 });
+        }
+      }
+      if (item.type === "membership" && item.membershipPlanId) {
+        const plan = await prisma.membershipPlan.findUnique({
+          where: { id: item.membershipPlanId },
+          select: { clientId: true },
+        });
+        if (!plan || plan.clientId !== clientId) {
+          return new NextResponse("Membership plan not found", { status: 400 });
+        }
+      }
+      if (item.type === "service" && item.servicePackageId) {
+        const pkg = await prisma.servicePackage.findUnique({
+          where: { id: item.servicePackageId },
+          select: { clientId: true },
+        });
+        if (!pkg || pkg.clientId !== clientId) {
+          return new NextResponse("Service package not found", { status: 400 });
+        }
+      }
+    }
+
     // Validate split payment totals if JSON array
     if (paymentMethod && paymentMethod.startsWith("[")) {
       try {
@@ -428,7 +473,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // Handle gift certificate items - create gift certificates
+    // Handle gift certificate items - create gift certificates,
+    // stamped with THIS tenant's clientId so redemption stays scoped.
     for (const item of lineItems) {
       if (item.type === "gift") {
         const code = `GC-${crypto.randomUUID().substring(0, 6).toUpperCase()}`;
@@ -440,16 +486,18 @@ export async function POST(req: Request) {
             purchasedBy: memberName || null,
             recipientName: item.recipientName || null,
             transactionId: transaction.id,
+            clientId,
           },
         });
       }
     }
 
-    // Handle gift certificate redemption
+    // Handle gift certificate redemption -- scoped to this tenant so
+    // one gym's gift code can't be redeemed at another.
     const { redeemedGiftCode, redeemedGiftAmountCents } = body;
     if (redeemedGiftCode && redeemedGiftAmountCents > 0) {
       const giftCert = await prisma.giftCertificate.findFirst({
-        where: { code: redeemedGiftCode },
+        where: { code: redeemedGiftCode, clientId },
       });
       if (giftCert && giftCert.status === "ACTIVE") {
         const newBalance = giftCert.balanceCents - redeemedGiftAmountCents;

@@ -16,16 +16,21 @@ function getBaseUrl(sandbox: boolean): string {
 }
 
 /**
- * Get PayPal config. Prefers per-tenant payment_paypal_* Settings rows
- * (set by each gym in Account → Payments), falls back to PAYPAL_CLIENT_ID /
- * PAYPAL_CLIENT_SECRET / PAYPAL_SANDBOX env vars as a platform-wide default.
+ * Get PayPal config for a specific tenant. Prefers per-tenant
+ * payment_paypal_* Settings rows (set by each gym in Account →
+ * Payments), falls back to PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET /
+ * PAYPAL_SANDBOX env vars as a platform-wide default.
  *
- * Priority is DB-first so that env vars can't silently override a gym's
- * own PayPal credentials.
+ * tenantClientId is REQUIRED so we never pick another gym's PayPal
+ * credentials and route their charges into that gym's account.
+ *
+ * Priority is DB-first so that env vars can't silently override a
+ * gym's own PayPal credentials.
  */
-export async function getPayPalConfig(): Promise<PayPalConfig | null> {
+export async function getPayPalConfig(tenantClientId: string): Promise<PayPalConfig | null> {
   const rows = await prisma.settings.findMany({
     where: {
+      clientId: tenantClientId,
       key: {
         in: [
           "payment_paypal_client_id",

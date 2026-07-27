@@ -15,17 +15,22 @@ function getBaseUrl(sandbox: boolean): string {
 }
 
 /**
- * Get Square config. Prefers per-tenant payment_square_* Settings rows
- * (set by each gym in Account → Payments), falls back to SQUARE_ACCESS_TOKEN
- * / SQUARE_LOCATION_ID / SQUARE_APPLICATION_ID / SQUARE_SANDBOX env vars as
- * a platform-wide default.
+ * Get Square config for a specific tenant. Prefers per-tenant
+ * payment_square_* Settings rows (set by each gym in Account →
+ * Payments), falls back to SQUARE_ACCESS_TOKEN / SQUARE_LOCATION_ID /
+ * SQUARE_APPLICATION_ID / SQUARE_SANDBOX env vars as a platform-wide
+ * default.
  *
- * Priority is DB-first so that env vars can't silently override a gym's
- * own Square credentials.
+ * clientId is REQUIRED so we never pick another gym's Square
+ * credentials and route their charges into that gym's account.
+ *
+ * Priority is DB-first so that env vars can't silently override a
+ * gym's own Square credentials.
  */
-export async function getSquareConfig(): Promise<SquareConfig | null> {
+export async function getSquareConfig(clientId: string): Promise<SquareConfig | null> {
   const rows = await prisma.settings.findMany({
     where: {
+      clientId,
       key: {
         in: [
           "payment_square_access_token",

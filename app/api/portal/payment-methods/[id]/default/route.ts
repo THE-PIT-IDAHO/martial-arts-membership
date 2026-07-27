@@ -13,23 +13,24 @@ export async function PUT(
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id: paymentMethodId } = await params;
-  const processor = await getActiveProcessor();
 
   const member = await prisma.member.findUnique({
     where: { id: auth.memberId },
-    select: { stripeCustomerId: true, paypalPayerId: true, squareCustomerId: true },
+    select: { clientId: true, stripeCustomerId: true, paypalPayerId: true, squareCustomerId: true },
   });
 
   if (!member) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
 
+  const processor = await getActiveProcessor(member.clientId);
+
   try {
     if (processor === "stripe") {
       if (!member.stripeCustomerId) {
         return NextResponse.json({ error: "No Stripe customer" }, { status: 400 });
       }
-      const stripeClient = await getStripeClient();
+      const stripeClient = await getStripeClient(member.clientId);
       if (!stripeClient) {
         return NextResponse.json({ error: "Stripe is not configured" }, { status: 400 });
       }

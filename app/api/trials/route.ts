@@ -35,6 +35,17 @@ export async function POST(request: Request) {
 
     const clientId = await getClientId(request);
 
+    // Verify memberId belongs to this tenant before attaching a
+    // trial pass. Without this, an admin could create trial passes
+    // referencing another gym's members.
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { clientId: true },
+    });
+    if (!member || member.clientId !== clientId) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+
     const trial = await prisma.trialPass.create({
       data: {
         memberId,

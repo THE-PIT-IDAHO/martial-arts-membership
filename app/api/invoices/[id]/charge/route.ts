@@ -91,7 +91,7 @@ export async function POST(
       );
     }
 
-    const currency = await getCurrency();
+    const currency = await getCurrency(clientId);
     const planName = invoice.membership?.membershipPlan?.name || "Membership";
 
     const chargeResult = await chargeStoredPaymentMethod({

@@ -12,11 +12,6 @@ export async function POST(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const processor = await getActiveProcessor();
-  if (!processor) {
-    return NextResponse.json({ error: "No payment processor configured" }, { status: 400 });
-  }
-
   const { items } = await req.json();
 
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -34,6 +29,12 @@ export async function POST(req: NextRequest) {
     },
   });
   if (!member) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const clientId = member.clientId;
+
+  const processor = await getActiveProcessor(clientId);
+  if (!processor) {
+    return NextResponse.json({ error: "No payment processor configured" }, { status: 400 });
+  }
 
   // Separate POS items from membership plan items
   const posItemIds: string[] = [];
@@ -46,24 +47,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Fetch POS items with variants
+  // Fetch POS items with variants -- scoped to this tenant so a
+  // spoofed itemId can't pull a foreign gym's item into our cart.
   const posItems = posItemIds.length > 0
     ? await prisma.pOSItem.findMany({
-        where: { id: { in: posItemIds }, isActive: true },
+        where: { id: { in: posItemIds }, isActive: true, clientId },
         include: { variants: true },
       })
     : [];
   const posItemMap = new Map(posItems.map((i) => [i.id, i]));
 
-  // Fetch membership plans
+  // Fetch membership plans -- same tenant-scoping so a spoofed
+  // planId can't attach another gym's plan on our member.
   const plans = planItemIds.length > 0
     ? await prisma.membershipPlan.findMany({
-        where: { id: { in: planItemIds }, isActive: true },
+        where: { id: { in: planItemIds }, isActive: true, clientId },
       })
     : [];
   const planMap = new Map(plans.map((p) => [`plan_${p.id}`, p]));
 
-  const currency = await getCurrency();
+  const currency = await getCurrency(clientId);
 
   // Validate stock and calculate total
   let totalCents = 0;
@@ -137,13 +140,16 @@ export async function POST(req: NextRequest) {
     name: `${member.firstName} ${member.lastName}`,
   });
 
-  // Check for tax rate
-  const taxSetting = await prisma.settings.findFirst({ where: { key: "taxRate" } });
+  // Check for tax rate (per-tenant).
+  const taxSetting = await prisma.settings.findUnique({
+    where: { key_clientId: { key: "taxRate", clientId } },
+  });
   const taxRatePercent = taxSetting ? Number(taxSetting.value) : 0;
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
   const session = await createCheckoutSession({
+    clientId,
     amountCents: totalCents,
     currency,
     description: "Store Purchase",
@@ -155,7 +161,6 @@ export async function POST(req: NextRequest) {
     taxRatePercent: taxRatePercent > 0 ? taxRatePercent : undefined,
     metadata: {
       memberId: member.id,
-      clientId: member.clientId,
       cartItems: JSON.stringify(items),
     },
   });

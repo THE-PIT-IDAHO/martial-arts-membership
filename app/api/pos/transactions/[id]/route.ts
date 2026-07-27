@@ -110,8 +110,9 @@ export async function PATCH(
       // Refund via payment processor if the transaction was paid by card
       if (status === "REFUNDED" && transaction.paymentIntentId) {
         const processor = (transaction.paymentProcessor as ProcessorType) || "stripe";
-        const currency = await getCurrency();
+        const currency = await getCurrency(clientId);
         const result = await createRefund(
+          clientId,
           transaction.paymentIntentId,
           processor,
           transaction.totalCents,

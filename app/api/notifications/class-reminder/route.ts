@@ -45,7 +45,7 @@ export async function POST(req: Request) {
       select: { id: true, firstName: true, lastName: true },
     });
 
-    const tz = (await getSetting("timezone")) || "America/Denver";
+    const tz = (await getSetting("timezone", clientId)) || "America/Denver";
 
     let sent = 0;
     for (const cls of upcomingClasses) {
