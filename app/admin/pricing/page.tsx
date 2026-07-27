@@ -46,7 +46,11 @@ export default function PricingTiersPage() {
 
   function resetForm() {
     setForm({
-      name: "", description: "", priceCents: "", billingPeriod: "monthly",
+      // priceDollars is the UI value ("50" or "50.00"); it gets
+      // converted to cents right before the API call. Storing the
+      // dollar amount instead of the cent count means the input
+      // can render as a familiar $50.00 in the form.
+      name: "", description: "", priceDollars: "", billingPeriod: "monthly",
       maxMembers: "10", maxStyles: "3", maxRanksPerStyle: "10", maxMembershipPlans: "3",
       maxClasses: "5", maxUsers: "2", maxLocations: "1", maxReports: "3", maxPOSItems: "10",
       allowStripe: false, allowPaypal: false, allowSquare: false,
@@ -58,7 +62,8 @@ export default function PricingTiersPage() {
 
   function openEdit(tier: Tier) {
     setForm({
-      name: tier.name, description: tier.description || "", priceCents: tier.priceCents > 0 ? String(tier.priceCents) : "",
+      name: tier.name, description: tier.description || "",
+      priceDollars: tier.priceCents > 0 ? (tier.priceCents / 100).toFixed(2) : "",
       billingPeriod: tier.billingPeriod,
       maxMembers: tier.maxMembers >= 999999 ? "" : String(tier.maxMembers),
       maxStyles: tier.maxStyles >= 999999 ? "" : String(tier.maxStyles),
@@ -80,7 +85,14 @@ export default function PricingTiersPage() {
     setSaving(true);
     try {
       const method = editingId ? "PATCH" : "POST";
-      const body = editingId ? { id: editingId, ...form } : form;
+      // Convert priceDollars (UI) to priceCents (API contract).
+      // Blank / non-numeric input becomes 0 = free tier. Rounded
+      // to the nearest cent so 12.995 -> 1300 doesn't drift.
+      const { priceDollars: pd, ...rest } = form as Record<string, unknown>;
+      const dollars = parseFloat(String(pd ?? ""));
+      const priceCents = Number.isFinite(dollars) && dollars > 0 ? Math.round(dollars * 100) : 0;
+      const payload = { ...rest, priceCents };
+      const body = editingId ? { id: editingId, ...payload } : payload;
       const res = await fetch("/api/admin/pricing", {
         method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
@@ -118,8 +130,21 @@ export default function PricingTiersPage() {
                 <input type="text" value={form.name as string || ""} onChange={e => setF("name", e.target.value)} placeholder="e.g., Basic, Pro, Enterprise" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
               </div>
               <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1">Price (cents/mo)</label>
-                <input type="number" value={form.priceCents as string || ""} onChange={e => setF("priceCents", e.target.value)} placeholder="0 = Free" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                <label className="block text-[11px] font-medium text-gray-600 mb-1">
+                  Price /{(form.billingPeriod as string) === "yearly" ? "year" : "month"}
+                </label>
+                <div className="flex items-center rounded-md border border-gray-300 focus-within:ring-2 focus-within:ring-primary overflow-hidden">
+                  <span className="px-2 py-1.5 text-sm text-gray-500 bg-gray-50 border-r border-gray-300">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.priceDollars as string || ""}
+                    onChange={e => setF("priceDollars", e.target.value)}
+                    placeholder="0.00"
+                    className="flex-1 px-2 py-1.5 text-sm focus:outline-none"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-1">Billing Period</label>
