@@ -819,6 +819,53 @@ export default function POSPage() {
       return;
     }
 
+    // Prompt to apply available account credit BEFORE running the
+    // selected payment method. Skipped when the cashier already
+    // picked ACCOUNT, is in split mode (they're managing methods
+    // themselves), is comping the sale, or the member has no credit.
+    if (
+      selectedMember &&
+      !isSplitMode &&
+      selectedMember.accountCreditCents > 0 &&
+      paymentSplits[0]?.method !== "ACCOUNT" &&
+      paymentSplits[0]?.method !== "COMP"
+    ) {
+      const effectiveTotal = Math.max(0, totalCents - (redeemedGift?.appliedCents || 0));
+      if (effectiveTotal > 0) {
+        const credit = selectedMember.accountCreditCents;
+        const toApply = Math.min(credit, effectiveTotal);
+        const remainder = effectiveTotal - toApply;
+        const originalMethod = paymentSplits[0]?.method || "CASH";
+        const useCredit = confirm(
+          `${selectedMember.firstName} has $${(credit / 100).toFixed(2)} in account credit.\n\n` +
+          `Apply $${(toApply / 100).toFixed(2)} of it to this sale first?\n\n` +
+          `Yes: charge $${(remainder / 100).toFixed(2)} to ${originalMethod} + $${(toApply / 100).toFixed(2)} to account credit.\n` +
+          `No: charge the full $${(effectiveTotal / 100).toFixed(2)} to ${originalMethod}.`
+        );
+        if (useCredit) {
+          if (remainder === 0) {
+            // Credit covers everything -- switch to single ACCOUNT
+            // payment instead of splitting to a $0 second method.
+            setPaymentSplits([
+              { id: crypto.randomUUID(), method: "ACCOUNT", amountCents: toApply, label: "" },
+            ]);
+            setIsSplitMode(false);
+          } else {
+            setPaymentSplits([
+              { id: crypto.randomUUID(), method: "ACCOUNT", amountCents: toApply, label: "" },
+              { id: crypto.randomUUID(), method: originalMethod, amountCents: remainder, label: "" },
+            ]);
+            setIsSplitMode(true);
+          }
+          alert(
+            `Payment updated: $${(toApply / 100).toFixed(2)} account credit${remainder > 0 ? ` + $${(remainder / 100).toFixed(2)} ${originalMethod}` : ""}.\n\n` +
+            `Click Checkout again to complete the sale.`
+          );
+          return;
+        }
+      }
+    }
+
     // Validate split payment totals
     if (isSplitMode) {
       const effectiveTotal = Math.max(0, totalCents - (redeemedGift?.appliedCents || 0));
