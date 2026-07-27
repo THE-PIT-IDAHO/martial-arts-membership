@@ -65,47 +65,12 @@ export default function ManageGymsPage() {
   const [linkNote, setLinkNote] = useState("");
   const [creatingLink, setCreatingLink] = useState(false);
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
-  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-  const [editLink, setEditLink] = useState<Record<string, string | boolean>>({});
-  const [savingLink, setSavingLink] = useState(false);
 
   // Edit gym
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editGym, setEditGym] = useState<Record<string, string | boolean>>({});
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  // Inline rename for pricing tiers on this page. Full field editing
-  // still lives on /admin/pricing -- this is just the rename shortcut
-  // so admins on the gyms page can disambiguate tiers (e.g. two 'Free
-  // Testing' rows) without navigating away.
-  const [renamingTierId, setRenamingTierId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [savingRename, setSavingRename] = useState(false);
-
-  async function handleRenameTier(id: string) {
-    const name = renameValue.trim();
-    if (!name) return;
-    setSavingRename(true);
-    try {
-      const res = await fetch("/api/admin/pricing", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, name }),
-      });
-      if (res.ok) {
-        setRenamingTierId(null);
-        setRenameValue("");
-        loadData();
-      } else {
-        alert("Failed to rename tier");
-      }
-    } catch {
-      alert("Failed to rename tier");
-    } finally {
-      setSavingRename(false);
-    }
-  }
 
   async function loadData() {
     setLoadError(null);
@@ -183,53 +148,6 @@ export default function ManageGymsPage() {
     } finally {
       setCreatingLink(false);
     }
-  }
-
-  function openEditLink(link: SignupLink) {
-    setEditingLinkId(link.id);
-    setEditLink({
-      maxMembers: String(link.maxMembers),
-      maxStyles: String(link.maxStyles),
-      maxRanksPerStyle: String(link.maxRanksPerStyle),
-      maxMembershipPlans: String(link.maxMembershipPlans),
-      maxClasses: String(link.maxClasses),
-      maxUsers: String(link.maxUsers),
-      maxLocations: String(link.maxLocations),
-      maxReports: String(link.maxReports),
-      maxPOSItems: String(link.maxPOSItems),
-      allowStripe: link.allowStripe,
-      allowPaypal: link.allowPaypal,
-      allowSquare: link.allowSquare,
-      priceCents: link.priceCents > 0 ? String(link.priceCents) : "",
-      trialMonths: link.trialMonths > 0 ? String(link.trialMonths) : "",
-      note: link.note || "",
-    });
-  }
-
-  async function handleSaveLink() {
-    if (!editingLinkId) return;
-    setSavingLink(true);
-    try {
-      const res = await fetch("/api/admin/signup-links", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editingLinkId, ...editLink }),
-      });
-      if (res.ok) {
-        setEditingLinkId(null);
-        loadData();
-      }
-    } catch {
-      alert("Failed to update link");
-    } finally {
-      setSavingLink(false);
-    }
-  }
-
-  async function deleteLink(id: string) {
-    if (!confirm("Delete this signup link?")) return;
-    await fetch(`/api/admin/signup-links?id=${id}`, { method: "DELETE" });
-    loadData();
   }
 
   function copyLink(token: string, id: string) {
@@ -320,99 +238,6 @@ export default function ManageGymsPage() {
           <p className="text-sm text-gray-500">Create signup links and manage trial gym accounts</p>
         </div>
 
-        {/* Pricing Tiers Section -- inline rename only. For price /
-            limit / payment-processor edits, use /admin/pricing. */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">
-              Pricing Tiers <span className="text-xs font-normal text-gray-400">({tiers.length})</span>
-            </h2>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={loadData}
-                className="text-xs font-semibold text-gray-500 hover:text-gray-700"
-              >
-                Refresh
-              </button>
-              <a
-                href="/admin/pricing"
-                className="text-xs font-semibold text-primary hover:text-primaryDark"
-              >
-                Full tier settings →
-              </a>
-            </div>
-          </div>
-          {tiers.length === 0 ? (
-            <p className="text-sm text-gray-500">No pricing tiers yet.</p>
-          ) : (
-            <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
-              {tiers.map(t => {
-                const isRenaming = renamingTierId === t.id;
-                const badge = t.founderOnly
-                  ? { label: "Founder", cls: "bg-purple-100 text-purple-700" }
-                  : t.inviteOnly
-                    ? { label: "Invite only", cls: "bg-yellow-100 text-yellow-700" }
-                    : { label: "Public", cls: "bg-gray-100 text-gray-600" };
-                return (
-                  <div key={t.id} className="flex items-center gap-3 px-4 py-2.5">
-                    <div className="flex-1 min-w-0">
-                      {isRenaming ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={renameValue}
-                            onChange={ev => setRenameValue(ev.target.value)}
-                            autoFocus
-                            className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleRenameTier(t.id)}
-                            disabled={savingRename || !renameValue.trim()}
-                            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
-                          >
-                            {savingRename ? "Saving..." : "Save"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setRenamingTierId(null); setRenameValue(""); }}
-                            className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900">{t.name}</span>
-                          <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${badge.cls}`}>{badge.label}</span>
-                          {t.isActive === false && (
-                            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-100 text-red-700">
-                              Inactive
-                            </span>
-                          )}
-                          <span className="text-xs text-gray-500">
-                            {t.priceCents > 0 ? `$${(t.priceCents / 100).toFixed(2)}/mo` : "Free"}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    {!isRenaming && (
-                      <button
-                        type="button"
-                        onClick={() => { setRenamingTierId(t.id); setRenameValue(t.name); }}
-                        className="text-xs text-primary hover:text-primaryDark font-semibold"
-                      >
-                        Rename
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
         {/* Signup Links Section */}
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -480,71 +305,6 @@ export default function ManageGymsPage() {
               {links.map(link => {
                 const expired = link.expiresAt && new Date() > new Date(link.expiresAt);
 
-                if (editingLinkId === link.id) {
-                  const e = editLink;
-                  const setE = (key: string, val: string | boolean) => setEditLink(prev => ({ ...prev, [key]: val }));
-                  return (
-                    <div key={link.id} className="rounded-lg border border-primary bg-white p-5">
-                      <h3 className="text-sm font-bold text-gray-800 mb-3">Limits</h3>
-                      <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
-                        {[
-                          { label: "Members", key: "maxMembers" },
-                          { label: "Styles", key: "maxStyles" },
-                          { label: "Ranks/Style", key: "maxRanksPerStyle" },
-                          { label: "Membership Plans", key: "maxMembershipPlans" },
-                          { label: "Class Types", key: "maxClasses" },
-                          { label: "Staff Accounts", key: "maxUsers" },
-                          { label: "Locations", key: "maxLocations" },
-                          { label: "Custom Reports", key: "maxReports" },
-                          { label: "POS Items", key: "maxPOSItems" },
-                        ].map(f => (
-                          <div key={f.key}>
-                            <label className="block text-[11px] font-medium text-gray-600 mb-1">{f.label}</label>
-                            <input type="number" value={e[f.key] as string || ""} onChange={ev => setE(f.key, ev.target.value)} min="1" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                          </div>
-                        ))}
-                      </div>
-                      <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Payment Processors</h3>
-                      <div className="flex flex-wrap gap-4">
-                        {[
-                          { label: "Stripe", key: "allowStripe" },
-                          { label: "PayPal", key: "allowPaypal" },
-                          { label: "Square", key: "allowSquare" },
-                        ].map(p => (
-                          <label key={p.key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                            <input type="checkbox" checked={!!e[p.key]} onChange={ev => setE(p.key, ev.target.checked)} className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500 accent-red-600" />
-                            {p.label}
-                          </label>
-                        ))}
-                      </div>
-                      <h3 className="text-sm font-bold text-gray-800 mt-4 mb-3">Pricing & Duration</h3>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-medium text-gray-600 mb-1">Price ($/month)</label>
-                          <input type="number" value={e.priceCents as string || ""} onChange={ev => setE("priceCents", ev.target.value)} placeholder="Free" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-medium text-gray-600 mb-1">Trial (weeks)</label>
-                          <input type="number" value={e.trialMonths as string || ""} onChange={ev => setE("trialMonths", ev.target.value)} placeholder="No expiration" min="0" className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-medium text-gray-600 mb-1">&nbsp;</label>
-                        </div>
-                      </div>
-                      <div className="mt-3">
-                        <label className="block text-[11px] font-medium text-gray-600 mb-1">Note</label>
-                        <input type="text" value={e.note as string || ""} onChange={ev => setE("note", ev.target.value)} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                      </div>
-                      <div className="mt-4 flex justify-end gap-2">
-                        <button onClick={handleSaveLink} disabled={savingLink} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
-                          {savingLink ? "Saving..." : "Save"}
-                        </button>
-                        <button onClick={() => setEditingLinkId(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-                      </div>
-                    </div>
-                  );
-                }
-
                 // Find matching tier name
                 const tierName = tiers.find(t =>
                   t.maxMembers === link.maxMembers && t.maxStyles === link.maxStyles && t.priceCents === link.priceCents
@@ -577,18 +337,12 @@ export default function ManageGymsPage() {
                         >
                           {copiedLinkId === link.id ? "Copied!" : "Copy Link"}
                         </button>
-                        <button
-                          onClick={() => openEditLink(link)}
-                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => deleteLink(link.id)}
-                          className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
-                        >
-                          Delete
-                        </button>
+                        {/* Edit / Delete removed: any tier-level
+                            change (price, limits, invite-only flag,
+                            etc.) should be made in /admin/pricing on
+                            the tier itself, not on individual signup
+                            links. Create a new link if the offer
+                            needs to change. */}
                       </div>
                     </div>
                   </div>
