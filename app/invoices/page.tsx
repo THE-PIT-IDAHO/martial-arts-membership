@@ -191,14 +191,39 @@ export default function InvoicesPage() {
       alert("This invoice was not paid through a payment processor and cannot be refunded automatically. Use Void instead.");
       return;
     }
-    if (!confirm(`Refund ${formatCents(invoice.amountCents)} to ${invoice.member.firstName} ${invoice.member.lastName}? This will reverse the payment through ${invoice.paymentProcessor}.`)) return;
+    if (!confirm(
+      `Refund ${formatCents(invoice.amountCents)} to ${invoice.member.firstName} ${invoice.member.lastName}?\n\n` +
+      `This reverses the payment through ${invoice.paymentProcessor} AND debits the same amount from the member's account balance ` +
+      `(uses their existing credit first if any; goes negative if not). The member will show as owing the money that was returned.`
+    )) return;
     try {
       const res = await fetch(`/api/invoices/${invoice.id}/refund`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
       if (res.ok) {
-        alert("Refund processed successfully.");
+        const data = await res.json() as {
+          refundedCents?: number;
+          newBalanceCents?: number;
+          absorbedByCredit?: number;
+          owedAfterCredit?: number;
+        };
+        const parts: string[] = [`Refunded ${formatCents(data.refundedCents ?? 0)} to the card.`];
+        if ((data.absorbedByCredit ?? 0) > 0) {
+          parts.push(`${formatCents(data.absorbedByCredit!)} came out of the member's existing account credit.`);
+        }
+        if ((data.owedAfterCredit ?? 0) > 0) {
+          parts.push(`Member now owes ${formatCents(data.owedAfterCredit!)}.`);
+        }
+        const bal = data.newBalanceCents ?? 0;
+        parts.push(
+          bal < 0
+            ? `New balance: -${formatCents(Math.abs(bal))} (owes).`
+            : bal > 0
+              ? `New balance: ${formatCents(bal)} credit.`
+              : `New balance: $0.00.`,
+        );
+        alert(parts.join("\n"));
         await loadInvoices();
       } else {
         const data = await res.json();
