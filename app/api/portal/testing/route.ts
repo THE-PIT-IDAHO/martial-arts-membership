@@ -9,9 +9,10 @@ export async function GET(request: NextRequest) {
 
   const member = await prisma.member.findUnique({
     where: { id: auth.memberId },
-    select: { firstName: true, lastName: true, primaryStyle: true, stylesNotes: true },
+    select: { clientId: true, firstName: true, lastName: true, primaryStyle: true, stylesNotes: true },
   });
   if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  const memberTenant = member.clientId;
 
   // Get member's enrolled styles
   let enrolledStyleNames: string[] = [];
@@ -25,17 +26,22 @@ export async function GET(request: NextRequest) {
     enrolledStyleNames = [member.primaryStyle];
   }
 
-  // Find style IDs for the member's styles
+  // Find style IDs for THIS member's styles -- scoped by tenant so
+  // a matching style name in another gym doesn't leak its testing
+  // events into this member's portal.
   const styles = await prisma.style.findMany({
-    where: { name: { in: enrolledStyleNames } },
+    where: { name: { in: enrolledStyleNames }, clientId: memberTenant },
     select: { id: true, name: true },
   });
   const styleIds = styles.map((s) => s.id);
 
-  // Upcoming testing events for member's styles
+  // Upcoming testing events for member's styles -- also scoped by
+  // clientId, so a legacy dangling styleId can't surface a foreign
+  // gym's event.
   const upcomingEvents = await prisma.testingEvent.findMany({
     where: {
       styleId: { in: styleIds },
+      clientId: memberTenant,
       date: { gte: new Date() },
       status: "SCHEDULED",
     },
@@ -124,12 +130,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "testingEventId required" }, { status: 400 });
   }
 
-  // Get event
+  // Get member info + current rank for this style. Resolved BEFORE
+  // event lookup so we can verify the event belongs to the same
+  // tenant as this portal member -- otherwise a portal user could
+  // register on any gym's testing event by passing its id.
+  const member = await prisma.member.findUnique({
+    where: { id: auth.memberId },
+    select: { clientId: true, firstName: true, lastName: true, rank: true, primaryStyle: true, stylesNotes: true },
+  });
+  if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
+
+  // Get event -- scoped to this member's tenant.
   const event = await prisma.testingEvent.findUnique({
     where: { id: testingEventId },
-    select: { id: true, date: true, status: true, styleId: true },
+    select: { id: true, date: true, status: true, styleId: true, clientId: true },
   });
-  if (!event) return NextResponse.json({ error: "Event not found" }, { status: 404 });
+  if (!event || event.clientId !== member.clientId) {
+    return NextResponse.json({ error: "Event not found" }, { status: 404 });
+  }
   if (event.status !== "SCHEDULED") {
     return NextResponse.json({ error: "Event is not open for registration" }, { status: 400 });
   }
@@ -145,15 +163,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Already registered" }, { status: 400 });
   }
 
-  // Get member info + current rank for this style
-  const member = await prisma.member.findUnique({
-    where: { id: auth.memberId },
-    select: { firstName: true, lastName: true, rank: true, primaryStyle: true, stylesNotes: true },
-  });
-  if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
-
-  const style = await prisma.style.findUnique({
-    where: { id: event.styleId },
+  const style = await prisma.style.findFirst({
+    where: { id: event.styleId, clientId: member.clientId },
     select: { name: true, beltConfig: true },
   });
 

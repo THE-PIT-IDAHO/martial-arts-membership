@@ -42,6 +42,21 @@ export async function POST(req: Request) {
       return new NextResponse("Title is required", { status: 400 });
     }
 
+    // Verify coachId + styleId belong to this tenant so the created
+    // Appointment doesn't end up with dangling foreign FKs.
+    if (coachId) {
+      const c = await prisma.member.findUnique({ where: { id: coachId }, select: { clientId: true } });
+      if (!c || c.clientId !== clientId) {
+        return new NextResponse("Coach not found in this tenant", { status: 400 });
+      }
+    }
+    if (styleId) {
+      const s = await prisma.style.findUnique({ where: { id: styleId }, select: { clientId: true } });
+      if (!s || s.clientId !== clientId) {
+        return new NextResponse("Style not found in this tenant", { status: 400 });
+      }
+    }
+
     const appointment = await prisma.appointment.create({
       data: {
         title: title.trim(),

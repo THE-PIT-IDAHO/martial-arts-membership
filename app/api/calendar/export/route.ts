@@ -47,12 +47,14 @@ export async function GET(req: Request) {
       });
     }
 
-    // Get location names
+    // Get location names -- scoped to this tenant so a legacy
+    // dangling locationId can't pull another gym's location name
+    // into the export.
     const locationIds = [...new Set(filtered.map((c) => c.locationId).filter(Boolean) as string[])];
     const locations =
       locationIds.length > 0
         ? await prisma.location.findMany({
-            where: { id: { in: locationIds } },
+            where: { id: { in: locationIds }, clientId },
             select: { id: true, name: true },
           })
         : [];

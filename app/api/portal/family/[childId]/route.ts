@@ -33,6 +33,7 @@ export async function GET(
     where: { id: childId },
     select: {
       id: true,
+      clientId: true,
       firstName: true,
       lastName: true,
       photoUrl: true,
@@ -118,8 +119,10 @@ export async function GET(
   for (const enrolled of enrolledStyles) {
     if (!enrolled.name || !enrolled.rank || enrolled.active === false) continue;
 
+    // Style lookup scoped to the child's tenant so a matching style
+    // name in another gym doesn't hand back that gym's beltConfig.
     const style = await prisma.style.findFirst({
-      where: { name: enrolled.name },
+      where: { name: enrolled.name, clientId: child.clientId },
       select: { beltConfig: true },
     });
 

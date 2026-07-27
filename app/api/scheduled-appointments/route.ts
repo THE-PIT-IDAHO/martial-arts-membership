@@ -65,15 +65,58 @@ export async function POST(req: Request) {
       return new NextResponse("Scheduled date and times are required", { status: 400 });
     }
 
+    // Verify every body-supplied FK belongs to THIS tenant before
+    // creating the row. Without these checks:
+    //   * memberServiceCreditId could reference gym B's credit and
+    //     this endpoint would decrement B's balance while stamping
+    //     the appointment on A -- literal theft of another gym's
+    //     paid sessions.
+    //   * memberId / coachId / spaceId / appointmentId could all
+    //     point at foreign rows, corrupting our joins downstream.
+    const assertTenant = async (
+      model: "member" | "appointment" | "space",
+      id: string,
+    ): Promise<boolean> => {
+      if (model === "member") {
+        const r = await prisma.member.findUnique({ where: { id }, select: { clientId: true } });
+        return !!r && r.clientId === clientId;
+      }
+      if (model === "appointment") {
+        const r = await prisma.appointment.findUnique({ where: { id }, select: { clientId: true } });
+        return !!r && r.clientId === clientId;
+      }
+      const r = await prisma.space.findUnique({ where: { id }, select: { clientId: true } });
+      return !!r && r.clientId === clientId;
+    };
+    if (!(await assertTenant("appointment", appointmentId))) {
+      return new NextResponse("Appointment not found in this tenant", { status: 400 });
+    }
+    if (memberId && !(await assertTenant("member", memberId))) {
+      return new NextResponse("Member not found in this tenant", { status: 400 });
+    }
+    if (coachId && !(await assertTenant("member", coachId))) {
+      return new NextResponse("Coach not found in this tenant", { status: 400 });
+    }
+    if (spaceId && !(await assertTenant("space", spaceId))) {
+      return new NextResponse("Space not found in this tenant", { status: 400 });
+    }
+
     // If using an appointment credit, validate and deduct in a transaction
     if (memberServiceCreditId) {
       const credit = await prisma.memberServiceCredit.findUnique({
         where: { id: memberServiceCreditId },
-        include: { servicePackage: true },
+        include: {
+          servicePackage: true,
+          member: { select: { clientId: true } },
+        },
       });
 
       if (!credit || credit.status !== "ACTIVE") {
         return new NextResponse("Appointment credit is not active", { status: 400 });
+      }
+      // Verify the credit's owning member is in THIS tenant.
+      if (credit.member?.clientId !== clientId) {
+        return new NextResponse("Appointment credit not found", { status: 404 });
       }
       if (credit.memberId !== memberId) {
         return new NextResponse("Appointment credit does not belong to this member", { status: 400 });

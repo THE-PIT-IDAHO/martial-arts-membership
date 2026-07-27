@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   }
 
   // Build sample variables
-  const s = await getSettings(["gymName", "gymEmail", "gymLogo"]);
+  const s = await getSettings(["gymName", "gymEmail", "gymLogo"], clientId);
   const gymName = s.gymName || "Our Gym";
   const gymEmail = s.gymEmail || "info@ourgym.com";
   const gymLogo = s.gymLogo || "";

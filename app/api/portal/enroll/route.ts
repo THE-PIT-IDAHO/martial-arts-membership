@@ -1,10 +1,22 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEnrollmentConfirmationEmail } from "@/lib/notifications";
+import { getClientId } from "@/lib/tenant";
 
-// POST /api/portal/enroll — Public endpoint
+// POST /api/portal/enroll — Public endpoint used by the online-signup
+// flow. Every downstream lookup is scoped to the calling tenant so a
+// caller (or a page rendered under gymA's subdomain) can't select a
+// gymB plan / gymB promo code and have the submission stored on the
+// wrong tenant. Before this fix:
+//   * MembershipPlan.findUnique + PromoCode.findFirst were unscoped
+//     (cross-tenant plan attach, cross-tenant promo redemption count
+//     increment)
+//   * EnrollmentSubmission.create didn't set clientId, so real gyms
+//     never saw their submissions on /members/enrollments (stuck on
+//     the default-client bucket).
 export async function POST(req: Request) {
   try {
+    const clientId = await getClientId(req);
     const body = await req.json();
     const {
       firstName, lastName, email, phone,
@@ -21,21 +33,28 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get plan name for confirmation email
+    // Get plan name for confirmation email -- scoped by clientId so
+    // a cross-tenant plan id is silently dropped rather than
+    // attached to this submission.
     let planName: string | undefined;
+    let safeSelectedPlanId: string | null = null;
     if (selectedPlanId) {
-      const plan = await prisma.membershipPlan.findUnique({
-        where: { id: selectedPlanId },
+      const plan = await prisma.membershipPlan.findFirst({
+        where: { id: selectedPlanId, clientId },
         select: { name: true },
       });
-      planName = plan?.name;
+      if (plan) {
+        planName = plan.name;
+        safeSelectedPlanId = selectedPlanId;
+      }
     }
 
-    // Validate and process promo code if provided
+    // Validate and process promo code if provided -- scoped by
+    // clientId so gym B's code can't be redeemed at gym A.
     let promoDiscountCents: number | null = null;
     if (promoCode) {
       const promo = await prisma.promoCode.findFirst({
-        where: { code: promoCode.toUpperCase() },
+        where: { code: promoCode.toUpperCase(), clientId },
       });
       if (promo && promo.isActive) {
         // Increment redemption count
@@ -44,9 +63,9 @@ export async function POST(req: Request) {
           data: { redemptionCount: { increment: 1 } },
         });
         // Calculate discount for record-keeping
-        if (selectedPlanId) {
-          const plan = await prisma.membershipPlan.findUnique({
-            where: { id: selectedPlanId },
+        if (safeSelectedPlanId) {
+          const plan = await prisma.membershipPlan.findFirst({
+            where: { id: safeSelectedPlanId, clientId },
             select: { priceCents: true },
           });
           if (plan?.priceCents) {
@@ -73,22 +92,25 @@ export async function POST(req: Request) {
         emergencyContactPhone: emergencyContactPhone?.trim() || null,
         parentGuardianName: parentGuardianName?.trim() || null,
         medicalNotes: medicalNotes?.trim() || null,
-        selectedPlanId: selectedPlanId || null,
+        selectedPlanId: safeSelectedPlanId,
         waiverSigned: waiverSigned || false,
         waiverSignedAt: waiverSigned ? new Date() : null,
         promoCode: promoCode?.toUpperCase() || null,
         promoDiscountCents,
         leadSource: leadSource?.trim() || null,
+        clientId,
       },
     });
 
-    // Send confirmation email to applicant
+    // Send confirmation email to applicant -- scoped so the branding
+    // and toggles reflect THIS gym, not the platform-default fallback.
     sendEnrollmentConfirmationEmail({
       email: email.trim().toLowerCase(),
       firstName: firstName.trim(),
+      clientId,
     }).catch(() => {});
 
-    return NextResponse.json({ success: true, id: submission.id }, { status: 201 });
+    return NextResponse.json({ success: true, id: submission.id, planName }, { status: 201 });
   } catch (error) {
     console.error("Error creating enrollment:", error);
     return new NextResponse("Failed to submit enrollment", { status: 500 });

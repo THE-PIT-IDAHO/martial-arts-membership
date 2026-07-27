@@ -76,14 +76,14 @@ async function handleBookingPost(req: NextRequest) {
     select: { clientId: true },
   });
 
-  // Store the booking's date as the UTC timestamp of the gym's local midnight
-  // for that date -- using THIS member's tenant timezone, not the platform
-  // fallback which could belong to any gym.
-  const bookingTz = await getGymTimezone(bookingMember?.clientId);
-  const parsedDate = new Date(localMidnightUtc(bookingDate, bookingTz));
   if (!bookingMember) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
+
+  // Store the booking's date as the UTC timestamp of the gym's local midnight
+  // for that date -- using THIS member's tenant timezone.
+  const bookingTz = await getGymTimezone(bookingMember.clientId);
+  const parsedDate = new Date(localMidnightUtc(bookingDate, bookingTz));
 
   // Get class info
   const cls = await prisma.classSession.findUnique({

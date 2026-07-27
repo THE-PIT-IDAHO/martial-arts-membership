@@ -27,30 +27,26 @@ export function invalidateSettingCache(key?: string, clientId?: string): void {
   settingCache.delete(cacheKey(key, clientId));
 }
 
-// Load a single setting by key, optionally scoped to a client. Cached 5 min.
-export async function getSetting(key: string, clientId?: string): Promise<string | null> {
+// Load a single setting by key for a specific tenant. clientId is
+// REQUIRED to prevent cross-tenant fallback that let one gym's
+// value (Resend key, notification toggles, tax rate, etc.) affect
+// another gym. Cached 5 min.
+export async function getSetting(key: string, clientId: string): Promise<string | null> {
   const ck = cacheKey(key, clientId);
   const hit = settingCache.get(ck);
   if (hit && hit.expiresAt > Date.now()) return hit.value;
 
-  let value: string | null = null;
-  if (clientId) {
-    const row = await prisma.settings.findUnique({
-      where: { key_clientId: { key, clientId } },
-    });
-    value = row?.value ?? null;
-  } else {
-    // Fallback: unscoped (backward compat during migration)
-    const row = await prisma.settings.findFirst({ where: { key } });
-    value = row?.value ?? null;
-  }
+  const row = await prisma.settings.findUnique({
+    where: { key_clientId: { key, clientId } },
+  });
+  const value = row?.value ?? null;
   settingCache.set(ck, { value, expiresAt: Date.now() + SETTING_CACHE_TTL_MS });
   return value;
 }
 
-// Load multiple settings by keys, optionally scoped to a client. Cached 5 min
+// Load multiple settings by keys for a specific tenant. Cached 5 min
 // per key. Misses are batched into one DB query for the keys not in cache.
-export async function getSettings(keys: string[], clientId?: string): Promise<Record<string, string>> {
+export async function getSettings(keys: string[], clientId: string): Promise<Record<string, string>> {
   const now = Date.now();
   const map: Record<string, string> = {};
   const missing: string[] = [];
@@ -69,7 +65,7 @@ export async function getSettings(keys: string[], clientId?: string): Promise<Re
     const rows = await prisma.settings.findMany({
       where: {
         key: { in: missing },
-        ...(clientId ? { clientId } : {}),
+        clientId,
       },
     });
     const found = new Set<string>();
@@ -177,6 +173,16 @@ export async function sendEmail(params: {
     const resend = getResendClient();
     if (!resend) {
       errorText = "Resend client not configured (RESEND_API_KEY missing)";
+      console.warn(`[Email] skipped: ${errorText} (event=${params.eventType || "?"})`);
+      return false;
+    }
+
+    // Refuse to send without a tenant context. The per-tenant master
+    // toggle and gym branding lookups both require clientId now, and
+    // running unscoped would leak another gym's settings into the
+    // sent email.
+    if (!params.clientId) {
+      errorText = "sendEmail called without a clientId; refusing to run unscoped";
       console.warn(`[Email] skipped: ${errorText} (event=${params.eventType || "?"})`);
       return false;
     }

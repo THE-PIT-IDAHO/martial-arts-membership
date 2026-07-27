@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   }
 
   // Sample variables
-  const s = await getSettings(["gymName", "gymEmail", "gymLogo"]);
+  const s = await getSettings(["gymName", "gymEmail", "gymLogo"], clientId);
   const gymName = s.gymName || "Our Gym";
   const gymEmail = s.gymEmail || "info@ourgym.com";
   const gymLogo = s.gymLogo || "";
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
 </html>`;
 
   try {
-    await sendEmail({ to: [toEmail], subject: renderedSubject, html: fullHtml });
+    await sendEmail({ to: [toEmail], subject: renderedSubject, html: fullHtml, clientId });
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to send";

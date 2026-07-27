@@ -18,6 +18,41 @@ export async function POST(req: Request) {
       );
     }
 
+    // Verify memberId belongs to this tenant BEFORE anything is
+    // written or emailed. Without this, an admin can post any gym's
+    // memberId + an attacker-controlled PDF, and the endpoint would
+    // fire sendContractSignedEmail which resolves recipient emails
+    // from the foreign member and delivers the PDF to their inbox.
+    // Phishing vector.
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { clientId: true },
+    });
+    if (!member || member.clientId !== clientId) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+
+    // Verify membershipId + transactionId belong to this tenant too
+    // (both optional).
+    if (membershipId) {
+      const ms = await prisma.membership.findUnique({
+        where: { id: membershipId },
+        select: { member: { select: { clientId: true } } },
+      });
+      if (!ms || ms.member.clientId !== clientId) {
+        return NextResponse.json({ error: "Membership not found" }, { status: 400 });
+      }
+    }
+    if (transactionId) {
+      const tx = await prisma.pOSTransaction.findUnique({
+        where: { id: transactionId },
+        select: { clientId: true },
+      });
+      if (!tx || tx.clientId !== clientId) {
+        return NextResponse.json({ error: "Transaction not found" }, { status: 400 });
+      }
+    }
+
     const fileName = `${memberName || "Member"} - ${planName || "Contract"}.pdf`;
 
     // Strip data URI prefix from PDF if present.

@@ -44,6 +44,31 @@ export async function PATCH(req: Request, context: RouteContext) {
       return new NextResponse("Not found", { status: 404 });
     }
 
+    // Verify any body-supplied FK still points at THIS tenant before
+    // we let the update repoint it -- otherwise a caller could
+    // reassign the row to another gym's member / coach / space and
+    // produce dangling cross-tenant references.
+    const assertTenant = async (
+      model: "member" | "space",
+      idToCheck: string,
+    ): Promise<boolean> => {
+      if (model === "member") {
+        const r = await prisma.member.findUnique({ where: { id: idToCheck }, select: { clientId: true } });
+        return !!r && r.clientId === clientId;
+      }
+      const r = await prisma.space.findUnique({ where: { id: idToCheck }, select: { clientId: true } });
+      return !!r && r.clientId === clientId;
+    };
+    if (memberId && !(await assertTenant("member", memberId))) {
+      return new NextResponse("Member not found in this tenant", { status: 400 });
+    }
+    if (coachId && !(await assertTenant("member", coachId))) {
+      return new NextResponse("Coach not found in this tenant", { status: 400 });
+    }
+    if (spaceId && !(await assertTenant("space", spaceId))) {
+      return new NextResponse("Space not found in this tenant", { status: 400 });
+    }
+
     // If cancelling and linked to an appointment credit, refund the credit
     if (status === "CANCELLED" && existing.status !== "CANCELLED" && existing.memberServiceCreditId) {
       const result = await prisma.$transaction(async (tx) => {

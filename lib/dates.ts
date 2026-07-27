@@ -128,16 +128,16 @@ export const DEFAULT_TIMEZONE = "America/Denver";
 
 /**
  * Resolve the gym's IANA timezone from the Settings table. Falls back to
- * DEFAULT_TIMEZONE if not configured.
+ * DEFAULT_TIMEZONE if not configured for this tenant.
  *
- * Pass clientId for proper multi-tenant scoping (recommended). Without it,
- * the lookup returns the first matching row regardless of tenant.
+ * clientId is REQUIRED to prevent the fallback returning another
+ * tenant's timezone (which caused date-format leaks across gyms).
  */
-export async function getGymTimezone(clientId?: string): Promise<string> {
+export async function getGymTimezone(clientId: string): Promise<string> {
   try {
-    const row = clientId
-      ? await prisma.settings.findUnique({ where: { key_clientId: { key: "timezone", clientId } } })
-      : await prisma.settings.findFirst({ where: { key: "timezone" } });
+    const row = await prisma.settings.findUnique({
+      where: { key_clientId: { key: "timezone", clientId } },
+    });
     return row?.value || DEFAULT_TIMEZONE;
   } catch {
     return DEFAULT_TIMEZONE;
