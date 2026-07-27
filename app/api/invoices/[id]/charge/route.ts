@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { chargeStoredPaymentMethod, getCurrency } from "@/lib/payment";
+import { applyAccountCreditToInvoice } from "@/lib/billing";
 
 // POST /api/invoices/[id]/charge — retry an auto-charge against the stored
 // payment method. Used by the "Charge Now" admin button on a pending
@@ -24,6 +25,7 @@ export async function POST(
         invoiceNumber: true,
         memberId: true,
         amountCents: true,
+        creditAppliedCents: true,
         status: true,
         clientId: true,
         notes: true,
@@ -53,9 +55,38 @@ export async function POST(
       return NextResponse.json({ success: true, marked: "PAID" });
     }
 
+    // Try account credit BEFORE the processor. If credit covers the
+    // full remaining balance, no card charge is needed and we can
+    // return success right here.
+    const outstanding = invoice.amountCents - invoice.creditAppliedCents;
+    let remainingCents = outstanding;
+    let creditApplied = 0;
+    if (outstanding > 0) {
+      const creditResult = await applyAccountCreditToInvoice({
+        memberId: invoice.memberId,
+        invoiceId: invoice.id,
+        amountOwed: outstanding,
+      });
+      creditApplied = creditResult.creditApplied;
+      remainingCents = creditResult.remainingCents;
+      if (creditResult.fullyPaidByCredit) {
+        return NextResponse.json({
+          success: true,
+          paidBy: "ACCOUNT_CREDIT",
+          creditAppliedCents: creditApplied,
+        });
+      }
+    }
+
     if (!invoice.member.defaultPaymentMethodId) {
+      // Credit only partially covered (or member had no credit) and
+      // there is no card on file to charge the remainder.
       return NextResponse.json(
-        { error: "Member has no default payment method on file" },
+        {
+          error: creditApplied > 0
+            ? `Applied $${(creditApplied / 100).toFixed(2)} from account credit, but member has no default payment method for the remaining $${(remainingCents / 100).toFixed(2)}`
+            : "Member has no default payment method on file",
+        },
         { status: 400 },
       );
     }
@@ -65,7 +96,7 @@ export async function POST(
 
     const chargeResult = await chargeStoredPaymentMethod({
       memberId: invoice.memberId,
-      amountCents: invoice.amountCents,
+      amountCents: remainingCents,
       currency,
       description: `Invoice ${invoice.invoiceNumber || invoice.id} — ${planName}`,
       invoiceId: invoice.invoiceNumber || invoice.id,

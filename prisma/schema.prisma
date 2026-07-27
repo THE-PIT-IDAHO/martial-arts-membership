@@ -1010,6 +1010,14 @@ model Invoice {
   membershipId           String
   memberId               String
   amountCents            Int
+  // How much of amountCents was covered by the member's account
+  // credit balance BEFORE the payment processor was touched. Auto-
+  // billing debits this from Member.accountCreditCents so the card
+  // (or PayPal/Square) only gets charged for the remainder. Kept as
+  // its own column so invoice history shows both the original amount
+  // owed and the credit portion, rather than silently reducing
+  // amountCents.
+  creditAppliedCents     Int        @default(0)
   status                 String     @default("PENDING") // PENDING, PAID, FAILED, PAST_DUE, VOID
   billingPeriodStart     DateTime
   billingPeriodEnd       DateTime

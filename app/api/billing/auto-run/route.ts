@@ -7,6 +7,7 @@ import {
   getEffectivePriceCents,
   generateInvoiceNumber,
   applyFamilyDiscount,
+  applyAccountCreditToInvoice,
 } from "@/lib/billing";
 import { sendInvoiceCreatedEmail, sendPastDueAlertEmail, sendDunningEmail, sendPromotionEligibilityAlertEmail } from "@/lib/notifications";
 import { calculateNextRetryDate, getDunningEmailLevel, shouldSuspendMembership } from "@/lib/dunning";
@@ -244,7 +245,7 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
           // owed money. Mark them PAID at creation so they read as a
           // clean monthly receipt.
           const isZeroDollar = amountCents === 0;
-          await prisma.invoice.create({
+          const createdInvoice = await prisma.invoice.create({
             data: {
               invoiceNumber,
               membershipId: ms.id,
@@ -263,6 +264,7 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
                   }
                 : {}),
             },
+            select: { id: true },
           });
           invoicesCreated++;
 
@@ -271,19 +273,33 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
             await markDiscountsUsed(appliedMemberDiscs);
           }
 
-          // Attempt auto-charge if member has a stored payment method
-          if (!isZeroDollar && activeProcessor && ms.member.defaultPaymentMethodId) {
+          // Draw down account credit BEFORE the processor. If the
+          // member has enough credit to cover the full amount, the
+          // helper marks the invoice PAID and there is nothing to
+          // charge. Otherwise we charge only the remainder.
+          let remainingCents = amountCents;
+          if (!isZeroDollar) {
+            const creditResult = await applyAccountCreditToInvoice({
+              memberId: ms.member.id,
+              invoiceId: createdInvoice.id,
+              amountOwed: amountCents,
+            });
+            remainingCents = creditResult.remainingCents;
+          }
+
+          // Attempt auto-charge on the remaining balance only.
+          if (!isZeroDollar && remainingCents > 0 && activeProcessor && ms.member.defaultPaymentMethodId) {
             try {
               const chargeResult = await chargeStoredPaymentMethod({
                 memberId: ms.member.id,
-                amountCents,
+                amountCents: remainingCents,
                 currency,
                 description: `Invoice ${invoiceNumber} — ${ms.membershipPlan.name}`,
                 invoiceId: invoiceNumber,
               });
               if (chargeResult.success && chargeResult.externalPaymentId) {
-                await prisma.invoice.updateMany({
-                  where: { invoiceNumber },
+                await prisma.invoice.update({
+                  where: { id: createdInvoice.id },
                   data: {
                     status: "PAID",
                     paidAt: new Date(),
@@ -415,12 +431,32 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
 
       for (const inv of dunningInvoices) {
         try {
+          // Draw down remaining account credit BEFORE hitting the
+          // processor again. Someone may have added credit since the
+          // invoice went past due; if the credit now covers the
+          // outstanding balance the helper marks the invoice PAID and
+          // we don't need to touch the card at all.
+          const outstanding = inv.amountCents - inv.creditAppliedCents;
+          let dunningRemaining = outstanding;
+          if (outstanding > 0) {
+            const creditResult = await applyAccountCreditToInvoice({
+              memberId: inv.member.id,
+              invoiceId: inv.id,
+              amountOwed: outstanding,
+            });
+            if (creditResult.fullyPaidByCredit) {
+              dunningProcessed++;
+              continue;
+            }
+            dunningRemaining = creditResult.remainingCents;
+          }
+
           // Attempt charge via active processor if member has stored payment method
-          if (activeProcessor && inv.member.defaultPaymentMethodId) {
+          if (dunningRemaining > 0 && activeProcessor && inv.member.defaultPaymentMethodId) {
             try {
               const chargeResult = await chargeStoredPaymentMethod({
                 memberId: inv.member.id,
-                amountCents: inv.amountCents,
+                amountCents: dunningRemaining,
                 currency,
                 description: `Invoice ${inv.invoiceNumber || inv.id} — Dunning retry`,
                 invoiceId: inv.id,
