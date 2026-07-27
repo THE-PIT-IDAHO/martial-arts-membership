@@ -39,6 +39,13 @@ model Client {
   // Kept as a raw String to avoid a join table for what is a tiny,
   // append-only list.
   grantedTierIds  String?
+  // PricingTier.id the Client is currently on. Set by PATCH /api/plan
+  // so the Your Plan picker can highlight the right card even when
+  // two tiers happen to share the same limits + price (e.g. Founder
+  // and Free Testing both being $0 / unlimited). Nullable because
+  // legacy Clients from before this field existed fall back to
+  // limit-matching.
+  currentTierId   String?
   trialExpiresAt  DateTime?
   canceledAt      DateTime?
   createdAt       DateTime         @default(now())

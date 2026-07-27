@@ -44,7 +44,7 @@ export async function GET(req: Request) {
           maxLocations: true, maxReports: true, maxPOSItems: true,
           allowStripe: true, allowPaypal: true, allowSquare: true,
           priceCents: true, trialExpiresAt: true,
-          isPlatformAdmin: true, grantedTierIds: true,
+          isPlatformAdmin: true, grantedTierIds: true, currentTierId: true,
         },
       }),
       prisma.pricingTier.findMany({
@@ -62,20 +62,30 @@ export async function GET(req: Request) {
       isTierVisible(t, { isPlatformAdmin: client.isPlatformAdmin, grantedIds })
     );
 
-    // Find current tier by matching limits. Match against the full
-    // list (not visibleTiers) so a client's current-tier name still
-    // resolves even on the odd chance they are currently sitting on
-    // a tier they can no longer see.
-    const currentTier = tiers.find(t =>
-      t.maxMembers === client.maxMembers &&
-      t.maxStyles === client.maxStyles &&
-      t.priceCents === client.priceCents
-    ) || null;
+    // Prefer the explicit currentTierId written by the last PATCH.
+    // Falls back to limit-matching only for legacy Clients that
+    // haven't switched tiers yet since currentTierId was added --
+    // otherwise two tiers with identical limits (e.g. Founder vs
+    // Free Testing, both $0 / unlimited) would race to "current"
+    // by array order and one would never be selectable in the UI.
+    // Match against the full list (not visibleTiers) so a client's
+    // current-tier name still resolves even on the odd chance they
+    // are currently sitting on a tier they can no longer see.
+    const currentTier =
+      (client.currentTierId
+        ? tiers.find((t) => t.id === client.currentTierId)
+        : null)
+      || tiers.find((t) =>
+        t.maxMembers === client.maxMembers &&
+        t.maxStyles === client.maxStyles &&
+        t.priceCents === client.priceCents,
+      )
+      || null;
 
     // Strip internal-only fields from the client blob before
-    // returning it -- both are used server-side for gating and
+    // returning it -- all are used server-side for gating and
     // aren't something we want to leak to the browser.
-    const { isPlatformAdmin: _ipa, grantedTierIds: _gt, ...clientPublic } = client;
+    const { isPlatformAdmin: _ipa, grantedTierIds: _gt, currentTierId: _ct, ...clientPublic } = client;
 
     return NextResponse.json({
       current: clientPublic,
@@ -136,6 +146,9 @@ export async function PATCH(req: Request) {
         allowPaypal: tier.allowPaypal,
         allowSquare: tier.allowSquare,
         priceCents: tier.priceCents,
+        // Explicit record of the picked tier so GET highlights the
+        // right card even when two tiers share the same limits.
+        currentTierId: tier.id,
       },
     });
 

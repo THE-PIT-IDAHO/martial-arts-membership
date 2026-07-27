@@ -1,0 +1,11 @@
+-- Direct record of which PricingTier a Client is currently on.
+-- Previously the Your Plan picker guessed the current tier by
+-- matching maxMembers + maxStyles + priceCents, but two tiers can
+-- legitimately share those (Founder and Free Testing are both $0 /
+-- unlimited), so the picker highlighted whichever tier appeared
+-- first in the array regardless of which one was actually selected.
+--
+-- Nullable and additive: no existing row is rewritten. Rows with
+-- null still fall back to limit-matching in the API, so upgrade is
+-- non-breaking; the first successful PATCH /api/plan populates it.
+ALTER TABLE "Client" ADD COLUMN "currentTierId" TEXT;
