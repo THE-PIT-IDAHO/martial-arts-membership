@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getClientId } from "@/lib/tenant";
 
-async function getSetting(key: string): Promise<string | null> {
-  const row = await prisma.settings.findFirst({ where: { key } });
+// Per-tenant Settings lookup. The original getSetting() used
+// findFirst({ where: { key } }) with no clientId, so "test
+// connection" would validate whatever tenant's Stripe secret key
+// it happened to find first -- a config leak that also served as
+// an enumeration primitive.
+async function getSetting(key: string, tenantId: string): Promise<string | null> {
+  const row = await prisma.settings.findUnique({
+    where: { key_clientId: { key, clientId: tenantId } },
+  });
   return row?.value ?? null;
 }
 
 export async function POST(req: Request) {
+  const tenantId = await getClientId(req);
   const { processor } = await req.json();
 
   if (!processor || !["stripe", "paypal", "square"].includes(processor)) {
@@ -15,7 +24,7 @@ export async function POST(req: Request) {
 
   try {
     if (processor === "stripe") {
-      const secretKey = await getSetting("payment_stripe_secret_key");
+      const secretKey = await getSetting("payment_stripe_secret_key", tenantId);
       if (!secretKey) {
         return NextResponse.json({ ok: false, message: "Secret key not configured" });
       }
@@ -28,9 +37,9 @@ export async function POST(req: Request) {
     }
 
     if (processor === "paypal") {
-      const clientId = await getSetting("payment_paypal_client_id");
-      const clientSecret = await getSetting("payment_paypal_client_secret");
-      const sandbox = (await getSetting("payment_paypal_sandbox")) === "true";
+      const clientId = await getSetting("payment_paypal_client_id", tenantId);
+      const clientSecret = await getSetting("payment_paypal_client_secret", tenantId);
+      const sandbox = (await getSetting("payment_paypal_sandbox", tenantId)) === "true";
       if (!clientId || !clientSecret) {
         return NextResponse.json({ ok: false, message: "Client ID and Secret required" });
       }
@@ -54,8 +63,8 @@ export async function POST(req: Request) {
     }
 
     if (processor === "square") {
-      const accessToken = await getSetting("payment_square_access_token");
-      const sandbox = (await getSetting("payment_square_sandbox")) === "true";
+      const accessToken = await getSetting("payment_square_access_token", tenantId);
+      const sandbox = (await getSetting("payment_square_sandbox", tenantId)) === "true";
       if (!accessToken) {
         return NextResponse.json({ ok: false, message: "Access token not configured" });
       }

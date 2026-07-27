@@ -2,9 +2,15 @@ import { prisma } from "@/lib/prisma";
 import { toCsv, csvResponse } from "@/lib/csv";
 import { formatInTimezone, getTodayInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
+import { getClientId } from "@/lib/tenant";
 
-export async function GET() {
+export async function GET(req: Request) {
+  const clientId = await getClientId(req);
+  // Scope to this tenant via member.clientId. Without this filter the
+  // export returned every gym's members + plans + prices as a CSV
+  // to any admin.
   const memberships = await prisma.membership.findMany({
+    where: { member: { clientId } },
     orderBy: { startDate: "desc" },
     include: {
       member: { select: { firstName: true, lastName: true, memberNumber: true, email: true } },
@@ -27,7 +33,7 @@ export async function GET() {
     "Custom Price",
   ];
 
-  const tz = (await getSetting("timezone")) || "America/Denver";
+  const tz = (await getSetting("timezone", clientId)) || "America/Denver";
   const dateFmt: Intl.DateTimeFormatOptions = { year: "numeric", month: "2-digit", day: "2-digit" };
 
   const rows = memberships.map((m) => [

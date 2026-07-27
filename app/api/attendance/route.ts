@@ -282,6 +282,21 @@ export async function DELETE(req: Request) {
     } else if (memberId && classSessionId && dateStr) {
       // Delete by member, class, and date — anchor at gym-local midnight to
       // match how writes were created.
+      // Verify BOTH the member and the class session belong to this
+      // tenant. Without these checks, a caller could pass a foreign
+      // memberId + classSessionId and delete attendance + cancel
+      // bookings in another gym.
+      const [mem, sess] = await Promise.all([
+        prisma.member.findUnique({ where: { id: memberId }, select: { clientId: true } }),
+        prisma.classSession.findUnique({ where: { id: classSessionId }, select: { clientId: true } }),
+      ]);
+      if (!mem || mem.clientId !== clientId) {
+        return new NextResponse("Member not found", { status: 404 });
+      }
+      if (!sess || sess.clientId !== clientId) {
+        return new NextResponse("Class session not found", { status: 404 });
+      }
+
       const tz = await getGymTimezone(clientId);
       const dayStartMs = localMidnightUtc(dateStr, tz);
       const startOfDay = new Date(dayStartMs);

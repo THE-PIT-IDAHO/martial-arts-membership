@@ -2,13 +2,17 @@ import { prisma } from "@/lib/prisma";
 import { toCsv, csvResponse } from "@/lib/csv";
 import { formatInTimezone, getTodayInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
+import { getClientId } from "@/lib/tenant";
 
 export async function GET(request: Request) {
+  const clientId = await getClientId(request);
   const { searchParams } = new URL(request.url);
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
-  const where: Record<string, unknown> = {};
+  // Scope by member.clientId. Without it, the export returned every
+  // gym's attendance rows (member names + numbers + class names).
+  const where: Record<string, unknown> = { member: { clientId } };
   if (from || to) {
     where.attendanceDate = {};
     if (from) (where.attendanceDate as Record<string, unknown>).gte = new Date(from);
@@ -35,7 +39,7 @@ export async function GET(request: Request) {
     "Check-in Time",
   ];
 
-  const tz = (await getSetting("timezone")) || "America/Denver";
+  const tz = (await getSetting("timezone", clientId)) || "America/Denver";
 
   const rows = records.map((a) => [
     formatInTimezone(new Date(a.attendanceDate), tz, { year: "numeric", month: "2-digit", day: "2-digit" }),

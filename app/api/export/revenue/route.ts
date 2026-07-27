@@ -2,14 +2,18 @@ import { prisma } from "@/lib/prisma";
 import { toCsv, csvResponse } from "@/lib/csv";
 import { formatInTimezone, getTodayInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
+import { getClientId } from "@/lib/tenant";
 
 export async function GET(request: Request) {
+  const clientId = await getClientId(request);
   const { searchParams } = new URL(request.url);
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
   // --- Invoices ---
-  const invoiceWhere: Record<string, unknown> = {};
+  // Scope both queries to this tenant. Without these filters the
+  // revenue CSV returned every gym's invoices and POS transactions.
+  const invoiceWhere: Record<string, unknown> = { clientId };
   if (from || to) {
     invoiceWhere.createdAt = {};
     if (from) (invoiceWhere.createdAt as Record<string, unknown>).gte = new Date(from);
@@ -26,7 +30,7 @@ export async function GET(request: Request) {
   });
 
   // --- POS Transactions ---
-  const posWhere: Record<string, unknown> = {};
+  const posWhere: Record<string, unknown> = { clientId };
   if (from || to) {
     posWhere.createdAt = {};
     if (from) (posWhere.createdAt as Record<string, unknown>).gte = new Date(from);
@@ -49,7 +53,7 @@ export async function GET(request: Request) {
     "Payment Method",
   ];
 
-  const tz = (await getSetting("timezone")) || "America/Denver";
+  const tz = (await getSetting("timezone", clientId)) || "America/Denver";
   const dateFmt: Intl.DateTimeFormatOptions = { year: "numeric", month: "2-digit", day: "2-digit" };
 
   const invoiceRows = invoices.map((inv) => [

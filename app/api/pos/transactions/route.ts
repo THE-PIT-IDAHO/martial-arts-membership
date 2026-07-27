@@ -156,11 +156,15 @@ export async function POST(req: Request) {
     if (memberId) {
       for (const item of lineItems) {
         if (item.type === "membership" && item.membershipPlanId) {
-          // Get the membership plan to compare prices, get allowed styles, and billing cycle
-          const plan = await prisma.membershipPlan.findUnique({
-            where: { id: item.membershipPlanId },
+          // Get the membership plan -- scoped to this tenant so a
+          // hand-crafted POST can't smuggle another gym's planId
+          // onto our member (which auto-billing would then charge
+          // at that plan's price next cycle).
+          const plan = await prisma.membershipPlan.findFirst({
+            where: { id: item.membershipPlanId, clientId },
             select: { priceCents: true, setupFeeCents: true, allowedStyles: true, billingCycle: true },
           });
+          if (!plan) continue;
 
           // Calculate if there's a custom price (different from plan price)
           const planTotalPrice = (plan?.priceCents || 0) + (plan?.setupFeeCents || 0);
@@ -238,9 +242,11 @@ export async function POST(req: Request) {
               const includedStyleIds: string[] = JSON.parse(plan.allowedStyles);
 
               if (includedStyleIds.length > 0) {
-                // Get the styles with their beltConfig (contains ranks and PDFs)
+                // Get the styles with their beltConfig, scoped to
+                // this tenant so a malformed allowedStyles list
+                // can't inject a foreign Style row.
                 const stylesWithConfig = await prisma.style.findMany({
-                  where: { id: { in: includedStyleIds } },
+                  where: { id: { in: includedStyleIds }, clientId },
                   select: { id: true, name: true, beltConfig: true },
                 });
 

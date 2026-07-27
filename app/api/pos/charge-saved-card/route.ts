@@ -49,11 +49,17 @@ export async function POST(req: Request) {
   });
   const billedMemberId = payerRow?.fromMemberId || memberId;
 
+  // Verify the PAYER also belongs to this tenant. Prevents charging
+  // a foreign member's saved card if a cross-tenant MemberRelationship
+  // row ever existed (legacy data or a future bug).
   const member = await prisma.member.findUnique({
     where: { id: billedMemberId },
-    select: { stripeCustomerId: true, defaultPaymentMethodId: true },
+    select: { clientId: true, stripeCustomerId: true, defaultPaymentMethodId: true },
   });
-  if (!member?.stripeCustomerId || !member.defaultPaymentMethodId) {
+  if (!member || member.clientId !== clientId) {
+    return NextResponse.json({ error: "Payer not found" }, { status: 404 });
+  }
+  if (!member.stripeCustomerId || !member.defaultPaymentMethodId) {
     return NextResponse.json({
       error: billedMemberId === memberId
         ? "Member has no saved card on file"

@@ -25,6 +25,18 @@ export async function DELETE(req: Request) {
       );
     }
 
+    // Defensive tenant check on the member. Existing behavior only
+    // scoped classSessionIds, which was already safe by side effect,
+    // but validating the member up front prevents callers from
+    // probing whether foreign memberIds exist by measuring latency.
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { clientId: true },
+    });
+    if (!member || member.clientId !== clientId) {
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
+
     // Find all class sessions with this class type that are imported
     const importedClassSessions = await prisma.classSession.findMany({
       where: {

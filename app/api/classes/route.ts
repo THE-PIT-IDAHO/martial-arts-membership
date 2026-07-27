@@ -78,6 +78,66 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: classCheck.reason }, { status: 403 });
     }
 
+    // Verify every cross-table reference belongs to THIS tenant.
+    // Without these checks a caller could point a new class at
+    // another gym's style / program / location / space / coach --
+    // wouldn't leak data on its own but would corrupt our own
+    // records with foreign ids and eventually crash on cascading
+    // reads (styles[].ranks queries, coach name mismatch, etc.).
+    async function assertTenantRow(model:
+      | "style" | "program" | "location" | "space" | "member",
+      id: string,
+    ) {
+      if (model === "style") {
+        const r = await prisma.style.findUnique({ where: { id }, select: { clientId: true } });
+        return !!r && r.clientId === clientId;
+      }
+      if (model === "program") {
+        const r = await prisma.program.findUnique({ where: { id }, select: { clientId: true } });
+        return !!r && r.clientId === clientId;
+      }
+      if (model === "location") {
+        const r = await prisma.location.findUnique({ where: { id }, select: { clientId: true } });
+        return !!r && r.clientId === clientId;
+      }
+      if (model === "space") {
+        const r = await prisma.space.findUnique({ where: { id }, select: { clientId: true } });
+        return !!r && r.clientId === clientId;
+      }
+      const r = await prisma.member.findUnique({ where: { id }, select: { clientId: true } });
+      return !!r && r.clientId === clientId;
+    }
+    if (styleId && !(await assertTenantRow("style", styleId))) {
+      return NextResponse.json({ error: "Style not found in this tenant" }, { status: 400 });
+    }
+    if (programId && !(await assertTenantRow("program", programId))) {
+      return NextResponse.json({ error: "Program not found in this tenant" }, { status: 400 });
+    }
+    if (locationId && !(await assertTenantRow("location", locationId))) {
+      return NextResponse.json({ error: "Location not found in this tenant" }, { status: 400 });
+    }
+    if (spaceId && !(await assertTenantRow("space", spaceId))) {
+      return NextResponse.json({ error: "Space not found in this tenant" }, { status: 400 });
+    }
+    if (coachId && !(await assertTenantRow("member", coachId))) {
+      return NextResponse.json({ error: "Coach not found in this tenant" }, { status: 400 });
+    }
+    // styleIds arrives either as an array or a JSON-string; handle both.
+    let styleIdList: string[] = [];
+    if (Array.isArray(styleIds)) {
+      styleIdList = styleIds.filter((s): s is string => typeof s === "string");
+    } else if (typeof styleIds === "string" && styleIds.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(styleIds);
+        if (Array.isArray(parsed)) styleIdList = parsed.filter((s): s is string => typeof s === "string");
+      } catch { /* ignore malformed */ }
+    }
+    for (const sid of styleIdList) {
+      if (!(await assertTenantRow("style", sid))) {
+        return NextResponse.json({ error: "One or more styleIds not in this tenant" }, { status: 400 });
+      }
+    }
+
     const classSession = await prisma.classSession.create({
       data: {
         name: name.trim(),

@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail, getSettings } from "@/lib/email";
 import { logAudit } from "@/lib/audit";
+import { getClientId } from "@/lib/tenant";
 
 export async function POST(req: NextRequest) {
   try {
+    const clientId = await getClientId(req);
     const { memberId } = await req.json();
     if (!memberId) {
       return NextResponse.json({ error: "memberId is required" }, { status: 400 });
@@ -14,7 +16,12 @@ export async function POST(req: NextRequest) {
       where: { id: memberId },
       select: { id: true, firstName: true, lastName: true, email: true, clientId: true },
     });
-    if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    if (!member || member.clientId !== clientId) {
+      // Refuse to send an add-child link to a member outside the
+      // caller's tenant. Prevents an admin from spamming or phishing
+      // another gym's members via this endpoint.
+      return NextResponse.json({ error: "Member not found" }, { status: 404 });
+    }
     if (!member.email) {
       return NextResponse.json({ error: "Member has no email on file" }, { status: 400 });
     }

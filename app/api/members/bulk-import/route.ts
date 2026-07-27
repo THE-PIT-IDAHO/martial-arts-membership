@@ -90,8 +90,12 @@ export async function POST(req: Request) {
     // regardless of what other gyms in the same DB have.
     const memberNumbers = await getNextMemberNumbers(clientId, importMembers.length);
 
-    // Get all styles with their belt configs for style/rank validation
+    // Get all styles with their belt configs for style/rank validation.
+    // Scoped to this tenant -- without the filter, imports matched
+    // by lowercase style name against every gym's catalog and could
+    // silently attach a foreign Style's config to imported members.
     const allStyles = await prisma.style.findMany({
+      where: { clientId },
       select: {
         id: true,
         name: true,
