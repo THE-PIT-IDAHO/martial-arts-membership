@@ -72,7 +72,24 @@ type RankTestItem = {
   timeLimitOperator?: string | null;
   videoUrl?: string | null;
   showTitleInPdf?: boolean;
+  // Optional JSON array of { name, reps?, sets?, duration?, distance? }.
+  // Set from the curriculum editor's per-item Bundle button (workout
+  // categories only). When present, the grading sheet renders the child
+  // exercises as a bulleted list under the parent item -- the parent's
+  // stopwatch + checkmark cover the whole bundle.
+  subExercises?: string | null;
 };
+
+// Local parser so this page doesn't reach into the curriculum module.
+function parseSubExercisesForGrading(raw: string | null | undefined) {
+  if (!raw) return [] as Array<{ name: string; reps?: number | null; sets?: number | null; duration?: string | null; distance?: string | null }>;
+  try {
+    const p = JSON.parse(raw);
+    return Array.isArray(p) ? p.filter((x) => x && typeof x.name === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 type RankTestCategory = {
   id: string;
@@ -3570,6 +3587,7 @@ export default function TestingPage() {
                             // stopwatch, even when the coach didn't set an
                             // explicit timeLimit / duration on the row.
                             const hasTimeLimit = isWorkoutCat || item.timeLimit || item.duration;
+                            const bundle = isWorkoutCat ? parseSubExercisesForGrading(item.subExercises) : [];
                             return (
                               <div key={item.id}>
                                 {/* Curriculum item row */}
@@ -3582,6 +3600,27 @@ export default function TestingPage() {
                                     <span className="text-xs text-gray-500">{getItemSpecs(item)}</span>
                                   )}
                                 </div>
+                                {/* Bundle: read-only list of child
+                                    exercises under the parent so the
+                                    grader knows what the single check /
+                                    single stopwatch covers. */}
+                                {bundle.length > 0 && (
+                                  <ul className="px-3 sm:px-6 py-2 bg-white border-b space-y-0.5 text-xs sm:text-sm text-gray-700 list-disc list-inside">
+                                    {bundle.map((sub, i) => {
+                                      const specs: string[] = [];
+                                      if (sub.reps) specs.push(`${sub.reps} reps`);
+                                      if (sub.sets) specs.push(`${sub.sets} sets`);
+                                      if (sub.duration) specs.push(sub.duration);
+                                      if (sub.distance) specs.push(sub.distance);
+                                      return (
+                                        <li key={i}>
+                                          <span className="font-medium">{sub.name}</span>
+                                          {specs.length > 0 && <span className="text-gray-500"> — {specs.join(" · ")}</span>}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                )}
                                 {/* Checkbox row */}
                                 <div
                                   className={`p-3 sm:p-4 flex items-start gap-3 transition-colors ${

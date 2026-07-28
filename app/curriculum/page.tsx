@@ -30,11 +30,34 @@ type RankTest = { id: string; name: string; rankId: string; categories: Category
 type CategoryType = "demonstration" | "workout" | "information";
 type Category = { id: string; name: string; sortOrder: number; visibleOnTest?: boolean; type?: CategoryType; items: Item[] };
 
+// Optional child exercises grouped under a single workout item so one
+// stopwatch + one checkmark cover the whole set (e.g. "Circuit 1" =
+// pushups + squats + burpees on a single timer). Only offered inside
+// workout-type categories; all fields optional except name.
+type SubExercise = {
+  name: string;
+  reps?: number | null;
+  sets?: number | null;
+  duration?: string | null;
+  distance?: string | null;
+};
+
+function parseSubExercises(raw: string | null | undefined): SubExercise[] {
+  if (!raw) return [];
+  try {
+    const p = JSON.parse(raw);
+    return Array.isArray(p) ? p.filter((x) => x && typeof x.name === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 type Item = {
   id: string; name: string; type: string; description?: string | null;
   sets?: number | null; rounds?: number | null; reps?: number | null;
   roundDuration?: string | null; duration?: string | null; distance?: string | null;
   timeLimit?: string | null; sortOrder: number; createdAt?: string;
+  subExercises?: string | null;
 };
 
 type Row = {
@@ -66,6 +89,131 @@ const ITEM_TYPES = [
   { value: "breaking", label: "Board Breaking" },
   { value: "other", label: "Other" },
 ];
+
+/**
+ * Inline editor for the sub-exercise bundle on a single workout item.
+ * Purely local state until Save; on Save the parent-provided onCommit
+ * flushes the array up (typically by PATCHing the RankTestItem row's
+ * `subExercises` field). Empty-name rows are stripped on save.
+ */
+function SubExerciseEditor({
+  value,
+  onCommit,
+}: {
+  value: SubExercise[];
+  onCommit: (next: SubExercise[]) => Promise<void> | void;
+}) {
+  const [draft, setDraft] = useState<SubExercise[]>(() =>
+    value.length > 0 ? value : [{ name: "" }],
+  );
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  function update(idx: number, patch: Partial<SubExercise>) {
+    setDraft((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...patch };
+      return next;
+    });
+    setDirty(true);
+  }
+  function addRow() { setDraft((prev) => [...prev, { name: "" }]); setDirty(true); }
+  function removeRow(idx: number) { setDraft((prev) => prev.filter((_, i) => i !== idx)); setDirty(true); }
+  async function save() {
+    const cleaned = draft
+      .map((s) => ({
+        name: s.name?.trim() || "",
+        reps: s.reps ? Number(s.reps) : null,
+        sets: s.sets ? Number(s.sets) : null,
+        duration: s.duration?.trim() || null,
+        distance: s.distance?.trim() || null,
+      }))
+      .filter((s) => s.name.length > 0);
+    setSaving(true);
+    try {
+      await onCommit(cleaned);
+      setDirty(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-[11px] font-semibold uppercase text-gray-500">
+        Bundle exercises — one stopwatch + one checkmark covers them all
+      </div>
+      <div className="space-y-1">
+        {draft.map((row, idx) => (
+          <div key={idx} className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={row.name}
+              onChange={(e) => update(idx, { name: e.target.value })}
+              placeholder="Exercise (e.g. Pushups)"
+              className="flex-1 min-w-[140px] rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <input
+              type="number"
+              min={0}
+              value={row.reps ?? ""}
+              onChange={(e) => update(idx, { reps: e.target.value ? Number(e.target.value) : null })}
+              placeholder="Reps"
+              className="w-16 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary no-spinner"
+            />
+            <input
+              type="number"
+              min={0}
+              value={row.sets ?? ""}
+              onChange={(e) => update(idx, { sets: e.target.value ? Number(e.target.value) : null })}
+              placeholder="Sets"
+              className="w-16 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary no-spinner"
+            />
+            <input
+              type="text"
+              value={row.duration || ""}
+              onChange={(e) => update(idx, { duration: e.target.value })}
+              placeholder="Duration"
+              className="w-24 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <input
+              type="text"
+              value={row.distance || ""}
+              onChange={(e) => update(idx, { distance: e.target.value })}
+              placeholder="Distance"
+              className="w-24 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <button
+              type="button"
+              onClick={() => removeRow(idx)}
+              className="rounded-md border border-gray-300 px-2 py-1 text-[11px] text-gray-500 hover:bg-gray-100"
+              title="Remove this row"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={addRow}
+          className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
+        >
+          + Add exercise
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          disabled={!dirty || saving}
+          className="rounded-md bg-primary px-3 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+        >
+          {saving ? "Saving..." : dirty ? "Save bundle" : "Saved"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function SortableCategoryItem({ id, name, isActive }: { id: string; name: string; isActive: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
@@ -150,6 +298,8 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
   const [newItemDuration, setNewItemDuration] = useState("");
   const [newItemDistance, setNewItemDistance] = useState("");
   const [addingItem, setAddingItem] = useState(false);
+  // Which items currently have their sub-exercise bundle editor open.
+  const [expandedBundle, setExpandedBundle] = useState<Record<string, boolean>>({});
   const [editPopup, setEditPopup] = useState<{ itemId: string; value: string } | null>(null);
   const popupEditorRef = useRef<HTMLDivElement>(null);
 
@@ -564,8 +714,12 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
           </tr>
         </thead>
         <tbody>
-          {items.map(item => (
-            <tr key={item.id} className="border-t border-gray-200 hover:bg-gray-200">
+          {items.map(item => {
+            const subs = parseSubExercises(item.subExercises);
+            const bundleOpen = !!expandedBundle[item.id];
+            return (
+            <React.Fragment key={item.id}>
+            <tr className="border-t border-gray-200 hover:bg-gray-200">
               <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}>
                 <RichInput
                   defaultValue={item.description || item.name}
@@ -596,10 +750,43 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
                 </td>
               </>}
               <td className="px-2 py-1 text-center">
-                <button onClick={() => deleteItem(item.id, item.name)} className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark">Delete</button>
+                <div className="flex flex-col items-stretch gap-1">
+                  {sectionType === "workout" && (
+                    <button
+                      onClick={() => setExpandedBundle((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
+                      className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
+                        subs.length > 0
+                          ? "bg-primary text-white hover:bg-primaryDark"
+                          : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                      }`}
+                      title="Group several exercises under this item; one stopwatch and one checkmark cover them all."
+                    >
+                      {bundleOpen ? "Hide" : subs.length > 0 ? `Bundle (${subs.length})` : "Bundle"}
+                    </button>
+                  )}
+                  <button onClick={() => deleteItem(item.id, item.name)} className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark">Delete</button>
+                </div>
               </td>
             </tr>
-          ))}
+            {sectionType === "workout" && bundleOpen && (
+              <tr className="bg-gray-50 border-t border-gray-200">
+                <td colSpan={10} className="px-4 py-3">
+                  <SubExerciseEditor
+                    value={subs}
+                    onCommit={async (next) => {
+                      await updateField(item.id, "subExercises", next);
+                      // Refresh so the Bundle button flips to
+                      // "Bundle (N)" with the new count and the
+                      // grading sheet picks up the change.
+                      await onReload();
+                    }}
+                  />
+                </td>
+              </tr>
+            )}
+            </React.Fragment>
+            );
+          })}
           {/* Add new row */}
           <tr className="border-t border-gray-200 bg-gray-100">
             <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}><input type="text" value={newItemDesc} onChange={e => setNewItemDesc(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addItem(); }} onPaste={handleAddRowPaste} placeholder="Type to add..." className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
@@ -685,6 +872,8 @@ export default function CurriculumV2Page() {
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
+  // Which top-table items have their sub-exercise editor open.
+  const [topExpandedBundle, setTopExpandedBundle] = useState<Record<string, boolean>>({});
   const [popupCell, setPopupCell] = useState<{ rowIdx: number; field: keyof Row; value: string } | null>(null);
   const popupCellEditorRef = useRef<HTMLDivElement>(null);
   const popupCellTabHandledRef = useRef(false);
@@ -2030,8 +2219,24 @@ export default function CurriculumV2Page() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, idx) => (
-                  <tr key={row.itemId} className={`border-t border-gray-200 hover:bg-gray-200 ${row.isNew && !row.description ? "bg-gray-100" : ""}`}>
+                {rows.map((row, idx) => {
+                  // Bundle only exists once the row is persisted (needs a
+                  // real itemId to look up subExercises + PATCH back). Look
+                  // up the live item straight from rankTests -- Row does
+                  // not carry subExercises through the save cycle.
+                  let liveItem: Item | null = null;
+                  if (!row.isNew) {
+                    for (const test of rankTests) {
+                      const c = test.categories.find((tc) => tc.id === selectedCategoryId);
+                      const it = c?.items.find((i) => i.id === row.itemId);
+                      if (it) { liveItem = it; break; }
+                    }
+                  }
+                  const topSubs = liveItem ? parseSubExercises(liveItem.subExercises) : [];
+                  const topBundleOpen = !!topExpandedBundle[row.itemId];
+                  return (
+                  <React.Fragment key={row.itemId}>
+                  <tr className={`border-t border-gray-200 hover:bg-gray-200 ${row.isNew && !row.description ? "bg-gray-100" : ""}`}>
                     <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}>
                       <div className="flex items-center gap-1">
                         <div
@@ -2148,11 +2353,52 @@ export default function CurriculumV2Page() {
                     </>}
                     <td className="px-2 py-1 text-center">
                       {!row.isNew && (
-                        <button onClick={() => deleteRow(idx)} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Delete</button>
+                        <div className="flex flex-col items-stretch gap-1">
+                          {topSectionType === "workout" && (
+                            <button
+                              onClick={() => setTopExpandedBundle((prev) => ({ ...prev, [row.itemId]: !prev[row.itemId] }))}
+                              className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
+                                topSubs.length > 0
+                                  ? "bg-primary text-white hover:bg-primaryDark"
+                                  : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                              }`}
+                              title="Group several exercises under this item; one stopwatch and one checkmark cover them all."
+                            >
+                              {topBundleOpen ? "Hide" : topSubs.length > 0 ? `Bundle (${topSubs.length})` : "Bundle"}
+                            </button>
+                          )}
+                          <button onClick={() => deleteRow(idx)} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Delete</button>
+                        </div>
                       )}
                     </td>
                   </tr>
-                ))}
+                  {topSectionType === "workout" && !row.isNew && topBundleOpen && (
+                    <tr className="bg-gray-50 border-t border-gray-200">
+                      <td colSpan={topSectionType === "workout" ? 10 : 3} className="px-4 py-3">
+                        <SubExerciseEditor
+                          value={topSubs}
+                          onCommit={async (next) => {
+                            const testId = getTestId();
+                            await fetch(`/api/rank-tests/${testId}/items`, {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ itemId: row.itemId, subExercises: next }),
+                            });
+                            // Refresh rankTests so subs.length + the
+                            // grading sheet pick up the new bundle.
+                            const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+                            if (res.ok) {
+                              const d = await res.json();
+                              setRankTests(d.rankTests || d.tests || []);
+                            }
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
