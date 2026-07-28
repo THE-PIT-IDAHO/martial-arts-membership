@@ -36,7 +36,7 @@ export async function POST(
   try {
     const clientId = await getClientId(req);
     const body = await req.json();
-    const { categoryId, name, description, type, required, reps, sets, rounds, roundDuration, duration, distance, timeLimit, timeLimitOperator, videoUrl, imageUrl, showTitleInPdf } = body;
+    const { categoryId, name, description, type, required, reps, sets, rounds, roundDuration, duration, distance, timeLimit, timeLimitOperator, videoUrl, imageUrl, showTitleInPdf, subExercises } = body;
 
     if (!categoryId) {
       return new NextResponse("categoryId is required", { status: 400 });
@@ -48,6 +48,17 @@ export async function POST(
 
     // Get count for sort order
     const count = await prisma.rankTestItem.count({ where: { categoryId } });
+
+    // Serialize subExercises to JSON string. Accept either an array
+    // (normal editor form submit) or a pre-encoded string (bulk
+    // imports). Empty arrays store as null so old-shape rows are
+    // indistinguishable from "no sub-exercises".
+    let subExercisesJson: string | null = null;
+    if (Array.isArray(subExercises) && subExercises.length > 0) {
+      subExercisesJson = JSON.stringify(subExercises);
+    } else if (typeof subExercises === "string" && subExercises.trim()) {
+      subExercisesJson = subExercises;
+    }
 
     const item = await prisma.rankTestItem.create({
       data: {
@@ -66,6 +77,7 @@ export async function POST(
         videoUrl: videoUrl?.trim() || null,
         imageUrl: imageUrl?.trim() || null,
         showTitleInPdf: showTitleInPdf ?? true,
+        subExercises: subExercisesJson,
         categoryId,
         sortOrder: count,
       },
@@ -86,7 +98,7 @@ export async function PATCH(
   try {
     const clientId = await getClientId(req);
     const body = await req.json();
-    const { itemId, name, description, type, required, reps, sets, rounds, roundDuration, duration, distance, timeLimit, timeLimitOperator, videoUrl, imageUrl, sortOrder, showTitleInPdf } = body;
+    const { itemId, name, description, type, required, reps, sets, rounds, roundDuration, duration, distance, timeLimit, timeLimitOperator, videoUrl, imageUrl, sortOrder, showTitleInPdf, subExercises } = body;
 
     if (!itemId) {
       return new NextResponse("itemId is required", { status: 400 });
@@ -113,6 +125,17 @@ export async function PATCH(
     if (imageUrl !== undefined) updateData.imageUrl = imageUrl?.trim() || null;
     if (showTitleInPdf !== undefined) updateData.showTitleInPdf = showTitleInPdf;
     if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
+    // Empty array or empty string clears the field (back to a plain
+    // single-exercise item). Any other array is serialized to JSON.
+    if (subExercises !== undefined) {
+      if (Array.isArray(subExercises)) {
+        updateData.subExercises = subExercises.length > 0 ? JSON.stringify(subExercises) : null;
+      } else if (typeof subExercises === "string") {
+        updateData.subExercises = subExercises.trim() || null;
+      } else {
+        updateData.subExercises = null;
+      }
+    }
 
     const item = await prisma.rankTestItem.update({
       where: { id: itemId },

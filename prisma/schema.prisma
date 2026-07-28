@@ -565,6 +565,16 @@ model RankTestItem {
   videoUrl          String?
   imageUrl          String?
   showTitleInPdf    Boolean          @default(true)
+  // Optional bundle of child exercises grouped under this single
+  // rank-test item. Stored as JSON array so we don't need a join
+  // table for what is typically 2-5 tiny rows per parent. Shape:
+  //   [{ name: "Pushups", reps: 20 },
+  //    { name: "Squats",  reps: 30 },
+  //    { name: "Plank",   duration: "1m" }]
+  // A single checkmark in the grading sheet marks the whole parent
+  // pass/fail; the child list is just there so the grader knows
+  // what the workout consisted of.
+  subExercises      String?
   categoryId        String
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt

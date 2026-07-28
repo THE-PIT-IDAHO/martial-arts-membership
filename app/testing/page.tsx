@@ -6,6 +6,7 @@ import Link from "next/link";
 import { jsPDF } from "jspdf";
 import { getTodayString } from "@/lib/dates";
 import { RichTextInput, parseHtmlForPdf } from "@/components/rich-text-input";
+import { Stopwatch } from "@/components/stopwatch";
 
 type Style = {
   id: string;
@@ -71,7 +72,23 @@ type RankTestItem = {
   timeLimitOperator?: string | null;
   videoUrl?: string | null;
   showTitleInPdf?: boolean;
+  // JSON array of { name, reps?, sets?, duration?, distance? }.
+  // Optional bundle rendered under the parent title -- one checkmark
+  // still covers the whole bundle at grading time.
+  subExercises?: string | null;
 };
+
+// Local parser so this page doesn't have to reach into the curriculum
+// page's helper (avoids a cross-module dependency cycle).
+function parseSubExercisesForGrading(raw: string | null | undefined) {
+  if (!raw) return [] as Array<{ name: string; reps?: number | null; sets?: number | null; duration?: string | null; distance?: string | null }>;
+  try {
+    const p = JSON.parse(raw);
+    return Array.isArray(p) ? p.filter((x) => x && typeof x.name === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 type RankTestCategory = {
   id: string;
@@ -3543,6 +3560,7 @@ export default function TestingPage() {
                             const isPassed = score?.passed ?? false;
                             const isFailed = score?.failed ?? false;
                             const hasTimeLimit = item.timeLimit || item.duration;
+                            const bundle = parseSubExercisesForGrading(item.subExercises);
                             return (
                               <div key={item.id}>
                                 {/* Curriculum item row */}
@@ -3555,6 +3573,27 @@ export default function TestingPage() {
                                     <span className="text-xs text-gray-500">{getItemSpecs(item)}</span>
                                   )}
                                 </div>
+                                {/* Sub-exercise bundle (parent item covers all
+                                    at grading time -- this is a read-only
+                                    list so the grader sees what the workout
+                                    consists of). */}
+                                {bundle.length > 0 && (
+                                  <ul className="px-3 sm:px-6 py-2 bg-white border-b space-y-0.5 text-xs sm:text-sm text-gray-700 list-disc list-inside">
+                                    {bundle.map((sub, i) => {
+                                      const specs: string[] = [];
+                                      if (sub.reps) specs.push(`${sub.reps} reps`);
+                                      if (sub.sets) specs.push(`${sub.sets} sets`);
+                                      if (sub.duration) specs.push(sub.duration);
+                                      if (sub.distance) specs.push(sub.distance);
+                                      return (
+                                        <li key={i}>
+                                          <span className="font-medium">{sub.name}</span>
+                                          {specs.length > 0 && <span className="text-gray-500"> — {specs.join(" · ")}</span>}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                )}
                                 {/* Checkbox row */}
                                 <div
                                   className={`p-3 sm:p-4 flex items-start gap-3 transition-colors ${
@@ -3587,9 +3626,12 @@ export default function TestingPage() {
                                   {/* Input area */}
                                   <div className="flex-1 min-w-0">
 
-                                  {/* Time input for timed items, notes for others */}
+                                  {/* Time input for timed items, notes for others.
+                                      Stopwatch pipes its stopped value straight
+                                      into handleItemTimeInput so the grader
+                                      never has to type the number. */}
                                   {hasTimeLimit ? (
-                                    <div className="mt-2 flex items-center gap-2">
+                                    <div className="mt-2 flex items-center gap-2 flex-wrap">
                                       <label className="text-xs text-gray-500">Time:</label>
                                       <input
                                         type="text"
@@ -3597,6 +3639,9 @@ export default function TestingPage() {
                                         onChange={(e) => handleItemTimeInput(item.id, e.target.value)}
                                         placeholder="0:00"
                                         className="w-20 sm:w-24 rounded border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                                      />
+                                      <Stopwatch
+                                        onStop={(formatted) => handleItemTimeInput(item.id, formatted)}
                                       />
                                     </div>
                                   ) : (
@@ -4135,7 +4180,7 @@ export default function TestingPage() {
                                 return (
                                   <tr key={item.id} className="hover:bg-gray-50">
                                     <td className="sticky left-0 z-10 bg-white border border-gray-300 px-3 py-2 align-middle">
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-2 flex-wrap">
                                         <span className="text-xs font-medium">{getItemLabel(item)}</span>
                                         {!isKnowledge && (
                                           <span className={`shrink-0 inline-block rounded px-1 py-0.5 text-[9px] font-medium ${getTypeColor(item.type)}`}>
@@ -4145,6 +4190,22 @@ export default function TestingPage() {
                                         {!isKnowledge && getItemSpecs(item) && (
                                           <span className="text-[10px] text-gray-500">{getItemSpecs(item)}</span>
                                         )}
+                                        {(() => {
+                                          const bundle = parseSubExercisesForGrading(item.subExercises);
+                                          if (bundle.length === 0) return null;
+                                          const title = bundle.map((s) => {
+                                            const specs = [s.reps ? `${s.reps} reps` : null, s.duration || null].filter(Boolean).join(" ");
+                                            return specs ? `${s.name} — ${specs}` : s.name;
+                                          }).join("\n");
+                                          return (
+                                            <span
+                                              className="inline-block rounded bg-primary/10 px-1 py-0.5 text-[9px] font-semibold text-primary"
+                                              title={title}
+                                            >
+                                              Bundle: {bundle.length}
+                                            </span>
+                                          );
+                                        })()}
                                       </div>
                                     </td>
                                     {sheetParticipants.map((p) => {

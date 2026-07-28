@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { AppLayout } from "@/components/app-layout";
 import { generateCurriculumPdf, type GymSettings, type PdfRankTest } from "@/lib/curriculum-pdf";
 import {
@@ -24,12 +24,35 @@ import { CSS } from "@dnd-kit/utilities";
 type Style = { id: string; name: string; ranks: { id: string; name: string; order: number }[] };
 type RankTest = { id: string; name: string; rankId: string; categories: Category[] };
 type Category = { id: string; name: string; sortOrder: number; visibleOnTest?: boolean; items: Item[] };
+// Sub-exercise: a child of a parent item. All fields optional except
+// `name`. Rendered as a bulleted list under the parent in the grading
+// sheet; one checkmark on the parent covers the whole bundle.
+export type SubExercise = {
+  name: string;
+  reps?: number | null;
+  sets?: number | null;
+  duration?: string | null;
+  distance?: string | null;
+};
+
 type Item = {
   id: string; name: string; type: string; description?: string | null;
   sets?: number | null; rounds?: number | null; reps?: number | null;
   roundDuration?: string | null; duration?: string | null; distance?: string | null;
   timeLimit?: string | null; sortOrder: number; createdAt?: string;
+  subExercises?: string | null; // JSON-encoded SubExercise[]
 };
+
+// Parse the JSON blob defensively so a bad row doesn't crash the page.
+export function parseSubExercises(raw: string | null | undefined): SubExercise[] {
+  if (!raw) return [];
+  try {
+    const p = JSON.parse(raw);
+    return Array.isArray(p) ? p.filter((x) => x && typeof x.name === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 type Row = {
   itemId: string;
@@ -60,6 +83,128 @@ const ITEM_TYPES = [
   { value: "breaking", label: "Board Breaking" },
   { value: "other", label: "Other" },
 ];
+
+// Inline editor for the sub-exercises list on a parent RankTestItem.
+// Purely local state until the user clicks Save -- then flushes the
+// full array up through onChange so the row's PATCH persists the
+// JSON. Empty rows are stripped before save.
+function SubExerciseEditor({
+  value,
+  onChange,
+}: {
+  value: SubExercise[];
+  onChange: (next: SubExercise[]) => void;
+}) {
+  const [draft, setDraft] = useState<SubExercise[]>(() =>
+    value.length > 0 ? value : [{ name: "" }],
+  );
+  const [dirty, setDirty] = useState(false);
+
+  function update(idx: number, patch: Partial<SubExercise>) {
+    setDraft((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...patch };
+      return next;
+    });
+    setDirty(true);
+  }
+  function addRow() {
+    setDraft((prev) => [...prev, { name: "" }]);
+    setDirty(true);
+  }
+  function removeRow(idx: number) {
+    setDraft((prev) => prev.filter((_, i) => i !== idx));
+    setDirty(true);
+  }
+  function save() {
+    const cleaned = draft
+      .map((s) => ({
+        name: s.name?.trim() || "",
+        reps: s.reps ? Number(s.reps) : null,
+        sets: s.sets ? Number(s.sets) : null,
+        duration: s.duration?.trim() || null,
+        distance: s.distance?.trim() || null,
+      }))
+      .filter((s) => s.name.length > 0);
+    onChange(cleaned);
+    setDirty(false);
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-[11px] font-semibold uppercase text-gray-500">
+        Bundle exercises — one checkmark covers all
+      </div>
+      <div className="space-y-1">
+        {draft.map((row, idx) => (
+          <div key={idx} className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={row.name}
+              onChange={(e) => update(idx, { name: e.target.value })}
+              placeholder="Exercise (e.g. Pushups)"
+              className="flex-1 min-w-[140px] rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <input
+              type="number"
+              min={0}
+              value={row.reps ?? ""}
+              onChange={(e) => update(idx, { reps: e.target.value ? Number(e.target.value) : null })}
+              placeholder="Reps"
+              className="w-16 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary no-spinner"
+            />
+            <input
+              type="number"
+              min={0}
+              value={row.sets ?? ""}
+              onChange={(e) => update(idx, { sets: e.target.value ? Number(e.target.value) : null })}
+              placeholder="Sets"
+              className="w-16 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary no-spinner"
+            />
+            <input
+              type="text"
+              value={row.duration || ""}
+              onChange={(e) => update(idx, { duration: e.target.value })}
+              placeholder="Duration"
+              className="w-24 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <input
+              type="text"
+              value={row.distance || ""}
+              onChange={(e) => update(idx, { distance: e.target.value })}
+              placeholder="Distance"
+              className="w-24 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <button
+              type="button"
+              onClick={() => removeRow(idx)}
+              className="rounded-md border border-gray-300 px-2 py-1 text-[11px] text-gray-500 hover:bg-gray-100"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={addRow}
+          className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
+        >
+          + Add exercise
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          disabled={!dirty}
+          className="rounded-md bg-primary px-3 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+        >
+          {dirty ? "Save bundle" : "Saved"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function SortableCategoryItem({ id, name, isActive }: { id: string; name: string; isActive: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
@@ -142,6 +287,8 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
   const [newItemDuration, setNewItemDuration] = useState("");
   const [newItemDistance, setNewItemDistance] = useState("");
   const [addingItem, setAddingItem] = useState(false);
+  // Which items have their sub-exercise bundle editor expanded.
+  const [expandedSubEx, setExpandedSubEx] = useState<Record<string, boolean>>({});
   const [editPopup, setEditPopup] = useState<{ itemId: string; value: string } | null>(null);
   const popupEditorRef = useRef<HTMLDivElement>(null);
 
@@ -533,8 +680,12 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
           </tr>
         </thead>
         <tbody>
-          {items.map(item => (
-            <tr key={item.id} className="border-t border-gray-200 hover:bg-gray-200">
+          {items.map(item => {
+            const subs = parseSubExercises(item.subExercises);
+            const bundleOpen = !!expandedSubEx[item.id];
+            return (
+            <React.Fragment key={item.id}>
+            <tr className="border-t border-gray-200 hover:bg-gray-200">
               <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}>
                 <RichInput
                   defaultValue={item.description || item.name}
@@ -562,9 +713,36 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
                   <input type="text" defaultValue={item.timeLimit || ""} onBlur={e => updateField(item.id, "timeLimit", e.target.value || null)} placeholder="e.g. 1:30" className="w-14 rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
                 </div>
               </td>
-              <td className="px-2 py-1 text-center"><button onClick={() => deleteItem(item.id, item.name)} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Delete</button></td>
+              <td className="px-2 py-1 text-center">
+                <div className="flex flex-col items-stretch gap-1">
+                  <button
+                    onClick={() => setExpandedSubEx((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
+                    className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
+                      subs.length > 0
+                        ? "bg-primary text-white hover:bg-primaryDark"
+                        : "border border-gray-300 text-gray-600 hover:bg-gray-50"
+                    }`}
+                    title="Bundle multiple exercises under this item; one checkmark covers all of them at grading time."
+                  >
+                    {bundleOpen ? "Hide" : subs.length > 0 ? `Bundle (${subs.length})` : "Bundle"}
+                  </button>
+                  <button onClick={() => deleteItem(item.id, item.name)} className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark">Delete</button>
+                </div>
+              </td>
             </tr>
-          ))}
+            {bundleOpen && (
+              <tr className="bg-gray-50 border-t border-gray-200">
+                <td colSpan={10} className="px-4 py-3">
+                  <SubExerciseEditor
+                    value={subs}
+                    onChange={(next) => updateField(item.id, "subExercises", next)}
+                  />
+                </td>
+              </tr>
+            )}
+            </React.Fragment>
+            );
+          })}
           {/* Add new row */}
           <tr className="border-t border-gray-200 bg-gray-100">
             <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}><input type="text" value={newItemDesc} onChange={e => setNewItemDesc(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addItem(); }} onPaste={handleAddRowPaste} placeholder="Type to add..." className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
