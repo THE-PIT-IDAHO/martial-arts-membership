@@ -233,6 +233,137 @@ function SubExerciseEditor({
   );
 }
 
+/**
+ * Chrome for the top of a curriculum section (used by both the top
+ * selected-section table and every CategorySpreadsheet below it).
+ *
+ * Left cluster is always in-your-face:  section name + Type dropdown.
+ * Right cluster is progressive: item count + Show-on-test toggle +
+ * Copy-to-Ranks (primary), with the rare/destructive stuff (Apply
+ * visibility to all ranks, Delete Section, Delete from All Ranks)
+ * tucked behind a ⋯ menu so the header doesn't turn into a button bar.
+ *
+ * Copy-to-Ranks keeps its own inline popover -- each call site owns
+ * a copy flow with slightly different logic (top saves first,
+ * subsections just copy), so we pass the whole trigger+popover as
+ * `copyToRanksSlot`.
+ */
+function SectionHeader({
+  name,
+  sectionType,
+  onChangeSectionType,
+  itemCount,
+  visibleOnTest,
+  onToggleVisibleOnTest,
+  onApplyVisibilityToAllRanks,
+  onDeleteSection,
+  onDeleteFromAllRanks,
+  copyToRanksSlot,
+}: {
+  name: string;
+  sectionType: CategoryType;
+  onChangeSectionType: (t: CategoryType) => void | Promise<void>;
+  itemCount: number;
+  visibleOnTest: boolean;
+  onToggleVisibleOnTest: () => void;
+  onApplyVisibilityToAllRanks: () => void;
+  onDeleteSection: () => void;
+  onDeleteFromAllRanks: () => void;
+  copyToRanksSlot: React.ReactNode;
+}) {
+  const [openMenu, setOpenMenu] = useState(false);
+  // Close on outside click without depending on a ref-per-usage.
+  useEffect(() => {
+    if (!openMenu) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t || !t.closest("[data-section-overflow-menu]")) setOpenMenu(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [openMenu]);
+
+  return (
+    <div className="bg-gray-200 border-b border-gray-300 px-4 py-2 flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center gap-3">
+        <h3 className="text-sm font-semibold text-gray-700">{name}</h3>
+        <label
+          className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1"
+          title="Controls how this section renders on the grading sheet and which columns show below."
+        >
+          <span className="text-[10px] font-semibold uppercase text-gray-500">Type</span>
+          <select
+            value={sectionType}
+            onChange={(e) => onChangeSectionType(e.target.value as CategoryType)}
+            className="rounded border border-gray-200 bg-white px-1 py-0.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="demonstration">Demonstration</option>
+            <option value="workout">Workout (stopwatch on every item)</option>
+            <option value="information">Information (check only)</option>
+          </select>
+        </label>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-gray-400">{itemCount} items</span>
+        <label
+          className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1 cursor-pointer"
+          title="Show this section on the printed grading sheet for the current rank"
+        >
+          <input
+            type="checkbox"
+            checked={visibleOnTest}
+            onChange={onToggleVisibleOnTest}
+            className="h-3.5 w-3.5 accent-primary cursor-pointer"
+          />
+          <span className="text-xs font-medium text-gray-700">Show on test</span>
+        </label>
+        {copyToRanksSlot}
+        <div className="relative" data-section-overflow-menu>
+          <button
+            type="button"
+            onClick={() => setOpenMenu((v) => !v)}
+            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+            title="More section actions"
+            aria-haspopup="menu"
+            aria-expanded={openMenu}
+          >
+            ⋯
+          </button>
+          {openMenu && (
+            <div className="absolute right-0 top-full mt-1 z-40 w-56 rounded-lg border border-gray-200 bg-white shadow-xl py-1" role="menu">
+              <button
+                type="button"
+                onClick={() => { setOpenMenu(false); onApplyVisibilityToAllRanks(); }}
+                className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+                role="menuitem"
+              >
+                Apply visibility to all ranks
+              </button>
+              <div className="my-1 border-t border-gray-100" />
+              <button
+                type="button"
+                onClick={() => { setOpenMenu(false); onDeleteSection(); }}
+                className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-red-50 hover:text-red-700"
+                role="menuitem"
+              >
+                Delete section (this rank)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setOpenMenu(false); onDeleteFromAllRanks(); }}
+                className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-red-50 hover:text-red-700"
+                role="menuitem"
+              >
+                Delete section from all ranks
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SortableCategoryItem({ id, name, isActive }: { id: string; name: string; isActive: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const style = { transform: CSS.Transform.toString(transform), transition };
@@ -637,27 +768,17 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
   return (
     <>
     <div className="rounded-lg border border-gray-200 bg-gray-100 overflow-x-auto">
-      <div className="bg-gray-200 border-b border-gray-300 px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-gray-700">{categoryName}</h3>
-          <label
-            className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1"
-            title="Controls how this section renders on the grading sheet and which columns show below."
-          >
-            <span className="text-[10px] font-semibold uppercase text-gray-500">Type</span>
-            <select
-              value={sectionType}
-              onChange={(e) => onChangeSectionType(e.target.value as CategoryType)}
-              className="rounded border border-gray-200 bg-white px-1 py-0.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              <option value="demonstration">Demonstration</option>
-              <option value="workout">Workout (stopwatch on every item)</option>
-              <option value="information">Information (check only)</option>
-            </select>
-          </label>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-400">{items.length} items</span>
+      <SectionHeader
+        name={categoryName}
+        sectionType={sectionType}
+        onChangeSectionType={onChangeSectionType}
+        itemCount={items.length}
+        visibleOnTest={visibleOnTest}
+        onToggleVisibleOnTest={toggleVisibleOnThisRank}
+        onApplyVisibilityToAllRanks={applyVisibilityToAllRanks}
+        onDeleteSection={onDeleteCategory}
+        onDeleteFromAllRanks={onDeleteFromAllRanks}
+        copyToRanksSlot={
           <div className="relative">
             <button onClick={() => setShowCopyMenu(!showCopyMenu)} disabled={copying || items.length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
               {copying ? "Copying..." : "Copy to Ranks"}
@@ -687,29 +808,8 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-2 py-1">
-            <label className="flex items-center gap-1.5 cursor-pointer" title="Show this section on the printed grading sheet for this rank">
-              <input
-                type="checkbox"
-                checked={visibleOnTest}
-                onChange={toggleVisibleOnThisRank}
-                className="h-3.5 w-3.5 accent-primary cursor-pointer"
-              />
-              <span className="text-xs font-medium text-gray-700">Show on test</span>
-            </label>
-            <button
-              type="button"
-              onClick={applyVisibilityToAllRanks}
-              title={`Set every rank's "${categoryName}" section to ${visibleOnTest ? "shown" : "hidden"} on test`}
-              className="rounded border-l border-gray-200 pl-2 text-[10px] font-semibold text-primary hover:underline"
-            >
-              Apply to all ranks
-            </button>
-          </div>
-          <button onClick={onDeleteCategory} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete Section</button>
-          <button onClick={onDeleteFromAllRanks} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete from All Ranks</button>
-        </div>
-      </div>
+        }
+      />
       {/* Workout-only performance columns (reps / sets / min-per-round /
           rounds / duration / distance / time limit). Demonstration and
           Information sections just need item info + video, so we hide
@@ -745,6 +845,23 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
                   className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white"
                   onEditClick={() => setEditPopup({ itemId: item.id, value: item.description || "" })}
                 />
+                {sectionType === "workout" && subs.length > 0 && (
+                  <div className="mt-1 flex flex-wrap items-center gap-1 pl-1">
+                    <span className="text-[9px] font-semibold uppercase text-gray-400">Bundle</span>
+                    {subs.map((s, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setExpandedBundle((prev) => ({ ...prev, [item.id]: true }))}
+                        className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                        title={s.timed ? "Timed sub-exercise — click to edit bundle" : "Click to edit bundle"}
+                      >
+                        {s.timed && <span aria-hidden="true">⏱</span>}
+                        <span>{s.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </td>
               <td className="px-2 py-1"><input type="text" defaultValue={(item as Record<string, unknown>).videoUrl as string || ""} onBlur={e => updateField(item.id, "videoUrl", e.target.value || null)} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
               {sectionType === "workout" && <>
@@ -2013,9 +2130,14 @@ export default function CurriculumV2Page() {
   // of the "type" state + change handler. Look the live value up on
   // rankTests since allCategories only carries id/name/testId.
   let topSectionType: CategoryType = "demonstration";
+  let topVisibleOnTest = true;
   for (const test of rankTests) {
     const c = test.categories.find((tc) => tc.id === selectedCategoryId);
-    if (c?.type) { topSectionType = c.type; break; }
+    if (c) {
+      if (c.type) topSectionType = c.type;
+      topVisibleOnTest = c.visibleOnTest !== false;
+      break;
+    }
   }
   async function changeTopSectionType(nextType: CategoryType) {
     if (!selectedCategoryId) return;
@@ -2039,6 +2161,58 @@ export default function CurriculumV2Page() {
       const r = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
       if (r.ok) { const d = await r.json(); setRankTests(d.rankTests || d.tests || []); }
     }
+  }
+  async function toggleTopVisibleOnTest() {
+    if (!selectedCategoryId) return;
+    const next = !topVisibleOnTest;
+    setRankTests((prev) => prev.map((t) => ({
+      ...t,
+      categories: t.categories.map((c) =>
+        c.id === selectedCategoryId ? { ...c, visibleOnTest: next } : c,
+      ),
+    })));
+    const testId = rankTests.find((t) =>
+      t.categories.some((c) => c.id === selectedCategoryId),
+    )?.id;
+    if (!testId) return;
+    const res = await fetch(`/api/rank-tests/${testId}/categories`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ categoryId: selectedCategoryId, visibleOnTest: next }),
+    });
+    if (!res.ok) {
+      const r = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+      if (r.ok) { const d = await r.json(); setRankTests(d.rankTests || d.tests || []); }
+    }
+  }
+  // Mirrors the CategorySpreadsheet flow: propagate whichever value
+  // the toggle currently sits at to every rank's same-named category.
+  async function applyTopVisibilityToAllRanks() {
+    if (!selectedCategory) return;
+    const wantVisible = topVisibleOnTest;
+    const nameLc = selectedCategory.name.trim().toLowerCase();
+    const targets: Array<{ testId: string; categoryId: string }> = [];
+    // Iterate every rank of the current style.
+    for (const rank of ranks) {
+      const rr = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
+      if (!rr.ok) continue;
+      const dd = await rr.json();
+      const tests: RankTest[] = dd.rankTests || dd.tests || [];
+      for (const t of tests) {
+        const match = t.categories.find((c) => c.name.trim().toLowerCase() === nameLc);
+        if (match) targets.push({ testId: t.id, categoryId: match.id });
+      }
+    }
+    await Promise.all(targets.map((t) =>
+      fetch(`/api/rank-tests/${t.testId}/categories`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categoryId: t.categoryId, visibleOnTest: wantVisible }),
+      })
+    ));
+    // Refresh the current rank so the toggle reflects the truth.
+    const r = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+    if (r.ok) { const d = await r.json(); setRankTests(d.rankTests || d.tests || []); }
   }
 
   return (
@@ -2165,60 +2339,48 @@ export default function CurriculumV2Page() {
           </div>
         ) : (
           <div className="rounded-lg border border-gray-200 bg-gray-100 overflow-x-auto">
-            <div className="bg-gray-200 border-b border-gray-300 px-4 py-2 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h3 className="text-sm font-semibold text-gray-700">{selectedCategory?.name}</h3>
-                <label
-                  className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1"
-                  title="Controls how this section renders on the grading sheet and which columns show below."
-                >
-                  <span className="text-[10px] font-semibold uppercase text-gray-500">Type</span>
-                  <select
-                    value={topSectionType}
-                    onChange={(e) => changeTopSectionType(e.target.value as CategoryType)}
-                    className="rounded border border-gray-200 bg-white px-1 py-0.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="demonstration">Demonstration</option>
-                    <option value="workout">Workout (stopwatch on every item)</option>
-                    <option value="information">Information (check only)</option>
-                  </select>
-                </label>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400">{rows.filter(r => r.description?.trim()).length} items</span>
+            <SectionHeader
+              name={selectedCategory?.name || ""}
+              sectionType={topSectionType}
+              onChangeSectionType={changeTopSectionType}
+              itemCount={rows.filter(r => r.description?.trim()).length}
+              visibleOnTest={topVisibleOnTest}
+              onToggleVisibleOnTest={toggleTopVisibleOnTest}
+              onApplyVisibilityToAllRanks={applyTopVisibilityToAllRanks}
+              onDeleteSection={() => selectedCategory && deleteCategory(selectedCategory.id, selectedCategory.name)}
+              onDeleteFromAllRanks={() => selectedCategory && deleteCustomCategory(selectedCategory.id, selectedCategory.name)}
+              copyToRanksSlot={
                 <div className="relative inline-block">
-                <button onClick={() => setShowMainCopyMenu(!showMainCopyMenu)} disabled={copyingMain || rows.filter(r => r.description?.trim()).length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
-                  {copyingMain ? "Copying..." : "Copy to Ranks"}
-                </button>
-                {showMainCopyMenu && (
-                  <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-gray-200 bg-white shadow-xl p-3 space-y-2">
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase">Select ranks</p>
-                    <div className="max-h-40 overflow-y-auto space-y-1">
-                      {ranks.filter(r => r.id !== selectedRankId).map(r => (
-                        <label key={r.id} className={`flex items-center gap-2 text-xs cursor-pointer p-1 rounded ${mainCopySelectedRanks.has(r.id) ? "bg-primary/10" : "hover:bg-gray-50"}`}>
-                          <input type="checkbox" checked={mainCopySelectedRanks.has(r.id)} onChange={() => setMainCopySelectedRanks(prev => { const n = new Set(prev); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} className="accent-primary" />
-                          {r.name}
-                        </label>
-                      ))}
+                  <button onClick={() => setShowMainCopyMenu(!showMainCopyMenu)} disabled={copyingMain || rows.filter(r => r.description?.trim()).length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                    {copyingMain ? "Copying..." : "Copy to Ranks"}
+                  </button>
+                  {showMainCopyMenu && (
+                    <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-gray-200 bg-white shadow-xl p-3 space-y-2">
+                      <p className="text-[10px] font-semibold text-gray-500 uppercase">Select ranks</p>
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {ranks.filter(r => r.id !== selectedRankId).map(r => (
+                          <label key={r.id} className={`flex items-center gap-2 text-xs cursor-pointer p-1 rounded ${mainCopySelectedRanks.has(r.id) ? "bg-primary/10" : "hover:bg-gray-50"}`}>
+                            <input type="checkbox" checked={mainCopySelectedRanks.has(r.id)} onChange={() => setMainCopySelectedRanks(prev => { const n = new Set(prev); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })} className="accent-primary" />
+                            {r.name}
+                          </label>
+                        ))}
+                      </div>
+                      <label className="flex items-center gap-2 text-[10px] text-gray-500 cursor-pointer">
+                        <input type="checkbox" checked={mainCopyReplace} onChange={e => setMainCopyReplace(e.target.checked)} className="accent-primary" />
+                        Replace existing items
+                      </label>
+                      <div className="flex gap-1 pt-1 border-t border-gray-100">
+                        <button onClick={() => setMainCopySelectedRanks(new Set(ranks.filter(r => r.id !== selectedRankId).map(r => r.id)))} className="text-[10px] text-primary hover:underline">All</button>
+                        <button onClick={() => setMainCopySelectedRanks(new Set())} className="text-[10px] text-gray-400 hover:underline">None</button>
+                        <div className="flex-1" />
+                        <button onClick={copyMainCategoryToRanks} disabled={mainCopySelectedRanks.size === 0} className="rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50">Copy</button>
+                        <button onClick={() => setShowMainCopyMenu(false)} className="rounded border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                      </div>
                     </div>
-                    <label className="flex items-center gap-2 text-[10px] text-gray-500 cursor-pointer">
-                      <input type="checkbox" checked={mainCopyReplace} onChange={e => setMainCopyReplace(e.target.checked)} className="accent-primary" />
-                      Replace existing items
-                    </label>
-                    <div className="flex gap-1 pt-1 border-t border-gray-100">
-                      <button onClick={() => setMainCopySelectedRanks(new Set(ranks.filter(r => r.id !== selectedRankId).map(r => r.id)))} className="text-[10px] text-primary hover:underline">All</button>
-                      <button onClick={() => setMainCopySelectedRanks(new Set())} className="text-[10px] text-gray-400 hover:underline">None</button>
-                      <div className="flex-1" />
-                      <button onClick={copyMainCategoryToRanks} disabled={mainCopySelectedRanks.size === 0} className="rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50">Copy</button>
-                      <button onClick={() => setShowMainCopyMenu(false)} className="rounded border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
-                    </div>
-                  </div>
-                )}
+                  )}
                 </div>
-                <button onClick={() => selectedCategory && deleteCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete Section</button>
-                <button onClick={() => selectedCategory && deleteCustomCategory(selectedCategory.id, selectedCategory.name)} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete from All Ranks</button>
-              </div>
-            </div>
+              }
+            />
             <table ref={tableRef} className="w-full text-sm">
               <thead className="bg-gray-100 border-b border-gray-300">
                 <tr>
@@ -2333,6 +2495,23 @@ export default function CurriculumV2Page() {
                           ) : null;
                         })()}
                       </div>
+                      {topSectionType === "workout" && topSubs.length > 0 && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1 pl-1">
+                          <span className="text-[9px] font-semibold uppercase text-gray-400">Bundle</span>
+                          {topSubs.map((s, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => setTopExpandedBundle((prev) => ({ ...prev, [row.itemId]: true }))}
+                              className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20"
+                              title={s.timed ? "Timed sub-exercise — click to edit bundle" : "Click to edit bundle"}
+                            >
+                              {s.timed && <span aria-hidden="true">⏱</span>}
+                              <span>{s.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="px-2 py-1">
                       <input type="text" data-row={idx} data-col={1} value={row.videoUrl} onChange={e => updateRow(idx, "videoUrl", e.target.value)} onKeyDown={e => handleKeyDown(e, idx, 1)} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
