@@ -474,9 +474,9 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
           <h3 className="text-sm font-semibold text-gray-700">{categoryName}</h3>
           <label
             className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1"
-            title="Controls how this section renders on the grading sheet."
+            title="Controls how this section renders on the grading sheet and which columns show below."
           >
-            <span className="text-[10px] font-semibold uppercase text-gray-500">Grading style</span>
+            <span className="text-[10px] font-semibold uppercase text-gray-500">Type</span>
             <select
               value={sectionType}
               onChange={(e) => onChangeSectionType(e.target.value as CategoryType)}
@@ -1220,7 +1220,10 @@ export default function CurriculumV2Page() {
   function handleKeyDown(e: React.KeyboardEvent, rowIdx: number, colIdx: number) {
     if (e.key === "Tab" || e.key === "Enter") {
       e.preventDefault();
-      const cols = 9;
+      // Non-workout sections only render two data-col cells
+      // (description + video) so Tab needs to wrap after col 1 there
+      // instead of hunting for cols 2-8 that don't exist.
+      const cols = topSectionType === "workout" ? 9 : 2;
       let nextRow = rowIdx;
       let nextCol = colIdx + 1;
       if (nextCol >= cols) { nextCol = 0; nextRow++; }
@@ -1798,6 +1801,39 @@ export default function CurriculumV2Page() {
   const selectedRank = ranks.find(r => r.id === selectedRankId);
   const selectedCategory = allCategories.find(c => c.id === selectedCategoryId);
 
+  // The selected/top category renders through its own inline table
+  // (not the CategorySpreadsheet component), so it needs its own copy
+  // of the "type" state + change handler. Look the live value up on
+  // rankTests since allCategories only carries id/name/testId.
+  let topSectionType: CategoryType = "demonstration";
+  for (const test of rankTests) {
+    const c = test.categories.find((tc) => tc.id === selectedCategoryId);
+    if (c?.type) { topSectionType = c.type; break; }
+  }
+  async function changeTopSectionType(nextType: CategoryType) {
+    if (!selectedCategoryId) return;
+    // Optimistic update so the dropdown flips instantly.
+    setRankTests((prev) => prev.map((t) => ({
+      ...t,
+      categories: t.categories.map((c) =>
+        c.id === selectedCategoryId ? { ...c, type: nextType } : c,
+      ),
+    })));
+    const testId = rankTests.find((t) =>
+      t.categories.some((c) => c.id === selectedCategoryId),
+    )?.id;
+    if (!testId) return;
+    const res = await fetch(`/api/rank-tests/${testId}/categories`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ categoryId: selectedCategoryId, type: nextType }),
+    });
+    if (!res.ok) {
+      const r = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+      if (r.ok) { const d = await r.json(); setRankTests(d.rankTests || d.tests || []); }
+    }
+  }
+
   return (
     <AppLayout>
       <div className="space-y-4 p-6">
@@ -1923,7 +1959,24 @@ export default function CurriculumV2Page() {
         ) : (
           <div className="rounded-lg border border-gray-200 bg-gray-100 overflow-x-auto">
             <div className="bg-gray-200 border-b border-gray-300 px-4 py-2 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-700">{selectedCategory?.name}</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-sm font-semibold text-gray-700">{selectedCategory?.name}</h3>
+                <label
+                  className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1"
+                  title="Controls how this section renders on the grading sheet and which columns show below."
+                >
+                  <span className="text-[10px] font-semibold uppercase text-gray-500">Type</span>
+                  <select
+                    value={topSectionType}
+                    onChange={(e) => changeTopSectionType(e.target.value as CategoryType)}
+                    className="rounded border border-gray-200 bg-white px-1 py-0.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="demonstration">Demonstration</option>
+                    <option value="workout">Workout (stopwatch on every item)</option>
+                    <option value="information">Information (check only)</option>
+                  </select>
+                </label>
+              </div>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-gray-400">{rows.filter(r => r.description?.trim()).length} items</span>
                 <div className="relative inline-block">
@@ -1964,13 +2017,15 @@ export default function CurriculumV2Page() {
                 <tr>
                   <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500" style={{ width: "100%", minWidth: "250px" }}>Item Information</th>
                   <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Min/Rd</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Rnds</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Duration</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Distance</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-28">Time Limit</th>
+                  {topSectionType === "workout" && <>
+                    <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
+                    <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
+                    <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Min/Rd</th>
+                    <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Rnds</th>
+                    <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Duration</th>
+                    <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Distance</th>
+                    <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-28">Time Limit</th>
+                  </>}
                   <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16"></th>
                 </tr>
               </thead>
@@ -2059,36 +2114,38 @@ export default function CurriculumV2Page() {
                     <td className="px-2 py-1">
                       <input type="text" data-row={idx} data-col={1} value={row.videoUrl} onChange={e => updateRow(idx, "videoUrl", e.target.value)} onKeyDown={e => handleKeyDown(e, idx, 1)} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
                     </td>
-                    <td className="px-2 py-1">
-                      <input type="number" min={0} data-row={idx} data-col={2} value={row.reps} onChange={e => updateRow(idx, "reps", e.target.value)} onPaste={e => handlePaste(e, idx, 2)} onKeyDown={e => handleKeyDown(e, idx, 2)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
-                    </td>
-                    <td className="px-2 py-1">
-                      <input type="number" min={0} data-row={idx} data-col={3} value={row.sets} onChange={e => updateRow(idx, "sets", e.target.value)} onPaste={e => handlePaste(e, idx, 3)} onKeyDown={e => handleKeyDown(e, idx, 3)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
-                    </td>
-                    <td className="px-2 py-1">
-                      <input type="text" data-row={idx} data-col={4} value={row.roundDuration} onChange={e => updateRow(idx, "roundDuration", e.target.value)} onPaste={e => handlePaste(e, idx, 4)} onKeyDown={e => handleKeyDown(e, idx, 4)} placeholder="e.g. 3m" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
-                    </td>
-                    <td className="px-2 py-1">
-                      <input type="number" min={0} data-row={idx} data-col={5} value={row.rounds} onChange={e => updateRow(idx, "rounds", e.target.value)} onPaste={e => handlePaste(e, idx, 5)} onKeyDown={e => handleKeyDown(e, idx, 5)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
-                    </td>
-                    <td className="px-2 py-1">
-                      <input type="text" data-row={idx} data-col={6} value={row.duration} onChange={e => updateRow(idx, "duration", e.target.value)} onPaste={e => handlePaste(e, idx, 6)} onKeyDown={e => handleKeyDown(e, idx, 6)} placeholder="e.g. 2 min" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
-                    </td>
-                    <td className="px-2 py-1">
-                      <input type="text" data-row={idx} data-col={7} value={row.distance} onChange={e => updateRow(idx, "distance", e.target.value)} onPaste={e => handlePaste(e, idx, 7)} onKeyDown={e => handleKeyDown(e, idx, 7)} placeholder="e.g. 1 mi" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
-                    </td>
-                    <td className="px-2 py-1">
-                      <div className="flex items-center gap-0.5">
-                        <select value={row.timeLimitOperator} onChange={e => updateRow(idx, "timeLimitOperator" as keyof Row, e.target.value)} className="w-10 rounded border border-gray-300 px-0.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-primary bg-white">
-                          <option value="lte">≤</option>
-                          <option value="lt">&lt;</option>
-                          <option value="eq">=</option>
-                          <option value="gte">≥</option>
-                          <option value="gt">&gt;</option>
-                        </select>
-                        <input type="text" data-row={idx} data-col={8} value={row.timeLimit} onChange={e => updateRow(idx, "timeLimit", e.target.value)} onKeyDown={e => handleKeyDown(e, idx, 8)} placeholder="e.g. 1:30" className="w-14 rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
-                      </div>
-                    </td>
+                    {topSectionType === "workout" && <>
+                      <td className="px-2 py-1">
+                        <input type="number" min={0} data-row={idx} data-col={2} value={row.reps} onChange={e => updateRow(idx, "reps", e.target.value)} onPaste={e => handlePaste(e, idx, 2)} onKeyDown={e => handleKeyDown(e, idx, 2)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="number" min={0} data-row={idx} data-col={3} value={row.sets} onChange={e => updateRow(idx, "sets", e.target.value)} onPaste={e => handlePaste(e, idx, 3)} onKeyDown={e => handleKeyDown(e, idx, 3)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="text" data-row={idx} data-col={4} value={row.roundDuration} onChange={e => updateRow(idx, "roundDuration", e.target.value)} onPaste={e => handlePaste(e, idx, 4)} onKeyDown={e => handleKeyDown(e, idx, 4)} placeholder="e.g. 3m" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="number" min={0} data-row={idx} data-col={5} value={row.rounds} onChange={e => updateRow(idx, "rounds", e.target.value)} onPaste={e => handlePaste(e, idx, 5)} onKeyDown={e => handleKeyDown(e, idx, 5)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="text" data-row={idx} data-col={6} value={row.duration} onChange={e => updateRow(idx, "duration", e.target.value)} onPaste={e => handlePaste(e, idx, 6)} onKeyDown={e => handleKeyDown(e, idx, 6)} placeholder="e.g. 2 min" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input type="text" data-row={idx} data-col={7} value={row.distance} onChange={e => updateRow(idx, "distance", e.target.value)} onPaste={e => handlePaste(e, idx, 7)} onKeyDown={e => handleKeyDown(e, idx, 7)} placeholder="e.g. 1 mi" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
+                      </td>
+                      <td className="px-2 py-1">
+                        <div className="flex items-center gap-0.5">
+                          <select value={row.timeLimitOperator} onChange={e => updateRow(idx, "timeLimitOperator" as keyof Row, e.target.value)} className="w-10 rounded border border-gray-300 px-0.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-primary bg-white">
+                            <option value="lte">≤</option>
+                            <option value="lt">&lt;</option>
+                            <option value="eq">=</option>
+                            <option value="gte">≥</option>
+                            <option value="gt">&gt;</option>
+                          </select>
+                          <input type="text" data-row={idx} data-col={8} value={row.timeLimit} onChange={e => updateRow(idx, "timeLimit", e.target.value)} onKeyDown={e => handleKeyDown(e, idx, 8)} placeholder="e.g. 1:30" className="w-14 rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
+                        </div>
+                      </td>
+                    </>}
                     <td className="px-2 py-1 text-center">
                       {!row.isNew && (
                         <button onClick={() => deleteRow(idx)} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Delete</button>
