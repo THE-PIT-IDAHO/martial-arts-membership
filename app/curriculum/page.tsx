@@ -40,6 +40,11 @@ type SubExercise = {
   sets?: number | null;
   duration?: string | null;
   distance?: string | null;
+  // Opt-in per-child stopwatch. When true, the grading sheet gives
+  // this exercise its own mini stopwatch alongside the parent's
+  // overall timer -- useful when the coach wants both the total
+  // circuit time AND per-station splits.
+  timed?: boolean;
 };
 
 function parseSubExercises(raw: string | null | undefined): SubExercise[] {
@@ -127,6 +132,7 @@ function SubExerciseEditor({
         sets: s.sets ? Number(s.sets) : null,
         duration: s.duration?.trim() || null,
         distance: s.distance?.trim() || null,
+        timed: !!s.timed,
       }))
       .filter((s) => s.name.length > 0);
     setSaving(true);
@@ -183,6 +189,18 @@ function SubExerciseEditor({
               placeholder="Distance"
               className="w-24 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary"
             />
+            <label
+              className="flex items-center gap-1 text-[11px] font-medium text-gray-600 cursor-pointer"
+              title="Give this exercise its own stopwatch on the grading sheet (in addition to the parent's overall timer)."
+            >
+              <input
+                type="checkbox"
+                checked={!!row.timed}
+                onChange={(e) => update(idx, { timed: e.target.checked })}
+                className="h-3.5 w-3.5 accent-primary cursor-pointer"
+              />
+              Timed
+            </label>
             <button
               type="button"
               onClick={() => removeRow(idx)}

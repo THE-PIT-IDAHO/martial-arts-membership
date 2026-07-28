@@ -80,9 +80,18 @@ type RankTestItem = {
   subExercises?: string | null;
 };
 
+type ParsedSubExercise = {
+  name: string;
+  reps?: number | null;
+  sets?: number | null;
+  duration?: string | null;
+  distance?: string | null;
+  timed?: boolean;
+};
+
 // Local parser so this page doesn't reach into the curriculum module.
-function parseSubExercisesForGrading(raw: string | null | undefined) {
-  if (!raw) return [] as Array<{ name: string; reps?: number | null; sets?: number | null; duration?: string | null; distance?: string | null }>;
+function parseSubExercisesForGrading(raw: string | null | undefined): ParsedSubExercise[] {
+  if (!raw) return [];
   try {
     const p = JSON.parse(raw);
     return Array.isArray(p) ? p.filter((x) => x && typeof x.name === "string") : [];
@@ -116,6 +125,11 @@ type ItemScore = {
   failed?: boolean; // true = explicitly failed, false/undefined = not failed
   score?: number;
   notes?: string;
+  // Per-child times for a bundled workout item. Index-aligned with the
+  // parent's parsed subExercises array. Rides in the ItemScore JSON
+  // blob so it persists / restores with the rest of the score set --
+  // no schema change needed.
+  subTimes?: string[];
 };
 
 type ItemScores = Record<string, ItemScore>;
@@ -1554,6 +1568,21 @@ export default function TestingPage() {
   const handleItemTimeInput = (itemId: string, value: string) => {
     const formatted = formatTimeInput(value);
     setItemNotes(itemId, formatted);
+  };
+
+  // Write a single child's stopwatch reading into the parent's
+  // subTimes array. Preserves existing sibling times and pads with
+  // empty strings so array indexes stay aligned to the sub-exercise
+  // order regardless of which child was timed first.
+  const setItemSubTime = (itemId: string, subIdx: number, value: string) => {
+    setItemScores((prev) => {
+      const current = prev[itemId] || { passed: false };
+      const existing = current.subTimes || [];
+      const next = existing.slice();
+      while (next.length <= subIdx) next.push("");
+      next[subIdx] = value;
+      return { ...prev, [itemId]: { ...current, subTimes: next } };
+    });
   };
 
   const saveGradingSheet = async () => {
@@ -3600,22 +3629,39 @@ export default function TestingPage() {
                                     <span className="text-xs text-gray-500">{getItemSpecs(item)}</span>
                                   )}
                                 </div>
-                                {/* Bundle: read-only list of child
-                                    exercises under the parent so the
-                                    grader knows what the single check /
-                                    single stopwatch covers. */}
+                                {/* Bundle: list of child exercises under
+                                    the parent so the grader knows what
+                                    the single check / total stopwatch
+                                    covers. Rows flagged `timed:true` in
+                                    the curriculum editor also get their
+                                    own mini stopwatch here for per-
+                                    station splits. */}
                                 {bundle.length > 0 && (
-                                  <ul className="px-3 sm:px-6 py-2 bg-white border-b space-y-0.5 text-xs sm:text-sm text-gray-700 list-disc list-inside">
+                                  <ul className="px-3 sm:px-6 py-2 bg-white border-b space-y-1 text-xs sm:text-sm text-gray-700">
                                     {bundle.map((sub, i) => {
                                       const specs: string[] = [];
                                       if (sub.reps) specs.push(`${sub.reps} reps`);
                                       if (sub.sets) specs.push(`${sub.sets} sets`);
                                       if (sub.duration) specs.push(sub.duration);
                                       if (sub.distance) specs.push(sub.distance);
+                                      const subTime = score?.subTimes?.[i] || "";
                                       return (
-                                        <li key={i}>
+                                        <li key={i} className="flex items-center gap-2 flex-wrap">
+                                          <span className="inline-block text-gray-400">•</span>
                                           <span className="font-medium">{sub.name}</span>
-                                          {specs.length > 0 && <span className="text-gray-500"> — {specs.join(" · ")}</span>}
+                                          {specs.length > 0 && <span className="text-gray-500">— {specs.join(" · ")}</span>}
+                                          {sub.timed && (
+                                            <span className="ml-auto flex items-center gap-1">
+                                              <input
+                                                type="text"
+                                                value={subTime}
+                                                onChange={(e) => setItemSubTime(item.id, i, formatTimeInput(e.target.value))}
+                                                placeholder="0:00"
+                                                className="w-16 rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                                              />
+                                              <Stopwatch onStop={(formatted) => setItemSubTime(item.id, i, formatted)} />
+                                            </span>
+                                          )}
                                         </li>
                                       );
                                     })}
