@@ -46,8 +46,19 @@ export async function POST(
       return new NextResponse("Category not found", { status: 404 });
     }
 
-    // Get count for sort order
-    const count = await prisma.rankTestItem.count({ where: { categoryId } });
+    // Compute sortOrder as max(existing)+1, NOT count(). Count breaks
+    // as soon as any item was ever deleted: with rows at sortOrder
+    // 0,1,3,4 (item #2 deleted), count returns 4 -- same as row #4 --
+    // so the new item collides with an existing sortOrder and the
+    // client-side stable sort lands it before the real last row. Using
+    // the actual max means the new item is strictly greater than every
+    // sibling and always sorts to the end.
+    const highest = await prisma.rankTestItem.findFirst({
+      where: { categoryId },
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true },
+    });
+    const nextSortOrder = (highest?.sortOrder ?? -1) + 1;
 
     // Serialize subExercises to JSON string. Accept either an array
     // (normal editor form submit) or a pre-encoded string (bulk
@@ -79,7 +90,7 @@ export async function POST(
         showTitleInPdf: showTitleInPdf ?? true,
         subExercises: subExercisesJson,
         categoryId,
-        sortOrder: count,
+        sortOrder: nextSortOrder,
       },
     });
 
