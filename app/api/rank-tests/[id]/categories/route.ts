@@ -62,11 +62,19 @@ export async function POST(
     const clientId = await getClientId(req);
     const { id } = await params;
     const body = await req.json();
-    const { name, description, sortOrder } = body;
+    const { name, description, sortOrder, type } = body;
 
     if (!name) {
       return new NextResponse("Name is required", { status: 400 });
     }
+
+    // Whitelist of category types. Anything else silently falls back
+    // to the default so a bad client can't poison the display logic
+    // downstream.
+    const CATEGORY_TYPES = new Set(["demonstration", "workout", "information"]);
+    const safeType: string = typeof type === "string" && CATEGORY_TYPES.has(type)
+      ? type
+      : "demonstration";
 
     if (!(await assertRankTestTenant(id, clientId))) {
       return new NextResponse("Rank test not found", { status: 404 });
@@ -94,6 +102,7 @@ export async function POST(
         data: {
           name: trimmedName,
           description: description?.trim() || null,
+          type: safeType,
           rankTestId: id,
           sortOrder: order,
         },
@@ -131,7 +140,7 @@ export async function PATCH(
   try {
     const clientId = await getClientId(req);
     const body = await req.json();
-    const { categoryId, name, description, sortOrder, visibleOnTest } = body;
+    const { categoryId, name, description, sortOrder, visibleOnTest, type } = body;
 
     if (!categoryId) {
       return new NextResponse("categoryId is required", { status: 400 });
@@ -141,11 +150,14 @@ export async function PATCH(
       return new NextResponse("Category not found", { status: 404 });
     }
 
+    const CATEGORY_TYPES = new Set(["demonstration", "workout", "information"]);
+
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name.trim();
     if (description !== undefined) updateData.description = description?.trim() || null;
     if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
     if (typeof visibleOnTest === "boolean") updateData.visibleOnTest = visibleOnTest;
+    if (typeof type === "string" && CATEGORY_TYPES.has(type)) updateData.type = type;
 
     const category = await prisma.rankTestCategory.update({
       where: { id: categoryId },

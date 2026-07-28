@@ -534,6 +534,13 @@ model RankTestCategory {
   description   String?
   sortOrder     Int            @default(0)
   visibleOnTest Boolean        @default(true)
+  // Grading style. Drives how the category renders on the grading
+  // sheet: "workout" gives every item a stopwatch and treats the
+  // category as a bundle (Gatekeeper, Fitness), "information" is a
+  // check-only Knowledge section with no time or notes inputs, and
+  // "demonstration" is the default per-item scoring used by
+  // Techniques / Forms / Katas.
+  type          String         @default("demonstration")
   rankTestId    String
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt

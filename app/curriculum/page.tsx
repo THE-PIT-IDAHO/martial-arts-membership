@@ -23,36 +23,19 @@ import { CSS } from "@dnd-kit/utilities";
 
 type Style = { id: string; name: string; ranks: { id: string; name: string; order: number }[] };
 type RankTest = { id: string; name: string; rankId: string; categories: Category[] };
-type Category = { id: string; name: string; sortOrder: number; visibleOnTest?: boolean; items: Item[] };
-// Sub-exercise: a child of a parent item. All fields optional except
-// `name`. Rendered as a bulleted list under the parent in the grading
-// sheet; one checkmark on the parent covers the whole bundle.
-export type SubExercise = {
-  name: string;
-  reps?: number | null;
-  sets?: number | null;
-  duration?: string | null;
-  distance?: string | null;
-};
+// Category "type" drives how the grading sheet renders each section:
+//   demonstration -> per-item scoring (Techniques, Forms, Katas — the default)
+//   workout       -> every item gets a stopwatch (Gatekeeper, Fitness)
+//   information   -> check-only knowledge section, no time / notes inputs
+type CategoryType = "demonstration" | "workout" | "information";
+type Category = { id: string; name: string; sortOrder: number; visibleOnTest?: boolean; type?: CategoryType; items: Item[] };
 
 type Item = {
   id: string; name: string; type: string; description?: string | null;
   sets?: number | null; rounds?: number | null; reps?: number | null;
   roundDuration?: string | null; duration?: string | null; distance?: string | null;
   timeLimit?: string | null; sortOrder: number; createdAt?: string;
-  subExercises?: string | null; // JSON-encoded SubExercise[]
 };
-
-// Parse the JSON blob defensively so a bad row doesn't crash the page.
-export function parseSubExercises(raw: string | null | undefined): SubExercise[] {
-  if (!raw) return [];
-  try {
-    const p = JSON.parse(raw);
-    return Array.isArray(p) ? p.filter((x) => x && typeof x.name === "string") : [];
-  } catch {
-    return [];
-  }
-}
 
 type Row = {
   itemId: string;
@@ -83,128 +66,6 @@ const ITEM_TYPES = [
   { value: "breaking", label: "Board Breaking" },
   { value: "other", label: "Other" },
 ];
-
-// Inline editor for the sub-exercises list on a parent RankTestItem.
-// Purely local state until the user clicks Save -- then flushes the
-// full array up through onChange so the row's PATCH persists the
-// JSON. Empty rows are stripped before save.
-function SubExerciseEditor({
-  value,
-  onChange,
-}: {
-  value: SubExercise[];
-  onChange: (next: SubExercise[]) => void;
-}) {
-  const [draft, setDraft] = useState<SubExercise[]>(() =>
-    value.length > 0 ? value : [{ name: "" }],
-  );
-  const [dirty, setDirty] = useState(false);
-
-  function update(idx: number, patch: Partial<SubExercise>) {
-    setDraft((prev) => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], ...patch };
-      return next;
-    });
-    setDirty(true);
-  }
-  function addRow() {
-    setDraft((prev) => [...prev, { name: "" }]);
-    setDirty(true);
-  }
-  function removeRow(idx: number) {
-    setDraft((prev) => prev.filter((_, i) => i !== idx));
-    setDirty(true);
-  }
-  function save() {
-    const cleaned = draft
-      .map((s) => ({
-        name: s.name?.trim() || "",
-        reps: s.reps ? Number(s.reps) : null,
-        sets: s.sets ? Number(s.sets) : null,
-        duration: s.duration?.trim() || null,
-        distance: s.distance?.trim() || null,
-      }))
-      .filter((s) => s.name.length > 0);
-    onChange(cleaned);
-    setDirty(false);
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="text-[11px] font-semibold uppercase text-gray-500">
-        Bundle exercises — one checkmark covers all
-      </div>
-      <div className="space-y-1">
-        {draft.map((row, idx) => (
-          <div key={idx} className="flex flex-wrap items-center gap-2">
-            <input
-              type="text"
-              value={row.name}
-              onChange={(e) => update(idx, { name: e.target.value })}
-              placeholder="Exercise (e.g. Pushups)"
-              className="flex-1 min-w-[140px] rounded border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <input
-              type="number"
-              min={0}
-              value={row.reps ?? ""}
-              onChange={(e) => update(idx, { reps: e.target.value ? Number(e.target.value) : null })}
-              placeholder="Reps"
-              className="w-16 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary no-spinner"
-            />
-            <input
-              type="number"
-              min={0}
-              value={row.sets ?? ""}
-              onChange={(e) => update(idx, { sets: e.target.value ? Number(e.target.value) : null })}
-              placeholder="Sets"
-              className="w-16 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary no-spinner"
-            />
-            <input
-              type="text"
-              value={row.duration || ""}
-              onChange={(e) => update(idx, { duration: e.target.value })}
-              placeholder="Duration"
-              className="w-24 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <input
-              type="text"
-              value={row.distance || ""}
-              onChange={(e) => update(idx, { distance: e.target.value })}
-              placeholder="Distance"
-              className="w-24 rounded border border-gray-300 px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <button
-              type="button"
-              onClick={() => removeRow(idx)}
-              className="rounded-md border border-gray-300 px-2 py-1 text-[11px] text-gray-500 hover:bg-gray-100"
-            >
-              ✕
-            </button>
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={addRow}
-          className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
-        >
-          + Add exercise
-        </button>
-        <button
-          type="button"
-          onClick={save}
-          disabled={!dirty}
-          className="rounded-md bg-primary px-3 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
-        >
-          {dirty ? "Save bundle" : "Saved"}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function SortableCategoryItem({ id, name, isActive }: { id: string; name: string; isActive: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
@@ -272,8 +133,10 @@ function RichInput({ defaultValue, onSave, className, onEditClick }: { defaultVa
   );
 }
 
-function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyleId, selectedRankId, selectedCategoryId, onReload, getCategoryType, onDeleteCategory, onDeleteFromAllRanks, ranks }: {
-  categoryId: string; categoryName: string; rankTests: RankTest[];
+function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSectionType, rankTests, selectedStyleId, selectedRankId, selectedCategoryId, onReload, getCategoryType, onDeleteCategory, onDeleteFromAllRanks, ranks }: {
+  categoryId: string; categoryName: string;
+  sectionType: CategoryType; onChangeSectionType: (t: CategoryType) => Promise<void>;
+  rankTests: RankTest[];
   selectedStyleId: string; selectedRankId: string; selectedCategoryId: string;
   onReload: () => Promise<void>; getCategoryType: () => string; onDeleteCategory: () => void; onDeleteFromAllRanks: () => void;
   ranks: { id: string; name: string; order: number }[];
@@ -287,8 +150,6 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
   const [newItemDuration, setNewItemDuration] = useState("");
   const [newItemDistance, setNewItemDistance] = useState("");
   const [addingItem, setAddingItem] = useState(false);
-  // Which items have their sub-exercise bundle editor expanded.
-  const [expandedSubEx, setExpandedSubEx] = useState<Record<string, boolean>>({});
   const [editPopup, setEditPopup] = useState<{ itemId: string; value: string } | null>(null);
   const popupEditorRef = useRef<HTMLDivElement>(null);
 
@@ -609,7 +470,24 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
     <>
     <div className="rounded-lg border border-gray-200 bg-gray-100 overflow-x-auto">
       <div className="bg-gray-200 border-b border-gray-300 px-4 py-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-700">{categoryName}</h3>
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-semibold text-gray-700">{categoryName}</h3>
+          <label
+            className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1"
+            title="Controls how this section renders on the grading sheet."
+          >
+            <span className="text-[10px] font-semibold uppercase text-gray-500">Grading style</span>
+            <select
+              value={sectionType}
+              onChange={(e) => onChangeSectionType(e.target.value as CategoryType)}
+              className="rounded border border-gray-200 bg-white px-1 py-0.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="demonstration">Demonstration</option>
+              <option value="workout">Workout (stopwatch on every item)</option>
+              <option value="information">Information (check only)</option>
+            </select>
+          </label>
+        </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-400">{items.length} items</span>
           <div className="relative">
@@ -664,28 +542,30 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
           <button onClick={onDeleteFromAllRanks} className="rounded-md bg-white border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50">Delete from All Ranks</button>
         </div>
       </div>
+      {/* Workout-only performance columns (reps / sets / min-per-round /
+          rounds / duration / distance / time limit). Demonstration and
+          Information sections just need item info + video, so we hide
+          the whole block for them -- both headers and cells. */}
       <table className="w-full text-sm">
         <thead className="bg-gray-100 border-b border-gray-300">
           <tr>
             <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500" style={{ width: "100%", minWidth: "250px" }}>Item Information</th>
             <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Min/Rd</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Rnds</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Duration</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Distance</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-28">Time Limit</th>
+            {sectionType === "workout" && <>
+              <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
+              <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
+              <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16">Min/Rd</th>
+              <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Rnds</th>
+              <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Duration</th>
+              <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-20">Distance</th>
+              <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-28">Time Limit</th>
+            </>}
             <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-16"></th>
           </tr>
         </thead>
         <tbody>
-          {items.map(item => {
-            const subs = parseSubExercises(item.subExercises);
-            const bundleOpen = !!expandedSubEx[item.id];
-            return (
-            <React.Fragment key={item.id}>
-            <tr className="border-t border-gray-200 hover:bg-gray-200">
+          {items.map(item => (
+            <tr key={item.id} className="border-t border-gray-200 hover:bg-gray-200">
               <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}>
                 <RichInput
                   defaultValue={item.description || item.name}
@@ -695,76 +575,55 @@ function CategorySpreadsheet({ categoryId, categoryName, rankTests, selectedStyl
                 />
               </td>
               <td className="px-2 py-1"><input type="text" defaultValue={(item as Record<string, unknown>).videoUrl as string || ""} onBlur={e => updateField(item.id, "videoUrl", e.target.value || null)} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-              <td className="px-2 py-1"><input type="number" min={0} defaultValue={item.reps ?? ""} onBlur={e => updateField(item.id, "reps", e.target.value ? parseInt(e.target.value) : null)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-              <td className="px-2 py-1"><input type="number" min={0} defaultValue={item.sets ?? ""} onBlur={e => updateField(item.id, "sets", e.target.value ? parseInt(e.target.value) : null)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-              <td className="px-2 py-1"><input type="text" defaultValue={item.roundDuration || ""} onBlur={e => updateField(item.id, "roundDuration", e.target.value || null)} placeholder="e.g. 3m" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-              <td className="px-2 py-1"><input type="number" min={0} defaultValue={item.rounds ?? ""} onBlur={e => updateField(item.id, "rounds", e.target.value ? parseInt(e.target.value) : null)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-              <td className="px-2 py-1"><input type="text" defaultValue={item.duration || ""} onBlur={e => updateField(item.id, "duration", e.target.value || null)} placeholder="e.g. 2 min" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-              <td className="px-2 py-1"><input type="text" defaultValue={item.distance || ""} onBlur={e => updateField(item.id, "distance", e.target.value || null)} placeholder="e.g. 1 mi" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+              {sectionType === "workout" && <>
+                <td className="px-2 py-1"><input type="number" min={0} defaultValue={item.reps ?? ""} onBlur={e => updateField(item.id, "reps", e.target.value ? parseInt(e.target.value) : null)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+                <td className="px-2 py-1"><input type="number" min={0} defaultValue={item.sets ?? ""} onBlur={e => updateField(item.id, "sets", e.target.value ? parseInt(e.target.value) : null)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+                <td className="px-2 py-1"><input type="text" defaultValue={item.roundDuration || ""} onBlur={e => updateField(item.id, "roundDuration", e.target.value || null)} placeholder="e.g. 3m" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+                <td className="px-2 py-1"><input type="number" min={0} defaultValue={item.rounds ?? ""} onBlur={e => updateField(item.id, "rounds", e.target.value ? parseInt(e.target.value) : null)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+                <td className="px-2 py-1"><input type="text" defaultValue={item.duration || ""} onBlur={e => updateField(item.id, "duration", e.target.value || null)} placeholder="e.g. 2 min" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+                <td className="px-2 py-1"><input type="text" defaultValue={item.distance || ""} onBlur={e => updateField(item.id, "distance", e.target.value || null)} placeholder="e.g. 1 mi" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+                <td className="px-2 py-1">
+                  <div className="flex items-center gap-0.5">
+                    <select defaultValue={(item as Record<string, unknown>).timeLimitOperator as string || "lte"} onBlur={e => updateField(item.id, "timeLimitOperator", e.target.value)} className="w-10 rounded border border-gray-300 px-0.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-primary bg-white">
+                      <option value="lte">≤</option>
+                      <option value="lt">&lt;</option>
+                      <option value="eq">=</option>
+                      <option value="gte">≥</option>
+                      <option value="gt">&gt;</option>
+                    </select>
+                    <input type="text" defaultValue={item.timeLimit || ""} onBlur={e => updateField(item.id, "timeLimit", e.target.value || null)} placeholder="e.g. 1:30" className="w-14 rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
+                  </div>
+                </td>
+              </>}
+              <td className="px-2 py-1 text-center">
+                <button onClick={() => deleteItem(item.id, item.name)} className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark">Delete</button>
+              </td>
+            </tr>
+          ))}
+          {/* Add new row */}
+          <tr className="border-t border-gray-200 bg-gray-100">
+            <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}><input type="text" value={newItemDesc} onChange={e => setNewItemDesc(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addItem(); }} onPaste={handleAddRowPaste} placeholder="Type to add..." className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+            <td className="px-2 py-1"><input type="text" value="" onChange={() => {}} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+            {sectionType === "workout" && <>
+              <td className="px-2 py-1"><input type="number" min={0} value={newItemReps} onChange={e => setNewItemReps(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+              <td className="px-2 py-1"><input type="number" min={0} value={newItemSets} onChange={e => setNewItemSets(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+              <td className="px-2 py-1"><input type="text" value={newItemRoundDuration} onChange={e => setNewItemRoundDuration(e.target.value)} placeholder="e.g. 3m" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+              <td className="px-2 py-1"><input type="number" min={0} value={newItemRounds} onChange={e => setNewItemRounds(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+              <td className="px-2 py-1"><input type="text" value={newItemDuration} onChange={e => setNewItemDuration(e.target.value)} placeholder="e.g. 2 min" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+              <td className="px-2 py-1"><input type="text" value={newItemDistance} onChange={e => setNewItemDistance(e.target.value)} placeholder="e.g. 1 mi" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
               <td className="px-2 py-1">
                 <div className="flex items-center gap-0.5">
-                  <select defaultValue={(item as Record<string, unknown>).timeLimitOperator as string || "lte"} onBlur={e => updateField(item.id, "timeLimitOperator", e.target.value)} className="w-10 rounded border border-gray-300 px-0.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-primary bg-white">
+                  <select className="w-10 rounded border border-gray-300 px-0.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-primary bg-white">
                     <option value="lte">≤</option>
                     <option value="lt">&lt;</option>
                     <option value="eq">=</option>
                     <option value="gte">≥</option>
                     <option value="gt">&gt;</option>
                   </select>
-                  <input type="text" defaultValue={item.timeLimit || ""} onBlur={e => updateField(item.id, "timeLimit", e.target.value || null)} placeholder="e.g. 1:30" className="w-14 rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
+                  <input type="text" placeholder="e.g. 1:30" className="w-14 rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
                 </div>
               </td>
-              <td className="px-2 py-1 text-center">
-                <div className="flex flex-col items-stretch gap-1">
-                  <button
-                    onClick={() => setExpandedSubEx((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
-                    className={`rounded-md px-2 py-1 text-[11px] font-semibold ${
-                      subs.length > 0
-                        ? "bg-primary text-white hover:bg-primaryDark"
-                        : "border border-gray-300 text-gray-600 hover:bg-gray-50"
-                    }`}
-                    title="Bundle multiple exercises under this item; one checkmark covers all of them at grading time."
-                  >
-                    {bundleOpen ? "Hide" : subs.length > 0 ? `Bundle (${subs.length})` : "Bundle"}
-                  </button>
-                  <button onClick={() => deleteItem(item.id, item.name)} className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark">Delete</button>
-                </div>
-              </td>
-            </tr>
-            {bundleOpen && (
-              <tr className="bg-gray-50 border-t border-gray-200">
-                <td colSpan={10} className="px-4 py-3">
-                  <SubExerciseEditor
-                    value={subs}
-                    onChange={(next) => updateField(item.id, "subExercises", next)}
-                  />
-                </td>
-              </tr>
-            )}
-            </React.Fragment>
-            );
-          })}
-          {/* Add new row */}
-          <tr className="border-t border-gray-200 bg-gray-100">
-            <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}><input type="text" value={newItemDesc} onChange={e => setNewItemDesc(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addItem(); }} onPaste={handleAddRowPaste} placeholder="Type to add..." className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-            <td className="px-2 py-1"><input type="text" value="" onChange={() => {}} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-            <td className="px-2 py-1"><input type="number" min={0} value={newItemReps} onChange={e => setNewItemReps(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-            <td className="px-2 py-1"><input type="number" min={0} value={newItemSets} onChange={e => setNewItemSets(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-            <td className="px-2 py-1"><input type="text" value={newItemRoundDuration} onChange={e => setNewItemRoundDuration(e.target.value)} placeholder="e.g. 3m" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-            <td className="px-2 py-1"><input type="number" min={0} value={newItemRounds} onChange={e => setNewItemRounds(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-            <td className="px-2 py-1"><input type="text" value={newItemDuration} onChange={e => setNewItemDuration(e.target.value)} placeholder="e.g. 2 min" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-            <td className="px-2 py-1"><input type="text" value={newItemDistance} onChange={e => setNewItemDistance(e.target.value)} placeholder="e.g. 1 mi" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-            <td className="px-2 py-1">
-              <div className="flex items-center gap-0.5">
-                <select className="w-10 rounded border border-gray-300 px-0.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-primary bg-white">
-                  <option value="lte">≤</option>
-                  <option value="lt">&lt;</option>
-                  <option value="eq">=</option>
-                  <option value="gte">≥</option>
-                  <option value="gt">&gt;</option>
-                </select>
-                <input type="text" placeholder="e.g. 1:30" className="w-14 rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
-              </div>
-            </td>
+            </>}
             <td className="px-2 py-1 text-center">
               {newItemDesc.trim() && <button onClick={addItem} disabled={addingItem} className="text-primary hover:text-primaryDark text-xs font-semibold">+</button>}
             </td>
@@ -2266,11 +2125,47 @@ export default function CurriculumV2Page() {
 
           return (
             <div className="space-y-3 mt-2">
-              {catsWithItems.map(cat => (
+              {catsWithItems.map(cat => {
+                // allCategories only tracks id/name/testId; the full
+                // Category (with `type`) lives on rankTests. Look it up
+                // once here so we can pass the current type down.
+                let liveType: CategoryType = "demonstration";
+                for (const test of rankTests) {
+                  const c = test.categories.find((tc) => tc.id === cat.id);
+                  if (c?.type) { liveType = c.type; break; }
+                }
+                return (
                 <CategorySpreadsheet
                   key={cat.id}
                   categoryId={cat.id}
                   categoryName={cat.name}
+                  sectionType={liveType}
+                  onChangeSectionType={async (nextType) => {
+                    // Optimistic: patch the local rankTests tree so the
+                    // dropdown flips instantly, then persist. On failure
+                    // we snap back to the server's copy via onReload.
+                    setRankTests((prev) =>
+                      prev.map((t) => ({
+                        ...t,
+                        categories: t.categories.map((c) =>
+                          c.id === cat.id ? { ...c, type: nextType } : c,
+                        ),
+                      })),
+                    );
+                    const testId = rankTests.find((t) =>
+                      t.categories.some((c) => c.id === cat.id),
+                    )?.id;
+                    if (!testId) return;
+                    const res = await fetch(`/api/rank-tests/${testId}/categories`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ categoryId: cat.id, type: nextType }),
+                    });
+                    if (!res.ok) {
+                      const r = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+                      if (r.ok) { const d = await r.json(); setRankTests(d.rankTests || d.tests || []); }
+                    }
+                  }}
                   rankTests={rankTests}
                   selectedStyleId={selectedStyleId}
                   selectedRankId={selectedRankId}
@@ -2294,7 +2189,8 @@ export default function CurriculumV2Page() {
                   onDeleteFromAllRanks={() => deleteCustomCategory(cat.id, cat.name)}
                   ranks={ranks}
                 />
-              ))}
+                );
+              })}
             </div>
           );
         })()}

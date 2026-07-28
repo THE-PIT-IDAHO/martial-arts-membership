@@ -72,23 +72,7 @@ type RankTestItem = {
   timeLimitOperator?: string | null;
   videoUrl?: string | null;
   showTitleInPdf?: boolean;
-  // JSON array of { name, reps?, sets?, duration?, distance? }.
-  // Optional bundle rendered under the parent title -- one checkmark
-  // still covers the whole bundle at grading time.
-  subExercises?: string | null;
 };
-
-// Local parser so this page doesn't have to reach into the curriculum
-// page's helper (avoids a cross-module dependency cycle).
-function parseSubExercisesForGrading(raw: string | null | undefined) {
-  if (!raw) return [] as Array<{ name: string; reps?: number | null; sets?: number | null; duration?: string | null; distance?: string | null }>;
-  try {
-    const p = JSON.parse(raw);
-    return Array.isArray(p) ? p.filter((x) => x && typeof x.name === "string") : [];
-  } catch {
-    return [];
-  }
-}
 
 type RankTestCategory = {
   id: string;
@@ -96,6 +80,10 @@ type RankTestCategory = {
   description?: string | null;
   sortOrder: number;
   visibleOnTest?: boolean;
+  // "workout" -> force a stopwatch on every item;
+  // "information" -> knowledge-only, no time or notes inputs;
+  // "demonstration" -> default per-item scoring.
+  type?: "demonstration" | "workout" | "information";
   items: RankTestItem[];
 };
 
@@ -3546,12 +3534,31 @@ export default function TestingPage() {
                   </div>
                 ) : (
                   <div className="space-y-3 sm:space-y-4">
-                    {visibleCategories(rankTestCurriculum.categories).map((category) => (
+                    {visibleCategories(rankTestCurriculum.categories).map((category) => {
+                      // Category type drives grading-sheet layout:
+                      //   workout     -> every item gets a stopwatch,
+                      //                  bundle heading identifies the block
+                      //   information -> check-only, no time/notes inputs
+                      //   demonstration (default) -> per-item scoring as before
+                      const catType = category.type || "demonstration";
+                      const isWorkoutCat = catType === "workout";
+                      const isInfoCat = catType === "information";
+                      return (
                       <div key={category.id} className="border rounded-lg overflow-hidden">
-                        <div className="bg-gray-100 px-3 py-2 sm:px-4 sm:py-3">
+                        <div className="bg-gray-100 px-3 py-2 sm:px-4 sm:py-3 flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold text-sm sm:text-base">{category.name}</h3>
+                          {isWorkoutCat && (
+                            <span className="inline-block rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                              Workout bundle
+                            </span>
+                          )}
+                          {isInfoCat && (
+                            <span className="inline-block rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                              Information
+                            </span>
+                          )}
                           {category.description && (
-                            <p className="text-xs sm:text-sm text-gray-500 mt-0.5" dangerouslySetInnerHTML={{ __html: category.description }} />
+                            <p className="w-full text-xs sm:text-sm text-gray-500 mt-0.5" dangerouslySetInnerHTML={{ __html: category.description }} />
                           )}
                         </div>
                         <div className="divide-y">
@@ -3559,8 +3566,10 @@ export default function TestingPage() {
                             const score = itemScores[item.id];
                             const isPassed = score?.passed ?? false;
                             const isFailed = score?.failed ?? false;
-                            const hasTimeLimit = item.timeLimit || item.duration;
-                            const bundle = parseSubExercisesForGrading(item.subExercises);
+                            // In a workout category every item gets a
+                            // stopwatch, even when the coach didn't set an
+                            // explicit timeLimit / duration on the row.
+                            const hasTimeLimit = isWorkoutCat || item.timeLimit || item.duration;
                             return (
                               <div key={item.id}>
                                 {/* Curriculum item row */}
@@ -3573,27 +3582,6 @@ export default function TestingPage() {
                                     <span className="text-xs text-gray-500">{getItemSpecs(item)}</span>
                                   )}
                                 </div>
-                                {/* Sub-exercise bundle (parent item covers all
-                                    at grading time -- this is a read-only
-                                    list so the grader sees what the workout
-                                    consists of). */}
-                                {bundle.length > 0 && (
-                                  <ul className="px-3 sm:px-6 py-2 bg-white border-b space-y-0.5 text-xs sm:text-sm text-gray-700 list-disc list-inside">
-                                    {bundle.map((sub, i) => {
-                                      const specs: string[] = [];
-                                      if (sub.reps) specs.push(`${sub.reps} reps`);
-                                      if (sub.sets) specs.push(`${sub.sets} sets`);
-                                      if (sub.duration) specs.push(sub.duration);
-                                      if (sub.distance) specs.push(sub.distance);
-                                      return (
-                                        <li key={i}>
-                                          <span className="font-medium">{sub.name}</span>
-                                          {specs.length > 0 && <span className="text-gray-500"> — {specs.join(" · ")}</span>}
-                                        </li>
-                                      );
-                                    })}
-                                  </ul>
-                                )}
                                 {/* Checkbox row */}
                                 <div
                                   className={`p-3 sm:p-4 flex items-start gap-3 transition-colors ${
@@ -3626,11 +3614,11 @@ export default function TestingPage() {
                                   {/* Input area */}
                                   <div className="flex-1 min-w-0">
 
-                                  {/* Time input for timed items, notes for others.
-                                      Stopwatch pipes its stopped value straight
-                                      into handleItemTimeInput so the grader
-                                      never has to type the number. */}
-                                  {hasTimeLimit ? (
+                                  {/* Information categories are check-only --
+                                      no time or notes input, since the
+                                      grader is just confirming the student
+                                      knows the material. */}
+                                  {isInfoCat ? null : hasTimeLimit ? (
                                     <div className="mt-2 flex items-center gap-2 flex-wrap">
                                       <label className="text-xs text-gray-500">Time:</label>
                                       <input
@@ -3669,7 +3657,8 @@ export default function TestingPage() {
                           })}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
 
                     {/* Summary - responsive grid */}
                     <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
@@ -4190,22 +4179,6 @@ export default function TestingPage() {
                                         {!isKnowledge && getItemSpecs(item) && (
                                           <span className="text-[10px] text-gray-500">{getItemSpecs(item)}</span>
                                         )}
-                                        {(() => {
-                                          const bundle = parseSubExercisesForGrading(item.subExercises);
-                                          if (bundle.length === 0) return null;
-                                          const title = bundle.map((s) => {
-                                            const specs = [s.reps ? `${s.reps} reps` : null, s.duration || null].filter(Boolean).join(" ");
-                                            return specs ? `${s.name} — ${specs}` : s.name;
-                                          }).join("\n");
-                                          return (
-                                            <span
-                                              className="inline-block rounded bg-primary/10 px-1 py-0.5 text-[9px] font-semibold text-primary"
-                                              title={title}
-                                            >
-                                              Bundle: {bundle.length}
-                                            </span>
-                                          );
-                                        })()}
                                       </div>
                                     </td>
                                     {sheetParticipants.map((p) => {
