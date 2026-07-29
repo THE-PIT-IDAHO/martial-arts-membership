@@ -22,6 +22,7 @@ type MemberStyle = {
   name: string;
   rank?: string;
   beltSize?: string;
+  beltText?: string;
   uniformSize?: string;
   startDate?: string;
   lastPromotionDate?: string;

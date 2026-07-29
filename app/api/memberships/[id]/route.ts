@@ -77,6 +77,7 @@ async function syncMemberStyles(memberId: string) {
     name: string;
     rank?: string;
     beltSize?: string;
+    beltText?: string;
     uniformSize?: string;
     startDate?: string;
     lastPromotionDate?: string;
@@ -189,6 +190,7 @@ async function setAttendanceResetDate(memberId: string, styleNames: string[]) {
     name: string;
     rank?: string;
     beltSize?: string;
+    beltText?: string;
     uniformSize?: string;
     startDate?: string;
     lastPromotionDate?: string;
@@ -389,6 +391,7 @@ export async function PATCH(
               name: string;
               rank?: string;
               beltSize?: string;
+              beltText?: string;
               uniformSize?: string;
               startDate?: string;
               lastPromotionDate?: string;

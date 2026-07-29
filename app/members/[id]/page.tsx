@@ -159,6 +159,7 @@ type StyleEntry = {
   name: string;
   rank?: string;
   beltSize?: string;
+  beltText?: string;
   uniformSize?: string;
   startDate?: string;
   lastPromotionDate?: string;  // Date of last rank promotion (for attendance window calculation)
@@ -1388,6 +1389,10 @@ export default function MemberProfilePage() {
                     obj.beltSize !== undefined && obj.beltSize !== null
                       ? String(obj.beltSize)
                       : undefined,
+                  beltText:
+                    obj.beltText !== undefined && obj.beltText !== null
+                      ? String(obj.beltText)
+                      : undefined,
                   uniformSize:
                     obj.uniformSize !== undefined && obj.uniformSize !== null
                       ? String(obj.uniformSize)
@@ -1654,6 +1659,7 @@ export default function MemberProfilePage() {
         name: s.name.trim(),
         rank: s.rank?.trim() || undefined,
         beltSize: s.beltSize?.trim() || undefined,
+        beltText: s.beltText?.trim() || undefined,
         uniformSize: s.uniformSize?.trim() || undefined,
         startDate: s.startDate || undefined,
         lastPromotionDate: s.lastPromotionDate || undefined,
@@ -2001,7 +2007,7 @@ export default function MemberProfilePage() {
   function addStyle() {
     setStyles((prev) => [
       ...prev,
-      { name: "", rank: "", beltSize: "", uniformSize: "", startDate: "" }
+      { name: "", rank: "", beltSize: "", beltText: "", uniformSize: "", startDate: "" }
     ]);
   }
 
@@ -2017,6 +2023,7 @@ export default function MemberProfilePage() {
           name: "",
           rank: "",
           beltSize: "",
+          beltText: "",
           uniformSize: "",
           startDate: "",
           lastPromotionDate: ""
@@ -4589,6 +4596,15 @@ export default function MemberProfilePage() {
                             onChange={(e) => updateStyle(i, "beltSize", e.target.value)}
                             className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                             placeholder="e.g. A2"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-700">Belt Text</label>
+                          <input
+                            value={s.beltText || ""}
+                            onChange={(e) => updateStyle(i, "beltText", e.target.value)}
+                            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                            placeholder="e.g. embroidery text"
                           />
                         </div>
                         <div className="space-y-1">

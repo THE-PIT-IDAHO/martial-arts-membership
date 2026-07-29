@@ -56,9 +56,10 @@ type ReportDataFields = {
   showStyleBreakdown: boolean;
   showRankDistribution: boolean;
   showUpcomingPromotions: boolean;
-  // Per-selected-style extras — surface a Belt Size and/or Next Rank
-  // column for every style listed in selectedStylesForRank.
+  // Per-selected-style extras — surface a Belt Size, Belt Text and/or
+  // Next Rank column for every style listed in selectedStylesForRank.
   showBeltSizeByStyle: boolean;
+  showBeltTextByStyle: boolean;
   showNextRankByStyle: boolean;
 
   // Memberships & Payments
@@ -148,6 +149,7 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showRankDistribution: false,
   showUpcomingPromotions: false,
   showBeltSizeByStyle: false,
+  showBeltTextByStyle: false,
   showNextRankByStyle: false,
   showMembershipTypes: false,
   showMembershipPlans: false,
@@ -259,6 +261,7 @@ const COLUMN_FIELDS = [
       { key: "showPrimaryStyle", label: "Primary Style" },
       { key: "showRanksByStyle", label: "Ranks by Style" },
       { key: "showBeltSizeByStyle", label: "Belt Size (per selected style)" },
+      { key: "showBeltTextByStyle", label: "Belt Text (per selected style)" },
       { key: "showNextRankByStyle", label: "Next Rank (per selected style)" },
     ],
   },
@@ -424,12 +427,13 @@ type PaymentSummary = {
 type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
 
 // Column ID can be a base column, a class type column, or one of the
-// per-style extras (current rank / belt size / next rank).
+// per-style extras (current rank / belt size / belt text / next rank).
 type ColumnId =
   | BaseColumnId
   | `classType:${string}`
   | `styleRank:${string}`
   | `styleBeltSize:${string}`
+  | `styleBeltText:${string}`
   | `styleNextRank:${string}`;
 
 // Default column order (base columns only - class type columns are appended dynamically)
@@ -493,6 +497,14 @@ function isStyleBeltSizeColumn(colId: ColumnId): colId is `styleBeltSize:${strin
 
 function getStyleBeltSizeName(colId: ColumnId): string {
   return colId.replace("styleBeltSize:", "");
+}
+
+function isStyleBeltTextColumn(colId: ColumnId): colId is `styleBeltText:${string}` {
+  return colId.startsWith("styleBeltText:");
+}
+
+function getStyleBeltTextName(colId: ColumnId): string {
+  return colId.replace("styleBeltText:", "");
 }
 
 function isStyleNextRankColumn(colId: ColumnId): colId is `styleNextRank:${string}` {
@@ -804,6 +816,11 @@ export default function ReportsPage() {
           (style) => `styleBeltSize:${style}` as ColumnId
         )
       : [];
+    const styleBeltTextColumns: ColumnId[] = activeReport.fields.showBeltTextByStyle
+      ? (activeReport.selectedStylesForRank || []).map(
+          (style) => `styleBeltText:${style}` as ColumnId
+        )
+      : [];
     const styleNextRankColumns: ColumnId[] = activeReport.fields.showNextRankByStyle
       ? (activeReport.selectedStylesForRank || []).map(
           (style) => `styleNextRank:${style}` as ColumnId
@@ -814,6 +831,7 @@ export default function ReportsPage() {
       ...allBaseColumns,
       ...styleRankColumns,
       ...styleBeltSizeColumns,
+      ...styleBeltTextColumns,
       ...styleNextRankColumns,
       ...classTypeColumns,
     ];
@@ -2201,6 +2219,11 @@ export default function ReportsPage() {
                                       (style) => `styleBeltSize:${style}` as ColumnId,
                                     )
                                   : [];
+                                const csvStyleBeltTextCols: ColumnId[] = activeReport.fields.showBeltTextByStyle
+                                  ? (activeReport.selectedStylesForRank || []).map(
+                                      (style) => `styleBeltText:${style}` as ColumnId,
+                                    )
+                                  : [];
                                 const csvStyleNextRankCols: ColumnId[] = activeReport.fields.showNextRankByStyle
                                   ? (activeReport.selectedStylesForRank || []).map(
                                       (style) => `styleNextRank:${style}` as ColumnId,
@@ -2211,6 +2234,7 @@ export default function ReportsPage() {
                                   ...DEFAULT_COLUMN_ORDER,
                                   ...csvStyleRankCols,
                                   ...csvStyleBeltSizeCols,
+                                  ...csvStyleBeltTextCols,
                                   ...csvStyleNextRankCols,
                                   ...csvClassTypeCols,
                                 ];
@@ -2228,6 +2252,10 @@ export default function ReportsPage() {
                                   if (isStyleBeltSizeColumn(colId)) {
                                     return activeReport.fields.showBeltSizeByStyle
                                       && (activeReport.selectedStylesForRank || []).includes(getStyleBeltSizeName(colId));
+                                  }
+                                  if (isStyleBeltTextColumn(colId)) {
+                                    return activeReport.fields.showBeltTextByStyle
+                                      && (activeReport.selectedStylesForRank || []).includes(getStyleBeltTextName(colId));
                                   }
                                   if (isStyleNextRankColumn(colId)) {
                                     return activeReport.fields.showNextRankByStyle
@@ -2260,6 +2288,7 @@ export default function ReportsPage() {
                                   if (isClassTypeColumn(colId)) return getClassTypeName(colId);
                                   if (isStyleRankColumn(colId)) return "Current Rank";
                                   if (isStyleBeltSizeColumn(colId)) return "Belt Size";
+                                  if (isStyleBeltTextColumn(colId)) return "Belt Text";
                                   if (isStyleNextRankColumn(colId)) return "Next Rank";
                                   if (colId === "rank") return "Primary Rank";
                                   if (colId === "totalClasses") return "Total Classes";
@@ -2292,6 +2321,19 @@ export default function ReportsPage() {
                                         if (Array.isArray(arr)) {
                                           const e = arr.find((s: any) => s?.name === styleName);
                                           if (e?.beltSize) return String(e.beltSize);
+                                        }
+                                      } catch {}
+                                    }
+                                    return "";
+                                  }
+                                  if (isStyleBeltTextColumn(colId)) {
+                                    const styleName = getStyleBeltTextName(colId);
+                                    if (m.stylesNotes) {
+                                      try {
+                                        const arr = JSON.parse(m.stylesNotes);
+                                        if (Array.isArray(arr)) {
+                                          const e = arr.find((s: any) => s?.name === styleName);
+                                          if (e?.beltText) return String(e.beltText);
                                         }
                                       } catch {}
                                     }
@@ -2418,6 +2460,11 @@ export default function ReportsPage() {
                                   (style) => `styleBeltSize:${style}` as ColumnId
                                 )
                               : [];
+                            const styleBeltTextColumns: ColumnId[] = activeReport.fields.showBeltTextByStyle
+                              ? (activeReport.selectedStylesForRank || []).map(
+                                  (style) => `styleBeltText:${style}` as ColumnId
+                                )
+                              : [];
                             const styleNextRankColumns: ColumnId[] = activeReport.fields.showNextRankByStyle
                               ? (activeReport.selectedStylesForRank || []).map(
                                   (style) => `styleNextRank:${style}` as ColumnId
@@ -2433,6 +2480,7 @@ export default function ReportsPage() {
                               ...allBaseColumns,
                               ...styleRankColumns,
                               ...styleBeltSizeColumns,
+                              ...styleBeltTextColumns,
                               ...styleNextRankColumns,
                               ...classTypeColumns,
                             ];
@@ -2458,6 +2506,12 @@ export default function ReportsPage() {
                               if (isStyleBeltSizeColumn(colId)) {
                                 const styleName = getStyleBeltSizeName(colId);
                                 return activeReport.fields.showBeltSizeByStyle
+                                  && (activeReport.selectedStylesForRank || []).includes(styleName);
+                              }
+                              // Handle style belt-text columns
+                              if (isStyleBeltTextColumn(colId)) {
+                                const styleName = getStyleBeltTextName(colId);
+                                return activeReport.fields.showBeltTextByStyle
                                   && (activeReport.selectedStylesForRank || []).includes(styleName);
                               }
                               // Handle style next-rank columns
@@ -2523,6 +2577,9 @@ export default function ReportsPage() {
                               }
                               if (isStyleBeltSizeColumn(colId)) {
                                 return "Belt Size";
+                              }
+                              if (isStyleBeltTextColumn(colId)) {
+                                return "Belt Text";
                               }
                               if (isStyleNextRankColumn(colId)) {
                                 return "Next Rank";
@@ -2640,6 +2697,22 @@ export default function ReportsPage() {
                                             if (Array.isArray(arr)) {
                                               const entry = arr.find((s: any) => s?.name === styleName);
                                               if (entry?.beltSize) return String(entry.beltSize);
+                                            }
+                                          } catch {}
+                                        }
+                                        return "—";
+                                      }
+                                      // Handle style belt-text columns — read
+                                      // beltText (embroidery) from the member's
+                                      // stylesNotes entry for the matching style.
+                                      if (isStyleBeltTextColumn(colId)) {
+                                        const styleName = getStyleBeltTextName(colId);
+                                        if (m.stylesNotes) {
+                                          try {
+                                            const arr = JSON.parse(m.stylesNotes);
+                                            if (Array.isArray(arr)) {
+                                              const entry = arr.find((s: any) => s?.name === styleName);
+                                              if (entry?.beltText) return String(entry.beltText);
                                             }
                                           } catch {}
                                         }
