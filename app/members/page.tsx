@@ -203,7 +203,12 @@ export default function MembersPage() {
           city: m.city ?? null,
           state: m.state ?? null,
           dateOfBirth: m.dateOfBirth ?? null,
-          membershipType: m.membershipType ?? null,
+          // Prefer the derived name from the member's active plan
+          // (m.membershipTypeName) -- that's the value tied to the
+          // MembershipType relation and updated by the plan editor.
+          // Fall back to the legacy scalar Member.membershipType for
+          // pre-relation rows that only have the old text field.
+          membershipType: m.membershipTypeName ?? m.membershipType ?? null,
           primaryStyle: m.primaryStyle ?? null,
           waiverSigned: m.waiverSigned ?? null,
           photoUrl: m.photoUrl ?? null,
@@ -737,7 +742,7 @@ export default function MembersPage() {
         city: m.city ?? null,
         state: m.state ?? null,
         dateOfBirth: m.dateOfBirth ?? null,
-        membershipType: m.membershipType ?? null,
+        membershipType: m.membershipTypeName ?? m.membershipType ?? null,
         primaryStyle: m.primaryStyle ?? null,
         waiverSigned: m.waiverSigned ?? null,
         photoUrl: m.photoUrl ?? null,
