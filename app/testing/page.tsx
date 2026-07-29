@@ -281,6 +281,30 @@ export default function TestingPage() {
     return item.name || "";
   }
 
+  // Same as getItemDisplay but keeps the inline formatting the admin
+  // applied in the curriculum editor (bold / italic / underline). Only
+  // that whitelist survives -- anything else is stripped so a stray
+  // paste can't sneak markup into a rendered span. Callers use
+  // dangerouslySetInnerHTML because the source is admin-authored
+  // (contentEditable in Curriculum Builder), not untrusted user input.
+  function getItemDisplayHtml(item: RankTestItem): string {
+    if (item.description) {
+      // Preserve line breaks first, then strip any tag that isn't
+      // b / strong / i / em / u (opening OR closing form).
+      let s = item.description.replace(/<br\s*\/?>/gi, "\n");
+      s = s.replace(/<(?!\/?(b|strong|i|em|u)\b)[^>]*>/gi, "");
+      if (item.type === "knowledge") return s.trim().replace(/\n/g, "<br>");
+      // Non-knowledge items collapse to a single line; keep whichever
+      // whitelisted tags landed in the first line.
+      return s.split("\n")[0];
+    }
+    // Escape the fallback name so an ampersand or angle bracket in a
+    // literal item name doesn't get eaten by innerHTML.
+    return (item.name || "").replace(/[&<>"']/g, (c) => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string
+    ));
+  }
+
   // Short label for use in the bulk grading spreadsheet, where each item gets
   // ONE row and there's no space for a multi-line knowledge description.
   // Knowledge items always show the literal label "Information" — matches
@@ -2453,9 +2477,10 @@ export default function TestingPage() {
                                                           {isPassed ? "✓" : "○"}
                                                         </span>
                                                         <div className="flex-1 min-w-0">
-                                                          <span className={`whitespace-pre-wrap ${isPassed ? "line-through" : ""}`}>
-                                                            {getItemDisplay(item)}
-                                                          </span>
+                                                          <span
+                                                            className={`whitespace-pre-wrap ${isPassed ? "line-through" : ""}`}
+                                                            dangerouslySetInnerHTML={{ __html: getItemDisplayHtml(item) }}
+                                                          />
                                                           {getItemSpecs(item) && (
                                                             <span className="ml-1 text-gray-400 text-[10px]">
                                                               ({getItemSpecs(item)})
@@ -2938,9 +2963,10 @@ export default function TestingPage() {
                                                                     {isPassed ? "✓" : "○"}
                                                                   </span>
                                                                   <div className="flex-1 min-w-0">
-                                                                    <span className="whitespace-pre-wrap">
-                                                                      {getItemDisplay(item)}
-                                                                    </span>
+                                                                    <span
+                                                                      className="whitespace-pre-wrap"
+                                                                      dangerouslySetInnerHTML={{ __html: getItemDisplayHtml(item) }}
+                                                                    />
                                                                     {itemScore?.notes && (
                                                                       <span className="ml-1 text-gray-400 text-[10px]">
                                                                         ({itemScore.notes})
@@ -3621,7 +3647,10 @@ export default function TestingPage() {
                               <div key={item.id}>
                                 {/* Curriculum item row */}
                                 <div className="px-3 py-1 sm:px-4 bg-gray-100 border-b flex items-center gap-2 flex-wrap">
-                                  <span className="text-sm sm:text-base font-medium whitespace-pre-wrap">{getItemDisplay(item)}</span>
+                                  <span
+                                    className="text-sm sm:text-base font-medium whitespace-pre-wrap"
+                                    dangerouslySetInnerHTML={{ __html: getItemDisplayHtml(item) }}
+                                  />
                                   <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] sm:text-xs font-medium ${getTypeColor(item.type)}`}>
                                     {getTypeLabel(item.type)}
                                   </span>
