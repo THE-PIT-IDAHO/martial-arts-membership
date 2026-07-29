@@ -1494,6 +1494,45 @@ export default function ReportsPage() {
     }
   }
 
+  // Clone an existing report as a new custom report. Everything the
+  // user configured comes across -- column visibility, column order,
+  // filters, per-style selections, date range, sort state. The clone
+  // is always type "custom" (even when duplicating a built-in like
+  // "Membership Overview") so the two behave independently and the
+  // trial limit + delete button both apply, and lands as the active
+  // tab so the user can rename / tweak it immediately.
+  async function duplicateReport(id: string) {
+    const source = reportConfigs.find((r) => r.id === id);
+    if (!source) return;
+
+    // Trial limit: match addReport so the duplicate button can't
+    // sneak past the customCount cap.
+    try {
+      const res = await fetch("/api/trial");
+      if (res.ok) {
+        const trial = await res.json();
+        if (trial.isTrial) {
+          const customCount = reportConfigs.filter((r) => r.id.startsWith("custom-")).length;
+          if (customCount >= (trial.limits?.maxReports ?? Infinity)) {
+            alert(`Report limit reached (${trial.limits.maxReports}). Upgrade your plan to add more reports.`);
+            return;
+          }
+        }
+      }
+    } catch { /* trial API is best-effort here */ }
+
+    // Deep clone via JSON so nested arrays (columnOrder, filters, etc.)
+    // aren't shared with the source.
+    const cloned: ReportConfig = JSON.parse(JSON.stringify(source));
+    cloned.id = `custom-${Date.now()}`;
+    cloned.type = "custom";
+    cloned.name = `${source.name} (Copy)`;
+    cloned.enabled = true;
+
+    setReportConfigs((current) => [...current, cloned]);
+    setActiveTab(cloned.id);
+  }
+
   // Opens the edit modal and preserves existing config values
   function openEditModal(id: string) {
     const existingConfig = reportConfigs.find((r) => r.id === id);
@@ -1725,6 +1764,7 @@ export default function ReportsPage() {
               title={activeReport.name}
               dateRangeLabel={getDateRangeLabel(activeReport.dateRange, activeReport.customStartDate, activeReport.customEndDate)}
               onEdit={() => openEditModal(activeReport.id)}
+              onDuplicate={() => duplicateReport(activeReport.id)}
               onDelete={() => { if (confirm(`Delete "${activeReport.name}"?`)) deleteReport(activeReport.id); }}
             >
               {/* Membership Stats — only on the built-in default reports.
@@ -4156,7 +4196,7 @@ function StatCard({ label, value, color, large }: { label: string; value: string
   );
 }
 
-function ReportSection({ title, dateRangeLabel, onEdit, onDelete, children }: { title: string; dateRangeLabel: string; onEdit: () => void; onDelete: () => void; children: React.ReactNode }) {
+function ReportSection({ title, dateRangeLabel, onEdit, onDuplicate, onDelete, children }: { title: string; dateRangeLabel: string; onEdit: () => void; onDuplicate: () => void; onDelete: () => void; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="flex items-center justify-between mb-4 print:hidden">
@@ -4166,6 +4206,7 @@ function ReportSection({ title, dateRangeLabel, onEdit, onDelete, children }: { 
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={onEdit} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Edit</button>
+          <button type="button" onClick={onDuplicate} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100" title="Create a copy of this report you can rename and tweak independently">Duplicate</button>
           <button type="button" onClick={onDelete} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100">Delete</button>
         </div>
       </div>
