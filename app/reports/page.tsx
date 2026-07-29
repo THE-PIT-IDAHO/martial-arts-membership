@@ -2591,7 +2591,7 @@ export default function ReportsPage() {
                                 const safeName = (activeReport.name || "report").replace(/[^a-z0-9-_ ]/gi, "").trim() || "report";
                                 pdf.save(`${safeName}.pdf`);
                               }}
-                              className="text-xs rounded-md border border-gray-300 bg-white px-3 py-1 font-semibold text-gray-700 hover:bg-gray-50"
+                              className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
                             >
                               Download PDF
                             </button>
@@ -2633,7 +2633,7 @@ export default function ReportsPage() {
                                 document.body.removeChild(a);
                                 URL.revokeObjectURL(url);
                               }}
-                              className="text-xs rounded-md border border-gray-300 bg-white px-3 py-1 font-semibold text-gray-700 hover:bg-gray-50"
+                              className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
                             >
                               Download CSV
                             </button>
