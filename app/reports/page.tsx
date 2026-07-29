@@ -2582,11 +2582,19 @@ export default function ReportsPage() {
                                 // the user sees.
                                 const pdfHeaders = enabledColIds.map((c) => exportHeaderFor(c));
                                 const pdfRows = sortedMembers.map((m: any) => enabledColIds.map((c) => exportCellText(m, c)));
+                                // Match the on-screen "text-primary" cells --
+                                // the first-name / last-name columns are
+                                // rendered as red Link labels in the table
+                                // above, so their PDF twin should be too.
+                                const primaryColumns: number[] = [];
+                                enabledColIds.forEach((cid, i) => {
+                                  if (cid === "firstName" || cid === "lastName") primaryColumns.push(i);
+                                });
                                 const pdf = generateReportPdf({
                                   title: activeReport.name,
-                                  dateRangeLabel: getDateRangeLabel(activeReport.dateRange, activeReport.customStartDate, activeReport.customEndDate),
                                   headers: pdfHeaders,
                                   rows: pdfRows,
+                                  primaryColumns,
                                 });
                                 const safeName = (activeReport.name || "report").replace(/[^a-z0-9-_ ]/gi, "").trim() || "report";
                                 pdf.save(`${safeName}.pdf`);
