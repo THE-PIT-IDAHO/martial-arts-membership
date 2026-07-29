@@ -288,14 +288,14 @@ function SectionHeader({
       <div className="flex items-center gap-3">
         <h3 className="text-sm font-semibold text-gray-700">{name}</h3>
         <label
-          className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2 py-1"
+          className="flex items-center gap-1.5"
           title="Controls how this section renders on the grading sheet and which columns show below."
         >
           <span className="text-[10px] font-semibold uppercase text-gray-500">Type</span>
           <select
             value={sectionType}
             onChange={(e) => onChangeSectionType(e.target.value as CategoryType)}
-            className="rounded border border-gray-200 bg-white px-1 py-0.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary"
+            className="rounded border border-gray-300 bg-white px-1 py-0.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary"
           >
             <option value="demonstration">Demonstration</option>
             <option value="workout">Workout (stopwatch on every item)</option>
