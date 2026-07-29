@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
+import { generateReportPdf } from "@/lib/report-pdf";
 import {
   countAttendanceByType,
   attendanceCountsForStyle,
@@ -948,22 +949,29 @@ export default function ReportsPage() {
 
   const enabledReports = reportConfigs.filter((r) => r.enabled);
 
-  // Set active tab from URL parameter or default to first enabled report
+  // Set active tab from URL parameter or default to first enabled report.
+  //
+  // Fallback for a disabled activeTab lives OUTSIDE the initialTabSet
+  // guard so it runs any time enabledReports changes -- e.g. the user
+  // unchecks the currently-viewed report in Manage Reports. Previously
+  // this branch was gated to the first mount only, so unchecking the
+  // active report left it stuck on screen with no way to hop off (or,
+  // worse, made the page look like it hard-defaults to whichever
+  // report happened to sit first in DEFAULT_REPORTS regardless of the
+  // user's own enabled set).
   useEffect(() => {
-    // Always respect URL tab parameter when navigating back to reports page
     if (tabFromUrl && enabledReports.find((r) => r.id === tabFromUrl)) {
-      if (activeTab !== tabFromUrl) {
-        setActiveTab(tabFromUrl);
-      }
+      if (activeTab !== tabFromUrl) setActiveTab(tabFromUrl);
       setInitialTabSet(true);
-    } else if (!initialTabSet) {
-      // Only set default on initial load (no URL param)
-      if (activeTab === null && enabledReports.length > 0) {
-        setActiveTab(enabledReports[0].id);
-        setInitialTabSet(true);
-      } else if (activeTab && !enabledReports.find((r) => r.id === activeTab)) {
-        setActiveTab(enabledReports[0]?.id || null);
-      }
+      return;
+    }
+    if (!initialTabSet && activeTab === null && enabledReports.length > 0) {
+      setActiveTab(enabledReports[0].id);
+      setInitialTabSet(true);
+      return;
+    }
+    if (activeTab && !enabledReports.find((r) => r.id === activeTab)) {
+      setActiveTab(enabledReports[0]?.id || null);
     }
   }, [enabledReports, activeTab, tabFromUrl, initialTabSet]);
 
@@ -2363,6 +2371,181 @@ export default function ReportsPage() {
                     const endIndex = Math.min(startIndex + membersPerPage, totalMembers);
                     const paginatedMembers = sortedMembers.slice(startIndex, endIndex);
 
+                    // Build enabledColIds + headerFor + cellText ONCE per render
+                    // instead of inside every click handler. Both the CSV export
+                    // and the PDF export (below) now walk the exact same column
+                    // set and cell values -- previously the CSV handler owned
+                    // this logic inline and any new export would have to
+                    // duplicate ~200 lines to stay in sync.
+                    const exportClassTypeCols: ColumnId[] = (activeReport.selectedClassTypes || []).map(
+                      (ct) => `classType:${ct}` as ColumnId,
+                    );
+                    const exportStyleRankCols: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
+                      (style) => `styleRank:${style}` as ColumnId,
+                    );
+                    const exportStyleBeltSizeCols: ColumnId[] = activeReport.fields.showBeltSizeByStyle
+                      ? (activeReport.selectedStylesForRank || []).map((style) => `styleBeltSize:${style}` as ColumnId)
+                      : [];
+                    const exportStyleBeltTextCols: ColumnId[] = activeReport.fields.showBeltTextByStyle
+                      ? (activeReport.selectedStylesForRank || []).map((style) => `styleBeltText:${style}` as ColumnId)
+                      : [];
+                    const exportStyleNextRankCols: ColumnId[] = activeReport.fields.showNextRankByStyle
+                      ? (activeReport.selectedStylesForRank || []).map((style) => `styleNextRank:${style}` as ColumnId)
+                      : [];
+                    const exportSavedOrder = activeReport.columnOrder || [];
+                    const exportAllColumns: ColumnId[] = [
+                      ...DEFAULT_COLUMN_ORDER,
+                      ...exportStyleRankCols,
+                      ...exportStyleBeltSizeCols,
+                      ...exportStyleBeltTextCols,
+                      ...exportStyleNextRankCols,
+                      ...exportClassTypeCols,
+                    ];
+                    const exportColumnOrder: ColumnId[] = [
+                      ...exportSavedOrder.filter((col) => exportAllColumns.includes(col)),
+                      ...exportAllColumns.filter((col) => !exportSavedOrder.includes(col)),
+                    ];
+                    const enabledColIds: ColumnId[] = exportColumnOrder.filter((colId) => {
+                      if (isClassTypeColumn(colId)) return (activeReport.selectedClassTypes || []).includes(getClassTypeName(colId));
+                      if (isStyleRankColumn(colId)) return (activeReport.selectedStylesForRank || []).includes(getStyleRankName(colId));
+                      if (isStyleBeltSizeColumn(colId)) return activeReport.fields.showBeltSizeByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleBeltSizeName(colId));
+                      if (isStyleBeltTextColumn(colId)) return activeReport.fields.showBeltTextByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleBeltTextName(colId));
+                      if (isStyleNextRankColumn(colId)) return activeReport.fields.showNextRankByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleNextRankName(colId));
+                      switch (colId) {
+                        case "firstName":
+                        case "lastName":
+                        case "status": return true;
+                        case "memberNumber": return activeReport.fields.showMemberNumber;
+                        case "email": return activeReport.fields.showMemberEmails;
+                        case "phone": return activeReport.fields.showMemberPhones;
+                        case "style": return activeReport.fields.showPrimaryStyle;
+                        case "rank": return activeReport.fields.showBeltRanks;
+                        case "nextRank": return activeReport.fields.showNextRank;
+                        case "latestPromotion": return activeReport.fields.showLatestPromotion;
+                        case "joinDate": return activeReport.fields.showJoinDate;
+                        case "waiver": return activeReport.fields.showWaiverStatus;
+                        case "membershipType": return activeReport.fields.showMembershipTypes;
+                        case "membershipPlan": return activeReport.fields.showMembershipPlans;
+                        case "monthlyPayment": return activeReport.fields.showMonthlyPayments;
+                        case "nextPaymentDate": return activeReport.fields.showNextPaymentDate;
+                        case "lastPaymentDate": return activeReport.fields.showLastPaymentDate;
+                        case "autoRenew": return activeReport.fields.showAutoRenewStatus;
+                        case "expirationDate": return activeReport.fields.showMembershipExpiring;
+                        case "totalClasses": return activeReport.fields.showTotalClassCount;
+                        default: return false;
+                      }
+                    });
+                    const exportHeaderFor = (colId: ColumnId): string => {
+                      if (isClassTypeColumn(colId)) return getClassTypeName(colId);
+                      if (isStyleRankColumn(colId)) return "Current Rank";
+                      if (isStyleBeltSizeColumn(colId)) return "Belt Size";
+                      if (isStyleBeltTextColumn(colId)) return "Belt Text";
+                      if (isStyleNextRankColumn(colId)) return "Next Rank";
+                      if (colId === "rank") return "Primary Rank";
+                      if (colId === "totalClasses") return "Total Classes";
+                      return COLUMN_LABELS[colId as BaseColumnId] || String(colId);
+                    };
+                    const exportCellText = (m: any, colId: ColumnId): string => {
+                      if (isClassTypeColumn(colId)) return String(m.attendanceCounts?.[getClassTypeName(colId)] || 0);
+                      if (isStyleRankColumn(colId)) {
+                        const styleName = getStyleRankName(colId);
+                        if (m.primaryStyle === styleName) return m.rank || "";
+                        if (m.stylesNotes) {
+                          try {
+                            const arr = JSON.parse(m.stylesNotes);
+                            if (Array.isArray(arr)) {
+                              const e = arr.find((s: any) => s?.name === styleName);
+                              if (e?.rank) return String(e.rank);
+                            }
+                          } catch { /* ignore */ }
+                        }
+                        return "";
+                      }
+                      if (isStyleBeltSizeColumn(colId)) {
+                        const styleName = getStyleBeltSizeName(colId);
+                        if (m.stylesNotes) {
+                          try {
+                            const arr = JSON.parse(m.stylesNotes);
+                            if (Array.isArray(arr)) {
+                              const e = arr.find((s: any) => s?.name === styleName);
+                              if (e?.beltSize) return String(e.beltSize);
+                            }
+                          } catch { /* ignore */ }
+                        }
+                        return "";
+                      }
+                      if (isStyleBeltTextColumn(colId)) {
+                        const styleName = getStyleBeltTextName(colId);
+                        if (m.stylesNotes) {
+                          try {
+                            const arr = JSON.parse(m.stylesNotes);
+                            if (Array.isArray(arr)) {
+                              const e = arr.find((s: any) => s?.name === styleName);
+                              if (e?.beltText) return String(e.beltText);
+                            }
+                          } catch { /* ignore */ }
+                        }
+                        return "";
+                      }
+                      if (isStyleNextRankColumn(colId)) {
+                        const styleName = getStyleNextRankName(colId);
+                        let currentRank: string | null = null;
+                        if (m.stylesNotes) {
+                          try {
+                            const arr = JSON.parse(m.stylesNotes);
+                            if (Array.isArray(arr)) {
+                              const e = arr.find((s: any) => s?.name === styleName);
+                              if (e?.rank) currentRank = String(e.rank);
+                            }
+                          } catch { /* ignore */ }
+                        }
+                        if (!currentRank && m.primaryStyle === styleName) currentRank = m.rank || null;
+                        if (!currentRank) return "";
+                        const styleDef = availableStyles.find((s) => s.name.toLowerCase() === styleName.toLowerCase());
+                        let progression: Array<{ name: string; order: number }> = [];
+                        const beltConfig = (styleDef as { beltConfig?: string | null } | undefined)?.beltConfig;
+                        if (beltConfig) {
+                          try {
+                            const parsed = JSON.parse(beltConfig);
+                            if (Array.isArray(parsed?.ranks)) {
+                              progression = [...parsed.ranks].sort(
+                                (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0),
+                              );
+                            }
+                          } catch { /* ignore */ }
+                        }
+                        if (progression.length === 0 && styleDef?.ranks) {
+                          progression = [...styleDef.ranks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                        }
+                        const idx = progression.findIndex((r) => r.name.toLowerCase() === currentRank!.toLowerCase());
+                        if (idx < 0 || idx >= progression.length - 1) return "";
+                        return progression[idx + 1].name;
+                      }
+                      switch (colId) {
+                        case "firstName": return m.firstName || "";
+                        case "lastName": return m.lastName || "";
+                        case "status": return m.status || "";
+                        case "memberNumber": return m.memberNumber ? String(m.memberNumber) : "";
+                        case "email": return m.email || "";
+                        case "phone": return m.phone || "";
+                        case "style": return m.primaryStyle || "";
+                        case "rank": return m.rank || "";
+                        case "nextRank": return computeNextRankFromPrimary(m, availableStyles);
+                        case "latestPromotion": return computeLatestPromotion(m);
+                        case "joinDate": return m.startDate ? new Date(m.startDate).toLocaleDateString() : "";
+                        case "waiver": return m.waiverSigned ? "Signed" : "Not Signed";
+                        case "membershipType": return m.membershipTypeName || "";
+                        case "membershipPlan": return m.membershipPlanName || "";
+                        case "monthlyPayment": return `$${((m.monthlyPaymentCents || 0) / 100).toFixed(2)}`;
+                        case "nextPaymentDate": return m.nextPaymentDate ? new Date(m.nextPaymentDate).toLocaleDateString() : "";
+                        case "lastPaymentDate": return m.lastPaymentDate ? new Date(m.lastPaymentDate).toLocaleDateString() : "";
+                        case "autoRenew": return m.autoRenew ? "Yes" : "No";
+                        case "expirationDate": return m.membershipEndDate ? new Date(m.membershipEndDate).toLocaleDateString() : "";
+                        case "totalClasses": return String(m.attendanceCounts?.total || 0);
+                        default: return "";
+                      }
+                    };
+
                     return (
                       <>
                         <div className="flex flex-wrap items-center justify-between gap-2 mb-3 print:hidden">
@@ -2390,224 +2573,54 @@ export default function ReportsPage() {
                             <button
                               type="button"
                               onClick={() => {
+                                // Client-side PDF export in the app's standard
+                                // page format (letter, landscape). Same
+                                // columns + rows + row order as the on-screen
+                                // table (via the shared enabledColIds /
+                                // exportHeaderFor / exportCellText hoisted
+                                // above), so the printed PDF matches what
+                                // the user sees.
+                                const pdfHeaders = enabledColIds.map((c) => exportHeaderFor(c));
+                                const pdfRows = sortedMembers.map((m: any) => enabledColIds.map((c) => exportCellText(m, c)));
+                                const pdf = generateReportPdf({
+                                  title: activeReport.name,
+                                  dateRangeLabel: getDateRangeLabel(activeReport.dateRange, activeReport.customStartDate, activeReport.customEndDate),
+                                  headers: pdfHeaders,
+                                  rows: pdfRows,
+                                });
+                                const safeName = (activeReport.name || "report").replace(/[^a-z0-9-_ ]/gi, "").trim() || "report";
+                                pdf.save(`${safeName}.pdf`);
+                              }}
+                              className="text-xs rounded-md border border-gray-300 bg-white px-3 py-1 font-semibold text-gray-700 hover:bg-gray-50"
+                            >
+                              Download PDF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
                                 // Client-side CSV export of exactly the rows +
                                 // columns currently shown for this report.
                                 // Filtered members (pre-pagination) are the
                                 // export set so the file has everything, not
-                                // just the current page.
-                                // Rebuild column order the same way the
-                                // table below does, so CSV columns match
-                                // what's on screen for this report.
-                                const csvClassTypeCols: ColumnId[] = (activeReport.selectedClassTypes || []).map(
-                                  (ct) => `classType:${ct}` as ColumnId,
-                                );
-                                const csvStyleRankCols: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
-                                  (style) => `styleRank:${style}` as ColumnId,
-                                );
-                                const csvStyleBeltSizeCols: ColumnId[] = activeReport.fields.showBeltSizeByStyle
-                                  ? (activeReport.selectedStylesForRank || []).map(
-                                      (style) => `styleBeltSize:${style}` as ColumnId,
-                                    )
-                                  : [];
-                                const csvStyleBeltTextCols: ColumnId[] = activeReport.fields.showBeltTextByStyle
-                                  ? (activeReport.selectedStylesForRank || []).map(
-                                      (style) => `styleBeltText:${style}` as ColumnId,
-                                    )
-                                  : [];
-                                const csvStyleNextRankCols: ColumnId[] = activeReport.fields.showNextRankByStyle
-                                  ? (activeReport.selectedStylesForRank || []).map(
-                                      (style) => `styleNextRank:${style}` as ColumnId,
-                                    )
-                                  : [];
-                                const csvSavedOrder = activeReport.columnOrder || [];
-                                const csvAllColumns: ColumnId[] = [
-                                  ...DEFAULT_COLUMN_ORDER,
-                                  ...csvStyleRankCols,
-                                  ...csvStyleBeltSizeCols,
-                                  ...csvStyleBeltTextCols,
-                                  ...csvStyleNextRankCols,
-                                  ...csvClassTypeCols,
-                                ];
-                                const csvColumnOrder: ColumnId[] = [
-                                  ...csvSavedOrder.filter((col) => csvAllColumns.includes(col)),
-                                  ...csvAllColumns.filter((col) => !csvSavedOrder.includes(col)),
-                                ];
-                                const enabledColIds = csvColumnOrder.filter((colId) => {
-                                  if (isClassTypeColumn(colId)) {
-                                    return (activeReport.selectedClassTypes || []).includes(getClassTypeName(colId));
-                                  }
-                                  if (isStyleRankColumn(colId)) {
-                                    return (activeReport.selectedStylesForRank || []).includes(getStyleRankName(colId));
-                                  }
-                                  if (isStyleBeltSizeColumn(colId)) {
-                                    return activeReport.fields.showBeltSizeByStyle
-                                      && (activeReport.selectedStylesForRank || []).includes(getStyleBeltSizeName(colId));
-                                  }
-                                  if (isStyleBeltTextColumn(colId)) {
-                                    return activeReport.fields.showBeltTextByStyle
-                                      && (activeReport.selectedStylesForRank || []).includes(getStyleBeltTextName(colId));
-                                  }
-                                  if (isStyleNextRankColumn(colId)) {
-                                    return activeReport.fields.showNextRankByStyle
-                                      && (activeReport.selectedStylesForRank || []).includes(getStyleNextRankName(colId));
-                                  }
-                                  switch (colId) {
-                                    case "firstName":
-                                    case "lastName":
-                                    case "status": return true;
-                                    case "memberNumber": return activeReport.fields.showMemberNumber;
-                                    case "email": return activeReport.fields.showMemberEmails;
-                                    case "phone": return activeReport.fields.showMemberPhones;
-                                    case "style": return activeReport.fields.showPrimaryStyle;
-                                    case "rank": return activeReport.fields.showBeltRanks;
-                                    case "nextRank": return activeReport.fields.showNextRank;
-                                    case "latestPromotion": return activeReport.fields.showLatestPromotion;
-                                    case "joinDate": return activeReport.fields.showJoinDate;
-                                    case "waiver": return activeReport.fields.showWaiverStatus;
-                                    case "membershipType": return activeReport.fields.showMembershipTypes;
-                                    case "membershipPlan": return activeReport.fields.showMembershipPlans;
-                                    case "monthlyPayment": return activeReport.fields.showMonthlyPayments;
-                                    case "nextPaymentDate": return activeReport.fields.showNextPaymentDate;
-                                    case "lastPaymentDate": return activeReport.fields.showLastPaymentDate;
-                                    case "autoRenew": return activeReport.fields.showAutoRenewStatus;
-                                    case "expirationDate": return activeReport.fields.showMembershipExpiring;
-                                    case "totalClasses": return activeReport.fields.showTotalClassCount;
-                                    default: return false;
-                                  }
-                                });
-
-                                const headerFor = (colId: ColumnId): string => {
-                                  if (isClassTypeColumn(colId)) return getClassTypeName(colId);
-                                  if (isStyleRankColumn(colId)) return "Current Rank";
-                                  if (isStyleBeltSizeColumn(colId)) return "Belt Size";
-                                  if (isStyleBeltTextColumn(colId)) return "Belt Text";
-                                  if (isStyleNextRankColumn(colId)) return "Next Rank";
-                                  if (colId === "rank") return "Primary Rank";
-                                  if (colId === "totalClasses") return "Total Classes";
-                                  return COLUMN_LABELS[colId as BaseColumnId] || String(colId);
-                                };
-
-                                const cellText = (m: any, colId: ColumnId): string => {
-                                  if (isClassTypeColumn(colId)) {
-                                    return String(m.attendanceCounts?.[getClassTypeName(colId)] || 0);
-                                  }
-                                  if (isStyleRankColumn(colId)) {
-                                    const styleName = getStyleRankName(colId);
-                                    if (m.primaryStyle === styleName) return m.rank || "";
-                                    if (m.stylesNotes) {
-                                      try {
-                                        const arr = JSON.parse(m.stylesNotes);
-                                        if (Array.isArray(arr)) {
-                                          const e = arr.find((s: any) => s?.name === styleName);
-                                          if (e?.rank) return String(e.rank);
-                                        }
-                                      } catch {}
-                                    }
-                                    return "";
-                                  }
-                                  if (isStyleBeltSizeColumn(colId)) {
-                                    const styleName = getStyleBeltSizeName(colId);
-                                    if (m.stylesNotes) {
-                                      try {
-                                        const arr = JSON.parse(m.stylesNotes);
-                                        if (Array.isArray(arr)) {
-                                          const e = arr.find((s: any) => s?.name === styleName);
-                                          if (e?.beltSize) return String(e.beltSize);
-                                        }
-                                      } catch {}
-                                    }
-                                    return "";
-                                  }
-                                  if (isStyleBeltTextColumn(colId)) {
-                                    const styleName = getStyleBeltTextName(colId);
-                                    if (m.stylesNotes) {
-                                      try {
-                                        const arr = JSON.parse(m.stylesNotes);
-                                        if (Array.isArray(arr)) {
-                                          const e = arr.find((s: any) => s?.name === styleName);
-                                          if (e?.beltText) return String(e.beltText);
-                                        }
-                                      } catch {}
-                                    }
-                                    return "";
-                                  }
-                                  if (isStyleNextRankColumn(colId)) {
-                                    const styleName = getStyleNextRankName(colId);
-                                    let currentRank: string | null = null;
-                                    if (m.stylesNotes) {
-                                      try {
-                                        const arr = JSON.parse(m.stylesNotes);
-                                        if (Array.isArray(arr)) {
-                                          const e = arr.find((s: any) => s?.name === styleName);
-                                          if (e?.rank) currentRank = String(e.rank);
-                                        }
-                                      } catch {}
-                                    }
-                                    if (!currentRank && m.primaryStyle === styleName) currentRank = m.rank || null;
-                                    if (!currentRank) return "";
-                                    const styleDef = availableStyles.find(
-                                      (s) => s.name.toLowerCase() === styleName.toLowerCase(),
-                                    );
-                                    let progression: Array<{ name: string; order: number }> = [];
-                                    const beltConfig = (styleDef as { beltConfig?: string | null } | undefined)?.beltConfig;
-                                    if (beltConfig) {
-                                      try {
-                                        const parsed = JSON.parse(beltConfig);
-                                        if (Array.isArray(parsed?.ranks)) {
-                                          progression = [...parsed.ranks].sort(
-                                            (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0),
-                                          );
-                                        }
-                                      } catch {}
-                                    }
-                                    if (progression.length === 0 && styleDef?.ranks) {
-                                      progression = [...styleDef.ranks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-                                    }
-                                    const idx = progression.findIndex(
-                                      (r) => r.name.toLowerCase() === currentRank!.toLowerCase(),
-                                    );
-                                    if (idx < 0 || idx >= progression.length - 1) return "";
-                                    return progression[idx + 1].name;
-                                  }
-                                  switch (colId) {
-                                    case "firstName": return m.firstName || "";
-                                    case "lastName": return m.lastName || "";
-                                    case "status": return m.status || "";
-                                    case "memberNumber": return m.memberNumber ? String(m.memberNumber) : "";
-                                    case "email": return m.email || "";
-                                    case "phone": return m.phone || "";
-                                    case "style": return m.primaryStyle || "";
-                                    case "rank": return m.rank || "";
-                                    case "nextRank": return computeNextRankFromPrimary(m, availableStyles);
-                                    case "latestPromotion": return computeLatestPromotion(m);
-                                    case "joinDate": return m.startDate ? new Date(m.startDate).toLocaleDateString() : "";
-                                    case "waiver": return m.waiverSigned ? "Signed" : "Not Signed";
-                                    case "membershipType": return m.membershipTypeName || "";
-                                    case "membershipPlan": return m.membershipPlanName || "";
-                                    case "monthlyPayment": return `$${((m.monthlyPaymentCents || 0) / 100).toFixed(2)}`;
-                                    case "nextPaymentDate": return m.nextPaymentDate ? new Date(m.nextPaymentDate).toLocaleDateString() : "";
-                                    case "lastPaymentDate": return m.lastPaymentDate ? new Date(m.lastPaymentDate).toLocaleDateString() : "";
-                                    case "autoRenew": return m.autoRenew ? "Yes" : "No";
-                                    case "expirationDate": return m.membershipEndDate ? new Date(m.membershipEndDate).toLocaleDateString() : "";
-                                    case "totalClasses": return String(m.attendanceCounts?.total || 0);
-                                    default: return "";
-                                  }
-                                };
-
+                                // just the current page. Shares column /
+                                // header / cell helpers with the PDF button
+                                // above via hoisted enabledColIds /
+                                // exportHeaderFor / exportCellText -- keeping
+                                // this in one place stops the two exports
+                                // from drifting.
                                 const escapeCsv = (v: string): string => {
                                   if (v.includes(",") || v.includes('"') || v.includes("\n")) {
                                     return `"${v.replace(/"/g, '""')}"`;
                                   }
                                   return v;
                                 };
-
-                                const rows = [
-                                  enabledColIds.map((c) => escapeCsv(headerFor(c))).join(","),
-                                  ...sortedMembers.map((m) =>
-                                    enabledColIds.map((c) => escapeCsv(cellText(m, c))).join(","),
+                                const csvLines = [
+                                  enabledColIds.map((c) => escapeCsv(exportHeaderFor(c))).join(","),
+                                  ...sortedMembers.map((m: any) =>
+                                    enabledColIds.map((c) => escapeCsv(exportCellText(m, c))).join(","),
                                   ),
                                 ];
-                                const csvBody = rows.join("\r\n");
+                                const csvBody = csvLines.join("\r\n");
                                 const bom = "﻿"; // Excel recognizes UTF-8 with BOM
                                 const blob = new Blob([bom + csvBody], { type: "text/csv;charset=utf-8;" });
                                 const url = URL.createObjectURL(blob);
