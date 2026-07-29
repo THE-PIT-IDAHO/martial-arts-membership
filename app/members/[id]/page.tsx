@@ -4310,10 +4310,12 @@ export default function MemberProfilePage() {
                             name: s.name,
                             rank: s.rank,
                             attendanceResetDate: s.attendanceResetDate,
+                            lastPromotionDate: s.lastPromotionDate,
                           },
                           selectedStyle?.beltConfig ?? null,
                         );
                         const rankRequirements = styleProgress.requirements;
+                        const timeInRank = styleProgress.timeInRank;
 
                         const beltLayers = getBeltLayersForRank(selectedStyle?.beltConfig, s.rank);
 
@@ -4341,8 +4343,13 @@ export default function MemberProfilePage() {
                                 <span className="text-xs font-medium text-gray-700">{parseLocalDate(s.lastPromotionDate).toLocaleDateString()}</span>
                               </div>
                             )}
-                            {/* Progress bars for class requirements */}
-                            {rankRequirements.length > 0 && (
+                            {/* Progress bars for class requirements and
+                                (if configured) minimum time in rank. When
+                                a rank has ONLY a time-in-rank requirement
+                                the class-requirements block is empty --
+                                the timeInRank block below is what the
+                                grader sees. */}
+                            {(rankRequirements.length > 0 || timeInRank) && (
                               <div className="space-y-1.5 pt-1">
                                 <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Progress</span>
                                 {rankRequirements.map((req, idx) => {
@@ -4362,6 +4369,39 @@ export default function MemberProfilePage() {
                                     </div>
                                   );
                                 })}
+                                {timeInRank && (() => {
+                                  // Show elapsed / required in whichever
+                                  // unit the coach configured, so a "6
+                                  // months" requirement reads "3/6 months"
+                                  // not "91/183 days".
+                                  const unit = timeInRank.required.unit;
+                                  const dayToUnit =
+                                    unit === "weeks" ? 7
+                                    : unit === "months" ? 30.4375
+                                    : 365.25;
+                                  const requiredValue = timeInRank.required.value;
+                                  const elapsedInUnit = Math.min(
+                                    requiredValue,
+                                    Math.floor(timeInRank.elapsedDays / dayToUnit),
+                                  );
+                                  const pct = timeInRank.requiredDays
+                                    ? Math.min(100, (timeInRank.elapsedDays / timeInRank.requiredDays) * 100)
+                                    : 0;
+                                  return (
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="font-medium text-gray-600">Time in rank</span>
+                                        <span className={`font-bold ${timeInRank.met ? "text-green-600" : "text-gray-800"}`}>{elapsedInUnit}/{requiredValue} {unit}</span>
+                                      </div>
+                                      <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full transition-all ${timeInRank.met ? "bg-green-500" : "bg-primary"}`}
+                                          style={{ width: `${pct}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             )}
                             {/* Fallback: single requirement from Rank model */}

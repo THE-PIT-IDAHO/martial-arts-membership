@@ -44,6 +44,16 @@ type EligibleEntry = {
   toRank: string;
   // Per-class-type attendance progress against the next rank's requirements.
   classRequirements: Array<{ label: string; attended: number; required: number; met: boolean }>;
+  // Configured minimum time in the current rank (from
+  // beltConfig[rank].minDuration). Null when no minDuration is set or
+  // the member has no lastPromotionDate to measure from -- both cases
+  // are a vacuous pass and don't gate eligibility.
+  timeInRank: {
+    required: { value: number; unit: "weeks" | "months" | "years" };
+    requiredDays: number;
+    elapsedDays: number;
+    met: boolean;
+  } | null;
   allRequirementsMet: boolean;
   attendanceResetDate: string | null;
   lastPromotionDate: string | null;
@@ -272,11 +282,19 @@ export async function GET(req: Request) {
             name: es.name,
             rank: es.rank,
             attendanceResetDate: effectiveResetYmd,
+            lastPromotionDate: es.lastPromotionDate,
           },
           style.beltConfig,
+          // Measure against the event date (or now) so "will they be
+          // ready by then" evaluates both class counts AND time-in-rank
+          // on the same yardstick. The lib returns null timeInRank when
+          // no minDuration is configured -- that stays a vacuous pass.
+          windowEnd,
         );
         const classReqs = progress.requirements;
-        const allMet = classReqs.length === 0 ? true : classReqs.every((r) => r.met);
+        const classMet = classReqs.length === 0 ? true : classReqs.every((r) => r.met);
+        const timeMet = progress.timeInRank == null ? true : progress.timeInRank.met;
+        const allMet = classMet && timeMet;
 
         const fee = await computePromotionFee({
           memberId: member.id,
@@ -296,6 +314,7 @@ export async function GET(req: Request) {
           fromRankOrder: currentIdx,
           toRank: nextRank.name,
           classRequirements: classReqs,
+          timeInRank: progress.timeInRank,
           allRequirementsMet: allMet,
           attendanceResetDate: es.attendanceResetDate || null,
           lastPromotionDate: es.lastPromotionDate || null,

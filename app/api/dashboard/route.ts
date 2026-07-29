@@ -485,6 +485,12 @@ export async function GET(req: Request) {
       currentRank: string;
       nextRank: string;
       requirementsMet: { label: string; count: number; required: number }[];
+      timeInRank: {
+        required: { value: number; unit: "weeks" | "months" | "years" };
+        requiredDays: number;
+        elapsedDays: number;
+        met: boolean;
+      } | null;
     }[] = [];
 
     try {
@@ -585,6 +591,7 @@ export async function GET(req: Request) {
                 name: ms.name,
                 rank: ms.rank,
                 attendanceResetDate: ms.attendanceResetDate,
+                lastPromotionDate: ms.lastPromotionDate,
               },
               styleConfig.beltConfig,
             );
@@ -616,8 +623,19 @@ export async function GET(req: Request) {
               }
             }
 
-            const allMet = classRequirements.length > 0
-              && classRequirements.every((r) => r.count >= r.required);
+            // Eligibility now mirrors /api/promotions/eligible:
+            //   class-req gate = no reqs configured (vacuous) OR every
+            //     configured req is met
+            //   time gate     = no minDuration (vacuous) OR the member
+            //     has been in rank at least that long
+            // Only surface members who clear BOTH. The old dashboard-
+            // only rule "must have classRequirements AND all met" hid
+            // gyms that only use a time-in-rank gate (e.g. affiliate
+            // black-belt tracking) from ever appearing here.
+            const classMet = classRequirements.length === 0
+              || classRequirements.every((r) => r.count >= r.required);
+            const timeMet = progress.timeInRank == null || progress.timeInRank.met;
+            const allMet = classMet && timeMet;
             if (allMet) {
               const nextRank = sortedRanks[currentIdx + 1];
               eligibleForPromotion.push({
@@ -627,6 +645,7 @@ export async function GET(req: Request) {
                 currentRank: sortedRanks[currentIdx].name,
                 nextRank: nextRank.name,
                 requirementsMet: classRequirements,
+                timeInRank: progress.timeInRank,
               });
             }
           }

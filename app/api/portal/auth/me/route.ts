@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
     name: string;
     rank?: string;
     attendanceResetDate?: string;
+    lastPromotionDate?: string;
     active?: boolean;
   }> = [];
   if (member.stylesNotes) {

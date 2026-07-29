@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
   }> = [];
 
   // Parse stylesNotes to get enrolled styles and ranks
-  let enrolledStyles: Array<{ name: string; rank?: string; attendanceResetDate?: string; active?: boolean }> = [];
+  let enrolledStyles: Array<{ name: string; rank?: string; attendanceResetDate?: string; lastPromotionDate?: string; active?: boolean }> = [];
   if (member.stylesNotes) {
     try {
       enrolledStyles = JSON.parse(member.stylesNotes);

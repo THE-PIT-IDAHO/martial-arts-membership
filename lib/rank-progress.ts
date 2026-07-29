@@ -26,13 +26,22 @@ export type EnrolledStyle = {
   name: string;
   rank?: string;
   attendanceResetDate?: string | null;
+  // When the member entered their current rank. Used to evaluate the
+  // "minimum time in current rank" requirement (rank.minDuration on
+  // the style's beltConfig). ISO or YYYY-MM-DD string.
+  lastPromotionDate?: string | null;
   active?: boolean;
 };
+
+type RankDuration = { value?: number | null; unit?: "weeks" | "months" | "years" | null };
 
 type BeltRank = {
   name: string;
   order: number;
   classRequirements?: Array<{ label?: string | null; minCount?: number | null }> | null;
+  // Optional "minimum time to graduate from this rank" configured in
+  // the belt designer. Absent / null / value<=0 means no time gate.
+  minDuration?: RankDuration | null;
 };
 
 export type RequirementProgress = {
@@ -42,10 +51,26 @@ export type RequirementProgress = {
   met: boolean;
 };
 
+export type TimeInRankProgress = {
+  // Configured minimum, as-authored (used for display: "6 months").
+  required: { value: number; unit: "weeks" | "months" | "years" };
+  // Same minimum expressed in whole days so callers can pick a unit
+  // for progress bars without re-deriving.
+  requiredDays: number;
+  // Days between the member's lastPromotionDate and the evaluation date
+  // (asOfDate passed to getStyleProgress, defaults to now). Clamped at 0.
+  elapsedDays: number;
+  met: boolean;
+};
+
 export type StyleProgressSummary = {
   currentRankName: string | null;
   nextRankName: string | null;
   requirements: RequirementProgress[];
+  // Present ONLY when the current rank has a positive minDuration AND
+  // the member has a lastPromotionDate to measure from. Null otherwise
+  // (vacuous pass -- no time gate to fail).
+  timeInRank: TimeInRankProgress | null;
 };
 
 // --- Internal helpers ---
@@ -130,22 +155,44 @@ function parseBeltConfigRanks(beltConfigJson: string | null | undefined): BeltRa
   }
 }
 
-/** Compute per-requirement progress for a specific enrolled style. */
+// Advance `date` by `value` calendar units. Uses setMonth / setFullYear
+// so month lengths + leap years behave the way a coach would expect
+// ("6 months from Jan 31" -> Jul 31 / Jul 30 as appropriate), not a
+// naive 30-day approximation.
+function addUnits(date: Date, value: number, unit: "weeks" | "months" | "years"): Date {
+  const d = new Date(date.getTime());
+  if (unit === "weeks") d.setDate(d.getDate() + 7 * value);
+  else if (unit === "months") d.setMonth(d.getMonth() + value);
+  else d.setFullYear(d.getFullYear() + value);
+  return d;
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** Compute per-requirement progress for a specific enrolled style.
+ *
+ *  `asOfDate` is the point in time to measure "have they met the
+ *  requirements" against. Defaults to now. Callers that ask
+ *  "will they be ready by an upcoming promotion event" pass the
+ *  event date so both class counts (already bounded upstream) and
+ *  the time-in-rank gate use the same yardstick.
+ */
 export function getStyleProgress(
   attendances: AttendanceRow[],
   enrolled: EnrolledStyle,
   beltConfigJson: string | null | undefined,
+  asOfDate: Date = new Date(),
 ): StyleProgressSummary {
   if (!enrolled.rank) {
-    return { currentRankName: null, nextRankName: null, requirements: [] };
+    return { currentRankName: null, nextRankName: null, requirements: [], timeInRank: null };
   }
   const ranks = parseBeltConfigRanks(beltConfigJson);
   if (ranks.length === 0) {
-    return { currentRankName: enrolled.rank, nextRankName: null, requirements: [] };
+    return { currentRankName: enrolled.rank, nextRankName: null, requirements: [], timeInRank: null };
   }
   const currentIdx = ranks.findIndex((r) => r.name.toLowerCase() === enrolled.rank!.toLowerCase());
   if (currentIdx < 0) {
-    return { currentRankName: enrolled.rank, nextRankName: null, requirements: [] };
+    return { currentRankName: enrolled.rank, nextRankName: null, requirements: [], timeInRank: null };
   }
   const current = ranks[currentIdx];
   const next = currentIdx < ranks.length - 1 ? ranks[currentIdx + 1] : null;
@@ -165,10 +212,38 @@ export function getStyleProgress(
       };
     });
 
+  // Time-in-rank: only compute when a real minDuration is configured
+  // AND the member has a lastPromotionDate to anchor it. If either is
+  // missing we return null so callers treat this rank as having no
+  // time gate (vacuous pass) instead of a failed one.
+  let timeInRank: TimeInRankProgress | null = null;
+  const md = current.minDuration;
+  const durationValue = md?.value ?? 0;
+  const durationUnit = md?.unit;
+  if (
+    durationValue > 0
+    && (durationUnit === "weeks" || durationUnit === "months" || durationUnit === "years")
+    && enrolled.lastPromotionDate
+  ) {
+    const startedAt = new Date(enrolled.lastPromotionDate);
+    if (!Number.isNaN(startedAt.getTime())) {
+      const readyAt = addUnits(startedAt, durationValue, durationUnit);
+      const elapsedDays = Math.max(0, Math.floor((asOfDate.getTime() - startedAt.getTime()) / MS_PER_DAY));
+      const requiredDays = Math.max(0, Math.round((readyAt.getTime() - startedAt.getTime()) / MS_PER_DAY));
+      timeInRank = {
+        required: { value: durationValue, unit: durationUnit },
+        requiredDays,
+        elapsedDays,
+        met: asOfDate.getTime() >= readyAt.getTime(),
+      };
+    }
+  }
+
   return {
     currentRankName: current.name,
     nextRankName: next?.name || null,
     requirements: reqs,
+    timeInRank,
   };
 }
 
@@ -212,6 +287,8 @@ export function parseEnrolledStyles(stylesNotesJson: string | null | undefined):
           rank: typeof o.rank === "string" ? o.rank : undefined,
           attendanceResetDate:
             typeof o.attendanceResetDate === "string" ? o.attendanceResetDate : undefined,
+          lastPromotionDate:
+            typeof o.lastPromotionDate === "string" ? o.lastPromotionDate : undefined,
           active: typeof o.active === "boolean" ? o.active : undefined,
         } as EnrolledStyle;
       })
