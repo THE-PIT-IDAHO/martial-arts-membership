@@ -2053,22 +2053,52 @@ export default function ReportsPage() {
                         bVal = b.attendanceCounts?.[classTypeName] || 0;
                       } else if (isStyleRankColumn(sortColumn)) {
                         const styleName = getStyleRankName(sortColumn);
-                        // Get rank for the style
-                        const getRankForStyle = (member: any) => {
-                          if (member.primaryStyle === styleName) return (member.rank || "").toLowerCase();
-                          if (member.stylesNotes) {
+                        // Sort by the rank's `order` from the style's
+                        // beltConfig, NOT alphabetically -- otherwise
+                        // "1st Degree" lands next to "10th Degree" and
+                        // "White" sorts after "Purple". Build the
+                        // name -> order lookup once for this column so
+                        // we don't re-parse beltConfig per comparison.
+                        const styleDef = availableStyles.find(
+                          (s) => s.name.toLowerCase() === styleName.toLowerCase(),
+                        );
+                        const rankOrderByName = new Map<string, number>();
+                        const beltConfig = (styleDef as { beltConfig?: string | null } | undefined)?.beltConfig;
+                        if (beltConfig) {
+                          try {
+                            const parsed = JSON.parse(beltConfig);
+                            if (parsed && Array.isArray(parsed.ranks)) {
+                              for (const r of parsed.ranks as Array<{ name?: string; order?: number }>) {
+                                if (r?.name && typeof r.order === "number") {
+                                  rankOrderByName.set(r.name.toLowerCase(), r.order);
+                                }
+                              }
+                            }
+                          } catch { /* ignore */ }
+                        }
+                        // Members whose rank isn't in the beltConfig
+                        // (deleted rank, typo, no rank at all) sort to
+                        // the bottom regardless of direction so they
+                        // don't scramble the top of the list.
+                        const noRankSentinel = Number.MAX_SAFE_INTEGER;
+                        const getRankOrder = (member: any) => {
+                          let name: string | null = null;
+                          if (member.primaryStyle === styleName) name = member.rank || null;
+                          if (!name && member.stylesNotes) {
                             try {
                               const stylesArray = JSON.parse(member.stylesNotes);
                               if (Array.isArray(stylesArray)) {
                                 const styleEntry = stylesArray.find((s: any) => s.name === styleName);
-                                if (styleEntry?.rank) return styleEntry.rank.toLowerCase();
+                                if (styleEntry?.rank) name = styleEntry.rank;
                               }
-                            } catch {}
+                            } catch { /* ignore */ }
                           }
-                          return "";
+                          if (!name) return noRankSentinel;
+                          const idx = rankOrderByName.get(name.toLowerCase());
+                          return typeof idx === "number" ? idx : noRankSentinel;
                         };
-                        aVal = getRankForStyle(a);
-                        bVal = getRankForStyle(b);
+                        aVal = getRankOrder(a);
+                        bVal = getRankOrder(b);
                       } else {
                         switch (sortColumn) {
                           case "firstName":
@@ -2099,10 +2129,37 @@ export default function ReportsPage() {
                             aVal = (a.primaryStyle || "").toLowerCase();
                             bVal = (b.primaryStyle || "").toLowerCase();
                             break;
-                          case "rank":
-                            aVal = (a.rank || "").toLowerCase();
-                            bVal = (b.rank || "").toLowerCase();
+                          case "rank": {
+                            // Same "sort by belt order, not alphabet"
+                            // reasoning as the per-style rank column
+                            // above. Each member's rank is scored via
+                            // their primaryStyle's beltConfig.ranks[].order
+                            // -- so "White (order 0)" always sorts
+                            // before "Black 10th Degree (order 15)"
+                            // even though "1" < "W" alphabetically.
+                            const orderFor = (member: any): number => {
+                              const styleName: string | null = member.primaryStyle || null;
+                              const rankName: string | null = member.rank || null;
+                              if (!styleName || !rankName) return Number.MAX_SAFE_INTEGER;
+                              const styleDef = availableStyles.find(
+                                (s) => s.name.toLowerCase() === styleName.toLowerCase(),
+                              );
+                              const beltConfig = (styleDef as { beltConfig?: string | null } | undefined)?.beltConfig;
+                              if (!beltConfig) return Number.MAX_SAFE_INTEGER;
+                              try {
+                                const parsed = JSON.parse(beltConfig);
+                                if (parsed && Array.isArray(parsed.ranks)) {
+                                  const hit = (parsed.ranks as Array<{ name?: string; order?: number }>)
+                                    .find((r) => r?.name?.toLowerCase() === rankName.toLowerCase());
+                                  if (hit && typeof hit.order === "number") return hit.order;
+                                }
+                              } catch { /* ignore */ }
+                              return Number.MAX_SAFE_INTEGER;
+                            };
+                            aVal = orderFor(a);
+                            bVal = orderFor(b);
                             break;
+                          }
                           case "joinDate":
                             aVal = a.startDate ? new Date(a.startDate).getTime() : 0;
                             bVal = b.startDate ? new Date(b.startDate).getTime() : 0;
