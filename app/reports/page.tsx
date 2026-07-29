@@ -56,6 +56,11 @@ type ReportDataFields = {
   showStyleBreakdown: boolean;
   showRankDistribution: boolean;
   showUpcomingPromotions: boolean;
+  // Non-style-specific rank extras -- scoped by each member's
+  // primaryStyle (Latest Promotion is the most recent lastPromotionDate
+  // across ALL of a member's styles).
+  showLatestPromotion: boolean;
+  showNextRank: boolean;
   // Per-selected-style extras — surface a Belt Size, Belt Text and/or
   // Next Rank column for every style listed in selectedStylesForRank.
   showBeltSizeByStyle: boolean;
@@ -148,6 +153,8 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showStyleBreakdown: false,
   showRankDistribution: false,
   showUpcomingPromotions: false,
+  showLatestPromotion: false,
+  showNextRank: false,
   showBeltSizeByStyle: false,
   showBeltTextByStyle: false,
   showNextRankByStyle: false,
@@ -259,6 +266,8 @@ const COLUMN_FIELDS = [
     fields: [
       { key: "showBeltRanks", label: "Belt Rank" },
       { key: "showPrimaryStyle", label: "Primary Style" },
+      { key: "showNextRank", label: "Next Rank" },
+      { key: "showLatestPromotion", label: "Latest Promotion" },
       { key: "showRanksByStyle", label: "Ranks by Style" },
       { key: "showBeltSizeByStyle", label: "Belt Size (per selected style)" },
       { key: "showBeltTextByStyle", label: "Belt Text (per selected style)" },
@@ -424,7 +433,7 @@ type PaymentSummary = {
 };
 
 // Base column identifiers for the member list table
-type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
+type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
 
 // Column ID can be a base column, a class type column, or one of the
 // per-style extras (current rank / belt size / belt text / next rank).
@@ -446,6 +455,8 @@ const DEFAULT_COLUMN_ORDER: BaseColumnId[] = [
   "phone",
   "style",
   "rank",
+  "nextRank",
+  "latestPromotion",
   "joinDate",
   "waiver",
   "membershipType",
@@ -468,6 +479,8 @@ const COLUMN_LABELS: Record<BaseColumnId, string> = {
   phone: "Phone",
   style: "Style",
   rank: "Rank",
+  nextRank: "Next Rank",
+  latestPromotion: "Latest Promotion",
   joinDate: "Joined",
   waiver: "Waiver",
   membershipType: "Membership Type",
@@ -522,6 +535,72 @@ function isStyleRankColumn(colId: ColumnId): colId is `styleRank:${string}` {
 // Helper to extract style name from style rank column ID
 function getStyleRankName(colId: ColumnId): string {
   return colId.replace("styleRank:", "");
+}
+
+// Compute the "next rank" in a member's primary style from that
+// style's beltConfig progression. Returns "" when the member is at
+// the top rank, missing a style, or the style has no beltConfig. Used
+// by the standalone "Next Rank" column (the per-style variant has
+// its own inline logic below).
+type AvailableStyleForNextRank = {
+  name: string;
+  beltConfig?: string | null;
+  ranks?: Array<{ name: string; order: number }>;
+};
+function computeNextRankFromPrimary(
+  m: { primaryStyle?: string | null; rank?: string | null },
+  availableStyles: AvailableStyleForNextRank[],
+): string {
+  const styleName = m.primaryStyle;
+  const currentRank = m.rank;
+  if (!styleName || !currentRank) return "";
+  const styleDef = availableStyles.find(
+    (s) => s.name.toLowerCase() === styleName.toLowerCase(),
+  );
+  if (!styleDef) return "";
+  let progression: Array<{ name: string; order: number }> = [];
+  if (styleDef.beltConfig) {
+    try {
+      const parsed = JSON.parse(styleDef.beltConfig);
+      if (Array.isArray(parsed?.ranks)) {
+        progression = [...parsed.ranks].sort(
+          (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0),
+        );
+      }
+    } catch { /* ignore */ }
+  }
+  if (progression.length === 0 && styleDef.ranks) {
+    progression = [...styleDef.ranks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }
+  const idx = progression.findIndex((r) => r.name.toLowerCase() === currentRank.toLowerCase());
+  if (idx < 0 || idx >= progression.length - 1) return "";
+  return progression[idx + 1].name;
+}
+
+// Pick the most recent lastPromotionDate across every style listed in
+// the member's stylesNotes JSON. Returns the timestamp (0 when the
+// member has no promotions recorded, so no-promotion rows sort to the
+// bottom in ascending order). Consumers wanting a display string call
+// computeLatestPromotion.
+function latestPromotionTime(m: { stylesNotes?: string | null }): number {
+  if (!m.stylesNotes) return 0;
+  try {
+    const arr = JSON.parse(m.stylesNotes);
+    if (!Array.isArray(arr)) return 0;
+    let latest = 0;
+    for (const s of arr as Array<{ lastPromotionDate?: string | null }>) {
+      if (!s?.lastPromotionDate) continue;
+      const t = new Date(s.lastPromotionDate).getTime();
+      if (!Number.isNaN(t) && t > latest) latest = t;
+    }
+    return latest;
+  } catch {
+    return 0;
+  }
+}
+function computeLatestPromotion(m: { stylesNotes?: string | null }): string {
+  const t = latestPromotionTime(m);
+  return t > 0 ? new Date(t).toLocaleDateString() : "";
 }
 
 type ReportConfig = {
@@ -2200,6 +2279,20 @@ export default function ReportsPage() {
                             bVal = orderFor(b);
                             break;
                           }
+                          case "nextRank":
+                            // Alphabetical is fine here -- next-rank
+                            // labels can span styles so there's no
+                            // shared "belt order" scale to sort by.
+                            aVal = computeNextRankFromPrimary(a, availableStyles).toLowerCase();
+                            bVal = computeNextRankFromPrimary(b, availableStyles).toLowerCase();
+                            break;
+                          case "latestPromotion":
+                            // Sort by underlying timestamp so newest/oldest
+                            // is correct instead of locale-string lex order
+                            // ("7/1/2026" beats "12/2/2025" alphabetically).
+                            aVal = latestPromotionTime(a);
+                            bVal = latestPromotionTime(b);
+                            break;
                           case "joinDate":
                             aVal = a.startDate ? new Date(a.startDate).getTime() : 0;
                             bVal = b.startDate ? new Date(b.startDate).getTime() : 0;
@@ -2367,6 +2460,8 @@ export default function ReportsPage() {
                                     case "phone": return activeReport.fields.showMemberPhones;
                                     case "style": return activeReport.fields.showPrimaryStyle;
                                     case "rank": return activeReport.fields.showBeltRanks;
+                                    case "nextRank": return activeReport.fields.showNextRank;
+                                    case "latestPromotion": return activeReport.fields.showLatestPromotion;
                                     case "joinDate": return activeReport.fields.showJoinDate;
                                     case "waiver": return activeReport.fields.showWaiverStatus;
                                     case "membershipType": return activeReport.fields.showMembershipTypes;
@@ -2483,6 +2578,8 @@ export default function ReportsPage() {
                                     case "phone": return m.phone || "";
                                     case "style": return m.primaryStyle || "";
                                     case "rank": return m.rank || "";
+                                    case "nextRank": return computeNextRankFromPrimary(m, availableStyles);
+                                    case "latestPromotion": return computeLatestPromotion(m);
                                     case "joinDate": return m.startDate ? new Date(m.startDate).toLocaleDateString() : "";
                                     case "waiver": return m.waiverSigned ? "Signed" : "Not Signed";
                                     case "membershipType": return m.membershipTypeName || "";
@@ -2633,6 +2730,10 @@ export default function ReportsPage() {
                                   return activeReport.fields.showPrimaryStyle;
                                 case "rank":
                                   return activeReport.fields.showBeltRanks;
+                                case "nextRank":
+                                  return activeReport.fields.showNextRank;
+                                case "latestPromotion":
+                                  return activeReport.fields.showLatestPromotion;
                                 case "joinDate":
                                   return activeReport.fields.showJoinDate;
                                 case "waiver":
@@ -2898,6 +2999,14 @@ export default function ReportsPage() {
                                           return m.primaryStyle || "—";
                                         case "rank":
                                           return displayRank;
+                                        case "nextRank": {
+                                          const nr = computeNextRankFromPrimary(m, availableStyles);
+                                          return nr || "—";
+                                        }
+                                        case "latestPromotion": {
+                                          const lp = computeLatestPromotion(m);
+                                          return lp || "—";
+                                        }
                                         case "joinDate":
                                           return m.startDate ? new Date(m.startDate).toLocaleDateString() : "—";
                                         case "waiver":
@@ -4206,7 +4315,7 @@ function ReportSection({ title, dateRangeLabel, onEdit, onDuplicate, onDelete, c
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={onEdit} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Edit</button>
-          <button type="button" onClick={onDuplicate} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100" title="Create a copy of this report you can rename and tweak independently">Duplicate</button>
+          <button type="button" onClick={onDuplicate} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark" title="Create a copy of this report you can rename and tweak independently">Duplicate</button>
           <button type="button" onClick={onDelete} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100">Delete</button>
         </div>
       </div>
