@@ -39,6 +39,7 @@ type ReportDataFields = {
 
   // Member Details
   showMemberNames: boolean;
+  showMemberStatus: boolean;
   showMemberEmails: boolean;
   showMemberPhones: boolean;
   showMemberAddresses: boolean;
@@ -138,6 +139,10 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showMembershipPlanDistribution: false,
   showMembershipTypeDistribution: false,
   showMemberNames: false,
+  // Default true so existing reports loaded from localStorage keep
+  // their Status column visible after this migration (the field used
+  // to be hardcoded on). Users can uncheck it from Manage Reports.
+  showMemberStatus: true,
   showMemberEmails: false,
   showMemberPhones: false,
   showMemberAddresses: false,
@@ -250,6 +255,7 @@ const COLUMN_FIELDS = [
     name: "Member Details",
     fields: [
       { key: "showMemberNames", label: "Member Names" },
+      { key: "showMemberStatus", label: "Status" },
       { key: "showMemberNumber", label: "Member Number" },
       { key: "showMemberEmails", label: "Email Address" },
       { key: "showMemberPhones", label: "Phone Numbers" },
@@ -2413,8 +2419,8 @@ export default function ReportsPage() {
                       if (isStyleNextRankColumn(colId)) return activeReport.fields.showNextRankByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleNextRankName(colId));
                       switch (colId) {
                         case "firstName":
-                        case "lastName":
-                        case "status": return true;
+                        case "lastName": return true;
+                        case "status": return activeReport.fields.showMemberStatus;
                         case "memberNumber": return activeReport.fields.showMemberNumber;
                         case "email": return activeReport.fields.showMemberEmails;
                         case "phone": return activeReport.fields.showMemberPhones;
@@ -2739,8 +2745,9 @@ export default function ReportsPage() {
                               switch (colId) {
                                 case "firstName":
                                 case "lastName":
-                                case "status":
                                   return true;
+                                case "status":
+                                  return activeReport.fields.showMemberStatus;
                                 case "memberNumber":
                                   return activeReport.fields.showMemberNumber;
                                 case "email":
