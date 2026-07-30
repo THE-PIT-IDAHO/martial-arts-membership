@@ -66,6 +66,9 @@ type ReportDataFields = {
   // Coach who promoted the member -- primary style entry's `coach`
   // value out of stylesNotes.
   showCoach: boolean;
+  // "Ready to promote" flag from /api/promotions/eligible. Cell shows
+  // the styles a member is currently eligible in, or a dash.
+  showPromotionEligible: boolean;
   // Per-selected-style extras — surface a Belt Size, Belt Text, Coach
   // and/or Next Rank column for every style listed in
   // selectedStylesForRank.
@@ -167,6 +170,7 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showLatestPromotion: false,
   showNextRank: false,
   showCoach: false,
+  showPromotionEligible: false,
   showBeltSizeByStyle: false,
   showBeltTextByStyle: false,
   showCoachByStyle: false,
@@ -289,6 +293,7 @@ const COLUMN_FIELDS = [
       { key: "showNextRank", label: "Next Rank" },
       { key: "showLatestPromotion", label: "Latest Promotion" },
       { key: "showCoach", label: "Coach" },
+      { key: "showPromotionEligible", label: "Promotion Eligible" },
       { key: "showRanksByStyle", label: "Ranks by Style" },
       { key: "showBeltSizeByStyle", label: "Belt Size (per selected style)" },
       { key: "showBeltTextByStyle", label: "Belt Text (per selected style)" },
@@ -455,7 +460,7 @@ type PaymentSummary = {
 };
 
 // Base column identifiers for the member list table
-type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
+type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "promotionEligible" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
 
 // Column ID can be a base column, a class type column, or one of the
 // per-style extras (current rank / belt size / belt text / next rank).
@@ -481,6 +486,7 @@ const DEFAULT_COLUMN_ORDER: BaseColumnId[] = [
   "nextRank",
   "latestPromotion",
   "coach",
+  "promotionEligible",
   "joinDate",
   "waiver",
   "membershipType",
@@ -506,6 +512,7 @@ const COLUMN_LABELS: Record<BaseColumnId, string> = {
   nextRank: "Next Rank",
   latestPromotion: "Latest Promotion",
   coach: "Coach",
+  promotionEligible: "Promotion Eligible",
   joinDate: "Joined",
   waiver: "Waiver",
   membershipType: "Membership Type",
@@ -925,6 +932,32 @@ export default function ReportsPage() {
   const [availableClassTypes, setAvailableClassTypes] = useState<string[]>([]);
   const [availableMembershipTypes, setAvailableMembershipTypes] = useState<{ id: string; name: string }[]>([]);
   const [availableMembershipPlans, setAvailableMembershipPlans] = useState<{ id: string; name: string }[]>([]);
+
+  // Map<memberId, "Style1, Style2"> of members currently promotion-
+  // eligible (from /api/promotions/eligible). Powers the optional
+  // Promotion Eligible column. Missing memberId => not eligible.
+  const [eligibleByMember, setEligibleByMember] = useState<Map<string, string>>(new Map());
+  // One-shot fetch on mount. Lightweight enough to run alongside the
+  // main dashboard-data load without gating on it.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/promotions/eligible");
+        if (!res.ok) return;
+        const data = await res.json();
+        const map = new Map<string, string[]>();
+        for (const row of (data.promotions || []) as Array<{ memberId: string; styleName: string; allRequirementsMet: boolean }>) {
+          if (!row.allRequirementsMet) continue;
+          const cur = map.get(row.memberId) || [];
+          cur.push(row.styleName);
+          map.set(row.memberId, cur);
+        }
+        const collapsed = new Map<string, string>();
+        for (const [id, styles] of map.entries()) collapsed.set(id, styles.join(", "));
+        setEligibleByMember(collapsed);
+      } catch { /* silent — column just stays empty */ }
+    })();
+  }, []);
 
   // Pagination state
   const [membersPerPage, setMembersPerPage] = useState<number>(25);
@@ -2406,6 +2439,13 @@ export default function ReportsPage() {
                             aVal = computeCoachFromPrimary(a).toLowerCase();
                             bVal = computeCoachFromPrimary(b).toLowerCase();
                             break;
+                          case "promotionEligible":
+                            // Eligible rows first (non-empty > empty),
+                            // then alphabetically by style list within
+                            // each group.
+                            aVal = eligibleByMember.get(a.id) ? `0${eligibleByMember.get(a.id)}` : "1";
+                            bVal = eligibleByMember.get(b.id) ? `0${eligibleByMember.get(b.id)}` : "1";
+                            break;
                           case "latestPromotion":
                             // Sort by underlying timestamp so newest/oldest
                             // is correct instead of locale-string lex order
@@ -2540,6 +2580,7 @@ export default function ReportsPage() {
                         case "nextRank": return activeReport.fields.showNextRank;
                         case "latestPromotion": return activeReport.fields.showLatestPromotion;
                         case "coach": return activeReport.fields.showCoach;
+                        case "promotionEligible": return activeReport.fields.showPromotionEligible;
                         case "joinDate": return activeReport.fields.showJoinDate;
                         case "waiver": return activeReport.fields.showWaiverStatus;
                         case "membershipType": return activeReport.fields.showMembershipTypes;
@@ -2655,6 +2696,7 @@ export default function ReportsPage() {
                         case "nextRank": return computeNextRankFromPrimary(m, availableStyles);
                         case "latestPromotion": return computeLatestPromotion(m);
                         case "coach": return computeCoachFromPrimary(m);
+                        case "promotionEligible": return eligibleByMember.get(m.id) || "";
                         case "joinDate": return m.startDate ? new Date(m.startDate).toLocaleDateString() : "";
                         case "waiver": return m.waiverSigned ? "Signed" : "Not Signed";
                         case "membershipType": return m.membershipTypeName || "";
@@ -2893,6 +2935,8 @@ export default function ReportsPage() {
                                   return activeReport.fields.showLatestPromotion;
                                 case "coach":
                                   return activeReport.fields.showCoach;
+                                case "promotionEligible":
+                                  return activeReport.fields.showPromotionEligible;
                                 case "joinDate":
                                   return activeReport.fields.showJoinDate;
                                 case "waiver":
@@ -3180,6 +3224,16 @@ export default function ReportsPage() {
                                         case "coach": {
                                           const c = computeCoachFromPrimary(m);
                                           return c || "—";
+                                        }
+                                        case "promotionEligible": {
+                                          const styles = eligibleByMember.get(m.id);
+                                          if (!styles) return <span className="text-gray-400">—</span>;
+                                          // Green "Ready" pill mirroring the dashboard.
+                                          return (
+                                            <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700" title={styles}>
+                                              Ready{styles.includes(",") ? ` (${styles.split(",").length})` : ""}
+                                            </span>
+                                          );
                                         }
                                         case "joinDate":
                                           return m.startDate ? new Date(m.startDate).toLocaleDateString() : "—";

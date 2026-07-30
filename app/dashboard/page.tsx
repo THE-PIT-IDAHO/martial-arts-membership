@@ -1290,8 +1290,13 @@ export default function DashboardPage() {
                         No members are currently promotion-eligible.
                       </div>
                     ) : (
-                      <div className="divide-y divide-gray-50">
-                        {data.eligibleForPromotion.slice(0, 5).map((p, i) => (
+                      // Show ALL eligible members instead of the old
+                      // slice(0, 5) that was hiding everyone past the
+                      // fifth. Cap height so long lists scroll inside
+                      // the card rather than pushing the rest of the
+                      // dashboard grid downward.
+                      <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
+                        {data.eligibleForPromotion.map((p, i) => (
                           <div
                             key={`${p.memberId}-${p.styleName}-${i}`}
                             className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
