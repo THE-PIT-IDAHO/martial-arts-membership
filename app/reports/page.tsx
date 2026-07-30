@@ -63,10 +63,15 @@ type ReportDataFields = {
   // across ALL of a member's styles).
   showLatestPromotion: boolean;
   showNextRank: boolean;
-  // Per-selected-style extras — surface a Belt Size, Belt Text and/or
-  // Next Rank column for every style listed in selectedStylesForRank.
+  // Coach who promoted the member -- primary style entry's `coach`
+  // value out of stylesNotes.
+  showCoach: boolean;
+  // Per-selected-style extras — surface a Belt Size, Belt Text, Coach
+  // and/or Next Rank column for every style listed in
+  // selectedStylesForRank.
   showBeltSizeByStyle: boolean;
   showBeltTextByStyle: boolean;
+  showCoachByStyle: boolean;
   showNextRankByStyle: boolean;
 
   // Memberships & Payments
@@ -161,8 +166,10 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showUpcomingPromotions: false,
   showLatestPromotion: false,
   showNextRank: false,
+  showCoach: false,
   showBeltSizeByStyle: false,
   showBeltTextByStyle: false,
+  showCoachByStyle: false,
   showNextRankByStyle: false,
   showMembershipTypes: false,
   showMembershipPlans: false,
@@ -247,6 +254,12 @@ const FILTER_FIELDS = [
     fields: [],
     hasMembershipPlanFilter: true,
   },
+  {
+    name: "Coach Filter",
+    description: "Filter to members promoted by specific coaches",
+    fields: [],
+    hasCoachFilter: true,
+  },
 ];
 
 // COLUMN FIELDS - Control what information columns are displayed in the member list
@@ -275,9 +288,11 @@ const COLUMN_FIELDS = [
       { key: "showPrimaryStyle", label: "Primary Style" },
       { key: "showNextRank", label: "Next Rank" },
       { key: "showLatestPromotion", label: "Latest Promotion" },
+      { key: "showCoach", label: "Coach" },
       { key: "showRanksByStyle", label: "Ranks by Style" },
       { key: "showBeltSizeByStyle", label: "Belt Size (per selected style)" },
       { key: "showBeltTextByStyle", label: "Belt Text (per selected style)" },
+      { key: "showCoachByStyle", label: "Coach (per selected style)" },
       { key: "showNextRankByStyle", label: "Next Rank (per selected style)" },
     ],
   },
@@ -440,7 +455,7 @@ type PaymentSummary = {
 };
 
 // Base column identifiers for the member list table
-type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
+type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
 
 // Column ID can be a base column, a class type column, or one of the
 // per-style extras (current rank / belt size / belt text / next rank).
@@ -450,6 +465,7 @@ type ColumnId =
   | `styleRank:${string}`
   | `styleBeltSize:${string}`
   | `styleBeltText:${string}`
+  | `styleCoach:${string}`
   | `styleNextRank:${string}`;
 
 // Default column order (base columns only - class type columns are appended dynamically)
@@ -464,6 +480,7 @@ const DEFAULT_COLUMN_ORDER: BaseColumnId[] = [
   "rank",
   "nextRank",
   "latestPromotion",
+  "coach",
   "joinDate",
   "waiver",
   "membershipType",
@@ -488,6 +505,7 @@ const COLUMN_LABELS: Record<BaseColumnId, string> = {
   rank: "Rank",
   nextRank: "Next Rank",
   latestPromotion: "Latest Promotion",
+  coach: "Coach",
   joinDate: "Joined",
   waiver: "Waiver",
   membershipType: "Membership Type",
@@ -525,6 +543,14 @@ function isStyleBeltTextColumn(colId: ColumnId): colId is `styleBeltText:${strin
 
 function getStyleBeltTextName(colId: ColumnId): string {
   return colId.replace("styleBeltText:", "");
+}
+
+function isStyleCoachColumn(colId: ColumnId): colId is `styleCoach:${string}` {
+  return colId.startsWith("styleCoach:");
+}
+
+function getStyleCoachName(colId: ColumnId): string {
+  return colId.replace("styleCoach:", "");
 }
 
 function isStyleNextRankColumn(colId: ColumnId): colId is `styleNextRank:${string}` {
@@ -610,6 +636,45 @@ function computeLatestPromotion(m: { stylesNotes?: string | null }): string {
   return t > 0 ? new Date(t).toLocaleDateString() : "";
 }
 
+// Coach recorded on the member's PRIMARY style entry (matches how
+// the placard dropdown saves it). Falls back to the first non-empty
+// coach across other styles so a member with a primary style that
+// has no coach set still shows something instead of an empty cell.
+function computeCoachFromPrimary(m: { primaryStyle?: string | null; stylesNotes?: string | null }): string {
+  if (!m.stylesNotes) return "";
+  try {
+    const arr = JSON.parse(m.stylesNotes);
+    if (!Array.isArray(arr)) return "";
+    const primaryName = (m.primaryStyle || "").toLowerCase();
+    if (primaryName) {
+      const primaryEntry = (arr as Array<{ name?: string; coach?: string | null }>)
+        .find((s) => (s?.name || "").toLowerCase() === primaryName);
+      if (primaryEntry?.coach) return String(primaryEntry.coach);
+    }
+    for (const s of arr as Array<{ coach?: string | null }>) {
+      if (s?.coach) return String(s.coach);
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
+// Look up the coach on a member's entry for a specific style.
+// Empty string when the style isn't enrolled or has no coach set.
+function coachForStyle(m: { stylesNotes?: string | null }, styleName: string): string {
+  if (!m.stylesNotes) return "";
+  try {
+    const arr = JSON.parse(m.stylesNotes);
+    if (!Array.isArray(arr)) return "";
+    const target = styleName.toLowerCase();
+    const entry = (arr as Array<{ name?: string; coach?: string | null }>)
+      .find((s) => (s?.name || "").toLowerCase() === target);
+    return entry?.coach ? String(entry.coach) : "";
+  } catch {
+    return "";
+  }
+}
+
 type ReportConfig = {
   id: string;
   name: string;
@@ -625,6 +690,11 @@ type ReportConfig = {
   filterByRanks?: string[]; // Filter members by belt ranks (empty = all ranks)
   filterByMembershipTypes?: string[]; // Filter members by membership types (empty = all)
   filterByMembershipPlans?: string[]; // Filter members by membership plans (empty = all)
+  // Coach names to include (matched against any style's `coach` value
+  // in stylesNotes). Empty / undefined means "all coaches / no filter".
+  // Special value "No Coach" targets members with no coach set on any
+  // style, mirroring the "No Membership" convention above.
+  filterByCoaches?: string[];
   selectedClassTypes?: string[]; // Class types to show as columns (e.g., ["Regular", "Sparring"])
   columnOrder?: ColumnId[]; // Order of columns in the member list table
 };
@@ -907,6 +977,11 @@ export default function ReportsPage() {
           (style) => `styleBeltText:${style}` as ColumnId
         )
       : [];
+    const styleCoachColumns: ColumnId[] = activeReport.fields.showCoachByStyle
+      ? (activeReport.selectedStylesForRank || []).map(
+          (style) => `styleCoach:${style}` as ColumnId
+        )
+      : [];
     const styleNextRankColumns: ColumnId[] = activeReport.fields.showNextRankByStyle
       ? (activeReport.selectedStylesForRank || []).map(
           (style) => `styleNextRank:${style}` as ColumnId
@@ -918,6 +993,7 @@ export default function ReportsPage() {
       ...styleRankColumns,
       ...styleBeltSizeColumns,
       ...styleBeltTextColumns,
+      ...styleCoachColumns,
       ...styleNextRankColumns,
       ...classTypeColumns,
     ];
@@ -2089,6 +2165,29 @@ export default function ReportsPage() {
                         }
                       }
 
+                      // Filter by coach if specified. Matches on any
+                      // style's `coach` value from stylesNotes -- so a
+                      // multi-style member whose BJJ coach is Cruz but
+                      // Karate coach is John shows up in "Filter to
+                      // Cruz" reports. "No Coach" targets members
+                      // whose stylesNotes has no coach set anywhere.
+                      if (activeReport.filterByCoaches && activeReport.filterByCoaches.length > 0) {
+                        const coaches = new Set<string>();
+                        if (m.stylesNotes) {
+                          try {
+                            const arr = JSON.parse(m.stylesNotes);
+                            if (Array.isArray(arr)) {
+                              for (const s of arr as Array<{ coach?: string | null }>) {
+                                if (s?.coach && String(s.coach).trim()) coaches.add(String(s.coach).trim());
+                              }
+                            }
+                          } catch { /* ignore */ }
+                        }
+                        const memberCoaches = coaches.size > 0 ? Array.from(coaches) : ["No Coach"];
+                        const overlap = memberCoaches.some((c) => activeReport.filterByCoaches!.includes(c));
+                        if (!overlap) return false;
+                      }
+
                       const status = (m.status || "").toUpperCase();
                       const statusFilters: boolean[] = [];
 
@@ -2172,6 +2271,9 @@ export default function ReportsPage() {
                     }
                     if (activeReport.filterByMembershipPlans && activeReport.filterByMembershipPlans.length > 0) {
                       activeFilters.push(`Plans: ${activeReport.filterByMembershipPlans.join(", ")}`);
+                    }
+                    if (activeReport.filterByCoaches && activeReport.filterByCoaches.length > 0) {
+                      activeFilters.push(`Coaches: ${activeReport.filterByCoaches.join(", ")}`);
                     }
 
                     // Sort members if a sort column is selected
@@ -2300,6 +2402,10 @@ export default function ReportsPage() {
                             aVal = computeNextRankFromPrimary(a, availableStyles).toLowerCase();
                             bVal = computeNextRankFromPrimary(b, availableStyles).toLowerCase();
                             break;
+                          case "coach":
+                            aVal = computeCoachFromPrimary(a).toLowerCase();
+                            bVal = computeCoachFromPrimary(b).toLowerCase();
+                            break;
                           case "latestPromotion":
                             // Sort by underlying timestamp so newest/oldest
                             // is correct instead of locale-string lex order
@@ -2395,6 +2501,9 @@ export default function ReportsPage() {
                     const exportStyleBeltTextCols: ColumnId[] = activeReport.fields.showBeltTextByStyle
                       ? (activeReport.selectedStylesForRank || []).map((style) => `styleBeltText:${style}` as ColumnId)
                       : [];
+                    const exportStyleCoachCols: ColumnId[] = activeReport.fields.showCoachByStyle
+                      ? (activeReport.selectedStylesForRank || []).map((style) => `styleCoach:${style}` as ColumnId)
+                      : [];
                     const exportStyleNextRankCols: ColumnId[] = activeReport.fields.showNextRankByStyle
                       ? (activeReport.selectedStylesForRank || []).map((style) => `styleNextRank:${style}` as ColumnId)
                       : [];
@@ -2404,6 +2513,7 @@ export default function ReportsPage() {
                       ...exportStyleRankCols,
                       ...exportStyleBeltSizeCols,
                       ...exportStyleBeltTextCols,
+                      ...exportStyleCoachCols,
                       ...exportStyleNextRankCols,
                       ...exportClassTypeCols,
                     ];
@@ -2416,6 +2526,7 @@ export default function ReportsPage() {
                       if (isStyleRankColumn(colId)) return (activeReport.selectedStylesForRank || []).includes(getStyleRankName(colId));
                       if (isStyleBeltSizeColumn(colId)) return activeReport.fields.showBeltSizeByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleBeltSizeName(colId));
                       if (isStyleBeltTextColumn(colId)) return activeReport.fields.showBeltTextByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleBeltTextName(colId));
+                      if (isStyleCoachColumn(colId)) return activeReport.fields.showCoachByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleCoachName(colId));
                       if (isStyleNextRankColumn(colId)) return activeReport.fields.showNextRankByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleNextRankName(colId));
                       switch (colId) {
                         case "firstName":
@@ -2428,6 +2539,7 @@ export default function ReportsPage() {
                         case "rank": return activeReport.fields.showBeltRanks;
                         case "nextRank": return activeReport.fields.showNextRank;
                         case "latestPromotion": return activeReport.fields.showLatestPromotion;
+                        case "coach": return activeReport.fields.showCoach;
                         case "joinDate": return activeReport.fields.showJoinDate;
                         case "waiver": return activeReport.fields.showWaiverStatus;
                         case "membershipType": return activeReport.fields.showMembershipTypes;
@@ -2446,6 +2558,7 @@ export default function ReportsPage() {
                       if (isStyleRankColumn(colId)) return "Current Rank";
                       if (isStyleBeltSizeColumn(colId)) return "Belt Size";
                       if (isStyleBeltTextColumn(colId)) return "Belt Text";
+                      if (isStyleCoachColumn(colId)) return "Coach";
                       if (isStyleNextRankColumn(colId)) return "Next Rank";
                       if (colId === "rank") return "Primary Rank";
                       if (colId === "totalClasses") return "Total Classes";
@@ -2493,6 +2606,9 @@ export default function ReportsPage() {
                         }
                         return "";
                       }
+                      if (isStyleCoachColumn(colId)) {
+                        return coachForStyle(m, getStyleCoachName(colId));
+                      }
                       if (isStyleNextRankColumn(colId)) {
                         const styleName = getStyleNextRankName(colId);
                         let currentRank: string | null = null;
@@ -2538,6 +2654,7 @@ export default function ReportsPage() {
                         case "rank": return m.rank || "";
                         case "nextRank": return computeNextRankFromPrimary(m, availableStyles);
                         case "latestPromotion": return computeLatestPromotion(m);
+                        case "coach": return computeCoachFromPrimary(m);
                         case "joinDate": return m.startDate ? new Date(m.startDate).toLocaleDateString() : "";
                         case "waiver": return m.waiverSigned ? "Signed" : "Not Signed";
                         case "membershipType": return m.membershipTypeName || "";
@@ -2686,6 +2803,11 @@ export default function ReportsPage() {
                                   (style) => `styleBeltText:${style}` as ColumnId
                                 )
                               : [];
+                            const styleCoachColumns: ColumnId[] = activeReport.fields.showCoachByStyle
+                              ? (activeReport.selectedStylesForRank || []).map(
+                                  (style) => `styleCoach:${style}` as ColumnId
+                                )
+                              : [];
                             const styleNextRankColumns: ColumnId[] = activeReport.fields.showNextRankByStyle
                               ? (activeReport.selectedStylesForRank || []).map(
                                   (style) => `styleNextRank:${style}` as ColumnId
@@ -2702,6 +2824,7 @@ export default function ReportsPage() {
                               ...styleRankColumns,
                               ...styleBeltSizeColumns,
                               ...styleBeltTextColumns,
+                              ...styleCoachColumns,
                               ...styleNextRankColumns,
                               ...classTypeColumns,
                             ];
@@ -2735,6 +2858,12 @@ export default function ReportsPage() {
                                 return activeReport.fields.showBeltTextByStyle
                                   && (activeReport.selectedStylesForRank || []).includes(styleName);
                               }
+                              // Handle style coach columns
+                              if (isStyleCoachColumn(colId)) {
+                                const styleName = getStyleCoachName(colId);
+                                return activeReport.fields.showCoachByStyle
+                                  && (activeReport.selectedStylesForRank || []).includes(styleName);
+                              }
                               // Handle style next-rank columns
                               if (isStyleNextRankColumn(colId)) {
                                 const styleName = getStyleNextRankName(colId);
@@ -2762,6 +2891,8 @@ export default function ReportsPage() {
                                   return activeReport.fields.showNextRank;
                                 case "latestPromotion":
                                   return activeReport.fields.showLatestPromotion;
+                                case "coach":
+                                  return activeReport.fields.showCoach;
                                 case "joinDate":
                                   return activeReport.fields.showJoinDate;
                                 case "waiver":
@@ -2806,6 +2937,9 @@ export default function ReportsPage() {
                               }
                               if (isStyleBeltTextColumn(colId)) {
                                 return "Belt Text";
+                              }
+                              if (isStyleCoachColumn(colId)) {
+                                return "Coach";
                               }
                               if (isStyleNextRankColumn(colId)) {
                                 return "Next Rank";
@@ -2944,6 +3078,14 @@ export default function ReportsPage() {
                                         }
                                         return "—";
                                       }
+                                      // Handle style coach columns — read
+                                      // coach (promoted-by name) from the
+                                      // member's stylesNotes entry for the
+                                      // matching style.
+                                      if (isStyleCoachColumn(colId)) {
+                                        const value = coachForStyle(m, getStyleCoachName(colId));
+                                        return value || "—";
+                                      }
                                       // Handle style next-rank columns — find
                                       // the member's current rank in the
                                       // style's ranks list (from availableStyles,
@@ -3034,6 +3176,10 @@ export default function ReportsPage() {
                                         case "latestPromotion": {
                                           const lp = computeLatestPromotion(m);
                                           return lp || "—";
+                                        }
+                                        case "coach": {
+                                          const c = computeCoachFromPrimary(m);
+                                          return c || "—";
                                         }
                                         case "joinDate":
                                           return m.startDate ? new Date(m.startDate).toLocaleDateString() : "—";
@@ -3686,6 +3832,9 @@ export default function ReportsPage() {
                       } else if ((category as any).hasMembershipPlanFilter) {
                         const count = (editingConfig.filterByMembershipPlans || []).length;
                         filterSummary = count > 0 ? `${count} selected` : "All";
+                      } else if ((category as any).hasCoachFilter) {
+                        const count = (editingConfig.filterByCoaches || []).length;
+                        filterSummary = count > 0 ? `${count} selected` : "All";
                       }
 
                       return (
@@ -4039,6 +4188,105 @@ export default function ReportsPage() {
                                   </p>
                                 </div>
                               )}
+
+                              {/* Coach Filter Checkboxes.
+                                  Coach list is derived from the members
+                                  we already loaded -- unique coach names
+                                  found on any style entry in each
+                                  member's stylesNotes. Not COACH-status
+                                  members, since a member could have a
+                                  placard coach who has since lost COACH
+                                  status. */}
+                              {(category as any).hasCoachFilter && (() => {
+                                const coachNames = new Set<string>();
+                                for (const m of membershipData?.membersList || []) {
+                                  if (!m.stylesNotes) continue;
+                                  try {
+                                    const arr = JSON.parse(m.stylesNotes);
+                                    if (!Array.isArray(arr)) continue;
+                                    for (const s of arr as Array<{ coach?: string | null }>) {
+                                      if (s?.coach && String(s.coach).trim()) coachNames.add(String(s.coach).trim());
+                                    }
+                                  } catch { /* ignore */ }
+                                }
+                                const sortedCoaches = Array.from(coachNames).sort((a, b) => a.localeCompare(b));
+                                if (sortedCoaches.length === 0) {
+                                  return (
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700 mb-2">Coaches</label>
+                                      <p className="text-[11px] text-gray-500 italic">
+                                        No coaches are set on any member's placard yet. Set a Coach on a member's style entry to filter by it here.
+                                      </p>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <label className="block text-xs font-medium text-gray-700">Coaches</label>
+                                      <div className="flex gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => updateEditingConfig({ filterByCoaches: sortedCoaches })}
+                                          className="text-[10px] text-primary hover:text-primaryDark"
+                                        >
+                                          Select All
+                                        </button>
+                                        <span className="text-gray-300">|</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => updateEditingConfig({ filterByCoaches: [] })}
+                                          className="text-[10px] text-gray-500 hover:text-gray-700"
+                                        >
+                                          Clear
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                      {sortedCoaches.map((name) => (
+                                        <label key={name} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900">
+                                          <input
+                                            type="checkbox"
+                                            checked={(editingConfig.filterByCoaches || []).includes(name)}
+                                            onChange={(e) => {
+                                              const current = editingConfig.filterByCoaches || [];
+                                              if (e.target.checked) {
+                                                updateEditingConfig({ filterByCoaches: [...current, name] });
+                                              } else {
+                                                updateEditingConfig({ filterByCoaches: current.filter((c) => c !== name) });
+                                              }
+                                            }}
+                                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                          />
+                                          <span className="text-xs">{name}</span>
+                                        </label>
+                                      ))}
+                                      {/* Option for members with no coach set on any style */}
+                                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900">
+                                        <input
+                                          type="checkbox"
+                                          checked={(editingConfig.filterByCoaches || []).includes("No Coach")}
+                                          onChange={(e) => {
+                                            const current = editingConfig.filterByCoaches || [];
+                                            if (e.target.checked) {
+                                              updateEditingConfig({ filterByCoaches: [...current, "No Coach"] });
+                                            } else {
+                                              updateEditingConfig({ filterByCoaches: current.filter((c) => c !== "No Coach") });
+                                            }
+                                          }}
+                                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                        />
+                                        <span className="text-xs text-gray-500 italic">No Coach</span>
+                                      </label>
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-1">
+                                      {(editingConfig.filterByCoaches || []).length === 0
+                                        ? "No filter - showing all members regardless of coach"
+                                        : `Showing ${(editingConfig.filterByCoaches || []).length} coach(es)`}
+                                    </p>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           )}
                         </div>

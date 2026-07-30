@@ -20,6 +20,10 @@ type MemberRow = {
   dateOfBirth?: string | null; // ISO string
   membershipType?: string | null;
   primaryStyle?: string | null;
+  // Free-text coach name pulled from the member's primary-style entry
+  // in stylesNotes -- same source the reports page reads. Empty when
+  // no coach has been set on the placard.
+  coach?: string | null;
   waiverSigned?: boolean | null;
   photoUrl?: string | null;
 };
@@ -36,6 +40,7 @@ type SortKey =
   | "dateOfBirth"
   | "age"
   | "membershipType"
+  | "coach"
   | "waiverSigned"
   | "hasPhoto";
 
@@ -52,6 +57,7 @@ type ColumnId =
   | "dateOfBirth"
   | "age"
   | "membershipType"
+  | "coach"
   | "waiverSigned"
   | "hasPhoto";
 
@@ -73,6 +79,7 @@ const ALL_COLUMNS: ColumnDef[] = [
   { id: "dateOfBirth", label: "DOB", sortable: true },
   { id: "age", label: "Age", sortable: true },
   { id: "membershipType", label: "Membership Type", sortable: true },
+  { id: "coach", label: "Coach", sortable: true },
   { id: "waiverSigned", label: "Waiver Signed", sortable: true },
   { id: "hasPhoto", label: "Has Photo", sortable: true },
 ];
@@ -109,6 +116,7 @@ const ALL_SORT_KEYS: SortKey[] = [
   "dateOfBirth",
   "age",
   "membershipType",
+  "coach",
   "waiverSigned",
 ];
 
@@ -117,6 +125,33 @@ const STORAGE_KEYS = {
   sortKey: "memberList.sortKey",
   sortDir: "memberList.sortDirection",
 };
+
+/**
+ * Extract the coach name from a member's PRIMARY-style entry in the
+ * stylesNotes JSON blob (same source the reports page reads via
+ * computeCoachFromPrimary). Falls back to the first non-empty coach
+ * across other styles so a multi-style member with only a
+ * non-primary-style coach still shows one.
+ */
+function pickPrimaryCoach(m: { primaryStyle?: string | null; stylesNotes?: string | null }): string | null {
+  if (!m.stylesNotes) return null;
+  try {
+    const arr = JSON.parse(m.stylesNotes);
+    if (!Array.isArray(arr)) return null;
+    const target = (m.primaryStyle || "").toLowerCase();
+    if (target) {
+      const primaryEntry = (arr as Array<{ name?: string; coach?: string | null }>)
+        .find((s) => (s?.name || "").toLowerCase() === target);
+      if (primaryEntry?.coach) return String(primaryEntry.coach);
+    }
+    for (const s of arr as Array<{ coach?: string | null }>) {
+      if (s?.coach) return String(s.coach);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export default function MembersPage() {
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -210,6 +245,7 @@ export default function MembersPage() {
           // pre-relation rows that only have the old text field.
           membershipType: m.membershipTypeName ?? m.membershipType ?? null,
           primaryStyle: m.primaryStyle ?? null,
+          coach: pickPrimaryCoach(m),
           waiverSigned: m.waiverSigned ?? null,
           photoUrl: m.photoUrl ?? null,
         }));
@@ -396,6 +432,8 @@ export default function MembersPage() {
         return "age";
       case "membershipType":
         return "membershipType";
+      case "coach":
+        return "coach";
       case "waiverSigned":
         return "waiverSigned";
       case "hasPhoto":
@@ -744,6 +782,7 @@ export default function MembersPage() {
         dateOfBirth: m.dateOfBirth ?? null,
         membershipType: m.membershipTypeName ?? m.membershipType ?? null,
         primaryStyle: m.primaryStyle ?? null,
+        coach: pickPrimaryCoach(m),
         waiverSigned: m.waiverSigned ?? null,
         photoUrl: m.photoUrl ?? null,
       }));
@@ -885,6 +924,7 @@ export default function MembersPage() {
       const cityState = `${m.city ?? ""} ${m.state ?? ""}`.toLowerCase();
       const membershipType = (m.membershipType ?? "").toLowerCase();
       const primaryStyle = (m.primaryStyle ?? "").toLowerCase();
+      const coach = (m.coach ?? "").toLowerCase();
 
       return (
         fullName.includes(q) ||
@@ -894,7 +934,8 @@ export default function MembersPage() {
         memberNum.includes(q) ||
         cityState.includes(q) ||
         membershipType.includes(q) ||
-        primaryStyle.includes(q)
+        primaryStyle.includes(q) ||
+        coach.includes(q)
       );
     });
 
@@ -968,6 +1009,12 @@ export default function MembersPage() {
       if (sortKey === "membershipType") {
         const aVal = (a.membershipType ?? "").toLowerCase();
         const bVal = (b.membershipType ?? "").toLowerCase();
+        return aVal.localeCompare(bVal) * dir;
+      }
+
+      if (sortKey === "coach") {
+        const aVal = (a.coach ?? "").toLowerCase();
+        const bVal = (b.coach ?? "").toLowerCase();
         return aVal.localeCompare(bVal) * dir;
       }
 
@@ -1136,6 +1183,13 @@ export default function MembersPage() {
       case "membershipType":
         return m.membershipType ? (
           <span className="text-xs text-gray-900">{m.membershipType}</span>
+        ) : (
+          <span className="text-xs text-gray-400">—</span>
+        );
+
+      case "coach":
+        return m.coach ? (
+          <span className="text-xs text-gray-900">{m.coach}</span>
         ) : (
           <span className="text-xs text-gray-400">—</span>
         );

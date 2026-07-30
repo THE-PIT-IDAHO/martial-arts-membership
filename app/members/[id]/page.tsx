@@ -160,6 +160,11 @@ type StyleEntry = {
   rank?: string;
   beltSize?: string;
   beltText?: string;
+  // Free-text name of the coach who promoted this member to their
+  // current rank. Populated by a dropdown of members with COACH in
+  // their status, but stored as plain text so a coach leaving the
+  // system doesn't wipe the historical attribution.
+  coach?: string;
   uniformSize?: string;
   startDate?: string;
   lastPromotionDate?: string;  // Date of last rank promotion (for attendance window calculation)
@@ -1393,6 +1398,10 @@ export default function MemberProfilePage() {
                     obj.beltText !== undefined && obj.beltText !== null
                       ? String(obj.beltText)
                       : undefined,
+                  coach:
+                    obj.coach !== undefined && obj.coach !== null
+                      ? String(obj.coach)
+                      : undefined,
                   uniformSize:
                     obj.uniformSize !== undefined && obj.uniformSize !== null
                       ? String(obj.uniformSize)
@@ -1660,6 +1669,7 @@ export default function MemberProfilePage() {
         rank: s.rank?.trim() || undefined,
         beltSize: s.beltSize?.trim() || undefined,
         beltText: s.beltText?.trim() || undefined,
+        coach: s.coach?.trim() || undefined,
         uniformSize: s.uniformSize?.trim() || undefined,
         startDate: s.startDate || undefined,
         lastPromotionDate: s.lastPromotionDate || undefined,
@@ -2007,7 +2017,7 @@ export default function MemberProfilePage() {
   function addStyle() {
     setStyles((prev) => [
       ...prev,
-      { name: "", rank: "", beltSize: "", beltText: "", uniformSize: "", startDate: "" }
+      { name: "", rank: "", beltSize: "", beltText: "", coach: "", uniformSize: "", startDate: "" }
     ]);
   }
 
@@ -2024,6 +2034,7 @@ export default function MemberProfilePage() {
           rank: "",
           beltSize: "",
           beltText: "",
+          coach: "",
           uniformSize: "",
           startDate: "",
           lastPromotionDate: ""
@@ -4606,6 +4617,46 @@ export default function MemberProfilePage() {
                             className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                             placeholder="e.g. embroidery text"
                           />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-medium text-gray-700">Coach</label>
+                          {(() => {
+                            // Dropdown of members whose status contains
+                            // COACH. Saves plain text (coach's display
+                            // name) so a coach removal later doesn't wipe
+                            // the historical attribution. A "-- none --"
+                            // option clears the field. A datalist-style
+                            // free-type is intentionally NOT used here --
+                            // typos across reports would fragment the
+                            // "Filter by coach" list on the report page.
+                            const coachOptions = allMembers
+                              .filter((mem) => (mem.status || "").toUpperCase().includes("COACH"))
+                              .map((mem) => `${mem.firstName || ""} ${mem.lastName || ""}`.trim())
+                              .filter((n) => n.length > 0)
+                              .sort((a, b) => a.localeCompare(b));
+                            const current = s.coach || "";
+                            // If the saved value refers to a name that
+                            // isn't in the current coach roster (e.g. that
+                            // member lost COACH status), keep showing it
+                            // as an extra option so the record survives.
+                            const optionSet = new Set(coachOptions);
+                            const preservedLegacy = current && !optionSet.has(current) ? [current] : [];
+                            return (
+                              <select
+                                value={current}
+                                onChange={(e) => updateStyle(i, "coach", e.target.value)}
+                                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary bg-white"
+                              >
+                                <option value="">— none —</option>
+                                {preservedLegacy.map((n) => (
+                                  <option key={`legacy-${n}`} value={n}>{n} (no longer coach)</option>
+                                ))}
+                                {coachOptions.map((n) => (
+                                  <option key={n} value={n}>{n}</option>
+                                ))}
+                              </select>
+                            );
+                          })()}
                         </div>
                         <div className="space-y-1">
                           <label className="block text-xs font-medium text-gray-700">Uniform Size</label>

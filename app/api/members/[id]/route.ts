@@ -23,6 +23,7 @@ type MemberStyle = {
   rank?: string;
   beltSize?: string;
   beltText?: string;
+  coach?: string;
   uniformSize?: string;
   startDate?: string;
   lastPromotionDate?: string;

@@ -189,6 +189,7 @@ export async function PATCH(
             rank?: string;
             beltSize?: string;
             beltText?: string;
+            coach?: string;
             uniformSize?: string;
             startDate?: string;
             lastPromotionDate?: string;
