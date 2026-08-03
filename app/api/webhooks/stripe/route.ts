@@ -26,19 +26,20 @@ export async function POST(req: NextRequest) {
   // for tenant resolution downstream.
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
+    // Real config error -- 500 so Stripe retries (and the emails
+    // escalate to the operator to fix). Never a per-event issue.
+    console.error("Stripe webhook rejected: STRIPE_WEBHOOK_SECRET is not set on this deployment");
     return NextResponse.json({ error: "Webhook secret not configured" }, { status: 500 });
   }
 
-  // Signature verification only needs a Stripe SDK instance (any
-  // secret key works). Use env-level so we don't have to pick a
-  // tenant before the event is even parsed. Downstream API calls
-  // that need per-tenant Stripe keys resolve tenant from
-  // metadata.clientId (see calls below).
-  const envKey = process.env.STRIPE_SECRET_KEY;
-  if (!envKey) {
-    return NextResponse.json({ error: "Stripe env key not configured" }, { status: 500 });
-  }
-  const platformStripe = new Stripe(envKey, { typescript: true });
+  // constructEvent does NOT hit the Stripe API -- it just verifies the
+  // HMAC signature -- so the Stripe SDK's API-key argument is unused
+  // by this code path. Pass a placeholder instead of requiring
+  // STRIPE_SECRET_KEY at env level (previously this 500'd every
+  // incoming webhook when a tenant only had per-DB keys configured).
+  // Downstream Stripe API calls still resolve their tenant's real
+  // key via getStripeClient(clientId).
+  const platformStripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_placeholder", { typescript: true });
 
   let event: Stripe.Event;
   try {
@@ -48,6 +49,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
+  // Dispatch the event, but never let a handler throw all the way
+  // out to a 500. Once the signature verifies, we've done Stripe's
+  // half of the contract -- if the downstream handler throws, log
+  // it and still 200 so Stripe stops piling up retries + operator
+  // emails for something a retry can't fix. Genuinely-transient
+  // failures should be surfaced by our own alerting, not Stripe's.
+  try {
+    await handleStripeEvent(event);
+  } catch (err) {
+    console.error(`Stripe webhook handler failed for event ${event.id} (${event.type}):`, err);
+  }
+
+  return NextResponse.json({ received: true });
+}
+
+/**
+ * Dispatches a verified Stripe.Event to the right lib handler.
+ * Split out so the outer POST can wrap the whole dispatch in a single
+ * try/catch instead of guarding each event-type block individually.
+ */
+async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
 
@@ -64,7 +86,7 @@ export async function POST(req: NextRequest) {
           // Now that we know the tenant (from the member), use their
           // Stripe key for API calls.
           const stripeClient = await getStripeClient(member.clientId);
-          if (!stripeClient) return NextResponse.json({ received: true });
+          if (!stripeClient) return;
           const setupIntent = await stripeClient.setupIntents.retrieve(setupIntentId);
           const pmId = typeof setupIntent.payment_method === "string"
             ? setupIntent.payment_method
@@ -80,7 +102,7 @@ export async function POST(req: NextRequest) {
           }
         }
       }
-      return NextResponse.json({ received: true });
+      return;
     }
 
     // Payment session — delegate to shared handler
@@ -94,6 +116,7 @@ export async function POST(req: NextRequest) {
       amountTotalCents: session.amount_total || undefined,
       taxCents: session.total_details?.amount_tax || 0,
     });
+    return;
   }
 
   // Off-session PaymentIntent success (auto-billing / dunning)
@@ -106,6 +129,7 @@ export async function POST(req: NextRequest) {
         invoiceId: pi.metadata.invoiceId,
       });
     }
+    return;
   }
 
   // Off-session PaymentIntent failure
@@ -116,6 +140,7 @@ export async function POST(req: NextRequest) {
         invoiceId: pi.metadata.invoiceId,
       });
     }
+    return;
   }
 
   // Refund from Stripe dashboard
@@ -131,7 +156,6 @@ export async function POST(req: NextRequest) {
         isFullRefund: charge.amount_refunded >= charge.amount,
       });
     }
+    return;
   }
-
-  return NextResponse.json({ received: true });
 }
