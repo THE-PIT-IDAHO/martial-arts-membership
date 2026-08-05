@@ -41,6 +41,10 @@ type MembershipPlan = {
   priceCents: number | null;
   setupFeeCents: number | null;
   billingCycle: string;
+  // When false the plan is manual-renewal even on a recurring cycle;
+  // the contract wording flips from "auto-charged... until cancelled"
+  // to "manual renewal each cycle". Server default is true.
+  autoRenew: boolean | null;
   contractLengthMonths: number | null; // Actually stores days
   cancellationNoticeDays: number | null;
   cancellationFeeCents: number | null;
@@ -961,8 +965,16 @@ export default function POSPage() {
     for (const item of cart) {
       if (item.type === "membership") {
         const plan = membershipPlans.find(p => p.id === item.membershipPlanId);
+        const cycleUpper = plan?.billingCycle?.toUpperCase() || "MONTHLY";
+        const isOneTime = cycleUpper === "ONE_TIME";
         lines.push(`--- Membership: ${item.itemName} ---`);
-        lines.push(`Price: ${formatCents(item.unitPriceCents)}/${plan?.billingCycle?.toLowerCase() || "month"}`);
+        // One-time plans read "Price: $X (one time)" instead of the
+        // recurring "Price: $X/one_time" that fell out of the raw enum.
+        lines.push(
+          isOneTime
+            ? `Price: ${formatCents(item.unitPriceCents)} (one time)`
+            : `Price: ${formatCents(item.unitPriceCents)}/${plan?.billingCycle?.toLowerCase() || "month"}`,
+        );
         if (plan?.contractLengthMonths) {
           const days = plan.contractLengthMonths;
           if (days >= 365 && days % 365 === 0) lines.push(`Contract: ${days / 365} year(s)`);
@@ -970,8 +982,12 @@ export default function POSPage() {
           else lines.push(`Contract: ${days} days`);
         }
         if (item.membershipStartDate) lines.push(`Start Date: ${parseLocalDate(item.membershipStartDate).toLocaleDateString()}`);
-        if (plan?.cancellationNoticeDays) lines.push(`Cancellation Notice: ${plan.cancellationNoticeDays} days`);
-        if (plan?.cancellationFeeCents) lines.push(`Early Termination Fee: ${formatCents(plan.cancellationFeeCents)}`);
+        // Same rule as the info-block version: no cancellation lines
+        // on a plan with nothing to cancel.
+        if (!isOneTime) {
+          if (plan?.cancellationNoticeDays) lines.push(`Cancellation Notice: ${plan.cancellationNoticeDays} days`);
+          if (plan?.cancellationFeeCents) lines.push(`Early Termination Fee: ${formatCents(plan.cancellationFeeCents)}`);
+        }
         lines.push("");
       } else if (item.type === "service") {
         const pkg = servicePackages.find(p => p.id === item.servicePackageId);
@@ -1032,6 +1048,9 @@ export default function POSPage() {
         const d = parseLocalDate(startDateStr);
         const day = d.getDate();
         const cadence = (cycle || "MONTHLY").toUpperCase();
+        // Match the modal helper -- ONE_TIME is a single dated charge,
+        // not a recurring pattern.
+        if (cadence === "ONE_TIME") return `${d.toLocaleDateString()} (single charge)`;
         if (cadence === "WEEKLY") return `Every ${d.toLocaleDateString(undefined, { weekday: "long" })}`;
         if (cadence === "YEARLY" || cadence === "ANNUAL" || cadence === "ANNUALLY") {
           return `${day}${ordinalSuffix(day)} of ${d.toLocaleString(undefined, { month: "long" })} each year`;
@@ -1085,6 +1104,13 @@ export default function POSPage() {
           const discountAppliedCents = item.discountAppliedCents || 0;
           const showDiscount = discountAppliedCents > 0;
           const suffix = billingSuffix(plan?.billingCycle);
+          // Same one-time / auto-renew rules as the on-screen modal.
+          const cycleUpper = plan?.billingCycle?.toUpperCase() || "MONTHLY";
+          const isOneTime = cycleUpper === "ONE_TIME";
+          const isAutoRenew = !isOneTime && plan?.autoRenew !== false;
+          const billingCycleLabel = plan?.billingCycle
+            ? plan.billingCycle.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+            : "Monthly";
 
           // Allowed styles → comma-separated list of NAMES (resolved
           // from the stylesById map; falls back to whatever the entry is
@@ -1133,14 +1159,21 @@ export default function POSPage() {
               : []),
             { label: "Contract Length", value: plan?.contractLengthMonths ? formatContractDuration(plan.contractLengthMonths) : "" },
             {
-              label: item.firstMonthDiscountOnly ? "Recurring (after first payment)" : "Price",
-              value: `${formatCents(recurringCents)}${suffix}`,
+              label: isOneTime ? "Price" : item.firstMonthDiscountOnly ? "Recurring (after first payment)" : "Price",
+              value: `${formatCents(recurringCents)}${isOneTime ? "" : suffix}`,
             },
             ...(discountLine ? [{ label: "Discount Applied", value: discountLine }] : []),
             ...(plan?.promoCode ? [{ label: "Promo Code", value: plan.promoCode }] : []),
-            { label: "Billing Cycle", value: plan?.billingCycle ? plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase() : "Monthly" },
-            { label: "Recurring Payments", value: "Yes — auto-charged each billing cycle until cancelled" },
-            { label: "Payment Due", value: paymentDueLine(item.membershipStartDate, plan?.billingCycle) },
+            { label: "Billing Cycle", value: billingCycleLabel },
+            {
+              label: "Recurring Payments",
+              value: isOneTime
+                ? "No — single one-time charge, no auto-renew"
+                : isAutoRenew
+                  ? "Yes — auto-charged each billing cycle until cancelled"
+                  : "No — manual renewal each cycle, not auto-charged",
+            },
+            { label: isOneTime ? "Charge Date" : "Payment Due", value: paymentDueLine(item.membershipStartDate, plan?.billingCycle) },
             ...(paymentMethodStr ? [{ label: "Payment Method", value: paymentMethodStr }] : []),
             // Access controls — only render if the plan has values set.
             ...(plan?.classesPerDay ? [{ label: "Classes per Day", value: String(plan.classesPerDay) }] : []),
@@ -1164,10 +1197,12 @@ export default function POSPage() {
           });
 
           // Cancellation block — only render if the plan has any
-          // cancellation policy OR a custom cancellation procedure set.
-          // The procedure text (editable per-plan on the memberships
-          // page) renders as the block's description.
-          if (plan?.cancellationNoticeDays || plan?.cancellationFeeCents || plan?.cancellationProcedure) {
+          // cancellation policy OR a custom cancellation procedure set,
+          // AND the plan actually has an ongoing billing cycle to
+          // cancel. One-time charges have nothing to cancel, so we
+          // suppress the whole block for them regardless of whether
+          // stale cancellation fields still linger on the plan record.
+          if (!isOneTime && (plan?.cancellationNoticeDays || plan?.cancellationFeeCents || plan?.cancellationProcedure)) {
             itemBlocks.push({
               title: `${item.itemName} — Cancellation`,
               description: plan?.cancellationProcedure ? plan.cancellationProcedure.trim() : undefined,
@@ -1636,27 +1671,60 @@ export default function POSPage() {
                   </p>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {filteredPlans.map(plan => (
-                      <button
-                        key={plan.id}
-                        onClick={() => openMembershipConfig(plan)}
-                        className="p-3 border border-gray-200 rounded-lg text-left hover:border-primary hover:bg-primary/5 transition-colors"
-                      >
-                        <p className="font-medium text-sm">{plan.name}</p>
-                        {plan.membershipId && (
-                          <p className="text-xs text-gray-500">#{plan.membershipId}</p>
-                        )}
-                        <p className="text-sm font-semibold text-primary mt-1">
-                          {formatCents((plan.priceCents || 0) + (plan.setupFeeCents || 0))}
-                          {plan.setupFeeCents ? (
-                            <span className="text-xs font-normal text-gray-500">
-                              {" "}(incl. ${(plan.setupFeeCents / 100).toFixed(2)} setup)
-                            </span>
-                          ) : null}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">{plan.billingCycle}</p>
-                      </button>
-                    ))}
+                    {filteredPlans.map(plan => {
+                      // First payment = recurring price + one-off setup
+                      // fee. Recurring = the plan's price alone (what
+                      // gets auto-charged next cycle). The two diverge
+                      // only when the plan has a setup fee; otherwise
+                      // the tile collapses to a single line.
+                      const recurringCents = plan.priceCents || 0;
+                      const firstPaymentCents = recurringCents + (plan.setupFeeCents || 0);
+                      const cycleUpper = plan.billingCycle?.toUpperCase() || "MONTHLY";
+                      const isOneTime = cycleUpper === "ONE_TIME";
+                      const billingCycleLabel = plan.billingCycle
+                        ? plan.billingCycle.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+                        : "Monthly";
+                      return (
+                        <button
+                          key={plan.id}
+                          onClick={() => openMembershipConfig(plan)}
+                          className="p-3 border border-gray-200 rounded-lg text-left hover:border-primary hover:bg-primary/5 transition-colors"
+                        >
+                          <p className="font-medium text-sm">{plan.name}</p>
+                          {plan.membershipId && (
+                            <p className="text-xs text-gray-500">#{plan.membershipId}</p>
+                          )}
+                          {/* Price line. One-time plans show a single
+                              amount labeled "one-time". Recurring plans
+                              show BOTH the "today" charge and the
+                              recurring rate whenever a setup fee makes
+                              them differ; otherwise a single "$X /
+                              cycle" line keeps the tile clean. */}
+                          {isOneTime ? (
+                            <p className="text-sm font-semibold text-primary mt-1">
+                              {formatCents(firstPaymentCents)}{" "}
+                              <span className="text-xs font-normal text-gray-500">one-time</span>
+                            </p>
+                          ) : firstPaymentCents !== recurringCents ? (
+                            <div className="mt-1 space-y-0.5">
+                              <p className="text-sm font-semibold text-primary">
+                                {formatCents(firstPaymentCents)}{" "}
+                                <span className="text-xs font-normal text-gray-500">today</span>
+                              </p>
+                              <p className="text-xs text-gray-600">
+                                then {formatCents(recurringCents)} / {billingCycleLabel.toLowerCase()}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-sm font-semibold text-primary mt-1">
+                              {formatCents(recurringCents)}{" "}
+                              <span className="text-xs font-normal text-gray-500">/ {billingCycleLabel.toLowerCase()}</span>
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-500 mt-1">{billingCycleLabel}</p>
+                        </button>
+                      );
+                    })}
                   </div>
                 )
               )}
@@ -2767,6 +2835,12 @@ export default function POSPage() {
                   const d = parseLocalDate(startDateStr);
                   const day = d.getDate();
                   const cadence = (cycle || "MONTHLY").toUpperCase();
+                  // One-time plans have exactly one payment on the start
+                  // date -- return that as a one-off due date instead of
+                  // falling through to the recurring "Nth of each month"
+                  // wording. Kept here so the modal + printable can both
+                  // rely on the same helper.
+                  if (cadence === "ONE_TIME") return `${d.toLocaleDateString()} (single charge)`;
                   if (cadence === "WEEKLY") return `Every ${d.toLocaleDateString(undefined, { weekday: "long" })}`;
                   if (cadence === "YEARLY" || cadence === "ANNUAL" || cadence === "ANNUALLY") {
                     return `${day}${ordinalSuffix(day)} of ${d.toLocaleString(undefined, { month: "long" })} each year`;
@@ -2828,7 +2902,23 @@ export default function POSPage() {
                 }
 
                 const description = item.type === "membership" ? plan?.description : pkg?.description;
-                const hasCancellationBlock = !!(plan?.cancellationNoticeDays || plan?.cancellationFeeCents || plan?.cancellationProcedure);
+                // Recurring/one-time detection matches the canonical rule
+                // used by openMembershipConfig -- billingCycle === ONE_TIME
+                // means no auto-charges at all, and autoRenew === false
+                // means the plan is manual-renewal (recurring cadence
+                // labels still apply for scheduling, but no auto-charge).
+                const cycleUpper = plan?.billingCycle?.toUpperCase() || "MONTHLY";
+                const isOneTime = cycleUpper === "ONE_TIME";
+                const isAutoRenew = !isOneTime && plan?.autoRenew !== false;
+                // Prettier billing-cycle label than the raw enum string;
+                // "one_time" -> "One Time" rather than "One_time".
+                const billingCycleLabel = plan?.billingCycle
+                  ? plan.billingCycle.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+                  : "Monthly";
+                // Cancellation block only makes sense on recurring plans
+                // -- there's nothing to cancel on a one-time charge.
+                const hasCancellationBlock = !isOneTime
+                  && !!(plan?.cancellationNoticeDays || plan?.cancellationFeeCents || plan?.cancellationProcedure);
 
                 // Multi-discount: one row with each discount labeled
                 // individually so the member sees every discount that
@@ -2875,7 +2965,9 @@ export default function POSPage() {
                               <div><span className="font-medium">Contract Length:</span> {formatDuration(plan.contractLengthMonths)}</div>
                             )}
                             <div>
-                              <span className="font-medium">{item.firstMonthDiscountOnly ? "Recurring (after first payment):" : "Price:"}</span> {formatCents(recurringCents)}{suffix}
+                              <span className="font-medium">
+                                {isOneTime ? "Price:" : item.firstMonthDiscountOnly ? "Recurring (after first payment):" : "Price:"}
+                              </span> {formatCents(recurringCents)}{isOneTime ? "" : suffix}
                             </div>
                             {discountLine && (
                               <div className="text-green-700 col-span-2"><span className="font-medium">Discount Applied:</span> {discountLine}</div>
@@ -2883,10 +2975,17 @@ export default function POSPage() {
                             {plan?.promoCode && (
                               <div><span className="font-medium">Promo Code:</span> {plan.promoCode}</div>
                             )}
-                            <div><span className="font-medium">Billing Cycle:</span> {plan?.billingCycle ? plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase() : "Monthly"}</div>
-                            <div className="col-span-2"><span className="font-medium">Recurring Payments:</span> Yes — auto-charged each billing cycle until cancelled</div>
+                            <div><span className="font-medium">Billing Cycle:</span> {billingCycleLabel}</div>
+                            <div className="col-span-2">
+                              <span className="font-medium">Recurring Payments:</span>{" "}
+                              {isOneTime
+                                ? "No — single one-time charge, no auto-renew"
+                                : isAutoRenew
+                                  ? "Yes — auto-charged each billing cycle until cancelled"
+                                  : "No — manual renewal each cycle, not auto-charged"}
+                            </div>
                             {item.membershipStartDate && (
-                              <div><span className="font-medium">Payment Due:</span> {paymentDueLine(item.membershipStartDate, plan?.billingCycle)}</div>
+                              <div><span className="font-medium">{isOneTime ? "Charge Date:" : "Payment Due:"}</span> {paymentDueLine(item.membershipStartDate, plan?.billingCycle)}</div>
                             )}
                             {describePaymentMethodLocal() && (
                               <div className="col-span-2"><span className="font-medium">Payment Method:</span> {describePaymentMethodLocal()}</div>
