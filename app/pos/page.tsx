@@ -109,6 +109,13 @@ type CartItem = {
   customPriceCents?: number;
   membershipStartDate?: string;
   membershipEndDate?: string;
+  // Per-sale override of the plan's recurring-vs-one-time behavior.
+  // When set, the agreement modal + printable contract read from
+  // THIS instead of plan.billingCycle -- so an admin toggling
+  // "One Time" in the Configure popover on a normally-recurring plan
+  // (or vice versa) gets contract wording that matches what they
+  // actually chose for this sale. Undefined = use plan default.
+  isRecurringOverride?: boolean;
   firstMonthDiscountOnly?: boolean;
   // Cents reduced by the discount control (not just a custom price change).
   // Lets the contract surface a discount line only when one was actually
@@ -763,6 +770,17 @@ export default function POSPage() {
         customPriceCents: recurringCents !== basePriceCents ? recurringCents : undefined,
         membershipStartDate: membershipConfig.startDate,
         membershipEndDate: endDate,
+        // Persist the recurring/one-time toggle whenever it differs from
+        // the plan's own billingCycle -- lets the contract wording
+        // follow what the admin picked in Configure, not what the plan
+        // template says. Matches plan default -> undefined so the cart
+        // stays "clean" and future plan changes flow through.
+        isRecurringOverride: (() => {
+          const planIsRecurring = (plan.billingCycle?.toUpperCase() || "MONTHLY") !== "ONE_TIME";
+          return membershipConfig.isRecurring !== planIsRecurring
+            ? membershipConfig.isRecurring
+            : undefined;
+        })(),
         firstMonthDiscountOnly: membershipConfig.firstMonthDiscountOnly,
         discountAppliedCents: discountAppliedCents > 0 ? discountAppliedCents : undefined,
       },
@@ -987,8 +1005,12 @@ export default function POSPage() {
     for (const item of cart) {
       if (item.type === "membership") {
         const plan = membershipPlans.find(p => p.id === item.membershipPlanId);
+        // Per-sale one-time override wins over the plan's billingCycle
+        // -- same rule the modal + printable contract use.
         const cycleUpper = plan?.billingCycle?.toUpperCase() || "MONTHLY";
-        const isOneTime = cycleUpper === "ONE_TIME";
+        const isOneTime = item.isRecurringOverride != null
+          ? item.isRecurringOverride === false
+          : cycleUpper === "ONE_TIME";
         lines.push(`--- Membership: ${item.itemName} ---`);
         // One-time plans read "Price: $X (one time)" instead of the
         // recurring "Price: $X/one_time" that fell out of the raw enum.
@@ -1126,9 +1148,14 @@ export default function POSPage() {
           const discountAppliedCents = item.discountAppliedCents || 0;
           const showDiscount = discountAppliedCents > 0;
           const suffix = billingSuffix(plan?.billingCycle);
-          // Same one-time / auto-renew rules as the on-screen modal.
+          // Same one-time / auto-renew rules as the on-screen modal --
+          // per-sale Configure toggle wins over the plan's own
+          // billingCycle so the printed contract matches what the
+          // admin actually sold.
           const cycleUpper = plan?.billingCycle?.toUpperCase() || "MONTHLY";
-          const isOneTime = cycleUpper === "ONE_TIME";
+          const isOneTime = item.isRecurringOverride != null
+            ? item.isRecurringOverride === false
+            : cycleUpper === "ONE_TIME";
           const isAutoRenew = !isOneTime && plan?.autoRenew !== false;
           const billingCycleLabel = plan?.billingCycle
             ? plan.billingCycle.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
@@ -2973,13 +3000,14 @@ export default function POSPage() {
                 }
 
                 const description = item.type === "membership" ? plan?.description : pkg?.description;
-                // Recurring/one-time detection matches the canonical rule
-                // used by openMembershipConfig -- billingCycle === ONE_TIME
-                // means no auto-charges at all, and autoRenew === false
-                // means the plan is manual-renewal (recurring cadence
-                // labels still apply for scheduling, but no auto-charge).
+                // Recurring/one-time detection prefers the per-sale
+                // override set from the Configure popover (item.isRecurringOverride).
+                // When absent, falls back to the plan's own billingCycle so
+                // pre-override cart items still read correctly.
                 const cycleUpper = plan?.billingCycle?.toUpperCase() || "MONTHLY";
-                const isOneTime = cycleUpper === "ONE_TIME";
+                const isOneTime = item.isRecurringOverride != null
+                  ? item.isRecurringOverride === false
+                  : cycleUpper === "ONE_TIME";
                 const isAutoRenew = !isOneTime && plan?.autoRenew !== false;
                 // Prettier billing-cycle label than the raw enum string;
                 // "one_time" -> "One Time" rather than "One_time".
