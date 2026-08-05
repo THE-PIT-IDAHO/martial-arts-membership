@@ -2553,10 +2553,16 @@ export default function POSPage() {
                   : 0;
                 const cappedDiscount = Math.max(0, Math.min(enteredPriceCents, enteredDiscountCents));
                 const firstPaymentCents = Math.max(0, enteredPriceCents - cappedDiscount);
-                const recurringCents = membershipConfig.firstMonthDiscountOnly
-                  ? enteredPriceCents
-                  : firstPaymentCents;
-                const showPreview = cappedDiscount > 0 || enteredPriceCents !== planDefaultCents;
+                // One-time plans have no recurring charge -- surface as
+                // $0.00 in the preview so the admin can see at a glance
+                // that nothing will re-bill. When recurring, either the
+                // full plan price (first-payment-only discount) or the
+                // discounted amount (discount carried into recurring).
+                const recurringCents = !membershipConfig.isRecurring
+                  ? 0
+                  : membershipConfig.firstMonthDiscountOnly
+                    ? enteredPriceCents
+                    : firstPaymentCents;
 
                 return (
                   <>
@@ -2620,19 +2626,25 @@ export default function POSPage() {
                       <span className="text-sm text-gray-700">First payment discount only (don't carry the discount into recurring)</span>
                     </label>
 
-                    {/* Calculated price preview */}
-                    {showPreview && (
-                      <div className="bg-gray-50 rounded-lg p-3 space-y-1">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">First payment:</span>
-                          <span className="font-bold text-primary">{formatCents(firstPaymentCents)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Recurring (every cycle):</span>
-                          <span className="font-bold text-gray-800">{formatCents(recurringCents)}</span>
-                        </div>
+                    {/* Calculated price preview -- always shown so the
+                        admin sees both the initial charge AND the
+                        recurring amount for every plan, whether or not
+                        a custom price / discount was applied. Recurring
+                        reads $0.00 on one-time plans by design. */}
+                    <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">First payment (charged now):</span>
+                        <span className="font-bold text-primary">{formatCents(firstPaymentCents)}</span>
                       </div>
-                    )}
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">
+                          Recurring{membershipConfig.isRecurring ? " (every cycle)" : ""}:
+                        </span>
+                        <span className={`font-bold ${membershipConfig.isRecurring ? "text-gray-800" : "text-gray-400"}`}>
+                          {formatCents(recurringCents)}
+                        </span>
+                      </div>
+                    </div>
                   </>
                 );
               })()}
