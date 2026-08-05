@@ -130,6 +130,12 @@ type MembershipConfig = {
   isRecurring: boolean;
   durationValue: number;
   durationUnit: "days" | "weeks" | "months" | "years";
+  // Direct override for the FIRST payment (the amount charged now).
+  // When empty string, first payment falls back to customPrice minus
+  // discount (the original derived behavior). When populated it wins
+  // over any discount math so the admin has a "make this charge $X"
+  // escape hatch that doesn't require calculating a discount value.
+  customFirstPayment: string;
   customPrice: string;
   discountType: "percent" | "amount";
   discountValue: string;
@@ -207,6 +213,7 @@ export default function POSPage() {
     isRecurring: true,
     durationValue: 1,
     durationUnit: "months",
+    customFirstPayment: "",
     customPrice: "",
     discountType: "percent",
     discountValue: "",
@@ -648,6 +655,9 @@ export default function POSPage() {
       isRecurring,
       durationValue,
       durationUnit,
+      // Blank by default -- lets the derived "first payment = price -
+      // discount" flow run unless the admin explicitly overrides it.
+      customFirstPayment: "",
       customPrice: (totalPrice / 100).toFixed(2),
       discountType: "percent",
       discountValue: "",
@@ -712,10 +722,22 @@ export default function POSPage() {
     }
     discountAppliedCents = Math.max(0, Math.min(priceCents, discountAppliedCents));
 
-    const firstPaymentCents = Math.max(0, priceCents - discountAppliedCents);
+    // Same precedence as the preview panel: an explicit First Payment
+    // override wins over the derived (price - discount) amount. Blank
+    // input falls through to the derivation. Recurring is always
+    // computed from the plan's recurring price (± discount when the
+    // "first payment only" flag is off), never from the first-payment
+    // override -- that's what makes it an override "for this charge".
+    const derivedFirstPaymentCents = Math.max(0, priceCents - discountAppliedCents);
+    const firstPaymentOverrideCents = membershipConfig.customFirstPayment.trim()
+      ? Math.max(0, parseCents(membershipConfig.customFirstPayment))
+      : null;
+    const firstPaymentCents = firstPaymentOverrideCents != null
+      ? firstPaymentOverrideCents
+      : derivedFirstPaymentCents;
     const recurringCents = membershipConfig.firstMonthDiscountOnly
       ? priceCents
-      : firstPaymentCents;
+      : derivedFirstPaymentCents;
 
     // Only calculate end date if not recurring
     const endDate = membershipConfig.isRecurring
@@ -2552,20 +2574,57 @@ export default function POSPage() {
                     : parseCents(membershipConfig.discountValue)
                   : 0;
                 const cappedDiscount = Math.max(0, Math.min(enteredPriceCents, enteredDiscountCents));
-                const firstPaymentCents = Math.max(0, enteredPriceCents - cappedDiscount);
+                // Derived first payment = recurring - discount. When
+                // the admin fills in the First Payment override input
+                // below, that wins over the derivation so they can just
+                // say "charge $80 today" without doing discount math.
+                const derivedFirstPaymentCents = Math.max(0, enteredPriceCents - cappedDiscount);
+                const overrideFirstPaymentCents = membershipConfig.customFirstPayment.trim()
+                  ? parseCents(membershipConfig.customFirstPayment)
+                  : null;
+                const firstPaymentCents = overrideFirstPaymentCents != null
+                  ? overrideFirstPaymentCents
+                  : derivedFirstPaymentCents;
                 // One-time plans have no recurring charge -- surface as
                 // $0.00 in the preview so the admin can see at a glance
                 // that nothing will re-bill. When recurring, either the
                 // full plan price (first-payment-only discount) or the
                 // discounted amount (discount carried into recurring).
+                // The First Payment override does NOT carry into
+                // recurring -- it only touches the "charged now" leg.
                 const recurringCents = !membershipConfig.isRecurring
                   ? 0
                   : membershipConfig.firstMonthDiscountOnly
                     ? enteredPriceCents
-                    : firstPaymentCents;
+                    : derivedFirstPaymentCents;
 
                 return (
                   <>
+                    {/* First Payment override input -- sits right above
+                        the Recurring input by request. Empty means
+                        "use derived (recurring - discount)"; any value
+                        typed here becomes the charge-now amount. */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        First payment
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                        <input
+                          type="text"
+                          value={membershipConfig.customFirstPayment}
+                          onChange={(e) => setMembershipConfig({ ...membershipConfig, customFirstPayment: e.target.value })}
+                          className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          placeholder={(derivedFirstPaymentCents / 100).toFixed(2)}
+                        />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {overrideFirstPaymentCents != null
+                          ? `Overrides the derived amount (${formatCents(derivedFirstPaymentCents)}). Leave blank to auto-derive from Price − Discount.`
+                          : `Auto-derived: ${formatCents(derivedFirstPaymentCents)}. Type a dollar amount to override the charge for this sale only.`}
+                      </p>
+                    </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Price (recurring)
