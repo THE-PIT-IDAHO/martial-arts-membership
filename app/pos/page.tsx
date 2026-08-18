@@ -3410,6 +3410,12 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saveCard, setSaveCard] = useState(false);
+  // Name on card. Defaults to the member's name so the typical
+  // in-person sale is one-tap, but editable so a parent / spouse /
+  // friend paying for the member can enter THEIR own name -- Stripe
+  // + issuing banks reject / flag charges where billing_details.name
+  // doesn't match the cardholder on file.
+  const [cardholderName, setCardholderName] = useState(data.memberName || "");
   // Three separate refs (number / expiry / cvc) instead of the all-in-one
   // CardElement. Mobile OSes (iOS, Android) attach the native "Scan Card"
   // button to the card-number field when it's a dedicated element with the
@@ -3454,7 +3460,7 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
       const { error: setupError, setupIntent } = await stripe.confirmCardSetup(data.clientSecret, {
         payment_method: {
           card: elements.getElement("cardNumber")!,
-          billing_details: { name: data.memberName || undefined },
+          billing_details: { name: cardholderName.trim() || data.memberName || undefined },
         },
       });
       if (setupError) {
@@ -3519,12 +3525,27 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {data.memberName && (
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Member</label>
-              <input type="text" defaultValue={data.memberName} readOnly className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-gray-50 text-gray-600" />
-            </div>
-          )}
+          {/* Name on card. Prefilled with the member so the common
+              case (member paying for themselves) is one-tap; editable
+              because a parent or spouse paying with THEIR card would
+              otherwise trip issuing-bank name-mismatch checks. Falls
+              back to the member's name at submit time if left blank. */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Name on Card</label>
+            <input
+              type="text"
+              value={cardholderName}
+              onChange={(e) => setCardholderName(e.target.value)}
+              placeholder={data.memberName || "Cardholder name"}
+              autoComplete="cc-name"
+              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            {data.memberName && cardholderName.trim() && cardholderName.trim().toLowerCase() !== data.memberName.trim().toLowerCase() && (
+              <p className="mt-1 text-[11px] text-gray-500">
+                Paying on behalf of <span className="font-medium">{data.memberName}</span>
+              </p>
+            )}
+          </div>
           {data.isSetupIntent && (
             <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
               No charge today. Your card will be saved on file and used for any
