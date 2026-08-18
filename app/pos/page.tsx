@@ -2627,34 +2627,38 @@ export default function POSPage() {
 
                 return (
                   <>
-                    {/* First Payment override input -- sits right above
-                        the Recurring input by request. Empty means
-                        "use derived (recurring - discount)"; any value
-                        typed here becomes the charge-now amount. */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        First payment
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
-                        <input
-                          type="text"
-                          value={membershipConfig.customFirstPayment}
-                          onChange={(e) => setMembershipConfig({ ...membershipConfig, customFirstPayment: e.target.value })}
-                          className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                          placeholder={(derivedFirstPaymentCents / 100).toFixed(2)}
-                        />
+                    {/* First Payment override input -- ONLY makes sense
+                        for recurring plans, where "first payment" is a
+                        separate leg from "every cycle after that". On
+                        a one-time plan there's only one charge and it
+                        IS the Price, so this input is hidden and the
+                        Price input alone drives the amount. */}
+                    {membershipConfig.isRecurring && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          First payment
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                          <input
+                            type="text"
+                            value={membershipConfig.customFirstPayment}
+                            onChange={(e) => setMembershipConfig({ ...membershipConfig, customFirstPayment: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            placeholder={(derivedFirstPaymentCents / 100).toFixed(2)}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {overrideFirstPaymentCents != null
+                            ? `Overrides the derived amount (${formatCents(derivedFirstPaymentCents)}). Leave blank to auto-derive from Price − Discount.`
+                            : `Auto-derived: ${formatCents(derivedFirstPaymentCents)}. Type a dollar amount to override the charge for this sale only.`}
+                        </p>
                       </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {overrideFirstPaymentCents != null
-                          ? `Overrides the derived amount (${formatCents(derivedFirstPaymentCents)}). Leave blank to auto-derive from Price − Discount.`
-                          : `Auto-derived: ${formatCents(derivedFirstPaymentCents)}. Type a dollar amount to override the charge for this sale only.`}
-                      </p>
-                    </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Price (recurring)
+                        {membershipConfig.isRecurring ? "Price (recurring)" : "Price"}
                       </label>
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
@@ -2674,10 +2678,13 @@ export default function POSPage() {
                       </p>
                     </div>
 
-                    {/* Discount */}
+                    {/* Discount -- label + help text adapt to whether
+                        the plan has future payments. On a one-time
+                        plan there's only one payment, so the "first
+                        payment only" wording is misleading. */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Discount on first payment
+                        {membershipConfig.isRecurring ? "Discount on first payment" : "Discount"}
                       </label>
                       <div className="flex gap-2">
                         <select
@@ -2697,20 +2704,26 @@ export default function POSPage() {
                         />
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
-                        Applied on top of Price — does not change the recurring amount unless you uncheck the box below.
+                        {membershipConfig.isRecurring
+                          ? "Applied on top of Price — does not change the recurring amount unless you uncheck the box below."
+                          : "Subtracted from Price to give the amount charged."}
                       </p>
                     </div>
 
-                    {/* First month discount only */}
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={membershipConfig.firstMonthDiscountOnly}
-                        onChange={(e) => setMembershipConfig({ ...membershipConfig, firstMonthDiscountOnly: e.target.checked })}
-                        className="rounded border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <span className="text-sm text-gray-700">First payment discount only (don't carry the discount into recurring)</span>
-                    </label>
+                    {/* First-payment-only checkbox -- only meaningful
+                        when there IS a future payment to compare
+                        against. Hidden for one-time. */}
+                    {membershipConfig.isRecurring && (
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={membershipConfig.firstMonthDiscountOnly}
+                          onChange={(e) => setMembershipConfig({ ...membershipConfig, firstMonthDiscountOnly: e.target.checked })}
+                          className="rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        <span className="text-sm text-gray-700">First payment discount only (don't carry the discount into recurring)</span>
+                      </label>
+                    )}
 
                     {/* Calculated price preview -- always shown so the
                         admin sees both the initial charge AND the
