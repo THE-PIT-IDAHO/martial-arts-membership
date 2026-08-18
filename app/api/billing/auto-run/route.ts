@@ -585,6 +585,89 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
       console.error("Trial expiry error:", err);
     }
 
+    // --- Expire fixed-term memberships past their endDate ---
+    // Any ACTIVE membership whose endDate has passed flips to EXPIRED.
+    // (Recurring memberships have endDate === null and never hit this
+    // condition; only fixed-term / one-time sales carry an endDate.)
+    try {
+      const nowForExpiry = new Date();
+      const expiringMemberships = await prisma.membership.findMany({
+        where: {
+          member: { clientId },
+          status: "ACTIVE",
+          endDate: { not: null, lt: nowForExpiry },
+        },
+        select: { id: true },
+      });
+      if (expiringMemberships.length > 0) {
+        await prisma.membership.updateMany({
+          where: { id: { in: expiringMemberships.map((m) => m.id) } },
+          data: { status: "EXPIRED", nextPaymentDate: null },
+        });
+        console.log(`Auto-expired ${expiringMemberships.length} membership(s) past endDate`);
+      }
+    } catch (err) {
+      console.error("Membership expiry error:", err);
+    }
+
+    // --- Flip members to INACTIVE when nothing keeps them "current" ---
+    // Runs across ALL ACTIVE-tagged members in the tenant (not just
+    // ones touched above) so it also catches members whose CANCELED
+    // membership silently lapsed its endDate on a prior day without
+    // triggering the recompute -- the intent from the user's ask is
+    // "any type of membership ends -> move to Inactive".
+    //
+    // A member is still "currently active" if any membership either:
+    //   * has status ACTIVE (recurring, still billing), OR
+    //   * has status CANCELED but endDate is still in the future
+    //     (paid through their notice period).
+    // Anything else (no memberships, EXPIRED / PAUSED, or CANCELED
+    // with endDate in the past) means the member drops to INACTIVE.
+    try {
+      const nowForStatus = new Date();
+      const activeMembers = await prisma.member.findMany({
+        where: { clientId, status: { contains: "ACTIVE" } },
+        select: {
+          id: true,
+          status: true,
+          memberships: { select: { status: true, endDate: true } },
+        },
+      });
+      let deactivatedCount = 0;
+      for (const m of activeMembers) {
+        const stillCurrent = m.memberships.some((ms) => {
+          if (ms.status === "ACTIVE") return true;
+          if (ms.status === "CANCELED" && ms.endDate && ms.endDate > nowForStatus) return true;
+          return false;
+        });
+        if (stillCurrent) continue;
+
+        // Preserve any non-active tags (COACH, PARENT, BANNED) that
+        // aren't participation-status labels. ACTIVE / PROSPECT /
+        // CANCELED are all "currently participating" states that
+        // don't co-exist with INACTIVE, so we strip them; INACTIVE
+        // then leads the comma list so the members-list filter sees
+        // this member under the Inactive tab.
+        const currentTags = (m.status || "").split(",").map((s) => s.trim()).filter(Boolean);
+        const preserved = currentTags.filter((s) => !["ACTIVE", "PROSPECT", "CANCELED"].includes(s));
+        if (!preserved.includes("INACTIVE")) preserved.unshift("INACTIVE");
+        const newStatus = preserved.join(",");
+        if (newStatus === m.status) continue;
+        try {
+          await prisma.member.update({
+            where: { id: m.id },
+            data: { status: newStatus },
+          });
+          deactivatedCount += 1;
+        } catch { /* keep going */ }
+      }
+      if (deactivatedCount > 0) {
+        console.log(`Auto-set ${deactivatedCount} member(s) to INACTIVE (no current membership)`);
+      }
+    } catch (err) {
+      console.error("Member auto-deactivate error:", err);
+    }
+
     // --- Send promotion eligibility alert (fire-and-forget) ---
     try {
       // Scope to this tenant -- previously matched member styles by
