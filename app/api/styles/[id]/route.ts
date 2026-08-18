@@ -137,8 +137,47 @@ export async function PATCH(req: Request, { params }: RouteParams) {
         const existingByName = new Map(existingRanks.map((r) => [r.name, r]));
         const matchedDbIds = new Set<string>();
 
-        // Update or create ranks
+        // Two-pass matcher.
+        //
+        // Pass 1 -- prefer id match (survives renames), fall back to
+        //   name match (survives reorders on unmigrated configs).
+        // Pass 2 -- for any incoming rank still unmatched, try to
+        //   pair it with an EXISTING rank at the same `order`. This
+        //   is the rename-in-place case: a beltConfig with a legacy
+        //   ranks[].id (not a DB CUID) that just got renamed misses
+        //   both the id and name lookup, and the old code would then
+        //   create a new rank + delete the old one -- cascading
+        //   through to RankTest and wiping the curriculum. Matching
+        //   the leftover incoming rank to the same-order leftover
+        //   existing rank keeps the RankTest attached to what is
+        //   effectively "the same rank, just renamed".
+        const pass1Result: Array<{ rank: any; existing: typeof existingRanks[number] | null }> = [];
         for (const rank of config.ranks) {
+          const existing =
+            (rank.id && existingById.get(rank.id)) ||
+            existingByName.get(rank.name) ||
+            null;
+          if (existing) matchedDbIds.add(existing.id);
+          pass1Result.push({ rank, existing });
+        }
+        // Pass 2: pair by order. Build a lookup of unmatched existing
+        // ranks keyed by order so we don't accidentally reuse one that
+        // was already matched by name/id.
+        const unmatchedExistingByOrder = new Map<number, typeof existingRanks[number]>();
+        for (const e of existingRanks) {
+          if (!matchedDbIds.has(e.id)) unmatchedExistingByOrder.set(e.order, e);
+        }
+        for (const entry of pass1Result) {
+          if (entry.existing) continue;
+          const byOrder = unmatchedExistingByOrder.get(entry.rank.order);
+          if (byOrder && !matchedDbIds.has(byOrder.id)) {
+            entry.existing = byOrder;
+            matchedDbIds.add(byOrder.id);
+          }
+        }
+
+        // Update or create ranks
+        for (const { rank, existing } of pass1Result) {
           // Calculate total class requirement from classRequirements array
           let totalClassRequirement = null;
           if (rank.classRequirements && Array.isArray(rank.classRequirements)) {
@@ -150,16 +189,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
             }
           }
 
-          // Prefer id match — handles renames. Fall back to name match for
-          // unmigrated beltConfigs where ranks[].id is still the legacy
-          // user-generated string ("rank_<ts>_<rand>") rather than a DB CUID.
-          const existing =
-            (rank.id && existingById.get(rank.id)) ||
-            existingByName.get(rank.name) ||
-            null;
-
           if (existing) {
-            matchedDbIds.add(existing.id);
             await prisma.rank.update({
               where: { id: existing.id },
               data: {
