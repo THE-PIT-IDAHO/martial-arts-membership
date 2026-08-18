@@ -121,8 +121,103 @@ export async function POST(req: Request) {
   }
 }
 
+/**
+ * Idempotent housekeeping the tenant needs on every dashboard load,
+ * NOT once per day like invoice generation. Kept outside
+ * processBillingForTenant's "Already run today" gate so that:
+ *   * a fixed-term membership whose endDate just passed lands on
+ *     EXPIRED the next time an admin opens the dashboard, and
+ *   * the owning member drops from ACTIVE -> INACTIVE in the same
+ *     pass so the Members list Inactive tab picks them up.
+ *
+ * Both steps are updateMany / conditional-write operations that only
+ * touch rows meeting their criteria, so re-running them multiple
+ * times a day is a no-op after the first sweep of the day.
+ */
+async function runMembershipHousekeeping(clientId: string): Promise<void> {
+  const now = new Date();
+
+  // 1. Auto-expire fixed-term memberships past endDate.
+  //    Recurring memberships have endDate === null and are unaffected.
+  try {
+    const expiring = await prisma.membership.findMany({
+      where: {
+        member: { clientId },
+        status: "ACTIVE",
+        endDate: { not: null, lt: now },
+      },
+      select: { id: true },
+    });
+    if (expiring.length > 0) {
+      await prisma.membership.updateMany({
+        where: { id: { in: expiring.map((m) => m.id) } },
+        data: { status: "EXPIRED", nextPaymentDate: null },
+      });
+      console.log(`[housekeeping ${clientId}] auto-expired ${expiring.length} membership(s) past endDate`);
+    }
+  } catch (err) {
+    console.error(`[housekeeping ${clientId}] membership expiry error:`, err);
+  }
+
+  // 2. Flip members to INACTIVE when nothing keeps them "current".
+  //    A member is still "currently active" if any membership either:
+  //      * has status ACTIVE, OR
+  //      * has status CANCELED but endDate is still in the future
+  //        (paid through their cancellation notice period).
+  //    Anything else -> INACTIVE. Preserves non-participation tags
+  //    (COACH, PARENT, BANNED) and strips participation tags
+  //    (ACTIVE, PROSPECT, CANCELED) before prepending INACTIVE.
+  try {
+    const activeMembers = await prisma.member.findMany({
+      where: { clientId, status: { contains: "ACTIVE" } },
+      select: {
+        id: true,
+        status: true,
+        memberships: { select: { status: true, endDate: true } },
+      },
+    });
+    let deactivated = 0;
+    for (const m of activeMembers) {
+      const stillCurrent = m.memberships.some((ms) => {
+        if (ms.status === "ACTIVE") return true;
+        if (ms.status === "CANCELED" && ms.endDate && ms.endDate > now) return true;
+        return false;
+      });
+      if (stillCurrent) continue;
+
+      const currentTags = (m.status || "").split(",").map((s) => s.trim()).filter(Boolean);
+      const preserved = currentTags.filter((s) => !["ACTIVE", "PROSPECT", "CANCELED"].includes(s));
+      if (!preserved.includes("INACTIVE")) preserved.unshift("INACTIVE");
+      const newStatus = preserved.join(",");
+      if (newStatus === m.status) continue;
+      try {
+        await prisma.member.update({
+          where: { id: m.id },
+          data: { status: newStatus },
+        });
+        deactivated += 1;
+      } catch { /* keep going */ }
+    }
+    if (deactivated > 0) {
+      console.log(`[housekeeping ${clientId}] auto-set ${deactivated} member(s) to INACTIVE (no current membership)`);
+    }
+  } catch (err) {
+    console.error(`[housekeeping ${clientId}] member auto-deactivate error:`, err);
+  }
+}
+
 async function processBillingForTenant(clientId: string): Promise<TenantResult> {
   try {
+    // Housekeeping runs EVERY call, not once per day. These sweeps
+    // touch only rows that need it (updateMany with filters, or a
+    // read-then-conditional-write), so it's safe to re-run. Living
+    // above the "Already run today" guard means an admin who loaded
+    // the dashboard earlier can trigger the flip later the same day
+    // by reloading -- the previous placement inside the guard was
+    // the reason a member whose membership just lapsed today stayed
+    // on the Active tab despite a second dashboard visit.
+    await runMembershipHousekeeping(clientId);
+
     const tz = (await getSetting("timezone", clientId)) || "America/Denver";
     const today = getTodayInTimezone(tz); // YYYY-MM-DD in gym's timezone
 
@@ -583,89 +678,6 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
       }
     } catch (err) {
       console.error("Trial expiry error:", err);
-    }
-
-    // --- Expire fixed-term memberships past their endDate ---
-    // Any ACTIVE membership whose endDate has passed flips to EXPIRED.
-    // (Recurring memberships have endDate === null and never hit this
-    // condition; only fixed-term / one-time sales carry an endDate.)
-    try {
-      const nowForExpiry = new Date();
-      const expiringMemberships = await prisma.membership.findMany({
-        where: {
-          member: { clientId },
-          status: "ACTIVE",
-          endDate: { not: null, lt: nowForExpiry },
-        },
-        select: { id: true },
-      });
-      if (expiringMemberships.length > 0) {
-        await prisma.membership.updateMany({
-          where: { id: { in: expiringMemberships.map((m) => m.id) } },
-          data: { status: "EXPIRED", nextPaymentDate: null },
-        });
-        console.log(`Auto-expired ${expiringMemberships.length} membership(s) past endDate`);
-      }
-    } catch (err) {
-      console.error("Membership expiry error:", err);
-    }
-
-    // --- Flip members to INACTIVE when nothing keeps them "current" ---
-    // Runs across ALL ACTIVE-tagged members in the tenant (not just
-    // ones touched above) so it also catches members whose CANCELED
-    // membership silently lapsed its endDate on a prior day without
-    // triggering the recompute -- the intent from the user's ask is
-    // "any type of membership ends -> move to Inactive".
-    //
-    // A member is still "currently active" if any membership either:
-    //   * has status ACTIVE (recurring, still billing), OR
-    //   * has status CANCELED but endDate is still in the future
-    //     (paid through their notice period).
-    // Anything else (no memberships, EXPIRED / PAUSED, or CANCELED
-    // with endDate in the past) means the member drops to INACTIVE.
-    try {
-      const nowForStatus = new Date();
-      const activeMembers = await prisma.member.findMany({
-        where: { clientId, status: { contains: "ACTIVE" } },
-        select: {
-          id: true,
-          status: true,
-          memberships: { select: { status: true, endDate: true } },
-        },
-      });
-      let deactivatedCount = 0;
-      for (const m of activeMembers) {
-        const stillCurrent = m.memberships.some((ms) => {
-          if (ms.status === "ACTIVE") return true;
-          if (ms.status === "CANCELED" && ms.endDate && ms.endDate > nowForStatus) return true;
-          return false;
-        });
-        if (stillCurrent) continue;
-
-        // Preserve any non-active tags (COACH, PARENT, BANNED) that
-        // aren't participation-status labels. ACTIVE / PROSPECT /
-        // CANCELED are all "currently participating" states that
-        // don't co-exist with INACTIVE, so we strip them; INACTIVE
-        // then leads the comma list so the members-list filter sees
-        // this member under the Inactive tab.
-        const currentTags = (m.status || "").split(",").map((s) => s.trim()).filter(Boolean);
-        const preserved = currentTags.filter((s) => !["ACTIVE", "PROSPECT", "CANCELED"].includes(s));
-        if (!preserved.includes("INACTIVE")) preserved.unshift("INACTIVE");
-        const newStatus = preserved.join(",");
-        if (newStatus === m.status) continue;
-        try {
-          await prisma.member.update({
-            where: { id: m.id },
-            data: { status: newStatus },
-          });
-          deactivatedCount += 1;
-        } catch { /* keep going */ }
-      }
-      if (deactivatedCount > 0) {
-        console.log(`Auto-set ${deactivatedCount} member(s) to INACTIVE (no current membership)`);
-      }
-    } catch (err) {
-      console.error("Member auto-deactivate error:", err);
     }
 
     // --- Send promotion eligibility alert (fire-and-forget) ---
