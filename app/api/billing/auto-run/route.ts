@@ -225,6 +225,57 @@ async function runMembershipHousekeeping(clientId: string): Promise<void> {
       console.error(`[housekeeping ${clientId}] syncMemberStyles failed for ${memberId}:`, err);
     }
   }
+
+  // 4. Catch-up sweep: sync ANY member whose stylesNotes has a style
+  //    marked active but whose memberships have no ACTIVE/CANCELED
+  //    row to back that up. This picks up members whose membership
+  //    was auto-expired on a previous run of this sweep (before we
+  //    called syncMemberStyles here) or whose styles got out of sync
+  //    for any other historical reason. Idempotent -- syncMemberStyles
+  //    no-ops when there's nothing to change.
+  try {
+    const stale = await prisma.member.findMany({
+      where: {
+        clientId,
+        stylesNotes: { not: null },
+        // Only inspect members with zero ACTIVE / CANCELED memberships;
+        // members with an active-side membership are trivially in sync
+        // via the PATCH endpoint and don't need a catch-up.
+        NOT: {
+          memberships: {
+            some: { status: { in: ["ACTIVE", "CANCELED"] } },
+          },
+        },
+      },
+      select: { id: true, stylesNotes: true },
+    });
+    let synced = 0;
+    for (const m of stale) {
+      // Only sync when the notes actually have an active style to
+      // demote -- syncMemberStyles is cheap but not free, and most
+      // never-enrolled members will have styles they never activated.
+      let hasActive = false;
+      try {
+        const parsed = JSON.parse(m.stylesNotes || "[]");
+        if (Array.isArray(parsed)) {
+          hasActive = parsed.some((s: { active?: boolean }) => s?.active !== false);
+        }
+      } catch { /* ignore */ }
+      if (!hasActive) continue;
+      if (touchedMemberIds.has(m.id)) continue; // already synced above
+      try {
+        await syncMemberStyles(m.id);
+        synced += 1;
+      } catch (err) {
+        console.error(`[housekeeping ${clientId}] catch-up syncMemberStyles failed for ${m.id}:`, err);
+      }
+    }
+    if (synced > 0) {
+      console.log(`[housekeeping ${clientId}] catch-up: synced styles for ${synced} member(s) with no active membership`);
+    }
+  } catch (err) {
+    console.error(`[housekeeping ${clientId}] style catch-up sweep error:`, err);
+  }
 }
 
 async function processBillingForTenant(clientId: string): Promise<TenantResult> {
