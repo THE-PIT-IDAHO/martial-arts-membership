@@ -16,6 +16,7 @@ import { getSetting } from "@/lib/email";
 import { getActiveProcessor, chargeStoredPaymentMethod, getCurrency, type ProcessorType } from "@/lib/payment";
 import { getClientId } from "@/lib/tenant";
 import { applyMemberDiscounts, markDiscountsUsed } from "@/lib/member-discounts";
+import { syncMemberStyles } from "@/lib/member-styles";
 
 // Vercel cron sends a GET request to the path on its schedule. The
 // dashboard caller still uses POST. Both delegate to the same handler.
@@ -137,6 +138,12 @@ export async function POST(req: Request) {
 async function runMembershipHousekeeping(clientId: string): Promise<void> {
   const now = new Date();
 
+  // Members touched by any part of housekeeping. syncMemberStyles is
+  // called once per member at the end so the styles/rank PDFs on
+  // stylesNotes match the fresh membership statuses -- the previous
+  // pass expired memberships but never told the styles to follow.
+  const touchedMemberIds = new Set<string>();
+
   // 1. Auto-expire fixed-term memberships past endDate.
   //    Recurring memberships have endDate === null and are unaffected.
   try {
@@ -146,13 +153,14 @@ async function runMembershipHousekeeping(clientId: string): Promise<void> {
         status: "ACTIVE",
         endDate: { not: null, lt: now },
       },
-      select: { id: true },
+      select: { id: true, memberId: true },
     });
     if (expiring.length > 0) {
       await prisma.membership.updateMany({
         where: { id: { in: expiring.map((m) => m.id) } },
         data: { status: "EXPIRED", nextPaymentDate: null },
       });
+      for (const m of expiring) touchedMemberIds.add(m.memberId);
       console.log(`[housekeeping ${clientId}] auto-expired ${expiring.length} membership(s) past endDate`);
     }
   } catch (err) {
@@ -195,6 +203,7 @@ async function runMembershipHousekeeping(clientId: string): Promise<void> {
           where: { id: m.id },
           data: { status: newStatus },
         });
+        touchedMemberIds.add(m.id);
         deactivated += 1;
       } catch { /* keep going */ }
     }
@@ -203,6 +212,18 @@ async function runMembershipHousekeeping(clientId: string): Promise<void> {
     }
   } catch (err) {
     console.error(`[housekeeping ${clientId}] member auto-deactivate error:`, err);
+  }
+
+  // 3. Sync per-style entries + rank PDFs so any style tied to a
+  //    membership we just expired flips to `active: false` on the
+  //    member's stylesNotes. Matches what PATCH /api/memberships/[id]
+  //    already does when an admin manually changes a status.
+  for (const memberId of touchedMemberIds) {
+    try {
+      await syncMemberStyles(memberId);
+    } catch (err) {
+      console.error(`[housekeeping ${clientId}] syncMemberStyles failed for ${memberId}:`, err);
+    }
   }
 }
 
