@@ -108,10 +108,26 @@ export async function POST(req: Request) {
       });
     }
 
+    // NB: no `setup_future_usage: "off_session"` here.
+    //
+    // Previously this was always set when a stripeCustomerId was present.
+    // It told Stripe to save the entered card on the customer for later
+    // off-session charges -- which triggers the bank's Strong Customer
+    // Authentication (SCA) + tighter Radar scrutiny even on card-present
+    // one-off sales. In practice that flipped legitimate cross-payer
+    // charges (grandma paying for grandchild's membership) into
+    // `requires_action` / `processing` states that never resolved, and
+    // the admin's UI hung waiting for a `succeeded` that Stripe was
+    // never going to send.
+    //
+    // The card modal's "Save card as default" checkbox now handles
+    // saving explicitly post-charge (PUT .../payment-methods/[pmId]/default
+    // attaches the PM to the customer if needed). One-off sales stay
+    // one-off; saves are opt-in.
     const paymentIntent = await stripeClient.paymentIntents.create({
       amount: amountCents,
       currency: currency.toLowerCase(),
-      ...(stripeCustomerId ? { customer: stripeCustomerId, setup_future_usage: "off_session" } : {}),
+      ...(stripeCustomerId ? { customer: stripeCustomerId } : {}),
       metadata: {
         source: "admin_pos",
         clientId,

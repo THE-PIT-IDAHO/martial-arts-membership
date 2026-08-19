@@ -29,10 +29,19 @@ export async function PUT(_req: NextRequest, { params }: Params) {
   }
 
   try {
-    // Verify this payment method belongs to the member's customer
+    // A PM created via the embedded card modal is attached to no
+    // customer by default now (the create-payment-intent route no
+    // longer forces setup_future_usage: "off_session"). When the admin
+    // checks "Save card as default" the PM arrives here unattached;
+    // attach it to this member's Stripe customer first. If it's
+    // already attached to a DIFFERENT customer, refuse -- that's a
+    // sign the caller mixed up a PM from another member's dropdown.
     const pm = await stripeClient.paymentMethods.retrieve(paymentMethodId);
-    if (pm.customer !== member.stripeCustomerId) {
-      return NextResponse.json({ error: "Payment method does not belong to this member" }, { status: 403 });
+    if (pm.customer && pm.customer !== member.stripeCustomerId) {
+      return NextResponse.json({ error: "Payment method belongs to a different member" }, { status: 403 });
+    }
+    if (!pm.customer) {
+      await stripeClient.paymentMethods.attach(paymentMethodId, { customer: member.stripeCustomerId });
     }
 
     // Set as default on Stripe customer
