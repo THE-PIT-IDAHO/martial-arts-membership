@@ -2631,14 +2631,23 @@ export default function MemberProfilePage() {
                           </button>
                         </>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => setShowAdminAccess(true)}
-                        title="Grant this member admin login access with a chosen role + class-scope"
-                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
-                      >
-                        Admin
-                      </button>
+                      {/* Only show for members flagged with an admin
+                          role via Account -> Users & Access. Keeps
+                          the button out of the way for the 99%
+                          who never need admin login. Flag first in
+                          Users & Access, then come here to configure
+                          the login (temp password, class scope,
+                          etc.). */}
+                      {member.accessRole && ["OWNER", "ADMIN", "COACH", "FRONT_DESK"].includes(member.accessRole) && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAdminAccess(true)}
+                          title="Configure this member's admin login access. Role comes from Users & Access."
+                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                        >
+                          Admin
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setEditingPersonal(true)}
