@@ -528,6 +528,13 @@ export async function GET(req: Request) {
             lastName: true,
             stylesNotes: true,
             attendances: {
+              // Confirmed-only matches the member profile + the
+              // promotions eligible route. Previously unfiltered here,
+              // which counted unconfirmed kiosk sign-ins toward
+              // requirements and could push a member onto the
+              // "Promotion Eligible" widget while their profile
+              // progress bars said they were still short.
+              where: { confirmed: true },
               select: {
                 attendanceDate: true,
                 checkedInAt: true,
