@@ -108,6 +108,13 @@ export default function KioskPage() {
   const [classes, setClasses] = useState<ClassSession[]>([]);
   const [todaysClasses, setTodaysClasses] = useState<ClassSession[]>([]);
   const [selectedClass, setSelectedClass] = useState<ClassSession | null>(null);
+  // Sticky-selection guard. When the user taps a class in the picker,
+  // we stamp Date.now()+15min here; the every-30s auto-change effect
+  // then leaves the selection alone until this expires. Without this,
+  // manually picking an already-ended class (e.g. to check in a late
+  // arrival) would get overwritten the moment the next class enters
+  // its prep window.
+  const [manualSelectionExpiresAt, setManualSelectionExpiresAt] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
@@ -144,6 +151,10 @@ export default function KioskPage() {
       const nowMins = now.getHours() * 60 + now.getMinutes();
       const autoChangeMins = kioskSettings.autoChangeMinutes || 10;
       if (autoChangeMins <= 0) return;
+      // Respect a recent manual selection -- the user picked something
+      // deliberately (e.g. an ended class for a late check-in) and
+      // shouldn't have it yanked out from under them.
+      if (Date.now() < manualSelectionExpiresAt) return;
 
       // Soonest upcoming class within the prep window.
       const upcoming = todaysClasses
@@ -171,7 +182,7 @@ export default function KioskPage() {
     }, 30000);
 
     return () => clearInterval(timer);
-  }, [todaysClasses, kioskSettings.autoChangeMinutes, selectedClass]);
+  }, [todaysClasses, kioskSettings.autoChangeMinutes, selectedClass, manualSelectionExpiresAt]);
 
   // Load initial data
   useEffect(() => {
@@ -794,6 +805,9 @@ export default function KioskPage() {
       setCheckInState("idle");
     }
     setSelectedClass(cls);
+    // Freeze auto-change for 15 minutes so the manual choice sticks.
+    // Refreshed on every subsequent manual click.
+    setManualSelectionExpiresAt(Date.now() + 15 * 60 * 1000);
   };
 
   // Confirm check-in
