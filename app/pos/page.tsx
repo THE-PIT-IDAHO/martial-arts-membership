@@ -287,14 +287,24 @@ export default function POSPage() {
   const [activeProcessor, setActiveProcessor] = useState<string | null>(null);
   const [stripePolling, setStripePolling] = useState(false);
   const [savedCard, setSavedCard] = useState<{ brand: string; last4: string } | null>(null);
+  // Publishable key + currency captured from the tenant's Settings so
+  // the card modal can init Stripe.js Elements in DEFERRED mode --
+  // Elements can now render the card fields without a PaymentIntent
+  // client_secret. The PI itself is created only when the admin clicks
+  // Pay Amount inside the modal, so cancelling before that click never
+  // touches Stripe at all.
+  const [stripePublishableKey, setStripePublishableKey] = useState<string | null>(null);
+  const [stripeCurrency, setStripeCurrency] = useState<string>("usd");
   const [cardPaymentData, setCardPaymentData] = useState<{
-    clientSecret: string; publishableKey: string; paymentIntentId: string | null;
-    amountCents: number; memberName: string; lineItems: unknown[];
-    existingTransactionId: string | null | undefined; existingTransactionNumber: string | null | undefined;
-    // When true, the clientSecret is for a Stripe SetupIntent (no money
-    // moves — used for $0 first-month flows that still need to save the
-    // card for future recurring charges).
-    isSetupIntent?: boolean;
+    publishableKey: string;
+    currency: string;
+    amountCents: number;
+    memberName: string;
+    lineItems: unknown[];
+    memberId: string | null;
+    metadata: Record<string, string>;
+    existingTransactionId: string | null | undefined;
+    existingTransactionNumber: string | null | undefined;
   } | null>(null);
 
   // Track if we've applied URL params
@@ -443,6 +453,14 @@ export default function POSPage() {
           // the user can change it from the SQL editor or a future settings UI.
           const pin = settingsMap.get("kiosk_unlock_pin");
           if (pin && /^\d{4,8}$/.test(pin)) setKioskUnlockPin(pin);
+          // Grab Stripe publishable key + currency for the deferred
+          // Elements init. Publishable keys are public by design, so
+          // exposing them to the POS bundle isn't a leak. Env-var
+          // fallback matches the create-payment-intent route's order.
+          const pkFromDb = settingsMap.get("payment_stripe_publishable_key");
+          if (pkFromDb) setStripePublishableKey(pkFromDb);
+          const curFromDb = settingsMap.get("currency");
+          if (curFromDb) setStripeCurrency(curFromDb.toLowerCase());
           // Determine active payment processor
           const proc = settingsMap.get("payment_active_processor") as string | undefined;
           if (proc && proc !== "none") {
@@ -1471,44 +1489,32 @@ export default function POSPage() {
           existingTransactionNumber = txnData.transaction.transactionNumber;
         }
 
-        // Create PaymentIntent for embedded card form
-        const checkoutRes = await fetch("/api/pos/create-payment-intent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amountCents: cardAmountCents || totalCents,
-            memberId: selectedMember?.id || null,
-            memberName: selectedMember ? `${selectedMember.firstName} ${selectedMember.lastName}` : null,
-            metadata: {
-              source: "admin_pos",
-              cartItems: JSON.stringify(lineItems),
-              ...(selectedMember?.id ? { memberId: selectedMember.id } : {}),
-              ...(notes ? { notes } : {}),
-              ...(existingTransactionId ? { transactionId: existingTransactionId } : {}),
-            },
-          }),
+        // Open the card modal WITHOUT creating a Stripe PaymentIntent.
+        // Elements initializes in DEFERRED mode so the card fields render
+        // off the tenant's publishable key alone; the PI (or SetupIntent
+        // for $0 saves) is created only when the admin clicks Pay Amount
+        // inside the modal. Cancelling before that click never touches
+        // Stripe -- nothing exists there yet.
+        if (!stripePublishableKey) throw new Error("Stripe publishable key not configured");
+        setCardPaymentData({
+          publishableKey: stripePublishableKey,
+          currency: stripeCurrency,
+          amountCents: cardAmountCents || totalCents,
+          memberName: selectedMember ? `${selectedMember.firstName} ${selectedMember.lastName}` : "",
+          lineItems,
+          memberId: selectedMember?.id || null,
+          metadata: {
+            source: "admin_pos",
+            cartItems: JSON.stringify(lineItems),
+            ...(selectedMember?.id ? { memberId: selectedMember.id } : {}),
+            ...(notes ? { notes } : {}),
+            ...(existingTransactionId ? { transactionId: existingTransactionId } : {}),
+          },
+          existingTransactionId,
+          existingTransactionNumber,
         });
-
-        if (!checkoutRes.ok) throw new Error(await checkoutRes.text() || "Card checkout failed");
-        const checkoutData = await checkoutRes.json();
-
-        if (checkoutData.clientSecret) {
-          // Show embedded card modal. isSetupIntent is true for $0 flows
-          // where we're collecting + saving the card without charging it.
-          setCardPaymentData({
-            clientSecret: checkoutData.clientSecret,
-            publishableKey: checkoutData.publishableKey,
-            paymentIntentId: checkoutData.paymentIntentId,
-            amountCents: cardAmountCents || totalCents,
-            memberName: checkoutData.memberName,
-            lineItems,
-            existingTransactionId,
-            existingTransactionNumber,
-            isSetupIntent: !!checkoutData.isSetupIntent,
-          });
-          setProcessing(false);
-          return;
-        }
+        setProcessing(false);
+        return;
       }
 
       // Standard (non-card) checkout
@@ -3348,25 +3354,12 @@ export default function POSPage() {
           memberId={selectedMember?.id}
           onClose={() => {
             // Member backed out of card entry — discard the pending
-            // contract too so we don't save it on a future attempt with
-            // possibly different cart contents.
+            // contract too so we don't save it on a future attempt
+            // with possibly different cart contents. Nothing to
+            // cancel in Stripe: the deferred flow only creates the
+            // PaymentIntent when the admin clicks Pay Amount, so
+            // backing out here is a pure client-side dismiss.
             pendingContractRef.current = null;
-            // Fire-and-forget: tell Stripe to cancel the PaymentIntent
-            // we created for the modal. Without this the PI stays as
-            // "requires_payment_method" / incomplete in the operator's
-            // Stripe dashboard forever, and the ops emails ("we tried
-            // to send events to your webhook, it 500'd") pile up.
-            // Endpoint is tenant-scoped and idempotent -- safe to call
-            // even if the PI never made it out or is already in a
-            // terminal state.
-            const abortedPiId = cardPaymentData?.paymentIntentId;
-            if (abortedPiId) {
-              fetch("/api/pos/cancel-payment-intent", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ paymentIntentId: abortedPiId }),
-              }).catch(() => { /* best-effort */ });
-            }
             setCardPaymentData(null);
           }}
           onSuccess={async (paymentIntentId) => {
@@ -3408,14 +3401,12 @@ export default function POSPage() {
 
 function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
   data: {
-    clientSecret: string;
     publishableKey: string;
-    paymentIntentId: string | null;
+    currency: string;
     amountCents: number;
     memberName: string;
-    // True when clientSecret is for a Stripe SetupIntent (no charge, just
-    // collect + save the card for future use).
-    isSetupIntent?: boolean;
+    memberId: string | null;
+    metadata: Record<string, string>;
   };
   memberId?: string | null;
   onClose: () => void;
@@ -3426,17 +3417,13 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saveCard, setSaveCard] = useState(false);
-  // Name on card. Defaults to the member's name so the typical
-  // in-person sale is one-tap, but editable so a parent / spouse /
-  // friend paying for the member can enter THEIR own name -- Stripe
-  // + issuing banks reject / flag charges where billing_details.name
-  // doesn't match the cardholder on file.
   const [cardholderName, setCardholderName] = useState(data.memberName || "");
-  // Three separate refs (number / expiry / cvc) instead of the all-in-one
-  // CardElement. Mobile OSes (iOS, Android) attach the native "Scan Card"
-  // button to the card-number field when it's a dedicated element with the
-  // right autocomplete hints — the all-in-one element doesn't trigger it
-  // reliably. Member can still tap and type if they prefer.
+  // $0 sales still need to save the card (recurring will bill against
+  // it later), so the modal always opens in "payment" mode UNLESS the
+  // total is zero -- in which case we flip to Stripe's SetupIntent
+  // path via `mode: "setup"`. Either way NO Stripe call happens until
+  // the admin clicks Pay Amount below.
+  const isSetupIntent = data.amountCents === 0;
   const cardNumberRef = useRef<HTMLDivElement>(null);
   const cardExpiryRef = useRef<HTMLDivElement>(null);
   const cardCvcRef = useRef<HTMLDivElement>(null);
@@ -3447,7 +3434,25 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
       loadStripe(data.publishableKey).then(s => {
         if (!mounted || !s) return;
         setStripe(s);
-        const el = s.elements({ clientSecret: data.clientSecret });
+        // DEFERRED init -- Elements can render the card fields off
+        // the publishable key + mode + amount, without a
+        // client_secret. The PaymentIntent (or SetupIntent) is
+        // created only when handleSubmit fires. Cancelling before
+        // that point never touches Stripe. Split by mode so the
+        // Stripe TS overload picks the right shape ("payment"
+        // requires amount, "setup" doesn't accept it).
+        const el = isSetupIntent
+          ? s.elements({
+              mode: "setup",
+              currency: data.currency || "usd",
+              paymentMethodCreation: "manual",
+            })
+          : s.elements({
+              mode: "payment",
+              amount: data.amountCents,
+              currency: data.currency || "usd",
+              paymentMethodCreation: "manual",
+            });
         setElements(el);
         const baseStyle = {
           base: { fontSize: "14px", color: "#1f2937", "::placeholder": { color: "#9ca3af" } },
@@ -3462,7 +3467,7 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
       });
     });
     return () => { mounted = false; };
-  }, [data.publishableKey, data.clientSecret]);
+  }, [data.publishableKey, data.amountCents, data.currency, isSetupIntent]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -3470,10 +3475,37 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
     setSaving(true);
     setError("");
 
+    // Only NOW do we call our backend to create the Stripe
+    // PaymentIntent / SetupIntent. If this fails we never even try
+    // to charge -- nothing lingers in Stripe as incomplete.
+    let clientSecret: string | null = null;
+    let paymentIntentId: string | null = null;
+    try {
+      const res = await fetch("/api/pos/create-payment-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountCents: data.amountCents,
+          memberId: data.memberId,
+          memberName: data.memberName || undefined,
+          metadata: data.metadata,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text() || "Failed to create payment intent");
+      const j = await res.json();
+      clientSecret = j.clientSecret || null;
+      paymentIntentId = j.paymentIntentId || null;
+      if (!clientSecret) throw new Error(j.error || "No client secret returned");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reach payment processor");
+      setSaving(false);
+      return;
+    }
+
     // SetupIntent path: $0 total. We collect + save the card without
     // charging it; recurring billing will hit the saved card later.
-    if (data.isSetupIntent) {
-      const { error: setupError, setupIntent } = await stripe.confirmCardSetup(data.clientSecret, {
+    if (isSetupIntent) {
+      const { error: setupError, setupIntent } = await stripe.confirmCardSetup(clientSecret, {
         payment_method: {
           card: elements.getElement("cardNumber")!,
           billing_details: { name: cardholderName.trim() || data.memberName || undefined },
@@ -3489,10 +3521,8 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
           const pmId = typeof setupIntent.payment_method === "string"
             ? setupIntent.payment_method
             : setupIntent.payment_method.id;
-          // Always default-save in the $0 flow — that's the whole point.
           await fetch(`/api/members/${memberId}/payment-methods/${pmId}/default`, { method: "PUT" }).catch(() => {});
         }
-        // No PaymentIntent ID exists; transaction record gets a null id.
         onSuccess("");
       } else {
         setError("Card was not saved");
@@ -3502,10 +3532,10 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
     }
 
     // Standard PaymentIntent path: actually charges the card.
-    const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(data.clientSecret, {
+    const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
       payment_method: {
-        card: elements.getElement("card")!,
-        billing_details: { name: data.memberName || undefined },
+        card: elements.getElement("cardNumber")!,
+        billing_details: { name: cardholderName.trim() || data.memberName || undefined },
       },
     });
 
@@ -3520,7 +3550,7 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
         const pmId = typeof paymentIntent.payment_method === "string" ? paymentIntent.payment_method : paymentIntent.payment_method.id;
         fetch(`/api/members/${memberId}/payment-methods/${pmId}/default`, { method: "PUT" }).catch(() => {});
       }
-      onSuccess(paymentIntent.id);
+      onSuccess(paymentIntent.id || paymentIntentId || "");
     } else {
       setError("Payment was not completed");
       setSaving(false);
@@ -3532,7 +3562,7 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
       <div className="w-full max-w-sm rounded-lg bg-white shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
           <h2 className="text-sm font-bold text-gray-900">
-            {data.isSetupIntent
+            {isSetupIntent
               ? "Save Card — $0.00 today"
               : `Card Payment — $${(data.amountCents / 100).toFixed(2)}`}
           </h2>
@@ -3562,7 +3592,7 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
               </p>
             )}
           </div>
-          {data.isSetupIntent && (
+          {isSetupIntent && (
             <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
               No charge today. Your card will be saved on file and used for any
               recurring membership payments.
@@ -3588,7 +3618,7 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
             </div>
           </div>
           {/* Save-as-default is implicit in the SetupIntent flow — no checkbox needed. */}
-          {memberId && !data.isSetupIntent && (
+          {memberId && !isSetupIntent && (
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -3605,7 +3635,7 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
             <button type="submit" disabled={saving || !stripe} className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
               {saving
                 ? "Processing..."
-                : data.isSetupIntent
+                : isSetupIntent
                   ? "Save Card"
                   : `Pay $${(data.amountCents / 100).toFixed(2)}`}
             </button>
