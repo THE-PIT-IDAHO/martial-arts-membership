@@ -125,24 +125,26 @@ function Hero() {
     // without escaping this section and getting hidden behind the
     // layout's bg-white (which was the reason v1 rendered blank).
     <section id="top" className="relative isolate overflow-hidden">
-      {/* Hero background: sunset kick silhouette. object-cover with
-          object-center works at every viewport -- on desktop the
-          horizon strip lands mid-hero, on mobile the figure sits
-          centered under the headline. */}
+      {/* Hero background: real check-in kiosk in use at THE PIT --
+          tablet showing "Welcome to THE PIT" over the mats + barcode
+          scanner. object-position biases toward the lower-right so
+          the tablet + hand stay in frame at every viewport width
+          (the tablet is the money shot, not the ceiling). */}
       <div className="absolute inset-0 -z-10" aria-hidden="true">
         <img
-          src="/marketing/hero-kick-silhouette.jpg"
+          src="/marketing/hero-kiosk.jpg"
           alt=""
-          className="w-full h-full object-cover object-center"
+          className="w-full h-full object-cover"
+          style={{ objectPosition: "70% 65%" }}
         />
         {/* White overlay fades left→right so the headline stays legible
-            over the twilight sky while the silhouette on the right
-            still reads through clearly. */}
+            over the darker left side of the frame (person's shirt +
+            chairs) while the kiosk on the right reads through clearly. */}
         <div
           className="absolute inset-0"
           style={{
             background:
-              "linear-gradient(to right, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.88) 45%, rgba(255,255,255,0.55) 75%, rgba(255,255,255,0.25) 100%)",
+              "linear-gradient(to right, rgba(255,255,255,0.97) 0%, rgba(255,255,255,0.92) 40%, rgba(255,255,255,0.55) 70%, rgba(255,255,255,0.20) 100%)",
           }}
         />
         {/* Brand-tint band at the very top -- kept from the original
