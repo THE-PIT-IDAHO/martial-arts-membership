@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * Dojo Storm Software marketing landing page.
@@ -272,114 +272,178 @@ function HowItWorks() {
 // Pricing
 // ---------------------------------------------------------------------------
 
+type ApiTier = {
+  id: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  billingPeriod: string;
+  maxMembers: number;
+  maxStyles: number;
+  maxUsers: number;
+  maxLocations: number;
+  maxReports: number;
+  maxPOSItems: number;
+  allowStripe: boolean;
+  allowPaypal: boolean;
+  allowSquare: boolean;
+};
+
 function Pricing() {
-  const tiers = [
-    {
-      name: "Starter",
-      price: "$49",
-      period: "/mo",
-      blurb: "Solo instructor or brand-new school.",
-      features: [
-        "Up to 50 active members",
-        "Full member + membership management",
-        "POS with card + cash + check",
-        "Auto-billing + dunning",
-        "Curriculum & testing",
-        "Email support",
-      ],
-      cta: "Book a demo",
-      highlight: false,
-    },
-    {
-      name: "Standard",
-      price: "$99",
-      period: "/mo",
-      blurb: "The typical dojo running the whole thing off Dojo Storm.",
-      features: [
-        "Up to 250 active members",
-        "Everything in Starter",
-        "Coach roles + per-role permissions",
-        "Member portal PWA",
-        "Kiosk sign-in",
-        "Priority email support",
-      ],
-      cta: "Book a demo",
-      highlight: true,
-    },
-    {
-      name: "Pro",
-      price: "$199",
-      period: "/mo",
-      blurb: "Multi-style school with staff, front desk, and heavy scheduling.",
-      features: [
-        "Unlimited active members",
-        "Everything in Standard",
-        "Multi-location / multi-style",
-        "Front-desk + admin roles",
-        "Advanced reports + margin",
-        "Onboarding call included",
-      ],
-      cta: "Book a demo",
-      highlight: false,
-    },
-  ];
+  const [tiers, setTiers] = useState<ApiTier[] | null>(null);
+  const [errored, setErrored] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/marketing/tiers")
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.statusText)))
+      .then((j) => setTiers(Array.isArray(j.tiers) ? j.tiers : []))
+      .catch(() => setErrored(true));
+  }, []);
+
+  // Highlight the middle tier (by count) as "Most popular" -- a
+  // pure display heuristic so the operator doesn't have to flag one
+  // in the DB. When there's one tier, no highlight; two tiers,
+  // highlight the second (the paid one, usually); three+ tiers,
+  // highlight the middle. Only ranges over what came back from the
+  // API, so hidden founderOnly / inviteOnly tiers never affect it.
+  function isHighlight(index: number, total: number): boolean {
+    if (total <= 1) return false;
+    if (total === 2) return index === 1;
+    return index === Math.floor(total / 2);
+  }
+
   return (
     <section id="pricing" className="py-20 sm:py-24 border-t border-gray-100">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <SectionHeading eyebrow="Pricing" title="Simple monthly pricing. No per-member fees." />
         <p className="mt-4 max-w-2xl text-gray-600">
-          Card processing fees pass through to your own Stripe (or PayPal / Square) account — we don't skim your revenue.
+          Card processing fees pass through to your own Stripe (or PayPal / Square) account — we don&apos;t skim your revenue.
         </p>
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
-          {tiers.map((t) => (
-            <div
-              key={t.name}
-              className={`rounded-2xl p-6 flex flex-col ${
-                t.highlight
-                  ? "border-2 border-primary bg-primary/[0.03] shadow-lg"
-                  : "border border-gray-200 bg-white"
-              }`}
-            >
-              {t.highlight && (
-                <div className="inline-block self-start rounded-full bg-primary text-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide mb-2">
-                  Most popular
+
+        {tiers === null && !errored && (
+          <div className="mt-12 text-sm text-gray-500">Loading pricing…</div>
+        )}
+        {errored && (
+          <div className="mt-12 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Couldn&apos;t load current pricing. Please <a className="underline" href="#contact">get in touch</a> and we&apos;ll send it over.
+          </div>
+        )}
+        {tiers && tiers.length === 0 && !errored && (
+          <div className="mt-12 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+            Pricing is currently being finalized. <a className="underline" href="#contact">Contact us</a> for a tailored quote.
+          </div>
+        )}
+
+        {tiers && tiers.length > 0 && (
+          <div
+            className={`mt-12 grid gap-6 ${
+              tiers.length === 1
+                ? "md:grid-cols-1 max-w-md mx-auto"
+                : tiers.length === 2
+                  ? "md:grid-cols-2"
+                  : tiers.length === 3
+                    ? "md:grid-cols-3"
+                    : "md:grid-cols-2 lg:grid-cols-4"
+            }`}
+          >
+            {tiers.map((t, i) => {
+              const highlight = isHighlight(i, tiers.length);
+              const features = buildFeatureList(t);
+              return (
+                <div
+                  key={t.id}
+                  className={`rounded-2xl p-6 flex flex-col ${
+                    highlight
+                      ? "border-2 border-primary bg-primary/[0.03] shadow-lg"
+                      : "border border-gray-200 bg-white"
+                  }`}
+                >
+                  {highlight && (
+                    <div className="inline-block self-start rounded-full bg-primary text-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide mb-2">
+                      Most popular
+                    </div>
+                  )}
+                  <h3 className="text-xl font-bold text-gray-900">{t.name}</h3>
+                  {t.description && (
+                    <p className="mt-1 text-sm text-gray-500">{t.description}</p>
+                  )}
+                  <div className="mt-4 flex items-baseline">
+                    <span className="text-4xl font-bold text-gray-900">
+                      {t.priceCents === 0 ? "Free" : `$${(t.priceCents / 100).toFixed(0)}`}
+                    </span>
+                    {t.priceCents > 0 && (
+                      <span className="ml-1 text-gray-500">/{shortPeriod(t.billingPeriod)}</span>
+                    )}
+                  </div>
+                  <ul className="mt-6 space-y-2 text-sm text-gray-700 flex-1">
+                    {features.map((f) => (
+                      <li key={f} className="flex items-start gap-2">
+                        <svg className="w-4 h-4 mt-0.5 text-primary shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <a
+                    href="#contact"
+                    className={`mt-6 block text-center rounded-md py-2.5 text-sm font-semibold ${
+                      highlight
+                        ? "bg-primary text-white hover:bg-primaryDark"
+                        : "border border-gray-300 text-gray-800 hover:bg-gray-50"
+                    }`}
+                  >
+                    Book a demo
+                  </a>
                 </div>
-              )}
-              <h3 className="text-xl font-bold text-gray-900">{t.name}</h3>
-              <p className="mt-1 text-sm text-gray-500">{t.blurb}</p>
-              <div className="mt-4 flex items-baseline">
-                <span className="text-4xl font-bold text-gray-900">{t.price}</span>
-                <span className="ml-1 text-gray-500">{t.period}</span>
-              </div>
-              <ul className="mt-6 space-y-2 text-sm text-gray-700 flex-1">
-                {t.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2">
-                    <svg className="w-4 h-4 mt-0.5 text-primary shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-              <a
-                href="#contact"
-                className={`mt-6 block text-center rounded-md py-2.5 text-sm font-semibold ${
-                  t.highlight
-                    ? "bg-primary text-white hover:bg-primaryDark"
-                    : "border border-gray-300 text-gray-800 hover:bg-gray-50"
-                }`}
-              >
-                {t.cta}
-              </a>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
         <p className="mt-8 text-xs text-gray-500 text-center">
-          Pricing is illustrative. Contact us for a quote tailored to your gym.
+          Not sure which tier fits? <a className="underline" href="#contact">Talk to us</a> and we&apos;ll help pick the right one.
         </p>
       </div>
     </section>
   );
+}
+
+/** Human-readable feature bullets derived from the tier's caps + toggles.
+ *  Keeps the marketing page in step with what's actually configured in
+ *  /admin/pricing without asking the operator to write bullet copy. */
+function buildFeatureList(t: ApiTier): string[] {
+  const bullets: string[] = [];
+  bullets.push(memberBullet(t.maxMembers));
+  if (t.maxStyles > 0) bullets.push(styleBullet(t.maxStyles));
+  if (t.maxUsers > 0) bullets.push(userBullet(t.maxUsers));
+  if (t.maxLocations > 1) bullets.push(`${t.maxLocations} locations`);
+  if (t.maxReports > 0) bullets.push(`${t.maxReports === 999 ? "Unlimited" : t.maxReports} custom reports`);
+  if (t.maxPOSItems > 0) bullets.push(`${t.maxPOSItems === 999 ? "Unlimited" : t.maxPOSItems} POS items`);
+  const processors: string[] = [];
+  if (t.allowStripe) processors.push("Stripe");
+  if (t.allowPaypal) processors.push("PayPal");
+  if (t.allowSquare) processors.push("Square");
+  if (processors.length > 0) bullets.push(`Card processing: ${processors.join(" · ")}`);
+  return bullets;
+}
+function memberBullet(n: number): string {
+  if (n >= 999) return "Unlimited members";
+  return `Up to ${n.toLocaleString()} active members`;
+}
+function styleBullet(n: number): string {
+  if (n >= 999) return "Unlimited styles";
+  return `${n} style${n === 1 ? "" : "s"}`;
+}
+function userBullet(n: number): string {
+  if (n >= 999) return "Unlimited admin users";
+  return `${n} admin user${n === 1 ? "" : "s"}`;
+}
+function shortPeriod(period: string): string {
+  const p = period.toLowerCase();
+  if (p === "monthly") return "mo";
+  if (p === "yearly" || p === "annual" || p === "annually") return "yr";
+  if (p === "weekly") return "wk";
+  return period;
 }
 
 // ---------------------------------------------------------------------------
