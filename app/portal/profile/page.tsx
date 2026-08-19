@@ -158,9 +158,9 @@ export default function PortalProfilePage() {
             generic "Admin" wording. */}
         {profile.userId && profile.accessRole && ["OWNER", "ADMIN", "COACH", "FRONT_DESK"].includes(profile.accessRole) && (
           <a
-            href="/dashboard"
+            href="/api/portal/admin-handoff"
             className="mt-3 inline-flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark active:scale-[0.98] transition-transform"
-            title="Open the admin app to sign members in, book appointments, and use the tools available to your role"
+            title="Open the admin app -- your portal login mints the admin session, no second sign-in needed"
           >
             {profile.accessRole === "COACH"
               ? "Coach Tools"
