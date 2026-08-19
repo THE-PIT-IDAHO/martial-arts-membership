@@ -27,7 +27,7 @@ const navItems: NavItem[] = [
   { label: "Reports", href: "/reports", permissionKey: "reports" },
   { label: "Tasks", href: "/tasks", permissionKey: "tasks" },
   { label: "Dojo Board", href: "/communication", permissionKey: "communication" },
-  { label: "Communications", href: "/communications", permissionKey: "communication" },
+  { label: "Emails", href: "/communications", permissionKey: "communication" },
   { label: "Kiosk Mode", href: "/kiosk/settings", permissionKey: "kiosk" },
   { label: "Setup", href: "/setup", permissionKey: "setup" },
   { label: "Audit Log", href: "/audit-log", permissionKey: "audit-log" },
