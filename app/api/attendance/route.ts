@@ -155,6 +155,41 @@ export async function POST(req: Request) {
     });
 
     if (existing) {
+      // Duplicate check-in. If the CURRENT attempt would confirm the
+      // row (KIOSK / MANUAL always, or a class where mobileConfirm is
+      // on) and the existing row is still unconfirmed, promote it in
+      // place instead of returning 409. Without this, an early scan
+      // that landed as source=QR (pre-fix, or a stale kiosk browser)
+      // stays permanently unconfirmed no matter how many times the
+      // member rescans -- every retry short-circuits at this branch
+      // before touching the row. Nathan Hall's row was the trigger
+      // for this fix.
+      const shouldConfirm =
+        source === "KIOSK" ||
+        source === "MANUAL" ||
+        (classSession?.mobileConfirm ? true : false);
+      if (shouldConfirm && !existing.confirmed) {
+        const updated = await prisma.attendance.update({
+          where: { id: existing.id },
+          // Also rewrite `source` to the new (trusted) source so
+          // downstream reporting doesn't still call it a "QR" row
+          // when a KIOSK scan just confirmed it.
+          data: { confirmed: true, source: source || existing.source },
+          include: {
+            member: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                primaryStyle: true,
+                stylesNotes: true,
+                rank: true,
+              },
+            },
+          },
+        });
+        return NextResponse.json({ attendance: updated, promoted: true }, { status: 200 });
+      }
       return new NextResponse("Member is already signed in to this class", { status: 409 });
     }
 
