@@ -27,16 +27,23 @@ export async function GET(req: Request) {
     );
   }
 
-  // Sync names from defaults (picks up renames even for customized templates)
+  // Sync names AND variables from defaults on every list. Names catch
+  // renames (even on customized rows). Variables catch newly-supported
+  // {{tokens}} we've added to the notification handlers -- otherwise
+  // gyms whose templates were seeded before the addition never see the
+  // new click-to-insert chip in the editor. Subject/body are never
+  // synced here so a customized template stays customized.
   const defaultMap = new Map(DEFAULT_EMAIL_TEMPLATES.map((t) => [t.eventKey, t]));
   const existing = await prisma.emailTemplate.findMany({ where: { clientId } });
   for (const tpl of existing) {
     const def = defaultMap.get(tpl.eventKey);
-    if (def && tpl.name !== def.name) {
-      await prisma.emailTemplate.update({
-        where: { id: tpl.id },
-        data: { name: def.name },
-      });
+    if (!def) continue;
+    const defaultVars = JSON.stringify(def.variables);
+    const patch: { name?: string; variables?: string } = {};
+    if (tpl.name !== def.name) patch.name = def.name;
+    if (tpl.variables !== defaultVars) patch.variables = defaultVars;
+    if (Object.keys(patch).length > 0) {
+      await prisma.emailTemplate.update({ where: { id: tpl.id }, data: patch });
     }
   }
 

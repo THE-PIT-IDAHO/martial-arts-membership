@@ -110,51 +110,70 @@ function getPortalBaseUrl(): string {
   return "https://app.dojostormsoftware.com";
 }
 
-// Build the "Open My Portal" CTA block included in welcome / waiver-confirm
-// / contract-signed emails. Returns empty string when the member has no
-// email (no token can be minted). expiresInMinutes defaults to 7 days for
-// account-setup emails — much longer than the 15-min default for regular
-// login magic links since these may sit unopened for days.
+// Mint a magic-link portal URL for a member. Returns null when the
+// member has no email address (no token to send to). Split out so
+// callers that need BOTH the raw URL (for a template variable like
+// {{portalLoginUrl}}) and the pre-rendered card HTML (portalSection)
+// can share a single token instead of minting two.
+async function mintPortalUrl(
+  memberId: string,
+  expiresInMinutes = 60 * 24 * 7, // 7-day default -- account-setup emails may sit unopened for days
+): Promise<{ url: string; expiryDays: number } | null> {
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { email: true },
+  });
+  if (!member?.email) return null;
+  try {
+    const token = await generateMagicLinkToken(memberId, member.email, expiresInMinutes);
+    return {
+      url: `${getPortalBaseUrl()}/portal/verify?token=${token}`,
+      expiryDays: Math.round(expiresInMinutes / (60 * 24)),
+    };
+  } catch (err) {
+    console.error("Failed to mint portal URL:", err);
+    return null;
+  }
+}
+
+// Render the styled "Open My Portal" CTA card from a URL + expiry.
+// Kept pure/synchronous so it can share a token with buildPortalLoginUrl
+// via the caller. Returns "" for a null minted URL so template
+// interpolation falls through cleanly.
+function renderPortalSectionHtml(
+  minted: { url: string; expiryDays: number } | null,
+  blurb?: string,
+): string {
+  if (!minted) return "";
+  const b =
+    blurb
+    ?? "Use the button below to sign in to your member portal — book classes, view payments, and update your profile.";
+  return `
+      <div style="margin:24px 0;padding:18px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+        <h3 style="margin:0 0 8px;color:#111;">Access your member portal</h3>
+        <p style="margin:0 0 14px;color:#444;font-size:14px;">${b}</p>
+        <p style="margin:0;">
+          <a href="${minted.url}" style="display:inline-block;padding:10px 20px;background:#c41111;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+            Open My Portal
+          </a>
+        </p>
+        <p style="margin:12px 0 0;color:#777;font-size:12px;">
+          This link works for the next ${minted.expiryDays} day${minted.expiryDays === 1 ? "" : "s"}. Once you're in, you can set a permanent password under Profile.
+        </p>
+      </div>
+    `;
+}
+
+// Public convenience wrapper. Callers that only need the card HTML
+// (they aren't using {{portalLoginUrl}} in their template) can keep
+// calling this as-is; internally it mints once and renders once.
 export async function buildPortalSection(params: {
   memberId: string;
   expiresInMinutes?: number;
   blurb?: string;
 }): Promise<string> {
-  const member = await prisma.member.findUnique({
-    where: { id: params.memberId },
-    select: { email: true },
-  });
-  if (!member?.email) return "";
-
-  try {
-    const token = await generateMagicLinkToken(
-      params.memberId,
-      member.email,
-      params.expiresInMinutes ?? 60 * 24 * 7, // 7 days
-    );
-    const portalUrl = `${getPortalBaseUrl()}/portal/verify?token=${token}`;
-    const expiryDays = Math.round((params.expiresInMinutes ?? 60 * 24 * 7) / (60 * 24));
-    const blurb =
-      params.blurb
-      ?? "Use the button below to sign in to your member portal — book classes, view payments, and update your profile.";
-    return `
-      <div style="margin:24px 0;padding:18px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
-        <h3 style="margin:0 0 8px;color:#111;">Access your member portal</h3>
-        <p style="margin:0 0 14px;color:#444;font-size:14px;">${blurb}</p>
-        <p style="margin:0;">
-          <a href="${portalUrl}" style="display:inline-block;padding:10px 20px;background:#c41111;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
-            Open My Portal
-          </a>
-        </p>
-        <p style="margin:12px 0 0;color:#777;font-size:12px;">
-          This link works for the next ${expiryDays} day${expiryDays === 1 ? "" : "s"}. Once you're in, you can set a permanent password under Profile.
-        </p>
-      </div>
-    `;
-  } catch (err) {
-    console.error("Failed to build portal section:", err);
-    return "";
-  }
+  const minted = await mintPortalUrl(params.memberId, params.expiresInMinutes);
+  return renderPortalSectionHtml(minted, params.blurb);
 }
 
 // --- 1. Welcome Email ---
@@ -169,12 +188,18 @@ export async function sendWelcomeEmail(params: {
   const emails = await resolveRecipientEmails(params.memberId);
   if (emails.length === 0) return;
   const brand = await getGymBranding(clientId);
-  const portalSection = await buildPortalSection({ memberId: params.memberId });
+  // Mint the portal magic link ONCE so both {{portalSection}} (the full
+  // styled card) and {{portalLoginUrl}} (the raw URL, for custom "click
+  // here to set your password" links) share the same token.
+  const minted = await mintPortalUrl(params.memberId);
+  const portalSection = renderPortalSectionHtml(minted);
+  const portalLoginUrl = minted?.url || "";
   const resolved = await resolveTemplate("welcome", {
     memberName: params.memberName,
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
     portalSection,
+    portalLoginUrl,
   }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
@@ -491,14 +516,18 @@ export async function sendWaiverReceivedEmail(params: {
   memberId?: string;
 }) {
   const brand = await getGymBranding(params.clientId);
-  const portalSection = params.memberId
-    ? await buildPortalSection({ memberId: params.memberId })
-    : "";
+  // Mint the portal magic link once and share it across both
+  // {{portalSection}} (the styled card) and {{portalLoginUrl}} (the
+  // raw URL, for custom inline links in operator-edited templates).
+  const minted = params.memberId ? await mintPortalUrl(params.memberId) : null;
+  const portalSection = renderPortalSectionHtml(minted);
+  const portalLoginUrl = minted?.url || "";
   const resolved = await resolveTemplate("enrollment_confirmation", {
     firstName: params.firstName,
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
     portalSection,
+    portalLoginUrl,
   }, { memberId: params.memberId, clientId: params.clientId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;
@@ -529,13 +558,16 @@ export async function sendContractSignedEmail(params: {
   const emails = await resolveRecipientEmails(params.memberId);
   if (emails.length === 0) return;
   const brand = await getGymBranding(params.clientId);
-  const portalSection = await buildPortalSection({ memberId: params.memberId });
+  const minted = await mintPortalUrl(params.memberId);
+  const portalSection = renderPortalSectionHtml(minted);
+  const portalLoginUrl = minted?.url || "";
   const resolved = await resolveTemplate("contract_signed", {
     memberName: params.memberName,
     planName: params.planName,
     gymName: brand.gymName,
     gymEmail: brand.gymEmail,
     portalSection,
+    portalLoginUrl,
   }, { memberId: params.memberId });
   if (!resolved) return;
   const { subject, bodyHtml } = resolved;

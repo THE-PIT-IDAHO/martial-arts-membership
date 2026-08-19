@@ -21,7 +21,7 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     {{portalSection}}
     <p>If you have any questions, feel free to reach out to us at {{gymEmail}}.</p>
     <p>See you on the mat!</p>`,
-    variables: ["memberName", "gymName", "gymEmail", "portalSection"],
+    variables: ["memberName", "gymName", "gymEmail", "portalSection", "portalLoginUrl"],
   },
   {
     eventKey: "birthday",
@@ -258,7 +258,7 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     <p>Please keep this document for your records.</p>
     {{portalSection}}
     <p style="color:#666;font-size:12px;margin-top:24px;">If you have any questions, please contact us at {{gymEmail}}.</p>`,
-    variables: ["memberName", "planName", "gymName", "gymEmail", "portalSection"],
+    variables: ["memberName", "planName", "gymName", "gymEmail", "portalSection", "portalLoginUrl"],
   },
 
   // --- Enrollment ---
@@ -271,7 +271,7 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     <p>Your liability waiver at <strong>{{gymName}}</strong> has been reviewed and confirmed.</p>
     {{portalSection}}
     <p>Thank you for completing your waiver. If you have any questions, feel free to contact us at {{gymEmail}}.</p>`,
-    variables: ["firstName", "gymName", "gymEmail", "portalSection"],
+    variables: ["firstName", "gymName", "gymEmail", "portalSection", "portalLoginUrl"],
   },
 
   // --- Waiver ---

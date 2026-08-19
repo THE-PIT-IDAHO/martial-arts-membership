@@ -3,6 +3,35 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { TEMPLATE_CATEGORIES, TEMPLATE_TRIGGERS } from "@/lib/email-template-defaults";
 
+// Human-readable descriptions for the variable chips in the editor.
+// Anything not listed here still renders (fall back to the raw name),
+// so an unfamiliar variable name doesn't hide the chip.
+const VARIABLE_DESCRIPTIONS: Record<string, string> = {
+  memberName: "Member's full name (first + last)",
+  firstName: "Member's first name only",
+  gymName: "Your gym's name (from Account settings)",
+  gymEmail: "Your gym's contact email address",
+  memberEmail: "The recipient member's email address",
+  portalSection:
+    "Pre-styled \"Access your member portal\" card with an Open My Portal button. Drop it once anywhere in the body.",
+  portalLoginUrl:
+    "Raw magic-link URL that signs the member into their portal and lets them set a password. Use inside your own link, e.g. <a href=\"{{portalLoginUrl}}\">Click here to log in and set your password</a>.",
+  portalUrl: "Portal magic-link URL (same as portalLoginUrl).",
+  planName: "Membership plan name on the transaction / contract",
+  invoiceNumber: "Invoice number (e.g. INV-2026-001)",
+  amount: "Formatted charge amount (e.g. $49.99)",
+  dueDate: "Formatted invoice due date",
+  newRank: "New rank name after promotion",
+  styleName: "Style name (e.g. BJJ, Karate)",
+  className: "Class name (e.g. Adult No Gi)",
+  classDate: "Formatted class date",
+  classTime: "Formatted class time",
+  daysSinceLastClass: "Number of days since the member's last check-in",
+  itemName: "POS item name (for stock alerts)",
+  currentQuantity: "Current on-hand quantity",
+  threshold: "The reorder threshold value",
+};
+
 interface EmailTemplate {
   id: string;
   eventKey: string;
@@ -307,6 +336,7 @@ export default function EmailTemplatesTab() {
                 <button
                   key={v}
                   onClick={() => insertVariable(v)}
+                  title={VARIABLE_DESCRIPTIONS[v] || v}
                   className="text-xs font-mono bg-white border border-gray-300 rounded px-2 py-1 hover:bg-primary hover:text-white hover:border-primary transition-colors"
                 >
                   {`{{${v}}}`}
