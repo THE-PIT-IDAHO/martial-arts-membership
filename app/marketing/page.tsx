@@ -54,7 +54,7 @@ function TopNav() {
             href="#contact"
             className="rounded-md bg-primary text-white text-sm font-semibold px-4 py-2 hover:bg-primaryDark"
           >
-            Book a demo
+            Get in touch
           </a>
         </nav>
         <button
@@ -91,7 +91,7 @@ function TopNav() {
             onClick={() => setOpen(false)}
             className="block mt-2 rounded-md bg-primary text-white text-center font-semibold px-4 py-2 hover:bg-primaryDark"
           >
-            Book a demo
+            Get in touch
           </a>
         </div>
       )}
@@ -133,17 +133,17 @@ function Hero() {
               href="#contact"
               className="rounded-md bg-primary text-white px-5 py-3 text-sm font-semibold hover:bg-primaryDark shadow-sm"
             >
-              Book a live demo
+              Get in touch
             </a>
             <a
               href="#features"
               className="rounded-md border border-gray-300 bg-white text-gray-800 px-5 py-3 text-sm font-semibold hover:bg-gray-50"
             >
-              See what's inside
+              See what&apos;s inside
             </a>
           </div>
           <p className="mt-4 text-xs text-gray-500">
-            No credit card required · 30-day free evaluation
+            30-day free evaluation · no credit card required
           </p>
         </div>
 
@@ -393,7 +393,7 @@ function Pricing() {
                         : "border border-gray-300 text-gray-800 hover:bg-gray-50"
                     }`}
                   >
-                    Book a demo
+                    Get in touch
                   </a>
                 </div>
               );
@@ -480,9 +480,9 @@ function Contact() {
   return (
     <section id="contact" className="py-20 sm:py-24 bg-gray-50 border-t border-gray-100">
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
-        <SectionHeading eyebrow="Get in touch" title="See it running on your own data." />
+        <SectionHeading eyebrow="Get in touch" title="Tell us about your gym." />
         <p className="mt-4 text-gray-600">
-          Tell us a bit about your gym and we'll set up a 20-minute call. We usually respond same day.
+          Questions, quote requests, setup help — send us a note and we&apos;ll usually reply the same day.
         </p>
         <form onSubmit={submit} className="mt-10 grid gap-4">
           <div className="grid gap-4 md:grid-cols-2">
@@ -508,7 +508,7 @@ function Contact() {
               disabled={status === "sending"}
               className="rounded-md bg-primary text-white px-6 py-2.5 text-sm font-semibold hover:bg-primaryDark disabled:opacity-50"
             >
-              {status === "sending" ? "Sending…" : "Request a demo"}
+              {status === "sending" ? "Sending…" : "Send message"}
             </button>
             {status === "sent" && (
               <span className="text-sm text-green-700">Thanks — we'll be in touch shortly.</span>

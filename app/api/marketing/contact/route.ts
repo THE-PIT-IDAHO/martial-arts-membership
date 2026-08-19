@@ -48,10 +48,10 @@ export async function POST(req: Request) {
     const to = process.env.MARKETING_CONTACT_TO || "cruzjuliangomez@gmail.com";
     const from = process.env.MARKETING_CONTACT_FROM || "Dojo Storm <noreply@dojostormsoftware.com>";
 
-    const subject = `[Dojo Storm] Demo request — ${name}${gymName ? ` (${gymName})` : ""}`;
+    const subject = `[Dojo Storm] Contact form — ${name}${gymName ? ` (${gymName})` : ""}`;
     const html = `
 <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #111; max-width: 560px;">
-  <h2 style="margin: 0 0 12px; font-size: 18px;">New demo request</h2>
+  <h2 style="margin: 0 0 12px; font-size: 18px;">New contact form submission</h2>
   <p style="margin: 4px 0;"><strong>Name:</strong> ${escapeHtml(name)}</p>
   <p style="margin: 4px 0;"><strong>Email:</strong> <a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a></p>
   ${gymName ? `<p style="margin: 4px 0;"><strong>Gym:</strong> ${escapeHtml(gymName)}</p>` : ""}
