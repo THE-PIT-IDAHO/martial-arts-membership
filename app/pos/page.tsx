@@ -3558,8 +3558,13 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-lg bg-white shadow-xl" onClick={e => e.stopPropagation()}>
+    // Backdrop click INTENTIONALLY does NOT close the modal -- one
+    // accidental tap outside the card panel used to wipe everything
+    // the admin had already entered (name, card number, expiry, CVC)
+    // and force them to start over. The only ways out now are the X
+    // in the header, the Cancel button, or a successful Pay Amount.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-full max-w-sm rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
           <h2 className="text-sm font-bold text-gray-900">
             {isSetupIntent
