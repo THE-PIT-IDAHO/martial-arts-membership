@@ -42,6 +42,12 @@ interface Profile {
   medicalNotes?: string;
   parentGuardianName?: string;
   uniformSize?: string;
+  // Present when this member has been granted admin login access via
+  // the Admin flow on the admin-side member profile. `userId` set
+  // means the linked User row exists; `accessRole` names which admin
+  // role they hold.
+  accessRole?: string | null;
+  userId?: string | null;
 }
 
 export default function PortalProfilePage() {
@@ -140,6 +146,33 @@ export default function PortalProfilePage() {
         </h1>
         {profile.memberNumber && (
           <p className="text-xs text-gray-400 mt-1">Member #{profile.memberNumber}</p>
+        )}
+
+        {/* Admin entry point. Only rendered when THIS member has been
+            granted admin login access (userId set + an admin role
+            flagged). Sends them to /dashboard on the same subdomain --
+            middleware redirects to /login if their admin cookie is
+            missing/expired, so a coach on their phone taps this and
+            lands on the same admin UI a desktop admin uses. Copy adapts
+            to the role so a Front Desk staff member doesn't see the
+            generic "Admin" wording. */}
+        {profile.userId && profile.accessRole && ["OWNER", "ADMIN", "COACH", "FRONT_DESK"].includes(profile.accessRole) && (
+          <a
+            href="/dashboard"
+            className="mt-3 inline-flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark active:scale-[0.98] transition-transform"
+            title="Open the admin app to sign members in, book appointments, and use the tools available to your role"
+          >
+            {profile.accessRole === "COACH"
+              ? "Coach Tools"
+              : profile.accessRole === "FRONT_DESK"
+                ? "Front Desk"
+                : profile.accessRole === "OWNER"
+                  ? "Owner Tools"
+                  : "Admin"}
+            <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
         )}
       </div>
 

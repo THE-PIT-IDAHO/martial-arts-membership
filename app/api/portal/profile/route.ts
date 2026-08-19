@@ -22,6 +22,12 @@ export async function GET(req: NextRequest) {
       stylesNotes: true,
       styleDocuments: true,
       status: true,
+      // For the "Admin" button on the portal profile -- shows when
+      // this member has been granted admin login (userId set). Sends
+      // the admin's role along so the button copy can adapt
+      // ("Coach Tools", "Front Desk Tools", "Admin", ...).
+      accessRole: true,
+      userId: true,
       attendances: {
         where: { confirmed: true },
         select: {
