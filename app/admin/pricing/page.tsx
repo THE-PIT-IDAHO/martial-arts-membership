@@ -25,6 +25,16 @@ type Tier = {
   inviteOnly: boolean;
   isActive: boolean;
   sortOrder: number;
+  stripeProductId?: string | null;
+  stripePriceId?: string | null;
+};
+
+type SyncResult = {
+  tierId: string;
+  name: string;
+  action: "created" | "updated" | "unchanged" | "skipped" | "error";
+  detail: string;
+  error?: string;
 };
 
 export default function PricingTiersPage() {
@@ -34,6 +44,9 @@ export default function PricingTiersPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Record<string, string | boolean>>({});
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResults, setSyncResults] = useState<SyncResult[] | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   async function loadTiers() {
     try {
@@ -106,6 +119,24 @@ export default function PricingTiersPage() {
     loadTiers();
   }
 
+  async function syncToStripe() {
+    if (!confirm("Sync all paid tiers to Stripe? This creates or updates a Product + Price for each active paid tier.")) return;
+    setSyncing(true);
+    setSyncError(null);
+    setSyncResults(null);
+    try {
+      const res = await fetch("/api/admin/tiers/sync-stripe", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Sync failed");
+      setSyncResults(data.results || []);
+      loadTiers();
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   const setF = (key: string, val: string | boolean) => setForm(prev => ({ ...prev, [key]: val }));
 
   return (
@@ -116,10 +147,54 @@ export default function PricingTiersPage() {
             <h1 className="text-2xl font-bold">Pricing Tiers</h1>
             <p className="text-sm text-gray-500">Define plans that can be used when creating signup links</p>
           </div>
-          <button onClick={openCreate} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">
-            Create Tier
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Push tier prices to Stripe. Only paid tiers get synced;
+                free tiers (Founder / Free Testing) are no-ops. */}
+            <button
+              onClick={syncToStripe}
+              disabled={syncing}
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              title="Create / refresh Stripe Products + Prices for every paid tier"
+            >
+              {syncing ? "Syncing…" : "Sync to Stripe"}
+            </button>
+            <button onClick={openCreate} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">
+              Create Tier
+            </button>
+          </div>
         </div>
+
+        {syncError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+            {syncError}
+          </div>
+        )}
+        {syncResults && (
+          <div className="rounded-md border border-gray-200 bg-white p-3">
+            <h3 className="text-xs font-bold text-gray-800 mb-2">Stripe sync results</h3>
+            <ul className="space-y-1 text-xs">
+              {syncResults.map((r) => (
+                <li key={r.tierId} className="flex items-start gap-2">
+                  <span
+                    className={
+                      r.action === "error"
+                        ? "text-red-600 font-semibold w-20 shrink-0"
+                        : r.action === "skipped"
+                          ? "text-gray-400 w-20 shrink-0"
+                          : r.action === "unchanged"
+                            ? "text-gray-500 w-20 shrink-0"
+                            : "text-green-700 font-semibold w-20 shrink-0"
+                    }
+                  >
+                    {r.action}
+                  </span>
+                  <span className="font-semibold text-gray-800">{r.name}</span>
+                  <span className="text-gray-500">— {r.detail}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {showCreate && (
           <div className="rounded-lg border border-gray-200 bg-white p-5">

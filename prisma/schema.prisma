@@ -15,148 +15,174 @@ datasource db {
 }
 
 model Client {
-  id              String           @id @default(cuid())
-  name            String
-  slug            String           @unique
-  maxMembers      Int              @default(10)
-  maxStyles       Int              @default(3)
-  maxRanksPerStyle Int             @default(10)
-  maxMembershipPlans Int           @default(3)
-  maxClasses      Int              @default(5)
-  maxUsers        Int              @default(2)
-  maxLocations    Int              @default(1)
-  maxReports      Int              @default(3)
-  maxPOSItems     Int              @default(10)
-  allowStripe     Boolean          @default(false)
-  allowPaypal     Boolean          @default(false)
-  allowSquare     Boolean          @default(false)
-  priceCents      Int              @default(0)
-  isPlatformAdmin Boolean          @default(false)
+  id                           String           @id @default(cuid())
+  name                         String
+  slug                         String           @unique
+  maxMembers                   Int              @default(10)
+  maxStyles                    Int              @default(3)
+  maxRanksPerStyle             Int              @default(10)
+  maxMembershipPlans           Int              @default(3)
+  maxClasses                   Int              @default(5)
+  maxUsers                     Int              @default(2)
+  maxLocations                 Int              @default(1)
+  maxReports                   Int              @default(3)
+  maxPOSItems                  Int              @default(10)
+  allowStripe                  Boolean          @default(false)
+  allowPaypal                  Boolean          @default(false)
+  allowSquare                  Boolean          @default(false)
+  priceCents                   Int              @default(0)
+  isPlatformAdmin              Boolean          @default(false)
   // JSON string of tier ids this Client is specifically entitled to
   // see in the Your Plan picker beyond the public catalog. Feeds the
   // invite-only tier flow: signup links can grant a tier id, and it
   // ends up here on the created Client so their Plan tab includes it.
   // Kept as a raw String to avoid a join table for what is a tiny,
   // append-only list.
-  grantedTierIds  String?
+  grantedTierIds               String?
   // PricingTier.id the Client is currently on. Set by PATCH /api/plan
   // so the Your Plan picker can highlight the right card even when
   // two tiers happen to share the same limits + price (e.g. Founder
   // and Free Testing both being $0 / unlimited). Nullable because
   // legacy Clients from before this field existed fall back to
   // limit-matching.
-  currentTierId   String?
-  trialExpiresAt  DateTime?
-  canceledAt      DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  appointments    Appointment[]
-  classSessions   ClassSession[]
-  members         Member[]
-  memberDiscounts MemberDiscount[]
-  membershipPlans MembershipPlan[]
-  programs        Program[]
-  tasks           Task[]
-  users           User[]
+  currentTierId                String?
+  trialExpiresAt               DateTime?
+  canceledAt                   DateTime?
+  // --- Platform (Dojo Storm) subscription billing ---
+  // These track this Client's subscription to the Dojo Storm PLATFORM
+  // itself (paid by the gym owner), NOT their gym members' billing.
+  // Populated when the owner completes a Stripe Checkout on the
+  // in-app /settings/subscription page. Nullable throughout the
+  // trial (no card yet) and while the platform is on invite-only
+  // grandfathered tiers.
+  stripeCustomerId             String?
+  stripeSubscriptionId         String?
+  // Raw Stripe status: trialing | active | past_due | canceled |
+  // unpaid | incomplete | incomplete_expired. Kept as a raw string
+  // so a new Stripe status value doesn't require a migration.
+  subscriptionStatus           String?
+  subscriptionCurrentPeriodEnd DateTime?
+  // Set when the owner schedules a cancellation via the Customer
+  // Portal (cancel_at_period_end). Used to show "Cancels on Feb 3"
+  // banners and to gate access after the period ends.
+  subscriptionCancelAt         DateTime?
+  createdAt                    DateTime         @default(now())
+  updatedAt                    DateTime         @updatedAt
+  appointments                 Appointment[]
+  classSessions                ClassSession[]
+  members                      Member[]
+  memberDiscounts              MemberDiscount[]
+  membershipPlans              MembershipPlan[]
+  programs                     Program[]
+  tasks                        Task[]
+  users                        User[]
 }
 
 model SignupLink {
-  id             String    @id @default(cuid())
-  token          String    @unique @default(cuid())
-  maxMembers     Int       @default(10)
-  maxStyles      Int       @default(3)
-  maxRanksPerStyle Int    @default(10)
-  maxMembershipPlans Int  @default(3)
-  maxClasses     Int       @default(5)
-  maxUsers       Int       @default(2)
-  maxLocations   Int       @default(1)
-  maxReports     Int       @default(3)
-  maxPOSItems    Int       @default(10)
-  allowStripe    Boolean   @default(false)
-  allowPaypal    Boolean   @default(false)
-  allowSquare    Boolean   @default(false)
-  priceCents     Int       @default(0)
-  trialMonths    Int       @default(3)
-  expiresAt      DateTime?
-  active         Boolean   @default(true)
-  useCount       Int       @default(0)
-  note           String?
+  id                 String    @id @default(cuid())
+  token              String    @unique @default(cuid())
+  maxMembers         Int       @default(10)
+  maxStyles          Int       @default(3)
+  maxRanksPerStyle   Int       @default(10)
+  maxMembershipPlans Int       @default(3)
+  maxClasses         Int       @default(5)
+  maxUsers           Int       @default(2)
+  maxLocations       Int       @default(1)
+  maxReports         Int       @default(3)
+  maxPOSItems        Int       @default(10)
+  allowStripe        Boolean   @default(false)
+  allowPaypal        Boolean   @default(false)
+  allowSquare        Boolean   @default(false)
+  priceCents         Int       @default(0)
+  trialMonths        Int       @default(3)
+  expiresAt          DateTime?
+  active             Boolean   @default(true)
+  useCount           Int       @default(0)
+  note               String?
   // If set, gyms created via this link get the referenced tier
   // added to their Client.grantedTierIds. That is how the invite-
   // only "Free Testing" tier reaches invited gyms without becoming
   // visible to everyone. Nullable so links that don't grant any
   // invite-only tier just skip it.
-  grantsTierId   String?
-  createdAt      DateTime  @default(now())
+  grantsTierId       String?
+  createdAt          DateTime  @default(now())
 }
 
 model PricingTier {
-  id              String   @id @default(cuid())
-  name            String
-  description     String?
-  priceCents      Int      @default(0)
-  billingPeriod   String   @default("monthly")
-  maxMembers      Int      @default(10)
-  maxStyles       Int      @default(3)
-  maxRanksPerStyle Int     @default(10)
-  maxMembershipPlans Int   @default(3)
-  maxClasses      Int      @default(5)
-  maxUsers        Int      @default(2)
-  maxLocations    Int      @default(1)
-  maxReports      Int      @default(3)
-  maxPOSItems     Int      @default(10)
-  allowStripe     Boolean  @default(false)
-  allowPaypal     Boolean  @default(false)
-  allowSquare     Boolean  @default(false)
-  isActive        Boolean  @default(true)
-  sortOrder       Int      @default(0)
+  id                 String   @id @default(cuid())
+  name               String
+  description        String?
+  priceCents         Int      @default(0)
+  billingPeriod      String   @default("monthly")
+  maxMembers         Int      @default(10)
+  maxStyles          Int      @default(3)
+  maxRanksPerStyle   Int      @default(10)
+  maxMembershipPlans Int      @default(3)
+  maxClasses         Int      @default(5)
+  maxUsers           Int      @default(2)
+  maxLocations       Int      @default(1)
+  maxReports         Int      @default(3)
+  maxPOSItems        Int      @default(10)
+  allowStripe        Boolean  @default(false)
+  allowPaypal        Boolean  @default(false)
+  allowSquare        Boolean  @default(false)
+  isActive           Boolean  @default(true)
+  sortOrder          Int      @default(0)
   // When true, this tier is only visible to platform-admin gyms
   // (see Client.isPlatformAdmin) -- used for the software owner's
   // internal "Founder" tier so it doesn't show up in the plan
   // picker of every other gym on the platform.
-  founderOnly     Boolean  @default(false)
+  founderOnly        Boolean  @default(false)
   // When true, this tier is hidden from every gym by default and
   // only appears in the plan picker of gyms that were explicitly
   // entitled to it (see Client.grantedTierIds). Used for the
   // "Free Testing" tier: only clients invited via a signup link
   // that grants this tier get to see and select it.
-  inviteOnly      Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  inviteOnly         Boolean  @default(false)
+  // --- Stripe wire-up for platform subscriptions ---
+  // Populated by the /admin/pricing "Sync to Stripe" button, which
+  // creates or updates the matching Stripe Product + Price and stores
+  // the resulting ids here. The Checkout / Portal / subscription
+  // routes then reference stripePriceId directly. Null tiers are
+  // display-only until the operator runs the sync.
+  stripeProductId    String?
+  stripePriceId      String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 model PlatformAnnouncement {
-  id          String   @id @default(cuid())
-  title       String
-  content     String
-  type        String   @default("info")
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  type      String   @default("info")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
 }
 
 model SupportTicket {
-  id          String   @id @default(cuid())
+  id          String         @id @default(cuid())
   clientId    String
   clientName  String
   userId      String?
   userName    String?
   subject     String
   description String
-  status      String   @default("OPEN")
-  priority    String   @default("NORMAL")
+  status      String         @default("OPEN")
+  priority    String         @default("NORMAL")
   replies     SupportReply[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 }
 
 model SupportReply {
-  id          String   @id @default(cuid())
-  ticketId    String
-  authorName  String
-  content     String
-  isStaff     Boolean  @default(false)
-  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
+  id         String        @id @default(cuid())
+  ticketId   String
+  authorName String
+  content    String
+  isStaff    Boolean       @default(false)
+  ticket     SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  createdAt  DateTime      @default(now())
 }
 
 model User {
@@ -175,9 +201,9 @@ model User {
   classScope         String   @default("all")
   mustChangePassword Boolean  @default(false)
   // --- 2FA / TOTP ---
-  totpSecret         String?  // base32-encoded shared secret (null = 2FA not set up)
+  totpSecret         String? // base32-encoded shared secret (null = 2FA not set up)
   totpEnabled        Boolean  @default(false) // only true after first successful verification
-  backupCodes        String?  // JSON array of bcrypt-hashed single-use recovery codes
+  backupCodes        String? // JSON array of bcrypt-hashed single-use recovery codes
   // ---
   clientId           String
   createdAt          DateTime @default(now())
@@ -195,91 +221,91 @@ model User {
 }
 
 model AdminResetToken {
-  id        String   @id @default(cuid())
-  token     String   @unique @default(cuid())
+  id        String    @id @default(cuid())
+  token     String    @unique @default(cuid())
   userId    String
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 }
 
 model Member {
-  id                    String               @id @default(cuid())
-  firstName             String
-  lastName              String
-  email                 String?
-  phone                 String?
-  photoUrl              String?
-  primaryStyle          String?
-  stylesNotes           String?
-  paymentNotes          String?
-  status                String               @default("PROSPECT")
-  dateOfBirth           DateTime?
-  address               String?
-  city                  String?
-  state                 String?
-  zipCode               String?
-  emergencyContactName  String?
-  emergencyContactPhone String?
+  id                           String                @id @default(cuid())
+  firstName                    String
+  lastName                     String
+  email                        String?
+  phone                        String?
+  photoUrl                     String?
+  primaryStyle                 String?
+  stylesNotes                  String?
+  paymentNotes                 String?
+  status                       String                @default("PROSPECT")
+  dateOfBirth                  DateTime?
+  address                      String?
+  city                         String?
+  state                        String?
+  zipCode                      String?
+  emergencyContactName         String?
+  emergencyContactPhone        String?
   // Free-text relationship to this member ("Aunt", "Sister", "Cousin").
   // Per-member: one emergency contact name can be saved with different
   // relationships across a household (Aunt to a kid, Sister to a parent).
   emergencyContactRelationship String?
-  parentGuardianName    String?
-  minorCommsMode        String?               @default("both") // "both" or "parent_only"
-  notes                 String?
-  startDate             DateTime?
-  rank                  String?
-  uniformSize           String?
-  medicalNotes          String?
-  waiverSigned          Boolean              @default(false)
-  waiverSignedAt        DateTime?
-  emailOptIn            Boolean              @default(true)
-  membershipType        String?
-  clientId              String
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
+  parentGuardianName           String?
+  minorCommsMode               String?               @default("both") // "both" or "parent_only"
+  notes                        String?
+  startDate                    DateTime?
+  rank                         String?
+  uniformSize                  String?
+  medicalNotes                 String?
+  waiverSigned                 Boolean               @default(false)
+  waiverSignedAt               DateTime?
+  emailOptIn                   Boolean               @default(true)
+  membershipType               String?
+  clientId                     String
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
   /// Member number – unique per client, starts at 10000001 and up (enforced in API logic)
-  memberNumber          Int?
-  styleDocuments        String?
-  accountCreditCents    Int                  @default(0)
-  accessRole            String?              // "OWNER", "ADMIN", "COACH", "FRONT_DESK"
+  memberNumber                 Int?
+  styleDocuments               String?
+  accountCreditCents           Int                   @default(0)
+  accessRole                   String? // "OWNER", "ADMIN", "COACH", "FRONT_DESK"
   // Link to an admin User row when this member has been granted admin
   // login access via the "Admin" button on their profile. Nullable so
   // most members never have one. onDelete SetNull -- if the User row
   // gets removed elsewhere the Member row stays healthy, and the
   // profile can just re-grant access to create a fresh User.
-  userId                String?              @unique
-  linkedUser            User?                @relation("MemberAdminUser", fields: [userId], references: [id], onDelete: SetNull)
-  stripeCustomerId      String?
-  defaultPaymentMethodId String?
-  paypalPayerId         String?
-  squareCustomerId      String?
-  portalPasswordHash    String?
-  leadSource            String?
-  referredByMemberId    String?
+  userId                       String?               @unique
+  linkedUser                   User?                 @relation("MemberAdminUser", fields: [userId], references: [id], onDelete: SetNull)
+  stripeCustomerId             String?
+  defaultPaymentMethodId       String?
+  paypalPayerId                String?
+  squareCustomerId             String?
+  portalPasswordHash           String?
+  leadSource                   String?
+  referredByMemberId           String?
   // Per-member override for the promotion fee. Takes precedence over the
   // style's promotionFeeCents and the global default. Null = use the
   // style or global fallback.
-  promotionFeeOverrideCents Int?
-  referredBy            Member?   @relation("Referrals", fields: [referredByMemberId], references: [id])
-  referrals             Member[]  @relation("Referrals")
-  attendances           Attendance[]
-  client                Client               @relation(fields: [clientId], references: [id])
-  relationshipsTo       MemberRelationship[] @relation("MemberRelationshipsTo")
-  relationshipsFrom     MemberRelationship[] @relation("MemberRelationshipsFrom")
-  memberships           Membership[]
-  invoices              Invoice[]
-  authTokens            MemberAuthToken[]
-  sessions              MemberSession[]
-  bookings              ClassBooking[]
-  signedWaivers         SignedWaiver[]
-  signedContracts       SignedContract[]
-  trialPasses           TrialPass[]
-  serviceCredits        MemberServiceCredit[]
-  emailLogs             EmailLog[]
-  promotions            Promotion[]
-  discounts             MemberDiscount[]
+  promotionFeeOverrideCents    Int?
+  referredBy                   Member?               @relation("Referrals", fields: [referredByMemberId], references: [id])
+  referrals                    Member[]              @relation("Referrals")
+  attendances                  Attendance[]
+  client                       Client                @relation(fields: [clientId], references: [id])
+  relationshipsTo              MemberRelationship[]  @relation("MemberRelationshipsTo")
+  relationshipsFrom            MemberRelationship[]  @relation("MemberRelationshipsFrom")
+  memberships                  Membership[]
+  invoices                     Invoice[]
+  authTokens                   MemberAuthToken[]
+  sessions                     MemberSession[]
+  bookings                     ClassBooking[]
+  signedWaivers                SignedWaiver[]
+  signedContracts              SignedContract[]
+  trialPasses                  TrialPass[]
+  serviceCredits               MemberServiceCredit[]
+  emailLogs                    EmailLog[]
+  promotions                   Promotion[]
+  discounts                    MemberDiscount[]
 
   @@unique([memberNumber, clientId])
 }
@@ -293,20 +319,20 @@ model Member {
 // applied to a real charge. lasting (oneTime=false): stays active until
 // the operator deletes it.
 model MemberDiscount {
-  id          String   @id @default(cuid())
-  memberId    String
-  clientId    String
-  label       String?
-  appliesTo   String   // POS | MEMBERSHIP | PROMOTION | ALL
-  percentOff  Float?   // 0-100, optional
-  flatCents   Int?     // optional flat-amount alternative
-  oneTime     Boolean  @default(false)
-  active      Boolean  @default(true)
-  usedAt      DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  client      Client   @relation(fields: [clientId], references: [id])
+  id         String    @id @default(cuid())
+  memberId   String
+  clientId   String
+  label      String?
+  appliesTo  String // POS | MEMBERSHIP | PROMOTION | ALL
+  percentOff Float? // 0-100, optional
+  flatCents  Int? // optional flat-amount alternative
+  oneTime    Boolean   @default(false)
+  active     Boolean   @default(true)
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  member     Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  client     Client    @relation(fields: [clientId], references: [id])
 
   @@index([memberId, active])
   @@index([clientId])
@@ -346,124 +372,124 @@ model MembershipType {
 }
 
 model MembershipPlan {
-  id                           String          @id @default(cuid())
+  id                             String          @id @default(cuid())
   /// Membership ID number – unique per tenant (see @@unique below).
   /// Was globally @unique, which caused cross-gym collisions when the
   /// auto-generator picked an id that another tenant already used.
-  membershipId                 String?
+  membershipId                   String?
   /// Membership Type for reporting purposes
-  membershipTypeId             String?
-  name                         String
-  description                  String?
-  priceCents                   Int?
-  setupFeeCents                Int?
-  billingCycle                 String          @default("MONTHLY")
-  contractLengthMonths         Int?
-  autoRenew                    Boolean         @default(true)
-  classesPerDay                Int?
-  classesPerWeek               Int?
-  classesPerMonth              Int?
-  allowedStyles                String?
-  familyDiscountPercent        Int?
-  trialDays                    Int?
-  promoCode                    String?
-  cancellationNoticeDays       Int?
-  cancellationFeeCents         Int?
+  membershipTypeId               String?
+  name                           String
+  description                    String?
+  priceCents                     Int?
+  setupFeeCents                  Int?
+  billingCycle                   String          @default("MONTHLY")
+  contractLengthMonths           Int?
+  autoRenew                      Boolean         @default(true)
+  classesPerDay                  Int?
+  classesPerWeek                 Int?
+  classesPerMonth                Int?
+  allowedStyles                  String?
+  familyDiscountPercent          Int?
+  trialDays                      Int?
+  promoCode                      String?
+  cancellationNoticeDays         Int?
+  cancellationFeeCents           Int?
   // Editable per-plan text rendered inside the contract's Cancellation
   // block (above the Notice + Fee rows). Use it to spell out how the
   // member should actually cancel — e.g. "Email cancel@thepit.com or
   // visit the front desk in writing; confirmation will be provided
   // within 3 business days."
-  cancellationProcedure        String?
-  sortOrder                    Int             @default(0)
-  color                        String?
-  isActive                     Boolean         @default(true)
-  availableOnline              Boolean         @default(false)
-  clientId                     String
-  purchaseLimit                Int?
-  rankPromotionDiscountPercent Int?
+  cancellationProcedure          String?
+  sortOrder                      Int             @default(0)
+  color                          String?
+  isActive                       Boolean         @default(true)
+  availableOnline                Boolean         @default(false)
+  clientId                       String
+  purchaseLimit                  Int?
+  rankPromotionDiscountPercent   Int?
   // Flat dollar discount (in cents) applied to promotion fees on top of (or
   // instead of) the percentage discount. Percent is applied first, then the
   // flat amount is subtracted. Final fee floors at $0.
   rankPromotionDiscountFlatCents Int?
-  otherDiscountPercent         Int?
-  contractClauses              String?
-  memberships                  Membership[]
-  client                       Client          @relation(fields: [clientId], references: [id])
-  membershipType               MembershipType? @relation(fields: [membershipTypeId], references: [id])
+  otherDiscountPercent           Int?
+  contractClauses                String?
+  memberships                    Membership[]
+  client                         Client          @relation(fields: [clientId], references: [id])
+  membershipType                 MembershipType? @relation(fields: [membershipTypeId], references: [id])
 
   @@unique([membershipId, clientId])
 }
 
 model Membership {
-  id                     String         @id @default(cuid())
-  memberId               String
-  membershipPlanId       String
-  startDate              DateTime
-  endDate                DateTime?
-  customPriceCents       Int?
+  id                        String         @id @default(cuid())
+  memberId                  String
+  membershipPlanId          String
+  startDate                 DateTime
+  endDate                   DateTime?
+  customPriceCents          Int?
   // Amount actually charged at signup (after any first-payment discount).
   // Distinct from customPriceCents, which is the recurring amount.
   // Used by the profile to display the correct first-cycle price instead
   // of falling back to the recurring price when first-month-only is set.
-  firstPaymentCents      Int?
-  firstMonthDiscountOnly Boolean        @default(false)
-  lastPaymentDate        DateTime?
-  nextPaymentDate        DateTime?
-  pauseEndDate           DateTime?
-  status                 String         @default("ACTIVE")
-  contractEndDate        DateTime?
+  firstPaymentCents         Int?
+  firstMonthDiscountOnly    Boolean        @default(false)
+  lastPaymentDate           DateTime?
+  nextPaymentDate           DateTime?
+  pauseEndDate              DateTime?
+  status                    String         @default("ACTIVE")
+  contractEndDate           DateTime?
   cancellationRequestDate   DateTime?
   cancellationEffectiveDate DateTime?
-  cancellationReason     String?
-  membershipPlan         MembershipPlan @relation(fields: [membershipPlanId], references: [id])
-  member                 Member         @relation(fields: [memberId], references: [id])
-  invoices               Invoice[]
+  cancellationReason        String?
+  membershipPlan            MembershipPlan @relation(fields: [membershipPlanId], references: [id])
+  member                    Member         @relation(fields: [memberId], references: [id])
+  invoices                  Invoice[]
 }
 
 model ClassSession {
-  id                String       @id @default(cuid())
-  name              String
-  startsAt          DateTime
-  endsAt            DateTime
-  classType         String?
-  classTypes        String?
-  styleIds          String?
-  styleNames        String?
-  styleId           String?
-  styleName         String?
-  minRankId         String?
-  minRankName       String?
-  minRankIds        String?       // JSON array of rank IDs aligned with styleIds, for per-style min ranks
-  isRecurring       Boolean      @default(false)
-  frequencyNumber   Int?
-  frequencyUnit     String?
-  scheduleStartDate DateTime?
-  scheduleEndDate   DateTime?
-  isOngoing         Boolean      @default(true)
-  color             String?      @default("#a3a3a3")
-  programId         String?
-  clientId          String
-  excludedDates     String?
-  coachId           String?
-  coachName         String?
-  maxCapacity       Int?
-  bookingEnabled    Boolean      @default(false)
-  bookingCutoffMins Int?
-  bookingAdvanceDays Int?
-  kioskEnabled      Boolean      @default(false)
-  mobileConfirm     Boolean      @default(false)
+  id                    String         @id @default(cuid())
+  name                  String
+  startsAt              DateTime
+  endsAt                DateTime
+  classType             String?
+  classTypes            String?
+  styleIds              String?
+  styleNames            String?
+  styleId               String?
+  styleName             String?
+  minRankId             String?
+  minRankName           String?
+  minRankIds            String? // JSON array of rank IDs aligned with styleIds, for per-style min ranks
+  isRecurring           Boolean        @default(false)
+  frequencyNumber       Int?
+  frequencyUnit         String?
+  scheduleStartDate     DateTime?
+  scheduleEndDate       DateTime?
+  isOngoing             Boolean        @default(true)
+  color                 String?        @default("#a3a3a3")
+  programId             String?
+  clientId              String
+  excludedDates         String?
+  coachId               String?
+  coachName             String?
+  maxCapacity           Int?
+  bookingEnabled        Boolean        @default(false)
+  bookingCutoffMins     Int?
+  bookingAdvanceDays    Int?
+  kioskEnabled          Boolean        @default(false)
+  mobileConfirm         Boolean        @default(false)
   // When true, the assigned coach is auto-added to the attendance roster
   // (and counts toward their own style requirements). Opt-in per class.
-  coachAttendsAsStudent Boolean  @default(false)
-  minAge            Int?
-  maxAge            Int?
-  attendances       Attendance[]
-  bookings          ClassBooking[]
-  locationId        String?
-  spaceId           String?
-  client            Client       @relation(fields: [clientId], references: [id])
-  program           Program?     @relation(fields: [programId], references: [id])
+  coachAttendsAsStudent Boolean        @default(false)
+  minAge                Int?
+  maxAge                Int?
+  attendances           Attendance[]
+  bookings              ClassBooking[]
+  locationId            String?
+  spaceId               String?
+  client                Client         @relation(fields: [clientId], references: [id])
+  program               Program?       @relation(fields: [programId], references: [id])
 }
 
 model Attendance {
@@ -482,32 +508,32 @@ model Attendance {
 }
 
 model Task {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
-  dueDate     DateTime?
-  priority    String    @default("MEDIUM")
-  recurrence  String?
-  assignedRole String?   // "OWNER", "ADMIN", "COACH", "FRONT_DESK"
-  status      String    @default("OPEN")
-  clientId    String
-  createdAt   DateTime  @default(now())
-  completedAt DateTime?
-  client      Client    @relation(fields: [clientId], references: [id])
+  id           String    @id @default(cuid())
+  title        String
+  description  String?
+  dueDate      DateTime?
+  priority     String    @default("MEDIUM")
+  recurrence   String?
+  assignedRole String? // "OWNER", "ADMIN", "COACH", "FRONT_DESK"
+  status       String    @default("OPEN")
+  clientId     String
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+  client       Client    @relation(fields: [clientId], references: [id])
 }
 
 model Style {
-  id                   String   @id @default(cuid())
+  id                   String      @id @default(cuid())
   name                 String
   shortName            String?
   description          String?
-  beltSystemEnabled    Boolean  @default(false)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  beltSystemEnabled    Boolean     @default(false)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
   beltConfig           String?
   gradingDates         String?
-  testNamingConvention String   @default("INTO_RANK") // "INTO_RANK" = test named for target rank, "FROM_RANK" = test named for current rank
-  curriculumDisclaimer String?  @default("Coach has final say for promotion and not everyone will promote every ceremony. Promotion depends on the following:\nattendance, skill recollection, good behavior, effort and fitness")
+  testNamingConvention String      @default("INTO_RANK") // "INTO_RANK" = test named for target rank, "FROM_RANK" = test named for current rank
+  curriculumDisclaimer String?     @default("Coach has final say for promotion and not everyone will promote every ceremony. Promotion depends on the following:\nattendance, skill recollection, good behavior, effort and fitness")
   // Per-style promotion fee in cents. Takes precedence over the global
   // default in Settings (promotion_fee_cents). Null = use the global fallback.
   promotionFeeCents    Int?
@@ -516,8 +542,8 @@ model Style {
   // override via stylesNotes[].showProgressInPortal (true/false); if
   // undefined they inherit this. Hidden by default — admins can flip on
   // per-style or per-member as they see fit.
-  showProgressInPortal Boolean  @default(false)
-  clientId             String   @default("default-client")
+  showProgressInPortal Boolean     @default(false)
+  clientId             String      @default("default-client")
   ranks                Rank[]
   promotions           Promotion[]
 }
@@ -537,16 +563,16 @@ model Rank {
 }
 
 model RankTest {
-  id          String         @id @default(cuid())
+  id          String             @id @default(cuid())
   name        String
   description String?
   rankId      String
   styleId     String
-  sortOrder   Int            @default(0)
-  isActive    Boolean        @default(true)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  rank        Rank           @relation(fields: [rankId], references: [id], onDelete: Cascade)
+  sortOrder   Int                @default(0)
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  rank        Rank               @relation(fields: [rankId], references: [id], onDelete: Cascade)
   categories  RankTestCategory[]
 }
 
@@ -590,7 +616,7 @@ model RankTestItem {
   duration          String?
   distance          String?
   timeLimit         String?
-  timeLimitOperator String?          // "lte" (<=), "lt" (<), "eq" (=), "gte" (>=), "gt" (>)
+  timeLimitOperator String? // "lte" (<=), "lt" (<), "eq" (=), "gte" (>=), "gt" (>)
   videoUrl          String?
   imageUrl          String?
   showTitleInPdf    Boolean          @default(true)
@@ -677,7 +703,7 @@ model BoardPost {
   authorName     String
   authorInitials String
   isPriority     Boolean      @default(false)
-  pinnedUntil    DateTime?    // Auto-unpin after this date passes (used for event posts)
+  pinnedUntil    DateTime? // Auto-unpin after this date passes (used for event posts)
   styleTags      String?
   reactions      String?
   channelId      String
@@ -748,30 +774,30 @@ model BoardPollVote {
 }
 
 model POSItem {
-  id              String           @id
-  name            String
-  description     String?
-  sku             String?
-  priceCents      Int
+  id               String           @id
+  name             String
+  description      String?
+  sku              String?
+  priceCents       Int
   // Wholesale / landed cost per unit -- what YOU paid to acquire it.
   // Optional (nullable) since older items may not have a cost recorded.
   // Reports use it to derive margin (priceCents - costCents) when set.
-  costCents       Int?
-  quantity        Int              @default(0)
-  category        String?
-  sizes           String?
-  colors          String?
-  variantLabel1   String?
-  variantLabel2   String?
-  itemType        String?
-  isActive        Boolean          @default(true)
-  availableOnline Boolean          @default(false)
+  costCents        Int?
+  quantity         Int              @default(0)
+  category         String?
+  sizes            String?
+  colors           String?
+  variantLabel1    String?
+  variantLabel2    String?
+  itemType         String?
+  isActive         Boolean          @default(true)
+  availableOnline  Boolean          @default(false)
   reorderThreshold Int?
-  clientId        String           @default("default-client")
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime
-  POSLineItem     POSLineItem[]
-  variants        POSItemVariant[]
+  clientId         String           @default("default-client")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime
+  POSLineItem      POSLineItem[]
+  variants         POSItemVariant[]
 
   @@unique([sku, clientId])
 }
@@ -845,10 +871,10 @@ model TestingEvent {
   name         String
   date         DateTime
   time         String?
-  styleId      String                // legacy single style — mirrors first entry of styleIds when multi
+  styleId      String // legacy single style — mirrors first entry of styleIds when multi
   styleName    String
-  styleIds     String?               // JSON array of style IDs for multi-style tests
-  styleNames   String?               // JSON array of style names for multi-style tests
+  styleIds     String? // JSON array of style IDs for multi-style tests
+  styleNames   String? // JSON array of style names for multi-style tests
   location     String?
   notes        String?
   status       String               @default("SCHEDULED")
@@ -859,18 +885,18 @@ model TestingEvent {
 }
 
 model TestingParticipant {
-  id             String       @id @default(cuid())
-  testingEventId String
-  memberId       String
-  memberName     String
-  currentRank    String?
-  testingForRank String?
-  status         String       @default("REGISTERED")
-  score          Int?
-  notes          String?      // Member notes - included in test result PDF
-  adminNotes     String?      // Admin notes - internal only, not included in PDF
-  resultPdfUrl   String?
-  itemScores     String?      // JSON string storing individual item scores: { itemId: { score, passed, notes } }
+  id                 String       @id @default(cuid())
+  testingEventId     String
+  memberId           String
+  memberName         String
+  currentRank        String?
+  testingForRank     String?
+  status             String       @default("REGISTERED")
+  score              Int?
+  notes              String? // Member notes - included in test result PDF
+  adminNotes         String? // Admin notes - internal only, not included in PDF
+  resultPdfUrl       String?
+  itemScores         String? // JSON string storing individual item scores: { itemId: { score, passed, notes } }
   // Set when the admin clicks "Mark Complete" on this participant
   // (either individually, from the bulk grading sheet, or via the
   // event-level Mark Complete). Null = the result is still in draft:
@@ -879,32 +905,32 @@ model TestingParticipant {
   // downloadable on the portal and the grade shows up alongside the
   // member on the Ready-to-Promote list.
   resultsPublishedAt DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  testingEvent   TestingEvent @relation(fields: [testingEventId], references: [id], onDelete: Cascade)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  testingEvent       TestingEvent @relation(fields: [testingEventId], references: [id], onDelete: Cascade)
 }
 
 model PromotionEvent {
-  id           String                 @id @default(cuid())
-  name         String
-  date         DateTime
-  time         String?
+  id                    String                 @id @default(cuid())
+  name                  String
+  date                  DateTime
+  time                  String?
   // Legacy single-style fields (kept so old records still display
   // correctly). New events use styleIds (JSON array) instead and may
   // leave these null.
-  styleId      String?
-  styleName    String?
+  styleId               String?
+  styleName             String?
   // JSON array of Style.id values attached to this event. Multi-style
   // events use this; the eligible-promotions API filters by it when
   // computing the attendance-window cutoff per rank.
-  styleIds     String?
+  styleIds              String?
   // When true (default), the eligible-promotions API caps attendance
   // counting at "event date − rank's attendanceWindow". When false, the
   // window is ignored and ALL attendance since the member's last
   // promotion / reset date counts toward this event. Lets the admin run
   // a one-off "everyone in good standing is eligible" promotion without
   // editing the rank configs.
-  applyAttendanceWindow Boolean @default(true)
+  applyAttendanceWindow Boolean                @default(true)
   // When set, the daily lifecycle cron auto-runs the finish flow on or
   // after this date. Null = manual finish only (admin clicks the button).
   autoFinishAt          DateTime?
@@ -912,14 +938,14 @@ model PromotionEvent {
   // via the button or by the cron). Stops the cron from re-running and
   // lets the modal show a "Finished" badge.
   finishedAt            DateTime?
-  location     String?
-  notes        String?
-  costCents    Int?                   // Optional fee to charge for the promotion
-  status       String                 @default("SCHEDULED") // SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED
-  clientId     String                 @default("default-client")
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
-  participants PromotionParticipant[]
+  location              String?
+  notes                 String?
+  costCents             Int? // Optional fee to charge for the promotion
+  status                String                 @default("SCHEDULED") // SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED
+  clientId              String                 @default("default-client")
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  participants          PromotionParticipant[]
 }
 
 // Promotion: a single recorded rank promotion. Replaces the old
@@ -928,33 +954,33 @@ model PromotionEvent {
 // promotion. The POS transaction holds the financial side; this row holds
 // the rank/test/audit side.
 model Promotion {
-  id                    String   @id @default(cuid())
-  memberId              String
-  styleId               String
-  styleName             String
-  fromRank              String?
-  toRank                String
-  promotedAt            DateTime @default(now())
+  id                   String   @id @default(cuid())
+  memberId             String
+  styleId              String
+  styleName            String
+  fromRank             String?
+  toRank               String
+  promotedAt           DateTime @default(now())
   // Test outcome. Manual today (admin toggles in modal); future testing UI
   // will auto-populate this. PASSED / FAILED / null (not tested / N/A).
-  testResult            String?
-  testParticipantId     String?  // optional link to TestingParticipant
+  testResult           String?
+  testParticipantId    String? // optional link to TestingParticipant
   // Money side. baseCostCents is the fee BEFORE discount; costCents is
   // what was actually charged. discountCents = base - cost.
-  baseCostCents         Int      @default(0)
-  discountCents         Int      @default(0)
-  costCents             Int      @default(0)
-  discountSourcePlanId  String?  // which membership plan supplied the discount
+  baseCostCents        Int      @default(0)
+  discountCents        Int      @default(0)
+  costCents            Int      @default(0)
+  discountSourcePlanId String? // which membership plan supplied the discount
   // PAID = charged successfully (cash/card/account); UNPAID = recorded but
   // not yet collected; CARD_FAILED = card on file declined, member owes.
-  paymentStatus         String   @default("PAID")
-  paymentMethod         String?  // CASH, CARD, ACCOUNT, etc.
-  posTransactionId      String?  // POSTransaction.id if a sale was created
-  promotedById          String?  // staff member id who recorded the promotion
-  notes                 String?
-  clientId              String   @default("default-client")
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  paymentStatus        String   @default("PAID")
+  paymentMethod        String? // CASH, CARD, ACCOUNT, etc.
+  posTransactionId     String? // POSTransaction.id if a sale was created
+  promotedById         String? // staff member id who recorded the promotion
+  notes                String?
+  clientId             String   @default("default-client")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
   style  Style  @relation(fields: [styleId], references: [id])
@@ -983,7 +1009,7 @@ model PromotionParticipant {
   // path skips them. The manual "Finish Event" button still promotes
   // them when clicked.
   autoPromote      Boolean        @default(true)
-  transactionId    String?        // Link to POSTransaction if fee was charged
+  transactionId    String? // Link to POSTransaction if fee was charged
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   promotionEvent   PromotionEvent @relation(fields: [promotionEventId], references: [id], onDelete: Cascade)
@@ -991,9 +1017,9 @@ model PromotionParticipant {
 
 model BoardEvent {
   id          String   @id @default(cuid())
-  sourceType  String   // "testing", "promotion"
-  sourceId    String   // ID of the TestingEvent or PromotionEvent
-  boardPostId String?  // ID of the BoardPost created when posted
+  sourceType  String // "testing", "promotion"
+  sourceId    String // ID of the TestingEvent or PromotionEvent
+  boardPostId String? // ID of the BoardPost created when posted
   clientId    String   @default("default-client")
   createdAt   DateTime @default(now())
 
@@ -1005,11 +1031,11 @@ model WeeklyFocus {
   title          String
   description    String?
   videoUrl       String?
-  rankTestItemId String?   // Optional link to a curriculum item
+  rankTestItemId String? // Optional link to a curriculum item
   isActive       Boolean   @default(true)
   postedAt       DateTime? // When this focus was posted to the feed
   pinnedUntil    DateTime? // Stays pinned in feed until this date/time
-  boardPostId    String?   // ID of the BoardPost created when posted
+  boardPostId    String? // ID of the BoardPost created when posted
   clientId       String    @default("default-client")
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -1053,8 +1079,8 @@ model DirectConversationMember {
 model DirectMessage {
   id             String             @id @default(cuid())
   conversationId String
-  senderType     String             // "admin" or "member"
-  senderId       String?            // memberId when senderType is "member"
+  senderType     String // "admin" or "member"
+  senderId       String? // memberId when senderType is "member"
   content        String
   isRead         Boolean            @default(false)
   clientId       String             @default("default-client")
@@ -1063,11 +1089,11 @@ model DirectMessage {
 }
 
 model Invoice {
-  id                     String     @id @default(cuid())
-  invoiceNumber          String?    @unique
-  membershipId           String
-  memberId               String
-  amountCents            Int
+  id                    String     @id @default(cuid())
+  invoiceNumber         String?    @unique
+  membershipId          String
+  memberId              String
+  amountCents           Int
   // How much of amountCents was covered by the member's account
   // credit balance BEFORE the payment processor was touched. Auto-
   // billing debits this from Member.accountCreditCents so the card
@@ -1075,26 +1101,26 @@ model Invoice {
   // its own column so invoice history shows both the original amount
   // owed and the credit portion, rather than silently reducing
   // amountCents.
-  creditAppliedCents     Int        @default(0)
-  status                 String     @default("PENDING") // PENDING, PAID, FAILED, PAST_DUE, VOID
-  billingPeriodStart     DateTime
-  billingPeriodEnd       DateTime
-  dueDate                DateTime
-  paidAt                 DateTime?
-  paymentMethod          String?
-  transactionId          String?    // Links to POSTransaction when paid
-  stripePaymentIntentId  String?    // Stripe payment intent ID (backward compat)
-  externalPaymentId      String?    // Processor-agnostic payment ID
-  paymentProcessor       String?    // "stripe" | "paypal" | "square"
-  retryCount             Int        @default(0)
-  lastRetryDate          DateTime?
-  nextRetryDate          DateTime?
-  notes                  String?
-  clientId               String     @default("default-client")
-  createdAt              DateTime   @default(now())
-  updatedAt              DateTime   @updatedAt
-  membership             Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
-  member                 Member     @relation(fields: [memberId], references: [id])
+  creditAppliedCents    Int        @default(0)
+  status                String     @default("PENDING") // PENDING, PAID, FAILED, PAST_DUE, VOID
+  billingPeriodStart    DateTime
+  billingPeriodEnd      DateTime
+  dueDate               DateTime
+  paidAt                DateTime?
+  paymentMethod         String?
+  transactionId         String? // Links to POSTransaction when paid
+  stripePaymentIntentId String? // Stripe payment intent ID (backward compat)
+  externalPaymentId     String? // Processor-agnostic payment ID
+  paymentProcessor      String? // "stripe" | "paypal" | "square"
+  retryCount            Int        @default(0)
+  lastRetryDate         DateTime?
+  nextRetryDate         DateTime?
+  notes                 String?
+  clientId              String     @default("default-client")
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  membership            Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  member                Member     @relation(fields: [memberId], references: [id])
 
   @@unique([membershipId, billingPeriodStart])
 }
@@ -1169,9 +1195,9 @@ model PromoCode {
   code              String
   description       String?
   discountType      String    @default("PERCENT") // PERCENT or FIXED
-  discountValue     Int                            // percent (0-100) or cents
-  applicablePlanIds String?                        // JSON array of plan IDs, null = all plans
-  maxRedemptions    Int?                           // null = unlimited
+  discountValue     Int // percent (0-100) or cents
+  applicablePlanIds String? // JSON array of plan IDs, null = all plans
+  maxRedemptions    Int? // null = unlimited
   redemptionCount   Int       @default(0)
   validFrom         DateTime?
   validUntil        DateTime?
@@ -1241,7 +1267,7 @@ model Location {
 }
 
 model WaiverTemplate {
-  id            String        @id @default(cuid())
+  id            String         @id @default(cuid())
   name          String
   // slug: URL-safe identifier, unique per tenant. Used as the share link
   // (/waivers/sign/<slug>) so each template has a stable public address
@@ -1249,21 +1275,21 @@ model WaiverTemplate {
   slug          String?
   // audience: "adult" or "guardian" — picks which form layout (single
   // participant vs dependent + guardian) the public sign page renders.
-  audience      String        @default("adult")
+  audience      String         @default("adult")
   // type: free-text bucket that groups templates regardless of audience
   // (e.g. an "Gym" type can contain both the adult and guardian versions).
   // The admin /waivers page renders one button per distinct type so each
   // group has its own signed-member list.
   type          String?
-  content       String        // JSON sections [{title, content}]
-  options       String?       // JSON: {includeMinorSignature, includeMinorEmail}
-  version       Int           @default(1)
-  isActive      Boolean       @default(true)
-  isDefault     Boolean       @default(false)
+  content       String // JSON sections [{title, content}]
+  options       String? // JSON: {includeMinorSignature, includeMinorEmail}
+  version       Int            @default(1)
+  isActive      Boolean        @default(true)
+  isDefault     Boolean        @default(false)
   archivedAt    DateTime?
-  clientId      String        @default("default-client")
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  clientId      String         @default("default-client")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   signedWaivers SignedWaiver[]
 
   @@unique([clientId, slug])
@@ -1312,7 +1338,7 @@ model TrialPass {
   expiresAt               DateTime
   convertedToMembershipId String?
   status                  String   @default("ACTIVE") // ACTIVE, EXPIRED, CONVERTED
-  classSessionIds         String?  // JSON array of attended class session IDs
+  classSessionIds         String? // JSON array of attended class session IDs
   notes                   String?
   clientId                String   @default("default-client")
   createdAt               DateTime @default(now())

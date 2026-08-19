@@ -2565,6 +2565,23 @@ export default function AccountPage() {
         {/* Plan Tab */}
         {activeTab === "plan" && (
           <div className="space-y-6">
+            {/* Point OWNERs at the real subscription page. The tier
+                grid below still works for free-to-free switches (admin
+                overrides, grandfathered gyms), but any change that
+                involves money now lives on /settings/subscription so
+                Stripe Checkout / the Customer Portal are on the flow. */}
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex items-center justify-between gap-4 flex-wrap">
+              <div className="text-sm text-gray-800">
+                <strong>Manage billing, upgrade, or update your card</strong> on the
+                Subscription page.
+              </div>
+              <a
+                href="/settings/subscription"
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark"
+              >
+                Open Subscription →
+              </a>
+            </div>
             <div className="rounded-lg border border-gray-200 bg-white p-6">
               <h3 className="text-lg font-semibold mb-1">Current Plan</h3>
               <p className="text-sm text-gray-500 mb-4">

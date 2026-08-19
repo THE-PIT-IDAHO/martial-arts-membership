@@ -134,6 +134,22 @@ export default function Header() {
                       </svg>
                       Account Settings
                     </button>
+                    {/* OWNER-only entry point for the Dojo Storm platform
+                        subscription (billing us, not the gym's members).
+                        Non-OWNERs see it too so the menu shape stays
+                        stable across role changes, but the page itself
+                        returns 403 for anyone below OWNER. */}
+                    {user.role === "OWNER" && (
+                      <button
+                        onClick={() => { setMenuOpen(false); router.push("/settings/subscription"); }}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                        </svg>
+                        Subscription
+                      </button>
+                    )}
                   </div>
 
                   {/* Sign out */}
