@@ -193,8 +193,8 @@ function FeaturesGrid() {
       icon: <IconCard />,
     },
     {
-      title: "Member Portal (PWA)",
-      blurb: "A phone app your students install from the browser. Class booking, attendance, messages, waivers, portal magic-link login. Coaches can even sign in others from theirs.",
+      title: "Member Portal",
+      blurb: "A mobile-friendly portal your students open from any browser -- class booking, attendance, messages, waivers, and magic-link sign-in. Coaches can even sign in other members from theirs.",
       icon: <IconPhone />,
     },
     {
