@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
+import { MemberAdminAccessModal } from "@/components/member-admin-access-modal";
 import { formatPaymentMethod } from "@/lib/payment-utils";
 import { getTodayString, parseLocalDate } from "@/lib/dates";
 import { getStyleProgress, type AttendanceRow } from "@/lib/rank-progress";
@@ -695,6 +696,7 @@ export default function MemberProfilePage() {
   // edit flags
   const [editingPhoto, setEditingPhoto] = useState(false);
   const [editingPersonal, setEditingPersonal] = useState(false);
+  const [showAdminAccess, setShowAdminAccess] = useState(false);
   const [editingStyleIndex, setEditingStyleIndex] = useState<number | null>(null);
   const [editingPayments, setEditingPayments] = useState(false);
 
@@ -2629,6 +2631,14 @@ export default function MemberProfilePage() {
                           </button>
                         </>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminAccess(true)}
+                        title="Grant this member admin login access with a chosen role + class-scope"
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                      >
+                        Admin
+                      </button>
                       <button
                         type="button"
                         onClick={() => setEditingPersonal(true)}
@@ -7351,6 +7361,16 @@ export default function MemberProfilePage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Admin-access modal (grant / edit / revoke a Member's admin login).
+          Owns its own data fetch, so we just gate on the open flag. */}
+      {showAdminAccess && member && (
+        <MemberAdminAccessModal
+          memberId={member.id}
+          memberName={`${member.firstName || ""} ${member.lastName || ""}`.trim() || "Member"}
+          onClose={() => setShowAdminAccess(false)}
+        />
       )}
     </AppLayout>
   );

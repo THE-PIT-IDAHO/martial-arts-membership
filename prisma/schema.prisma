@@ -165,6 +165,14 @@ model User {
   passwordHash       String
   name               String?
   role               String   @default("COACH")
+  // Data scoping for class + appointment views. "all" -> the user
+  // sees every class / appointment in the gym (admins, front desk).
+  // "own" -> filtered to entities where coachId matches THIS user's
+  // linked Member (coaches see only what they're assigned to teach).
+  // Configurable per user in the Admin modal on the member profile;
+  // default is set from the role at grant time (COACH -> "own",
+  // OWNER / ADMIN / FRONT_DESK -> "all").
+  classScope         String   @default("all")
   mustChangePassword Boolean  @default(false)
   // --- 2FA / TOTP ---
   totpSecret         String?  // base32-encoded shared secret (null = 2FA not set up)
@@ -175,6 +183,13 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   client             Client   @relation(fields: [clientId], references: [id])
+  // Back-link to the Member row this admin User was created FROM
+  // (via the "Admin" button on the member profile). Optional --
+  // there's still a bootstrap OWNER user seeded at gym create time
+  // that never has a member row. When present, revoking admin access
+  // from the member profile drops this User; deleting the Member also
+  // orphans this pointer (see Member.linkedUser onDelete: SetNull).
+  linkedMember       Member?  @relation("MemberAdminUser")
 
   @@unique([email, clientId])
 }
@@ -229,6 +244,13 @@ model Member {
   styleDocuments        String?
   accountCreditCents    Int                  @default(0)
   accessRole            String?              // "OWNER", "ADMIN", "COACH", "FRONT_DESK"
+  // Link to an admin User row when this member has been granted admin
+  // login access via the "Admin" button on their profile. Nullable so
+  // most members never have one. onDelete SetNull -- if the User row
+  // gets removed elsewhere the Member row stays healthy, and the
+  // profile can just re-grant access to create a fresh User.
+  userId                String?              @unique
+  linkedUser            User?                @relation("MemberAdminUser", fields: [userId], references: [id], onDelete: SetNull)
   stripeCustomerId      String?
   defaultPaymentMethodId String?
   paypalPayerId         String?
