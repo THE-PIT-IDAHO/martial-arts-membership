@@ -19,6 +19,10 @@ type POSItem = {
   description: string | null;
   sku: string | null;
   priceCents: number;
+  // Wholesale / landed cost per unit. Null when the admin never
+  // recorded a cost -- margin reports show "-" in that case rather
+  // than pretending cost was $0.
+  costCents: number | null;
   quantity: number;
   category: string | null;
   sizes: string | null;
@@ -83,6 +87,7 @@ export default function POSItemsPage() {
     description: "",
     sku: "",
     price: "",
+    cost: "",
     quantity: "0",
     category: "",
     sizes: "",
@@ -152,6 +157,7 @@ export default function POSItemsPage() {
       description: "",
       sku: "",
       price: "",
+      cost: "",
       quantity: "0",
       category: "",
       sizes: "",
@@ -174,6 +180,7 @@ export default function POSItemsPage() {
       description: item.description || "",
       sku: item.sku || "",
       price: (item.priceCents / 100).toFixed(2),
+      cost: item.costCents != null ? (item.costCents / 100).toFixed(2) : "",
       quantity: item.quantity.toString(),
       category: item.category || "",
       sizes: parseJsonArray(item.sizes).join(", "),
@@ -241,6 +248,9 @@ export default function POSItemsPage() {
         description: formData.description.trim() || null,
         sku: formData.sku.trim() || null,
         priceCents: parseCents(formData.price),
+        // Empty cost field -> explicit null so PATCH clears any
+        // previously-recorded cost cleanly.
+        costCents: formData.cost.trim() ? parseCents(formData.cost) : null,
         quantity: totalQty,
         category: formData.category.trim() || null,
         sizes: sizesArr.length > 0 ? JSON.stringify(sizesArr) : null,
@@ -729,6 +739,24 @@ export default function POSItemsPage() {
                       placeholder="0.00"
                     />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Cost
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                    <input
+                      type="text"
+                      value={formData.cost}
+                      onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
+                      className="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    What you paid per unit. Leave blank if not tracking cost. Reports use this to show margin.
+                  </p>
                 </div>
                 {!hasFormVariants && (
                   <div>

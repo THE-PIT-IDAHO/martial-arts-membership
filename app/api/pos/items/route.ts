@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { name, description, sku, priceCents, quantity, category, sizes, colors, variantLabel1, variantLabel2, itemType, isActive, availableOnline, variants, reorderThreshold } = body;
+    const { name, description, sku, priceCents, costCents, quantity, category, sizes, colors, variantLabel1, variantLabel2, itemType, isActive, availableOnline, variants, reorderThreshold } = body;
 
     if (!name || priceCents === undefined) {
       return new NextResponse("Name and price are required", { status: 400 });
@@ -74,6 +74,10 @@ export async function POST(req: Request) {
         description: description || null,
         sku: sku || null,
         priceCents,
+        // costCents is optional (null = "no wholesale cost recorded").
+        // Coerce falsy-but-numeric-0 correctly: only null when the
+        // caller explicitly passed null / undefined.
+        costCents: typeof costCents === "number" ? costCents : (costCents == null ? null : Number(costCents) || null),
         quantity: quantity || 0,
         category: category || null,
         sizes: sizes || null,

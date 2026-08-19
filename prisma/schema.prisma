@@ -753,6 +753,10 @@ model POSItem {
   description     String?
   sku             String?
   priceCents      Int
+  // Wholesale / landed cost per unit -- what YOU paid to acquire it.
+  // Optional (nullable) since older items may not have a cost recorded.
+  // Reports use it to derive margin (priceCents - costCents) when set.
+  costCents       Int?
   quantity        Int              @default(0)
   category        String?
   sizes           String?

@@ -36,7 +36,7 @@ export async function PATCH(
     const { id } = await params;
     const clientId = await getClientId(req);
     const body = await req.json();
-    const { name, description, sku, priceCents, quantity, category, sizes, colors, variantLabel1, variantLabel2, itemType, isActive, availableOnline, variants, reorderThreshold } = body;
+    const { name, description, sku, priceCents, costCents, quantity, category, sizes, colors, variantLabel1, variantLabel2, itemType, isActive, availableOnline, variants, reorderThreshold } = body;
 
     // Verify item belongs to tenant
     const existing = await prisma.pOSItem.findFirst({ where: { id, clientId }, select: { id: true } });
@@ -49,6 +49,11 @@ export async function PATCH(
         ...(description !== undefined && { description }),
         ...(sku !== undefined && { sku }),
         ...(priceCents !== undefined && { priceCents }),
+        // Explicit null clears the cost; number sets it; undefined
+        // leaves whatever was there.
+        ...(costCents !== undefined && {
+          costCents: costCents === null || costCents === "" ? null : Number(costCents),
+        }),
         ...(quantity !== undefined && { quantity }),
         ...(category !== undefined && { category }),
         ...(sizes !== undefined && { sizes }),
