@@ -13,6 +13,35 @@ import { useEffect, useState } from "react";
  * /api/marketing/contact, which emails the platform inbox via Resend.
  */
 export default function MarketingHome() {
+  // Intercept every in-page hash link (Features, Pricing, Contact,
+  // the brand logo → top, etc.) and do a manual smooth-scroll with
+  // an offset for the sticky header. Also preventDefault so the URL
+  // bar stays clean -- users don't paste "/#pricing" links, and we
+  // don't have real routed pages, so there's nothing worth putting
+  // in the address bar. External links (Sign in) fall through
+  // untouched because their href doesn't start with "#".
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      let node = e.target as HTMLElement | null;
+      while (node && node.tagName !== "A") node = node.parentElement;
+      if (!node) return;
+      const href = (node as HTMLAnchorElement).getAttribute("href");
+      if (!href || !href.startsWith("#")) return;
+      const id = href.slice(1);
+      if (!id) return;
+      const target = document.getElementById(id);
+      if (!target) return;
+      e.preventDefault();
+      const headerEl = document.querySelector("header");
+      const offset = headerEl ? headerEl.getBoundingClientRect().height : 0;
+      const y = target.getBoundingClientRect().top + window.scrollY - offset;
+      window.scrollTo({ top: y, behavior: "smooth" });
+    }
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, []);
+
   return (
     <>
       <TopNav />
@@ -30,8 +59,51 @@ export default function MarketingHome() {
 // Nav
 // ---------------------------------------------------------------------------
 
+// In-page nav items. `section` is the DOM id of the section the link
+// jumps to -- used by the IntersectionObserver below to highlight the
+// current nav item as the visitor scrolls. Contact + Get in touch both
+// point at the same section on purpose (two entry points, one form);
+// they both light up when #contact is in the read band.
+const NAV_SECTIONS: Array<{ label: string; href: string; section: string }> = [
+  { label: "Features", href: "#features", section: "features" },
+  { label: "How it works", href: "#how", section: "how" },
+  { label: "Pricing", href: "#pricing", section: "pricing" },
+  { label: "Contact", href: "#contact", section: "contact" },
+  { label: "Get in touch", href: "#contact", section: "contact" },
+];
+
 function TopNav() {
   const [open, setOpen] = useState(false);
+  const [active, setActive] = useState<string | null>(null);
+
+  // Active-section tracking. We observe each section with a "read band"
+  // rootMargin (top 40%..bottom 55% of viewport = a ~5%-tall band at
+  // ~42% down) so exactly one section is considered active at a time,
+  // corresponding to where the reader's eye naturally sits. Simpler
+  // thresholds get confused when two sections are visible at once.
+  useEffect(() => {
+    const ids = Array.from(new Set(NAV_SECTIONS.map((n) => n.section)));
+    const targets = ids
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => !!el);
+    if (targets.length === 0) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) setActive(entry.target.id);
+        });
+      },
+      { rootMargin: "-40% 0px -55% 0px", threshold: 0 },
+    );
+    targets.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
+  const linkClass = (section: string) =>
+    active === section
+      ? "text-primary font-semibold"
+      : "text-gray-600 hover:text-gray-900";
+
   return (
     <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-gray-100">
       <div className="max-w-6xl mx-auto flex items-center justify-between px-4 sm:px-6 py-3">
@@ -55,21 +127,19 @@ function TopNav() {
           </div>
         </a>
         <nav className="hidden md:flex items-center gap-6 text-sm">
-          <a href="#features" className="text-gray-600 hover:text-gray-900">Features</a>
-          <a href="#how" className="text-gray-600 hover:text-gray-900">How it works</a>
-          <a href="#pricing" className="text-gray-600 hover:text-gray-900">Pricing</a>
-          <a href="#contact" className="text-gray-600 hover:text-gray-900">Contact</a>
+          {NAV_SECTIONS.map((item) => (
+            <a key={item.label} href={item.href} className={linkClass(item.section)}>
+              {item.label}
+            </a>
+          ))}
+          {/* Sign in is the primary CTA on the marketing site now --
+              gets the filled-red button treatment so it stands apart
+              from the section links. */}
           <a
             href="https://app.dojostormsoftware.com/login"
-            className="text-gray-700 font-semibold hover:text-primary"
-          >
-            Sign in
-          </a>
-          <a
-            href="#contact"
             className="rounded-md bg-primary text-white text-sm font-semibold px-4 py-2 hover:bg-primaryDark"
           >
-            Get in touch
+            Sign in
           </a>
         </nav>
         <button
@@ -85,28 +155,26 @@ function TopNav() {
       </div>
       {open && (
         <div className="md:hidden border-t border-gray-100 px-4 py-3 space-y-2 text-sm bg-white">
-          {[
-            ["Features", "#features"],
-            ["How it works", "#how"],
-            ["Pricing", "#pricing"],
-            ["Contact", "#contact"],
-            ["Sign in", "https://app.dojostormsoftware.com/login"],
-          ].map(([label, href]) => (
+          {NAV_SECTIONS.map((item) => (
             <a
-              key={label}
-              href={href}
+              key={item.label}
+              href={item.href}
               onClick={() => setOpen(false)}
-              className="block py-2 text-gray-700 hover:text-primary"
+              className={`block py-2 ${
+                active === item.section
+                  ? "text-primary font-semibold"
+                  : "text-gray-700 hover:text-primary"
+              }`}
             >
-              {label}
+              {item.label}
             </a>
           ))}
           <a
-            href="#contact"
+            href="https://app.dojostormsoftware.com/login"
             onClick={() => setOpen(false)}
             className="block mt-2 rounded-md bg-primary text-white text-center font-semibold px-4 py-2 hover:bg-primaryDark"
           >
-            Get in touch
+            Sign in
           </a>
         </div>
       )}
