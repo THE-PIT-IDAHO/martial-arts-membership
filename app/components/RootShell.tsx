@@ -4,7 +4,14 @@ import { usePathname } from "next/navigation";
 import Header from "./Header";
 import { ThemeProvider } from "@/components/theme-provider";
 
-const PASSTHROUGH_PREFIXES = ["/portal", "/kiosk", "/waivers/new", "/waivers/sign", "/waiver"];
+// Routes rendered WITHOUT the admin app chrome (Header + fixed-height
+// scroll trap). Public / self-contained surfaces: portal, kiosk,
+// standalone waiver flows, and the public marketing site at
+// /marketing on the www / bare-domain host. Adding marketing here
+// lets its layout run its own natural document flow -- the fixed
+// h-screen overflow-hidden wrapper below made the landing page
+// un-scrollable and rendered the admin Header on top of it.
+const PASSTHROUGH_PREFIXES = ["/portal", "/kiosk", "/waivers/new", "/waivers/sign", "/waiver", "/marketing"];
 const PASSTHROUGH_EXCEPTIONS = ["/kiosk/settings"];
 
 export default function RootShell({ children }: { children: React.ReactNode }) {
