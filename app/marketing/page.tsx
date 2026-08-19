@@ -35,9 +35,24 @@ function TopNav() {
   return (
     <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-gray-100">
       <div className="max-w-6xl mx-auto flex items-center justify-between px-4 sm:px-6 py-3">
-        <a href="#top" className="flex items-center gap-2 font-bold text-lg">
-          <span className="inline-block w-7 h-7 rounded-md bg-primary text-white grid place-items-center text-sm">DS</span>
-          <span>Dojo Storm</span>
+        {/* Same brand lockup used by the in-app Header: /logo.png +
+            uppercase-italic wordmark with a "Software" subline. Uses
+            the dark shimmer variant because this nav sits on a light
+            (white/blur) background. */}
+        <a href="#top" className="flex items-center gap-3">
+          <img
+            src="/logo.png"
+            alt="Dojo Storm"
+            className="h-9 w-9 object-contain drop-shadow-sm"
+          />
+          <div className="flex flex-col leading-none brand-dynamic-dark">
+            <span className="text-xl font-black tracking-wider uppercase italic">
+              Dojo Storm
+            </span>
+            <span className="text-[10px] uppercase tracking-[0.3em] font-semibold hidden sm:block">
+              Software
+            </span>
+          </div>
         </a>
         <nav className="hidden md:flex items-center gap-6 text-sm">
           <a href="#features" className="text-gray-600 hover:text-gray-900">Features</a>
@@ -105,13 +120,15 @@ function TopNav() {
 
 function Hero() {
   return (
-    <section id="top" className="relative overflow-hidden">
-      {/* Hero background: sunset kick silhouette. Sits behind the
-          content via a wrapping absolute layer so the image + its
-          readability overlay stack correctly under normal-flow text.
-          object-cover with object-center works at every viewport --
-          on desktop the horizon strip lands mid-hero, on mobile the
-          figure sits centered under the headline. */}
+    // `isolate` creates a stacking context on the section so the
+    // absolute background layer below can sit behind the content
+    // without escaping this section and getting hidden behind the
+    // layout's bg-white (which was the reason v1 rendered blank).
+    <section id="top" className="relative isolate overflow-hidden">
+      {/* Hero background: sunset kick silhouette. object-cover with
+          object-center works at every viewport -- on desktop the
+          horizon strip lands mid-hero, on mobile the figure sits
+          centered under the headline. */}
       <div className="absolute inset-0 -z-10" aria-hidden="true">
         <img
           src="/marketing/hero-kick-silhouette.jpg"
