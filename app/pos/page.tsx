@@ -209,6 +209,23 @@ export default function POSPage() {
   const [productDiscountType, setProductDiscountType] = useState<"percent" | "amount">("percent");
   const [productDiscountValue, setProductDiscountValue] = useState("");
 
+  // Member-profile discounts. Fetched when a member is attached to the
+  // sale; each row carries a scope (POS / MEMBERSHIP / PROMOTION / ALL)
+  // and a percent + flat off. Applied on top of manual per-line and
+  // per-section discounts so the cashier sees the true out-the-door
+  // price the moment the member is selected. Server independently
+  // re-applies these in /api/pos/transactions, so a tampered client
+  // never gets a bigger discount than the DB actually allows.
+  type MemberDiscountRow = {
+    id: string;
+    label: string | null;
+    appliesTo: string;
+    percentOff: number | null;
+    flatCents: number | null;
+    oneTime: boolean;
+  };
+  const [memberDiscountRows, setMemberDiscountRows] = useState<MemberDiscountRow[]>([]);
+
   // Section discount visibility
   const [showProductDiscount, setShowProductDiscount] = useState(false);
 
@@ -383,6 +400,22 @@ export default function POSPage() {
         }
       })
       .catch(() => {});
+  }, [selectedMember]);
+
+  // Load member-profile discounts on member select. Cleared to [] on
+  // deselect so a lingering set from a previous member never applies
+  // to the next sale.
+  useEffect(() => {
+    if (!selectedMember) {
+      setMemberDiscountRows([]);
+      return;
+    }
+    fetch(`/api/members/${selectedMember.id}/discounts`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        setMemberDiscountRows(Array.isArray(data?.discounts) ? data.discounts : []);
+      })
+      .catch(() => setMemberDiscountRows([]));
   }, [selectedMember]);
 
   async function fetchData() {
@@ -859,10 +892,96 @@ export default function POSPage() {
   const serviceCalc = calcSection(serviceItems, "percent", "");
   const productCalc = calcSection(productItems, productDiscountType, productDiscountValue);
 
+  // Member-profile discounts. Rules match the server (
+  // app/api/pos/transactions/route.ts):
+  //   - POS-scope rows apply to the non-membership subtotal (products,
+  //     services, credit, gift).
+  //   - MEMBERSHIP-scope rows apply to the membership subtotal (first
+  //     payment at signup; recurring cycles are discounted separately
+  //     by the billing job).
+  //   - ALL-scope rows apply once to the whole cart -- routed here to
+  //     the non-membership bucket if there ARE non-membership items,
+  //     otherwise to the membership bucket. Prevents flat-cents ALL
+  //     discounts from being counted twice.
+  // Applied on top of manual per-line + per-section discounts (i.e.
+  // against the post-manual-discount subtotals) so the two systems
+  // stack rather than fight.
+  function computeDiscountFromRows(
+    rows: MemberDiscountRow[],
+    base: number,
+  ): number {
+    if (rows.length === 0 || base <= 0) return 0;
+    let percent = 0;
+    let flat = 0;
+    for (const r of rows) {
+      percent += r.percentOff ?? 0;
+      flat += r.flatCents ?? 0;
+    }
+    const fromPct = Math.round((base * Math.min(percent, 100)) / 100);
+    return Math.min(base, fromPct + flat);
+  }
+
+  const membershipCartTotal = serviceItems
+    .filter((i) => i.type === "membership")
+    .reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
+  const nonMembershipCartTotal = serviceCalc.total + productCalc.total - membershipCartTotal;
+
+  const posDiscountRows = memberDiscountRows.filter((r) => r.appliesTo === "POS");
+  const membershipDiscountRows = memberDiscountRows.filter((r) => r.appliesTo === "MEMBERSHIP");
+  const allScopeRows = memberDiscountRows.filter((r) => r.appliesTo === "ALL");
+
+  // ALL-scope goes to whichever bucket has room. Prefer non-membership
+  // when there is any, so a "10% off everything" discount visibly
+  // reduces the products total (the more common ask).
+  const posBucketRows =
+    nonMembershipCartTotal > 0
+      ? [...posDiscountRows, ...allScopeRows]
+      : posDiscountRows;
+  const membershipBucketRows =
+    nonMembershipCartTotal > 0
+      ? membershipDiscountRows
+      : [...membershipDiscountRows, ...allScopeRows];
+
+  const memberDiscountPosCents = computeDiscountFromRows(posBucketRows, nonMembershipCartTotal);
+  const memberDiscountMembershipCents = computeDiscountFromRows(
+    membershipBucketRows,
+    membershipCartTotal,
+  );
+  const memberDiscountCents = memberDiscountPosCents + memberDiscountMembershipCents;
+
+  // Human-readable label for the summary line (e.g. "10% off").
+  const memberDiscountLabel = (() => {
+    if (memberDiscountCents <= 0) return "";
+    const totalPct = memberDiscountRows.reduce((s, r) => s + (r.percentOff ?? 0), 0);
+    const totalFlat = memberDiscountRows.reduce((s, r) => s + (r.flatCents ?? 0), 0);
+    const parts: string[] = [];
+    if (totalPct > 0) parts.push(`${Math.min(totalPct, 100)}%`);
+    if (totalFlat > 0) parts.push(`-$${(totalFlat / 100).toFixed(2)}`);
+    return parts.join(" + ");
+  })();
+
   const subtotalCents = serviceCalc.subtotal + productCalc.subtotal;
-  const discountCents = serviceCalc.itemDisc + serviceCalc.sectionDisc + productCalc.itemDisc + productCalc.sectionDisc;
-  const taxCents = taxRate > 0 ? Math.round(productCalc.total * taxRate / 100) : 0; // Tax on goods only
-  const totalCents = serviceCalc.total + productCalc.total + taxCents;
+  // Manual discounts (per-item + per-section). Sent to the server as
+  // `discountCents`; member-profile discounts are OMITTED here because
+  // /api/pos/transactions re-computes them from the DB independently
+  // as the source of truth. If we also sent them in this bag they'd
+  // get double-applied at the server.
+  const discountCents =
+    serviceCalc.itemDisc +
+    serviceCalc.sectionDisc +
+    productCalc.itemDisc +
+    productCalc.sectionDisc;
+  // Tax is on the POST-member-discount product total. Same treatment
+  // as manual section discounts -- discounts always reduce the tax
+  // base, otherwise a "10% off" promotion accidentally taxes the
+  // original price.
+  const productTotalAfterMemberDisc = Math.max(0, productCalc.total - memberDiscountPosCents);
+  const taxCents = taxRate > 0 ? Math.round((productTotalAfterMemberDisc * taxRate) / 100) : 0;
+  const totalCents =
+    serviceCalc.total +
+    productCalc.total -
+    memberDiscountCents +
+    taxCents;
 
   // Process checkout
   async function processCheckout() {
@@ -2467,6 +2586,15 @@ export default function POSPage() {
                   <div className="flex justify-between text-green-600">
                     <span>Discounts</span>
                     <span>-{formatCents(discountCents)}</span>
+                  </div>
+                )}
+                {memberDiscountCents > 0 && (
+                  <div className="flex justify-between text-green-600 pl-3 text-xs">
+                    <span>
+                      &nbsp;• Member discount
+                      {memberDiscountLabel ? ` (${memberDiscountLabel})` : ""}
+                    </span>
+                    <span>-{formatCents(memberDiscountCents)}</span>
                   </div>
                 )}
                 {taxCents > 0 && (

@@ -4,7 +4,7 @@ import { getClientId } from "@/lib/tenant";
 import { parseLocalDate } from "@/lib/dates";
 import { calculateNextPaymentDate } from "@/lib/billing";
 import { getAccountPaymentAmount } from "@/lib/payment-utils";
-import { applyMemberDiscounts, markDiscountsUsed } from "@/lib/member-discounts";
+import { markDiscountsUsed } from "@/lib/member-discounts";
 
 import { getFirstRankFromBeltConfig, addRankPdfsToDocuments, type StyleDocument } from "@/lib/belt-config";
 
@@ -109,17 +109,90 @@ export async function POST(req: Request) {
       0
     );
 
-    // Stack per-member discounts on top of the client-supplied discountCents.
-    // Computed against the subtotal so the percent matches what a customer
-    // expects ("10% off my purchase"). Skipped for membership-only carts —
-    // those discounts are applied at billing time instead.
+    // Stack per-member discounts on top of the client-supplied
+    // discountCents (which now carries manual per-item + per-section
+    // discounts only -- the client no longer folds member-profile
+    // discounts into that number, so this is the sole source of truth
+    // for member discounts).
+    //
+    // Rules:
+    //   - MEMBERSHIP-scope rows apply to the membership subtotal
+    //     (first payment at signup; recurring cycles are handled by
+    //     the billing job).
+    //   - POS-scope rows apply to the non-membership subtotal.
+    //   - ALL-scope rows apply once to the whole cart -- routed to
+    //     whichever bucket has room (prefer non-membership since a
+    //     "10% off everything" discount is usually meant for the
+    //     product/service line). Prevents flat-cents ALL discounts
+    //     being counted twice when both buckets have volume.
+    //
+    // The client (app/pos/page.tsx) mirrors this exact logic so the
+    // preview totals shown to the cashier match what actually gets
+    // charged here.
+    type AppliedRow = {
+      id: string;
+      label: string;
+      percentOff: number;
+      flatCents: number;
+      oneTime: boolean;
+    };
+    function computeFromRows(rows: AppliedRow[], base: number): number {
+      if (rows.length === 0 || base <= 0) return 0;
+      let percent = 0;
+      let flat = 0;
+      for (const r of rows) {
+        percent += r.percentOff || 0;
+        flat += r.flatCents || 0;
+      }
+      const fromPct = Math.round((base * Math.min(percent, 100)) / 100);
+      return Math.min(base, fromPct + flat);
+    }
+
     let memberDiscountCents = 0;
-    let appliedMemberDiscounts: Awaited<ReturnType<typeof applyMemberDiscounts>>["applied"] = [];
-    const cartHasNonMembershipItems = lineItems.some((i: any) => i.type !== "membership");
-    if (memberId && cartHasNonMembershipItems) {
-      const result = await applyMemberDiscounts(memberId, "POS", subtotalCents);
-      memberDiscountCents = result.discountCents;
-      appliedMemberDiscounts = result.applied;
+    let appliedMemberDiscounts: AppliedRow[] = [];
+    if (memberId) {
+      const rawRows = await prisma.memberDiscount.findMany({
+        where: {
+          memberId,
+          active: true,
+          appliesTo: { in: ["POS", "MEMBERSHIP", "ALL"] },
+        },
+        select: {
+          id: true,
+          label: true,
+          appliesTo: true,
+          percentOff: true,
+          flatCents: true,
+          oneTime: true,
+        },
+      });
+      const norm = (r: (typeof rawRows)[number]): AppliedRow => ({
+        id: r.id,
+        label: r.label || `${r.appliesTo} discount`,
+        percentOff: r.percentOff ?? 0,
+        flatCents: r.flatCents ?? 0,
+        oneTime: r.oneTime,
+      });
+      const posRows = rawRows.filter((r) => r.appliesTo === "POS").map(norm);
+      const membershipRows = rawRows.filter((r) => r.appliesTo === "MEMBERSHIP").map(norm);
+      const allRows = rawRows.filter((r) => r.appliesTo === "ALL").map(norm);
+
+      const membershipSubtotal = lineItems
+        .filter((i: any) => i.type === "membership")
+        .reduce((sum: number, i: any) => sum + i.unitPriceCents * i.quantity, 0);
+      const nonMembershipSubtotal = subtotalCents - membershipSubtotal;
+
+      const posBucket = nonMembershipSubtotal > 0 ? [...posRows, ...allRows] : posRows;
+      const membershipBucket =
+        nonMembershipSubtotal > 0 ? membershipRows : [...membershipRows, ...allRows];
+
+      const posDiscount = computeFromRows(posBucket, nonMembershipSubtotal);
+      const membershipDiscount = computeFromRows(membershipBucket, membershipSubtotal);
+      memberDiscountCents = posDiscount + membershipDiscount;
+      // markDiscountsUsed only cares about one-time rows; safe to
+      // include the same ALL row twice because both bucket lists
+      // reference it by the same id (updateMany dedupes).
+      appliedMemberDiscounts = [...posBucket, ...membershipBucket];
     }
     const finalDiscountCents = discountCents + memberDiscountCents;
     const totalCents = Math.max(0, subtotalCents - finalDiscountCents + taxCents);
