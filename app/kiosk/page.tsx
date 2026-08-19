@@ -120,7 +120,6 @@ export default function KioskPage() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [scanMode, setScanMode] = useState(false);
-  const [showKeyboard, setShowKeyboard] = useState(false);
 
   // Update clock every second
   useEffect(() => {
@@ -618,7 +617,10 @@ export default function KioskPage() {
   }, [selectedClass, loadAttendees]);
 
   function refocusInput() {
-    setShowKeyboard(false); // Hide keyboard after check-in
+    // Programmatic focus doesn't trigger the virtual keyboard on
+    // mobile -- only real user gestures do -- so this stays quiet
+    // between check-ins. Tapping the input directly still pops the
+    // keyboard, which is what we want for name-typing.
     setTimeout(() => searchInputRef.current?.focus(), 100);
   }
 
@@ -648,7 +650,15 @@ export default function KioskPage() {
           memberId: member.id,
           classSessionId: cls.id,
           attendanceDate: today,
-          source: "QR",
+          // Scanner check-ins happen AT the physical kiosk under
+          // staff supervision -- same trust model as a manual tap.
+          // Marking these as KIOSK (not QR) makes /api/attendance
+          // stamp them confirmed, matching what the check-in banner
+          // on the kiosk already shows. Prior code used "QR" here,
+          // which only auto-confirms when the class has mobileConfirm
+          // set -- barcode-scan check-ins were silently landing as
+          // unconfirmed on classes without that flag.
+          source: "KIOSK",
         }),
       });
       if (res.status === 409) {
@@ -1019,9 +1029,8 @@ export default function KioskPage() {
                         }
                       }}
                       ref={searchInputRef}
-                      placeholder={showKeyboard ? "Type your name..." : "Scan barcode or tap to type"}
+                      placeholder="Scan barcode or tap to type your name"
                       autoFocus
-                      inputMode={showKeyboard ? "text" : "none"}
                       className="w-full text-xl md:text-2xl px-6 py-4 rounded-2xl border-2 border-gray-200 focus:border-primary focus:outline-none transition-colors"
                     />
                     {searchQuery && (
@@ -1038,29 +1047,6 @@ export default function KioskPage() {
                       </button>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowKeyboard(prev => {
-                        const next = !prev;
-                        // Refocus with new inputMode after state updates
-                        setTimeout(() => {
-                          if (searchInputRef.current) {
-                            searchInputRef.current.blur();
-                            setTimeout(() => searchInputRef.current?.focus(), 50);
-                          }
-                        }, 10);
-                        return next;
-                      });
-                    }}
-                    className="mt-2 text-xs text-gray-400 hover:text-primary flex items-center gap-1 mx-auto"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" />
-                    </svg>
-                    {showKeyboard ? "Hide Keyboard" : "Show Keyboard"}
-                  </button>
-
                   {/* Search Results */}
                   {searchResults.length > 0 && (
                     <div className="space-y-2 mb-6 max-h-[300px] overflow-y-auto">
