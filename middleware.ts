@@ -93,6 +93,34 @@ export async function middleware(request: NextRequest) {
   const host = request.headers.get("host") || "localhost:3000";
   const subdomain = extractSubdomain(host);
 
+  // --- Marketing site host: www.dojostormsoftware.com and bare
+  // dojostormsoftware.com serve the public marketing site (not the
+  // app). Rewrite the request into /marketing/* so route files under
+  // that folder render, and bypass every auth / tenant / permission
+  // check. The public API routes under /api/marketing/* also live
+  // here (contact form). Everything else falls through to the
+  // tenant-app flow below. The /marketing prefix is an
+  // implementation detail; the visitor sees "www.dojostormsoftware
+  // .com/" as the URL because Next handles the rewrite transparently.
+  const isBareOrWww = subdomain === null || subdomain === "www";
+  if (isBareOrWww && !host.startsWith("localhost")) {
+    // Serve marketing tree + its API. Anything else on this host is
+    // a legacy link -- redirect it to the app subdomain so it still
+    // works instead of 404ing the visitor.
+    if (pathname === "/" || pathname === "/marketing") {
+      return NextResponse.rewrite(new URL("/marketing", request.url));
+    }
+    if (pathname.startsWith("/marketing") || pathname.startsWith("/api/marketing")) {
+      return NextResponse.next();
+    }
+    // Not a marketing path but arrived on the marketing host --
+    // send them to the same path on the app subdomain. Keeps a
+    // stray /portal/login share link on www working.
+    const url = request.nextUrl.clone();
+    url.host = host.replace(/^(www\.)?/, "app.");
+    return NextResponse.redirect(url);
+  }
+
   // --- Admin subdomain: admin.dojostormsoftware.com ---
   if (subdomain === "admin") {
     // Only allow /admin/* paths and /login on the admin subdomain
