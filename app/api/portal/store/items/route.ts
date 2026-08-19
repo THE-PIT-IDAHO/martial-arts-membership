@@ -6,9 +6,21 @@ export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Scope every catalog read to THIS member's tenant. Without the
+  // clientId filter, POSItem.findMany + MembershipPlan.findMany
+  // returned every gym's for-sale-online catalog to every gym's
+  // portal (phantom plans / items from other tenants showed up in
+  // Store -> Services + Store -> Goods).
+  const member = await prisma.member.findUnique({
+    where: { id: auth.memberId },
+    select: { clientId: true },
+  });
+  if (!member) return NextResponse.json({ error: "Member not found" }, { status: 404 });
+  const clientId = member.clientId;
+
   // Fetch active POS items marked for online sale (with variant stock)
   const posItems = await prisma.pOSItem.findMany({
-    where: { isActive: true, availableOnline: true },
+    where: { clientId, isActive: true, availableOnline: true },
     select: {
       id: true,
       name: true,
@@ -30,7 +42,7 @@ export async function GET(req: NextRequest) {
 
   // Fetch membership plans marked as available for online purchase
   const plans = await prisma.membershipPlan.findMany({
-    where: { isActive: true, availableOnline: true },
+    where: { clientId, isActive: true, availableOnline: true },
     select: {
       id: true,
       name: true,
