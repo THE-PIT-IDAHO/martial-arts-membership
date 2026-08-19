@@ -712,6 +712,11 @@ export async function GET(req: Request) {
     }));
 
     // --- Low Stock Items ---
+    // Threshold is applied PER VARIANT, not to the item's total. A shirt
+    // with 20 XL and 0 of every other size shouldn't hide the fact that
+    // S/M/L need reordering just because the total is comfortably above
+    // the threshold. For no-variant items the base quantity is checked
+    // directly (same as before).
     const allPosItems = await prisma.pOSItem.findMany({
       where: { isActive: true, clientId },
       select: {
@@ -719,23 +724,38 @@ export async function GET(req: Request) {
         name: true,
         quantity: true,
         reorderThreshold: true,
-        variants: { select: { quantity: true } },
+        variants: { select: { size: true, color: true, quantity: true } },
       },
     });
-    const lowStockItems = allPosItems.filter(item => {
-      const stock = item.variants.length > 0
-        ? item.variants.reduce((sum, v) => sum + v.quantity, 0)
-        : item.quantity;
+    const lowStockItems = allPosItems.flatMap((item) => {
       const threshold = item.reorderThreshold ?? 5;
-      return stock > 0 && stock <= threshold;
-    }).map(item => ({
-      id: item.id,
-      name: item.name,
-      stock: item.variants.length > 0
-        ? item.variants.reduce((sum, v) => sum + v.quantity, 0)
-        : item.quantity,
-      threshold: item.reorderThreshold ?? 5,
-    }));
+      // No variants: check the base quantity in place.
+      if (item.variants.length === 0) {
+        if (item.quantity > 0 && item.quantity <= threshold) {
+          return [{
+            id: item.id,
+            name: item.name,
+            variantLabel: null as string | null,
+            stock: item.quantity,
+            threshold,
+          }];
+        }
+        return [];
+      }
+      // With variants: one entry per variant that's below threshold so
+      // the operator sees exactly which SKU to reorder. Variants at 0
+      // stay in the (separate) out-of-stock bucket -- "low" means
+      // running out but not yet out.
+      return item.variants
+        .filter((v) => v.quantity > 0 && v.quantity <= threshold)
+        .map((v) => ({
+          id: item.id,
+          name: item.name,
+          variantLabel: [v.size, v.color].filter(Boolean).join(" / ") || null,
+          stock: v.quantity,
+          threshold,
+        }));
+    });
 
     // --- Active Trial Passes ---
     const activeTrials = await prisma.trialPass.findMany({

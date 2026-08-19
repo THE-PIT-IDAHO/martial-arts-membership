@@ -130,6 +130,9 @@ type DashboardData = {
   lowStockItems: Array<{
     id: string;
     name: string;
+    // Present when this row is for a specific variant of a multi-variant
+    // item (e.g. "Small / Blue"). Null for items without variants.
+    variantLabel: string | null;
     stock: number;
     threshold: number;
   }>;
@@ -1502,13 +1505,22 @@ export default function DashboardPage() {
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-50">
-                        {data.lowStockItems.map((item) => (
+                        {data.lowStockItems.map((item, idx) => (
+                          // Key includes the variant label because one item
+                          // can now yield multiple rows (one per low variant).
                           <div
-                            key={item.id}
+                            key={`${item.id}-${item.variantLabel ?? "base"}-${idx}`}
                             className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
                             onClick={() => router.push("/pos/items")}
                           >
-                            <p className="text-sm font-medium text-gray-900">{item.name}</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {item.name}
+                              {item.variantLabel && (
+                                <span className="ml-1 text-xs font-normal text-gray-500">
+                                  ({item.variantLabel})
+                                </span>
+                              )}
+                            </p>
                             <span className="text-xs font-semibold text-yellow-600">
                               {item.stock} left (threshold: {item.threshold})
                             </span>

@@ -62,6 +62,29 @@ function getItemThreshold(item: POSItem): number {
   return item.reorderThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
 }
 
+/** True when ANY variant (or the base quantity for a no-variant item)
+ *  is in the low-stock zone. Threshold applies PER VARIANT -- an item
+ *  with 20 XL and 0 of everything else is still "low" because the
+ *  other sizes need reordering, even if the total isn't. */
+function isItemLowStock(item: POSItem): boolean {
+  const threshold = getItemThreshold(item);
+  if (item.variants.length === 0) {
+    return item.quantity > 0 && item.quantity <= threshold;
+  }
+  return item.variants.some((v) => v.quantity > 0 && v.quantity <= threshold);
+}
+
+/** How many variants are currently in the low-stock zone; used to show
+ *  a per-item hint like "2 low" next to the total on the row. Returns
+ *  1 for a no-variant item that is itself low, 0 otherwise. */
+function lowVariantCount(item: POSItem): number {
+  const threshold = getItemThreshold(item);
+  if (item.variants.length === 0) {
+    return item.quantity > 0 && item.quantity <= threshold ? 1 : 0;
+  }
+  return item.variants.filter((v) => v.quantity > 0 && v.quantity <= threshold).length;
+}
+
 function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
@@ -131,7 +154,7 @@ export default function POSItemsPage() {
     if (!showInactive && !item.isActive) return false;
     if (categoryFilter !== "all" && item.category !== categoryFilter) return false;
     if (stockFilter === "out" && stock > 0) return false;
-    if (stockFilter === "low" && (stock <= 0 || stock > getItemThreshold(item))) return false;
+    if (stockFilter === "low" && !isItemLowStock(item)) return false;
     if (stockFilter === "online" && !item.availableOnline) return false;
     if (search) {
       const searchLower = search.toLowerCase();
@@ -351,7 +374,7 @@ export default function POSItemsPage() {
   // Summary stats using totalStock
   const activeItems = items.filter(i => i.isActive);
   const outOfStockCount = activeItems.filter(i => totalStock(i) <= 0).length;
-  const lowStockCount = activeItems.filter(i => { const s = totalStock(i); return s > 0 && s <= getItemThreshold(i); }).length;
+  const lowStockCount = activeItems.filter(isItemLowStock).length;
   const onlineCount = activeItems.filter(i => i.availableOnline).length;
 
   if (loading) {
@@ -527,7 +550,8 @@ export default function POSItemsPage() {
                 {filteredItems.map(item => {
                   const stock = totalStock(item);
                   const isOutOfStock = stock <= 0;
-                  const isLowStock = stock > 0 && stock <= getItemThreshold(item);
+                  const isLowStock = isItemLowStock(item);
+                  const lowCount = lowVariantCount(item);
                   const hasVariants = item.variants.length > 0;
                   return (
                     <tr
@@ -598,7 +622,11 @@ export default function POSItemsPage() {
                             <p className="text-[10px] text-red-500 mt-0.5">Out of stock</p>
                           )}
                           {isLowStock && item.isActive && (
-                            <p className="text-[10px] text-yellow-600 mt-0.5">Low stock</p>
+                            <p className="text-[10px] text-yellow-600 mt-0.5">
+                              {hasVariants && lowCount > 0
+                                ? `Low stock (${lowCount} variant${lowCount === 1 ? "" : "s"})`
+                                : "Low stock"}
+                            </p>
                           )}
                         </div>
                       </td>
