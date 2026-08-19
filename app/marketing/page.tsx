@@ -61,14 +61,11 @@ export default function MarketingHome() {
 
 // In-page nav items. `section` is the DOM id of the section the link
 // jumps to -- used by the IntersectionObserver below to highlight the
-// current nav item as the visitor scrolls. Contact + Get in touch both
-// point at the same section on purpose (two entry points, one form);
-// they both light up when #contact is in the read band.
+// current nav item as the visitor scrolls.
 const NAV_SECTIONS: Array<{ label: string; href: string; section: string }> = [
   { label: "Features", href: "#features", section: "features" },
   { label: "How it works", href: "#how", section: "how" },
   { label: "Pricing", href: "#pricing", section: "pricing" },
-  { label: "Contact", href: "#contact", section: "contact" },
   { label: "Get in touch", href: "#contact", section: "contact" },
 ];
 
@@ -678,7 +675,7 @@ function Footer() {
         <div className="flex items-center gap-4">
           <a href="#features" className="hover:text-gray-700">Features</a>
           <a href="#pricing" className="hover:text-gray-700">Pricing</a>
-          <a href="#contact" className="hover:text-gray-700">Contact</a>
+          <a href="#contact" className="hover:text-gray-700">Get in touch</a>
           <a href="https://app.dojostormsoftware.com/login" className="hover:text-gray-700">Sign in</a>
         </div>
       </div>
