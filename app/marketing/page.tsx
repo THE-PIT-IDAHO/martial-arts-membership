@@ -135,7 +135,7 @@ function Hero() {
           src="/marketing/hero-kiosk.jpg"
           alt=""
           className="w-full h-full object-cover"
-          style={{ objectPosition: "70% 65%" }}
+          style={{ objectPosition: "55% 55%" }}
         />
         {/* White overlay fades left→right so the headline stays legible
             over the darker left side of the frame (person's shirt +
