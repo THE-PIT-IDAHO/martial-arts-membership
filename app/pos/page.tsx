@@ -3351,6 +3351,22 @@ export default function POSPage() {
             // contract too so we don't save it on a future attempt with
             // possibly different cart contents.
             pendingContractRef.current = null;
+            // Fire-and-forget: tell Stripe to cancel the PaymentIntent
+            // we created for the modal. Without this the PI stays as
+            // "requires_payment_method" / incomplete in the operator's
+            // Stripe dashboard forever, and the ops emails ("we tried
+            // to send events to your webhook, it 500'd") pile up.
+            // Endpoint is tenant-scoped and idempotent -- safe to call
+            // even if the PI never made it out or is already in a
+            // terminal state.
+            const abortedPiId = cardPaymentData?.paymentIntentId;
+            if (abortedPiId) {
+              fetch("/api/pos/cancel-payment-intent", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ paymentIntentId: abortedPiId }),
+              }).catch(() => { /* best-effort */ });
+            }
             setCardPaymentData(null);
           }}
           onSuccess={async (paymentIntentId) => {
