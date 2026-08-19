@@ -106,15 +106,39 @@ function TopNav() {
 function Hero() {
   return (
     <section id="top" className="relative overflow-hidden">
-      {/* Subtle diagonal band -- keeps the hero from feeling like a
-          flat white block without adding distracting imagery. */}
-      <div
-        className="absolute inset-x-0 top-0 h-[520px] -z-10"
-        style={{
-          background:
-            "linear-gradient(180deg, rgba(196,17,17,0.05) 0%, rgba(196,17,17,0) 100%)",
-        }}
-      />
+      {/* Hero background: sunset kick silhouette. Sits behind the
+          content via a wrapping absolute layer so the image + its
+          readability overlay stack correctly under normal-flow text.
+          object-cover with object-center works at every viewport --
+          on desktop the horizon strip lands mid-hero, on mobile the
+          figure sits centered under the headline. */}
+      <div className="absolute inset-0 -z-10" aria-hidden="true">
+        <img
+          src="/marketing/hero-kick-silhouette.jpg"
+          alt=""
+          className="w-full h-full object-cover object-center"
+        />
+        {/* White overlay fades left→right so the headline stays legible
+            over the twilight sky while the silhouette on the right
+            still reads through clearly. */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(to right, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.88) 45%, rgba(255,255,255,0.55) 75%, rgba(255,255,255,0.25) 100%)",
+          }}
+        />
+        {/* Brand-tint band at the very top -- kept from the original
+            design so the hero still reads as "Dojo Storm" and not
+            just a stock photo. */}
+        <div
+          className="absolute inset-x-0 top-0 h-[520px]"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(196,17,17,0.06) 0%, rgba(196,17,17,0) 100%)",
+          }}
+        />
+      </div>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-14 sm:pt-20 pb-16 sm:pb-24">
         <div className="max-w-3xl">
           <div className="inline-block rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold text-primary mb-4">
@@ -143,7 +167,7 @@ function Hero() {
             </a>
           </div>
           <p className="mt-4 text-xs text-gray-500">
-            30-day free evaluation · no credit card required
+            No credit card required to get started
           </p>
         </div>
 
@@ -336,15 +360,18 @@ function Pricing() {
 
         {tiers && tiers.length > 0 && (
           <div
-            className={`mt-12 grid gap-6 ${
-              tiers.length === 1
-                ? "md:grid-cols-1 max-w-md mx-auto"
-                : tiers.length === 2
-                  ? "md:grid-cols-2"
-                  : tiers.length === 3
-                    ? "md:grid-cols-3"
-                    : "md:grid-cols-2 lg:grid-cols-4"
-            }`}
+            // Fluid grid: one column per tier as long as each stays at
+            // least 200px wide; below that, columns wrap. Result: on
+            // a wide desktop every tier (including a 5th "Enterprise"
+            // card) sits on one row and cards resize together as the
+            // window narrows; on tablet/mobile they wrap smoothly
+            // instead of jumping between fixed 1/2/3/4-col layouts.
+            // Uses inline style because Tailwind's grid-cols-* is
+            // static and doesn't cover the auto-fit / minmax pattern.
+            className="mt-12 grid gap-6"
+            style={{
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))",
+            }}
           >
             {tiers.map((t, i) => {
               const highlight = isHighlight(i, tiers.length);
