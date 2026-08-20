@@ -97,6 +97,10 @@ type DashboardData = {
       id: string;
       nextPaymentDate: string;
       customPriceCents: number | null;
+      // What the member will ACTUALLY be charged next cycle after their
+      // MEMBERSHIP + ALL scope discounts. Server-computed and always
+      // > 0 (rows that would resolve to $0 are dropped by the API).
+      displayPriceCents: number;
       member: { id: string; firstName: string; lastName: string };
       membershipPlan: { name: string; priceCents: number | null; billingCycle: string };
     }>;
@@ -1265,7 +1269,7 @@ export default function DashboardPage() {
                             </div>
                             <div className="text-right">
                               <p className="text-xs font-semibold text-gray-700">
-                                {formatCents(ms.customPriceCents ?? ms.membershipPlan.priceCents ?? 0)}
+                                {formatCents(ms.displayPriceCents)}
                               </p>
                               <p className="text-[10px] text-gray-400">{formatShortDate(ms.nextPaymentDate)}</p>
                             </div>

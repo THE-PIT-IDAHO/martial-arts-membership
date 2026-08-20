@@ -8,6 +8,7 @@ import { MemberAdminAccessModal } from "@/components/member-admin-access-modal";
 import { formatPaymentMethod } from "@/lib/payment-utils";
 import { getTodayString, parseLocalDate } from "@/lib/dates";
 import { getStyleProgress, type AttendanceRow } from "@/lib/rank-progress";
+import { getEffectivePriceAfterDiscountCents } from "@/lib/member-discount-math";
 
 // Belt rendering helpers (mirrored from portal/styles)
 function TintedLayer({ src, color }: { src: string; color: string }) {
@@ -3968,18 +3969,28 @@ export default function MemberProfilePage() {
                                 {(() => {
                                   const cycleSuffix = membership.membershipPlan.billingCycle.toLowerCase().replace("ly", "");
                                   const recurringCents = displayPrice; // customPriceCents ?? planPrice
+                                  // Apply the member's MEMBERSHIP + ALL scope discounts so
+                                  // the headline matches what auto-billing will actually
+                                  // charge next cycle. Was showing the pre-discount price
+                                  // even for 100%-comped family members (Nico read as
+                                  // $195/mo when he actually pays $0).
+                                  const effectiveRecurringCents = getEffectivePriceAfterDiscountCents(
+                                    recurringCents,
+                                    memberDiscounts,
+                                  );
+                                  const hasMemberDiscount = effectiveRecurringCents !== recurringCents;
                                   // First-cycle amount: prefer the actually-charged value
                                   // recorded on the membership; fall back to recurring for
                                   // pre-migration rows that don't have firstPaymentCents.
-                                  const firstCycleCents = membership.firstPaymentCents ?? recurringCents;
+                                  const firstCycleCents = membership.firstPaymentCents ?? effectiveRecurringCents;
                                   const showFirstCycleLine =
                                     membership.firstMonthDiscountOnly &&
-                                    firstCycleCents !== recurringCents;
+                                    firstCycleCents !== effectiveRecurringCents;
                                   return (
                                     <div>
                                       <div className="flex items-baseline gap-1 flex-wrap">
                                         <span className="text-lg font-bold text-gray-900">
-                                          ${(recurringCents / 100).toFixed(2)}
+                                          ${(effectiveRecurringCents / 100).toFixed(2)}
                                         </span>
                                         <span className="text-[10px] text-gray-500 uppercase">
                                           /{cycleSuffix}
@@ -3989,7 +4000,18 @@ export default function MemberProfilePage() {
                                             1st {cycleSuffix} discount
                                           </span>
                                         )}
-                                        {!membership.firstMonthDiscountOnly &&
+                                        {hasMemberDiscount && (
+                                          <>
+                                            <span className="text-[10px] text-gray-400 line-through ml-1">
+                                              ${(recurringCents / 100).toFixed(2)}
+                                            </span>
+                                            <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full ml-1">
+                                              Member discount
+                                            </span>
+                                          </>
+                                        )}
+                                        {!hasMemberDiscount &&
+                                          !membership.firstMonthDiscountOnly &&
                                           membership.customPriceCents !== null &&
                                           membership.customPriceCents !== planPrice && (
                                           <span className="text-[10px] text-gray-400 line-through ml-1">
@@ -5510,7 +5532,12 @@ export default function MemberProfilePage() {
                   // firstPaymentCents IS the amount the member actually paid
                   // at signup (after any first-payment discount). Used when
                   // the most recent payment is the at-signup payment.
-                  const recurringPrice = mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0;
+                  const rawRecurring = mb.customPriceCents ?? mb.membershipPlan?.priceCents ?? 0;
+                  // Effective price after the member's MEMBERSHIP + ALL
+                  // scope discounts. A 100%-discounted member (family
+                  // comp) shows $0 across Monthly / Next / Last so no
+                  // rollup pretends they contribute revenue.
+                  const recurringPrice = getEffectivePriceAfterDiscountCents(rawRecurring, memberDiscounts);
                   const isActive = mb.status === "ACTIVE";
                   const notExpired = !mb.endDate || new Date(mb.endDate) > now;
                   const willRenew = mb.membershipPlan?.autoRenew === true;

@@ -76,6 +76,16 @@ export function getEffectivePriceCents(
   return membership.customPriceCents ?? planPrice;
 }
 
+// Re-export the pure discount math from its Prisma-free home so
+// existing server callers can keep importing from `@/lib/billing`.
+// Client-side callers should import from `@/lib/member-discount-math`
+// directly to avoid pulling the prisma client into their bundle.
+export {
+  computeMembershipDiscountCents,
+  getEffectivePriceAfterDiscountCents,
+  type MemberDiscountRowForMath as MemberDiscountForBilling,
+} from "@/lib/member-discount-math";
+
 /** Apply family discount: reduces amount by familyDiscountPercent per additional member. */
 export function applyFamilyDiscount(
   amountCents: number,

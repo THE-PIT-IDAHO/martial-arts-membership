@@ -9,6 +9,7 @@ import { getClientId } from "@/lib/tenant";
 import { canAddMember } from "@/lib/trial";
 import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 import { getNextMemberNumber } from "@/lib/sequence";
+import { getEffectivePriceAfterDiscountCents } from "@/lib/billing";
 
 function toDateOrNull(value: any): Date | null {
   if (!value) return null;
@@ -208,9 +209,38 @@ export async function GET(req: Request) {
     // Apply limit after deduplication and style filtering
     const limitedMembers = limit ? membersWithAllowedStyle.slice(0, parseInt(limit, 10)) : membersWithAllowedStyle;
 
+    // Bulk-fetch MEMBERSHIP + ALL scope discount rows for every member
+    // in one round-trip so the per-member loop below can apply them
+    // without an N+1 query. Fully-comped memberships end up excluded
+    // from monthlyPaymentCents so the Recurring Payments report (and
+    // any other list gated on monthlyPaymentCents > 0) drops them.
+    const memberIds = limitedMembers.map((m) => m.id);
+    const rawDiscountRows = memberIds.length > 0
+      ? await prisma.memberDiscount.findMany({
+          where: {
+            memberId: { in: memberIds },
+            active: true,
+            appliesTo: { in: ["MEMBERSHIP", "ALL"] },
+          },
+          select: {
+            memberId: true,
+            appliesTo: true,
+            percentOff: true,
+            flatCents: true,
+          },
+        })
+      : [];
+    const discountsByMember = new Map<string, Array<{ appliesTo: string; percentOff: number | null; flatCents: number | null }>>();
+    for (const row of rawDiscountRows) {
+      const bucket = discountsByMember.get(row.memberId) ?? [];
+      bucket.push({ appliesTo: row.appliesTo, percentOff: row.percentOff, flatCents: row.flatCents });
+      discountsByMember.set(row.memberId, bucket);
+    }
+
     // Calculate monthly payment and extract membership info for each member
     const membersWithMembershipInfo = limitedMembers.map((m) => {
       let monthlyPaymentCents = 0;
+      const memberDiscounts = discountsByMember.get(m.id) ?? [];
       let membershipTypeName: string | null = null;
       let membershipPlanName: string | null = null;
       let autoRenew: boolean | null = null;
@@ -246,7 +276,12 @@ export async function GET(req: Request) {
           const recurringPriceCents = membership.customPriceCents
             ?? membership.membershipPlan.priceCents
             ?? 0;
-          monthlyPaymentCents += recurringPriceCents;
+          // Apply the member's MEMBERSHIP + ALL scope discounts BEFORE
+          // summing into monthlyPaymentCents so a 100%-discounted member
+          // contributes $0 and disappears from any list gated on
+          // monthlyPaymentCents > 0 (e.g. the Recurring Payments report).
+          const effective = getEffectivePriceAfterDiscountCents(recurringPriceCents, memberDiscounts);
+          monthlyPaymentCents += effective;
         }
 
         // Use first membership (active preferred) for type/plan/autoRenew info

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { getGymTimezone, getDayOfWeekInTimezone, localMidnightUtc, formatDateInTimezone, getLocalParts } from "@/lib/dates";
 import { getStyleProgress, attendanceCountsForStyle, type AttendanceRow } from "@/lib/rank-progress";
+import { getEffectivePriceAfterDiscountCents } from "@/lib/billing";
 
 // GET /api/dashboard
 export async function GET(req: Request) {
@@ -337,10 +338,14 @@ export async function GET(req: Request) {
       _count: true,
     });
 
-    // Active memberships with recurring revenue
+    // Active memberships with recurring revenue. memberId included so
+    // we can look up per-member MEMBERSHIP/ALL scope discounts and
+    // apply them before summing -- otherwise a 100%-discounted member
+    // still contributes their pre-discount price to MRR.
     const activeMemberships = await prisma.membership.findMany({
       where: { status: "ACTIVE", member: { clientId } },
       select: {
+        memberId: true,
         customPriceCents: true,
         membershipPlan: {
           select: {
@@ -351,10 +356,40 @@ export async function GET(req: Request) {
       },
     });
 
-    // Calculate monthly recurring revenue (MRR)
+    // Bulk-fetch the discount rows for every member with an active
+    // membership so the MRR loop below can apply them without an N+1.
+    const activeMembershipMemberIds = Array.from(new Set(activeMemberships.map((m) => m.memberId)));
+    const rawMembershipDiscountRows = activeMembershipMemberIds.length > 0
+      ? await prisma.memberDiscount.findMany({
+          where: {
+            memberId: { in: activeMembershipMemberIds },
+            active: true,
+            appliesTo: { in: ["MEMBERSHIP", "ALL"] },
+          },
+          select: {
+            memberId: true,
+            appliesTo: true,
+            percentOff: true,
+            flatCents: true,
+          },
+        })
+      : [];
+    const membershipDiscountsByMember = new Map<string, Array<{ appliesTo: string; percentOff: number | null; flatCents: number | null }>>();
+    for (const row of rawMembershipDiscountRows) {
+      const bucket = membershipDiscountsByMember.get(row.memberId) ?? [];
+      bucket.push({ appliesTo: row.appliesTo, percentOff: row.percentOff, flatCents: row.flatCents });
+      membershipDiscountsByMember.set(row.memberId, bucket);
+    }
+
+    // Calculate monthly recurring revenue (MRR). Effective per-cycle
+    // price is the raw recurring amount minus any MEMBERSHIP/ALL scope
+    // discount; a 0-effective membership contributes nothing to MRR.
     let monthlyRecurringRevenue = 0;
     for (const ms of activeMemberships) {
-      const price = ms.customPriceCents ?? ms.membershipPlan.priceCents ?? 0;
+      const raw = ms.customPriceCents ?? ms.membershipPlan.priceCents ?? 0;
+      const discounts = membershipDiscountsByMember.get(ms.memberId) ?? [];
+      const price = getEffectivePriceAfterDiscountCents(raw, discounts);
+      if (price <= 0) continue;
       switch (ms.membershipPlan.billingCycle) {
         case "WEEKLY": monthlyRecurringRevenue += price * 4; break;
         case "MONTHLY": monthlyRecurringRevenue += price; break;
@@ -434,7 +469,10 @@ export async function GET(req: Request) {
 
     const sevenDaysFromNow = new Date(todayEnd);
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
-    const upcomingBillings = await prisma.membership.findMany({
+    // Overfetch to 30 so we can drop $0-effective rows and still land
+    // ~10 real ones in the widget. A fully-discounted member isn't a
+    // "billing" -- no charge will actually run.
+    const upcomingBillingsRaw = await prisma.membership.findMany({
       where: {
         status: "ACTIVE",
         nextPaymentDate: {
@@ -455,8 +493,23 @@ export async function GET(req: Request) {
         },
       },
       orderBy: { nextPaymentDate: "asc" },
-      take: 10,
+      take: 30,
     });
+    // Apply the same MEMBERSHIP + ALL scope discount pass that auto-
+    // billing will use, then keep only rows that will actually charge.
+    // The discountsByMember map from the MRR loop covers every active
+    // member; anyone here who isn't in it (unlikely -- would mean
+    // their membership status is ACTIVE but they're not in the earlier
+    // findMany, which shares the same filter) falls back to no rows.
+    const upcomingBillings = upcomingBillingsRaw
+      .map((ms) => {
+        const raw = ms.customPriceCents ?? ms.membershipPlan.priceCents ?? 0;
+        const discounts = membershipDiscountsByMember.get(ms.member.id) ?? [];
+        const displayPriceCents = getEffectivePriceAfterDiscountCents(raw, discounts);
+        return { ...ms, displayPriceCents };
+      })
+      .filter((ms) => ms.displayPriceCents > 0)
+      .slice(0, 10);
 
     const pastDueInvoices = await prisma.invoice.findMany({
       where: { status: "PAST_DUE", member: { clientId } },
