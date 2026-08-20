@@ -145,6 +145,50 @@ to a fresh copy of prod:
 4. Redeploy staging (`git commit --allow-empty -m "refresh staging"
    && git push origin staging`).
 
+### Scrubbing customer data from staging
+
+The Neon branch above starts as an EXACT copy of prod -- real
+member names, real email addresses, real transaction history. For
+day-to-day testing of features you don't want that customer data
+sitting on the staging DB (and you REALLY don't want to accidentally
+email or charge those real addresses even with the safety nets on).
+
+Run `scripts/scrub-staging-data.js` after (re)branching:
+
+```
+IS_STAGING=1 node scripts/scrub-staging-data.js "postgres://…staging pooled URL…" --yes-really-scrub
+```
+
+The script requires ALL THREE guards to run:
+- `IS_STAGING=1` in your shell environment
+- A postgres:// URL passed as arg1 (it refuses to fall back to
+  whatever `DATABASE_URL` is in your `.env` -- that could be prod)
+- `--yes-really-scrub` flag on the command line
+
+What it WIPES (customer / user data):
+- Members and everything attached to them (memberships, invoices,
+  attendance, class bookings, POS transactions, signed contracts /
+  waivers, gift certificates, service credits, discounts)
+- Testing / promotion event instances + per-member rank history
+- All messaging + board posts + polls (BoardChannels themselves
+  are kept -- those are the "rooms" the gym owner set up)
+- Email + audit logs, ephemeral auth tokens
+
+What it KEEPS (config the gym owner built):
+- Client / Settings / User (so you can still log in on staging)
+- Styles, Ranks, RankTests + categories + items (curriculum)
+- Programs, MembershipTypes, MembershipPlans
+- Class schedule, Appointments, Locations, Spaces
+- POSItems + variants, ServicePackages, PromoCodes
+- WaiverTemplates, EmailTemplates, BoardChannels, Weekly Focus, Tasks
+- Platform-level rows (PricingTiers, SignupLinks, etc.)
+
+Idempotent -- safe to re-run. Rows already gone stay gone.
+
+Once staged, the sequence "rebranch Neon + rerun scrub" is the
+canonical way to reset staging to a fresh copy of prod config
+without any customer PII.
+
 ## Kill switches in code
 
 Anywhere `isStaging()` returns true, we treat the environment as
