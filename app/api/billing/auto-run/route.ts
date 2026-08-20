@@ -17,6 +17,7 @@ import { getActiveProcessor, chargeStoredPaymentMethod, getCurrency, type Proces
 import { getClientId } from "@/lib/tenant";
 import { applyMemberDiscounts, markDiscountsUsed } from "@/lib/member-discounts";
 import { syncMemberStyles } from "@/lib/member-styles";
+import { isStaging } from "@/lib/env";
 
 // Vercel cron sends a GET request to the path on its schedule. The
 // dashboard caller still uses POST. Both delegate to the same handler.
@@ -54,6 +55,23 @@ type TenantResult = {
 export async function POST(req: Request) {
   try {
     const isCronCall = req.headers.get("x-cron-mode") === "true";
+
+    // Hard-stop on staging. The staging DB is a Neon branch of prod,
+    // so any auto-billing here would (a) mint duplicate Invoice rows
+    // that overwrite prod-copied state, (b) hit real Stripe / PayPal
+    // if a live processor key ever leaked into the staging env, and
+    // (c) fire notification emails to real customer addresses. Manual
+    // "Charge Now" runs from the staging dashboard are still blocked
+    // -- deliberate; use prod for real charges. Explicit early-return
+    // + JSON so scheduled runs on staging show as no-ops instead of
+    // silently churning through prod-copied data.
+    if (isStaging()) {
+      return NextResponse.json({
+        skipped: true,
+        reason: "Auto-billing is disabled on the staging deployment.",
+        isCronCall,
+      });
+    }
 
     let tenantIds: string[];
     if (isCronCall) {

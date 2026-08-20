@@ -23,10 +23,16 @@ const CRON_API_PATHS = [
 // The Client record in DB was created with slug "app" by migrate-tenant.ts
 const DEFAULT_SLUG = "app";
 
-// Map subdomains to their DB slug if different
-// Production client slug is "thepitidaho"; "app" subdomain aliases to it
+// Map subdomains to their DB slug if different.
+// "app" subdomain (prod) aliases to the operator's live gym.
+// "staging" subdomain (staging.dojostormsoftware.com) also routes to
+// that same slug -- staging is served by a separate Vercel deployment
+// with its own env vars pointing at the staging Neon branch, which
+// carries a copy of prod data (same slug present there too). Anything
+// on the staging host lands on the branched DB, not prod.
 const SLUG_ALIASES: Record<string, string> = {
   app: "thepitidaho",
+  staging: "thepitidaho",
 };
 
 // Portal public routes (no auth required)

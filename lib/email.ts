@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
+import { isStaging, stagingEmailSandbox } from "@/lib/env";
 
 // Single platform-wide Resend client (API key from environment variable)
 let resendClient: Resend | null = null;
@@ -207,10 +208,38 @@ export async function sendEmail(params: {
       return false;
     }
 
+    // Staging safety net. The staging DB is a Neon branch of prod, so
+    // recipient email addresses on it are REAL customer addresses --
+    // one stray "test notification" would blast every real member.
+    // On staging:
+    //   1) Every send is rerouted to EMAIL_SANDBOX_TO if set (highly
+    //      recommended -- set to an address you control).
+    //   2) Subject is prefixed with "[STAGING]" (and the original
+    //      intended recipients when rerouted) so it's obvious in the
+    //      inbox where the email would have landed in prod.
+    let finalRecipients = recipients;
+    let finalSubject = params.subject;
+    if (isStaging()) {
+      const sandbox = stagingEmailSandbox();
+      if (sandbox) {
+        finalRecipients = [sandbox];
+        finalSubject = `[STAGING → ${recipients.join(", ")}] ${params.subject}`;
+      } else {
+        finalSubject = `[STAGING] ${params.subject}`;
+        // Loud log so an ops-time review can spot the risk -- staging
+        // running without EMAIL_SANDBOX_TO WILL contact real users
+        // whose addresses got copied into the staging Neon branch.
+        console.warn(
+          "[Email] STAGING deployment sending to real address(es) -- set EMAIL_SANDBOX_TO to redirect:",
+          recipients.join(", "),
+        );
+      }
+    }
+
     const emailPayload: Parameters<typeof resend.emails.send>[0] = {
       from: fromAddress,
-      to: recipients,
-      subject: params.subject,
+      to: finalRecipients,
+      subject: finalSubject,
       html: params.html,
       replyTo: gymEmail || undefined,
     };
