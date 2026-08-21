@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
-import { MemberAdminAccessModal } from "@/components/member-admin-access-modal";
 import { formatPaymentMethod } from "@/lib/payment-utils";
 import { getTodayString, parseLocalDate } from "@/lib/dates";
 import { getStyleProgress, type AttendanceRow } from "@/lib/rank-progress";
@@ -697,7 +696,6 @@ export default function MemberProfilePage() {
   // edit flags
   const [editingPhoto, setEditingPhoto] = useState(false);
   const [editingPersonal, setEditingPersonal] = useState(false);
-  const [showAdminAccess, setShowAdminAccess] = useState(false);
   const [editingStyleIndex, setEditingStyleIndex] = useState<number | null>(null);
   const [editingPayments, setEditingPayments] = useState(false);
 
@@ -2620,35 +2618,24 @@ export default function MemberProfilePage() {
                             title="Email this member a 7-day magic link to access their member portal"
                             className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                           >
-                            {sendingPortalAccess ? "Sending..." : "Send Portal Access"}
+                            {sendingPortalAccess ? "Sending..." : "Portal Access"}
                           </button>
                           <button
                             type="button"
                             onClick={handleSendPasswordReset}
                             disabled={sendingReset}
+                            title="Email this member a link to reset their portal password"
                             className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                           >
-                            {sendingReset ? "Sending..." : "Send Password Link"}
+                            {sendingReset ? "Sending..." : "Forgot Password"}
                           </button>
                         </>
                       )}
-                      {/* Only show for members flagged with an admin
-                          role via Account -> Users & Access. Keeps
-                          the button out of the way for the 99%
-                          who never need admin login. Flag first in
-                          Users & Access, then come here to configure
-                          the login (temp password, class scope,
-                          etc.). */}
-                      {member.accessRole && ["OWNER", "ADMIN", "COACH", "FRONT_DESK"].includes(member.accessRole) && (
-                        <button
-                          type="button"
-                          onClick={() => setShowAdminAccess(true)}
-                          title="Configure this member's admin login access. Role comes from Users & Access."
-                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
-                        >
-                          Admin
-                        </button>
-                      )}
+                      {/* Admin-login configuration button lives in
+                          Account > Users & Access now -- keeps the
+                          member profile focused on member-facing
+                          actions instead of mixing staff-account
+                          management into the same row. */}
                       <button
                         type="button"
                         onClick={() => setEditingPersonal(true)}
@@ -7399,15 +7386,6 @@ export default function MemberProfilePage() {
         </div>
       )}
 
-      {/* Admin-access modal (grant / edit / revoke a Member's admin login).
-          Owns its own data fetch, so we just gate on the open flag. */}
-      {showAdminAccess && member && (
-        <MemberAdminAccessModal
-          memberId={member.id}
-          memberName={`${member.firstName || ""} ${member.lastName || ""}`.trim() || "Member"}
-          onClose={() => setShowAdminAccess(false)}
-        />
-      )}
     </AppLayout>
   );
 }
