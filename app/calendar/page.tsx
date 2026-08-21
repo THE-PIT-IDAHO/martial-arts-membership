@@ -2343,6 +2343,27 @@ export default function CalendarPage() {
             >
               Export .ics
             </button>
+            <button
+              onClick={async () => {
+                if (!confirm("Sweep ghost bookings? This deletes future class bookings whose class no longer runs on that date. Past history is untouched.")) return;
+                try {
+                  const res = await fetch("/api/classes/cleanup-ghost-bookings", { method: "POST" });
+                  const data = await res.json().catch(() => ({}));
+                  if (res.ok) {
+                    alert(`Cleanup complete. Deleted ${data.deleted ?? 0} ghost booking(s) out of ${data.inspected ?? 0} checked.`);
+                  } else {
+                    alert(`Cleanup failed: ${data.error || res.statusText}`);
+                  }
+                } catch (e) {
+                  alert("Cleanup failed. Check the console.");
+                  console.error(e);
+                }
+              }}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              title="Delete future ClassBooking rows whose class no longer runs on that date"
+            >
+              Clean Ghost Bookings
+            </button>
           </div>
         </div>
 

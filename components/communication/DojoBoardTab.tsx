@@ -129,7 +129,7 @@ type TrainingChannel = {
   memberCount: number;
   hasUpdates: boolean;
   visibility?: {
-    type: "all" | "styles" | "ranks" | "statuses" | "specific";
+    type: "all" | "styles" | "ranks" | "statuses" | "specific" | "combined";
     styleIds?: string[];
     rankIds?: string[];
     statuses?: string[];
@@ -142,6 +142,77 @@ type Style = {
   name: string;
   ranks: { id: string; name: string; order: number }[];
 };
+
+// How many members satisfy this channel's visibility rules? Mirrors the
+// portal-side check in lib/portal-board-visibility.ts:
+//   - undefined visibility / type "all" ......... everyone
+//   - "specific" with undefined memberIds ....... everyone (legacy)
+//   - "specific" with an array (even []) ........ only listed member ids
+//   - "styles" / "ranks" / "statuses" ........... members matching the
+//       named dimension. Empty array or undefined = no filter -> everyone.
+//   - "combined" ................................ each dimension present
+//       as an array must match. Present-but-empty = nobody qualifies on
+//       that axis. All dimensions absent = everyone.
+// Note: Member.primaryStyle / .rank are NAMES, not ids -- we resolve
+// ids -> names against the loaded Style list to compare.
+function countChannelMembers(
+  channel: TrainingChannel,
+  members: Member[],
+  styles: Style[],
+): number {
+  const vis = channel.visibility;
+  if (!vis || vis.type === "all") return members.length;
+
+  if (vis.type === "specific") {
+    if (!vis.memberIds) return members.length;
+    return vis.memberIds.length;
+  }
+
+  const styleNames = new Set(
+    (vis.styleIds || [])
+      .map((id) => styles.find((s) => s.id === id)?.name.toLowerCase())
+      .filter((n): n is string => !!n),
+  );
+  const rankNames = new Set(
+    (vis.rankIds || [])
+      .flatMap((rid) => styles.flatMap((s) => s.ranks.filter((r) => r.id === rid).map((r) => r.name.toLowerCase())))
+      .filter((n): n is string => !!n),
+  );
+  const statuses = new Set(vis.statuses || []);
+  const memberIdSet = new Set(vis.memberIds || []);
+
+  const matches = (m: Member): boolean => {
+    if (vis.type === "styles") {
+      if (!vis.styleIds || vis.styleIds.length === 0) return true;
+      return !!m.primaryStyle && styleNames.has(m.primaryStyle.toLowerCase());
+    }
+    if (vis.type === "ranks") {
+      if (!vis.rankIds || vis.rankIds.length === 0) return true;
+      return !!m.rank && rankNames.has(m.rank.toLowerCase());
+    }
+    if (vis.type === "statuses") {
+      if (!vis.statuses || vis.statuses.length === 0) return true;
+      return statuses.has(m.status);
+    }
+    // "combined": every present dimension must match. A present-but-empty
+    // dimension excludes everyone on that axis.
+    if (vis.styleIds !== undefined) {
+      if (!m.primaryStyle || !styleNames.has(m.primaryStyle.toLowerCase())) return false;
+    }
+    if (vis.rankIds !== undefined) {
+      if (!m.rank || !rankNames.has(m.rank.toLowerCase())) return false;
+    }
+    if (vis.statuses !== undefined) {
+      if (!statuses.has(m.status)) return false;
+    }
+    if (vis.memberIds !== undefined) {
+      if (!memberIdSet.has(m.id)) return false;
+    }
+    return true;
+  };
+
+  return members.filter(matches).length;
+}
 
 type PollOption = {
   id: string;
@@ -707,7 +778,12 @@ export default function DojoBoardTab() {
   function resetChannelForm() {
     setChannelName("");
     setChannelDescription("");
-    setChannelVisibility("all");
+    // New channels default to "specific members" with nobody selected.
+    // The admin has to actively check people to grant access -- prevents
+    // accidental "channel visible to the whole gym" mistakes. Editing
+    // an existing channel overrides this in openEditChannel().
+    setChannelVisibility("specific");
+    setChannelFilters(new Set());
     setSelectedStyleIds([]);
     setSelectedRankIds([]);
     setSelectedStatuses([]);
@@ -724,11 +800,29 @@ export default function DojoBoardTab() {
     setEditingChannel(channel);
     setChannelName(channel.name);
     setChannelDescription(channel.description || "");
-    setChannelVisibility(channel.visibility?.type || "all");
-    setSelectedStyleIds(channel.visibility?.styleIds || []);
-    setSelectedRankIds(channel.visibility?.rankIds || []);
-    setSelectedStatuses(channel.visibility?.statuses || []);
-    setSelectedMemberIds(channel.visibility?.memberIds || []);
+    const vis = channel.visibility;
+    if (vis?.type === "combined") {
+      // Combined channels: recover which filter checkboxes were on
+      // from the presence of each dimension array. Empty array counts
+      // as "on" (admin intentionally scoped, even if to zero members).
+      const filters = new Set<string>();
+      if (vis.styleIds !== undefined) filters.add("styles");
+      if (vis.rankIds !== undefined) filters.add("ranks");
+      if (vis.statuses !== undefined) filters.add("statuses");
+      if (vis.memberIds !== undefined) filters.add("specific");
+      setChannelFilters(filters);
+      // channelVisibility drives the single-mode checked state, so fall
+      // back to the first enabled dimension for the visual pill.
+      const first = filters.values().next().value;
+      setChannelVisibility((first as any) || "all");
+    } else {
+      setChannelFilters(new Set());
+      setChannelVisibility((vis?.type as any) || "all");
+    }
+    setSelectedStyleIds(vis?.styleIds || []);
+    setSelectedRankIds(vis?.rankIds || []);
+    setSelectedStatuses(vis?.statuses || []);
+    setSelectedMemberIds(vis?.memberIds || []);
     setShowChannelModal(true);
   }
 
@@ -1347,23 +1441,12 @@ export default function DojoBoardTab() {
                     <div className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
                       {channel.name}
                       {(() => {
-                        // Member count next to the channel name. Exact
-                        // when the channel is scoped by specific members
-                        // (visibility.memberIds.length). For all-members
-                        // channels, uses the total gym roster loaded on
-                        // this tab. Rule-based channels (styles/ranks/
-                        // statuses) hide the count -- computing the
-                        // qualifying set client-side would duplicate the
-                        // portal-side visibility rules; not worth the
-                        // code for a sidebar hint.
-                        const vis = channel.visibility;
-                        let count: number | null = null;
-                        if (vis?.type === "specific") {
-                          count = (vis.memberIds || []).length;
-                        } else if (!vis || vis.type === "all") {
-                          count = members.length;
-                        }
-                        return count === null ? null : (
+                        // Member count next to the channel name -- shown
+                        // for every visibility type so operators can see
+                        // channel reach at a glance. Rules mirror the
+                        // portal-side visibility check in lib/portal-board-visibility.ts.
+                        const count = countChannelMembers(channel, members, styles);
+                        return (
                           <span className="text-[11px] font-normal text-gray-400">
                             ({count})
                           </span>
@@ -2613,58 +2696,72 @@ export default function DojoBoardTab() {
                   Who can view this channel? (select one or more filters)
                 </label>
                 <div className="space-y-2">
-                  <label
-                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                      channelFilters.size === 0
-                        ? "border-primary bg-primary/5"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={channelFilters.size === 0}
-                      onChange={() => { setChannelFilters(new Set()); setChannelVisibility("all"); }}
-                      className="mt-0.5"
-                    />
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">All Members</div>
-                      <div className="text-xs text-gray-500">Everyone in the dojo can see this channel</div>
-                    </div>
-                  </label>
+                  {(() => {
+                    // "All Members" is checked only when no rule-based filter is
+                    // active AND channelVisibility is explicitly "all". The new
+                    // default for new channels is "specific" with an empty roster,
+                    // so this box starts unchecked (matches the Specific row's
+                    // checked state below and the saved shape).
+                    const allChecked = channelFilters.size === 0 && channelVisibility === "all";
+                    return (
+                      <label
+                        className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          allChecked ? "border-primary bg-primary/5" : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={allChecked}
+                          onChange={() => { setChannelFilters(new Set()); setChannelVisibility("all"); }}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">All Members</div>
+                          <div className="text-xs text-gray-500">Everyone in the dojo can see this channel</div>
+                        </div>
+                      </label>
+                    );
+                  })()}
                   {[
                     { value: "styles", label: "By Style", description: "Only members enrolled in specific styles" },
                     { value: "ranks", label: "By Rank", description: "Only members at or above specific ranks" },
                     { value: "statuses", label: "By Status", description: "Only members with specific statuses" },
                     { value: "specific", label: "Specific Members", description: "Hand-pick individual members" },
-                  ].map((option) => (
-                    <label
-                      key={option.value}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                        channelFilters.has(option.value)
-                          ? "border-primary bg-primary/5"
-                          : "border-gray-200 hover:border-gray-300"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={channelFilters.has(option.value)}
-                        onChange={() => {
-                          setChannelFilters(prev => {
-                            const next = new Set(prev);
-                            if (next.has(option.value)) next.delete(option.value);
-                            else next.add(option.value);
-                            return next;
-                          });
-                          setChannelVisibility(option.value as typeof channelVisibility);
-                        }}
-                        className="mt-0.5"
-                      />
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{option.label}</div>
-                        <div className="text-xs text-gray-500">{option.description}</div>
-                      </div>
-                    </label>
-                  ))}
+                  ].map((option) => {
+                    // A filter option is checked when it's in the combined
+                    // filter set OR when it's the single active visibility
+                    // (the new-channel default of channelVisibility="specific"
+                    // shows the Specific row checked without adding it to
+                    // channelFilters).
+                    const checked = channelFilters.has(option.value) || channelVisibility === option.value;
+                    return (
+                      <label
+                        key={option.value}
+                        className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          checked ? "border-primary bg-primary/5" : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setChannelFilters(prev => {
+                              const next = new Set(prev);
+                              if (next.has(option.value)) next.delete(option.value);
+                              else next.add(option.value);
+                              return next;
+                            });
+                            setChannelVisibility(option.value as typeof channelVisibility);
+                          }}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{option.label}</div>
+                          <div className="text-xs text-gray-500">{option.description}</div>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 

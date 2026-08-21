@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { cleanupGhostBookings } from "@/lib/ghost-bookings";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -242,6 +243,22 @@ export async function PATCH(req: Request, { params }: Params) {
         } catch (e) {
           console.error(`Error updating beltConfig for style ${style.id}:`, e);
         }
+      }
+    }
+
+    // Sweep bookings that no longer fit the (possibly new) schedule.
+    // Any change to startsAt, endsAt, or excludedDates can orphan
+    // future ClassBooking rows — the portal would then show a class
+    // that doesn't actually run on that date. Scoped to this class only.
+    const scheduleTouched =
+      startsAt !== undefined ||
+      endsAt !== undefined ||
+      excludedDates !== undefined;
+    if (scheduleTouched) {
+      try {
+        await cleanupGhostBookings({ classSessionId: id });
+      } catch (e) {
+        console.error(`[classes/${id}] ghost-booking cleanup failed:`, e);
       }
     }
 

@@ -3,7 +3,7 @@ import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 
 interface ChannelVisibility {
-  type: "all" | "styles" | "ranks" | "statuses" | "specific";
+  type: "all" | "styles" | "ranks" | "statuses" | "specific" | "combined";
   styleIds?: string[];
   rankIds?: string[];
   statuses?: string[];
@@ -108,8 +108,20 @@ async function getVisibleChannelIds(memberId: string): Promise<Set<string> | nul
         visible = !vis.statuses?.length || vis.statuses.includes(member.status);
         break;
       case "specific":
-        visible = !vis.memberIds?.length || vis.memberIds.includes(member.id);
+        // Empty memberIds = "nobody" (matches lib/portal-board-visibility.ts).
+        // Undefined memberIds = legacy fallback to "everyone".
+        visible = vis.memberIds ? vis.memberIds.includes(member.id) : true;
         break;
+      case "combined": {
+        // See lib/portal-board-visibility.ts for the shared rule.
+        let ok = true;
+        if (vis.styleIds !== undefined && !vis.styleIds.some((sid) => memberStyleIds.has(sid))) ok = false;
+        if (ok && vis.rankIds !== undefined && !vis.rankIds.some((rid) => memberRankIds.has(rid))) ok = false;
+        if (ok && vis.statuses !== undefined && !vis.statuses.includes(member.status)) ok = false;
+        if (ok && vis.memberIds !== undefined && !vis.memberIds.includes(member.id)) ok = false;
+        visible = ok;
+        break;
+      }
       default:
         visible = true;
     }

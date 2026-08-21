@@ -19,7 +19,7 @@ import { prisma } from "@/lib/prisma";
  * channel, they can't get a notification for its posts.
  */
 export interface ChannelVisibility {
-  type: "all" | "styles" | "ranks" | "statuses" | "specific";
+  type: "all" | "styles" | "ranks" | "statuses" | "specific" | "combined";
   styleIds?: string[];
   rankIds?: string[];
   statuses?: string[];
@@ -113,8 +113,28 @@ export async function getVisibleBoardChannelIds(memberId: string): Promise<Set<s
         visible = !vis.statuses?.length || vis.statuses.includes(member.status);
         break;
       case "specific":
-        visible = !vis.memberIds?.length || vis.memberIds.includes(member.id);
+        // Empty memberIds means "nobody" for specific channels -- new
+        // channels created via the admin UI default to this so admins
+        // must explicitly add members. Undefined memberIds (legacy /
+        // hand-authored) still fall back to "everyone" for compat.
+        visible = vis.memberIds
+          ? vis.memberIds.includes(member.id)
+          : true;
         break;
+      case "combined": {
+        // Every dimension the admin explicitly turned on (present as an
+        // array, even if empty) must match. A present-but-empty array
+        // means nobody qualifies on that axis. A dimension left off
+        // entirely (undefined) is skipped. If NO dimensions are set,
+        // the channel is visible to everyone.
+        let ok = true;
+        if (vis.styleIds !== undefined && !vis.styleIds.some((sid) => memberStyleIds.has(sid))) ok = false;
+        if (ok && vis.rankIds !== undefined && !vis.rankIds.some((rid) => memberRankIds.has(rid))) ok = false;
+        if (ok && vis.statuses !== undefined && !vis.statuses.includes(member.status)) ok = false;
+        if (ok && vis.memberIds !== undefined && !vis.memberIds.includes(member.id)) ok = false;
+        visible = ok;
+        break;
+      }
       default:
         visible = true;
     }

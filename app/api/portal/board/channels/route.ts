@@ -3,7 +3,7 @@ import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 
 interface ChannelVisibility {
-  type: "all" | "styles" | "ranks" | "statuses" | "specific";
+  type: "all" | "styles" | "ranks" | "statuses" | "specific" | "combined";
   styleIds?: string[];
   rankIds?: string[];
   statuses?: string[];
@@ -122,8 +122,20 @@ export async function GET(req: NextRequest) {
           return vis.statuses.includes(member.status);
 
         case "specific":
-          if (!vis.memberIds || vis.memberIds.length === 0) return true;
+          // Empty memberIds = "nobody" (new-channel default in admin
+          // UI). Undefined memberIds = legacy / hand-authored, fall
+          // back to "everyone" for compat.
+          if (!vis.memberIds) return true;
           return vis.memberIds.includes(member.id);
+
+        case "combined": {
+          // See lib/portal-board-visibility.ts for the shared rule.
+          if (vis.styleIds !== undefined && !vis.styleIds.some((sid) => memberStyleIds.has(sid))) return false;
+          if (vis.rankIds !== undefined && !vis.rankIds.some((rid) => memberRankIds.has(rid))) return false;
+          if (vis.statuses !== undefined && !vis.statuses.includes(member.status)) return false;
+          if (vis.memberIds !== undefined && !vis.memberIds.includes(member.id)) return false;
+          return true;
+        }
 
         default:
           return true;
