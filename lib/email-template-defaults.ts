@@ -259,6 +259,10 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     eventKey: "purchase_complete",
     name: "Purchase Complete",
     subject: "Your Purchase — {{gymName}}",
+    // Portal-access section deliberately NOT included here -- the
+    // Welcome email owns the "sign in and set up your portal" moment.
+    // If an operator wants a portal link in this email too, the
+    // {{portalLoginUrl}} variable is still available in the editor.
     bodyHtml: `<h2 style="color:#c41111;">Thanks for your purchase, {{memberName}}!</h2>
     <p>We've attached your receipt{{contractSuffix}} to this email — please keep them for your records.</p>
     <div style="margin:16px 0;padding:14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
@@ -267,7 +271,6 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
       <p style="margin:8px 0 0;color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;">Total</p>
       <p style="margin:0;font-weight:600;color:#111;">{{totalAmount}}</p>
     </div>
-    {{portalSection}}
     <p style="color:#666;font-size:12px;margin-top:24px;">Questions? Reply to this email or reach us at {{gymEmail}}.</p>`,
     variables: [
       "memberName",
@@ -279,7 +282,8 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
       // contract PDF is attached; empty string otherwise. Lets one
       // template cover both cases without a conditional.
       "contractSuffix",
-      "portalSection",
+      // Both left available so the operator can add a portal CTA
+      // back in if they want -- the default body doesn't render them.
       "portalLoginUrl",
     ],
   },

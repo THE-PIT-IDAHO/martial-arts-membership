@@ -7,11 +7,22 @@ import { DEFAULT_EMAIL_TEMPLATES } from "@/lib/email-template-defaults";
 export async function GET(req: Request) {
   const clientId = await getClientId(req);
 
-  // Lazy-seed: if no templates in DB yet for this tenant, insert all defaults
-  const count = await prisma.emailTemplate.count({ where: { clientId } });
-  if (count === 0) {
+  // Sync defaults on every list. Three things happen:
+  //   1. Any default whose eventKey has NO DB row yet gets INSERTED.
+  //      Previously we only seeded on first-ever call (count === 0),
+  //      so any new default added after a tenant's first visit --
+  //      like "purchase_complete" -- never appeared in the editor.
+  //   2. Existing rows get their name + variables refreshed so
+  //      renames and newly-supported {{tokens}} propagate.
+  //   3. Subject/body are NEVER synced here -- a customized template
+  //      stays customized.
+  const existing = await prisma.emailTemplate.findMany({ where: { clientId } });
+  const existingByEventKey = new Map(existing.map((t) => [t.eventKey, t]));
+
+  const toCreate = DEFAULT_EMAIL_TEMPLATES.filter((t) => !existingByEventKey.has(t.eventKey));
+  if (toCreate.length > 0) {
     await prisma.$transaction(
-      DEFAULT_EMAIL_TEMPLATES.map((t) =>
+      toCreate.map((t) =>
         prisma.emailTemplate.create({
           data: {
             eventKey: t.eventKey,
@@ -22,19 +33,12 @@ export async function GET(req: Request) {
             isCustom: false,
             clientId,
           },
-        })
-      )
+        }),
+      ),
     );
   }
 
-  // Sync names AND variables from defaults on every list. Names catch
-  // renames (even on customized rows). Variables catch newly-supported
-  // {{tokens}} we've added to the notification handlers -- otherwise
-  // gyms whose templates were seeded before the addition never see the
-  // new click-to-insert chip in the editor. Subject/body are never
-  // synced here so a customized template stays customized.
   const defaultMap = new Map(DEFAULT_EMAIL_TEMPLATES.map((t) => [t.eventKey, t]));
-  const existing = await prisma.emailTemplate.findMany({ where: { clientId } });
   for (const tpl of existing) {
     const def = defaultMap.get(tpl.eventKey);
     if (!def) continue;

@@ -982,18 +982,20 @@ export async function sendPurchaseCompleteEmail(params: {
     attachments.push({ filename: params.contractFileName!, content: params.contractPdfBase64! });
   }
 
-  for (const to of emails) {
-    const ok = await sendEmail({
-      to,
-      subject,
-      html,
-      attachments,
-      memberId: params.memberId,
-      clientId,
-      eventType: "PURCHASE_COMPLETE",
-    });
-    console.log(`${tag} to=${to} sendEmail returned ${ok ? "true" : "false"}`);
-  }
+  // Send ONCE with all recipient addresses on the To line -- earlier
+  // version looped per-address and sent a separate email to each,
+  // which duplicated when a member had two addresses on file (their
+  // own + a parent guardian email pointing at the same inbox).
+  const ok = await sendEmail({
+    to: emails,
+    subject,
+    html,
+    attachments,
+    memberId: params.memberId,
+    clientId,
+    eventType: "PURCHASE_COMPLETE",
+  });
+  console.log(`${tag} to=[${emails.join(", ")}] sendEmail returned ${ok ? "true" : "false"}`);
 }
 
 // ─── Receipt Email (LEGACY -- kept for anything not yet migrated) ──
