@@ -96,6 +96,12 @@ export default function PortalBoardPage() {
   const [polls, setPolls] = useState<BoardPoll[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  // Post id from the URL (?post=<id>) -- when set, we scroll to that
+  // post after content loads and flash a brief highlight so the
+  // member's eye lands on the right row. Set by the "New in Dojo
+  // Board" list on the Messages page.
+  const [anchorPostId, setAnchorPostId] = useState<string | null>(null);
+  const [flashPostId, setFlashPostId] = useState<string | null>(null);
 
   // New post form
   const [showNewPost, setShowNewPost] = useState(false);
@@ -124,6 +130,21 @@ export default function PortalBoardPage() {
       .then((r) => r.json())
       .then((data) => { if (data.id) setMemberId(data.id); })
       .catch(() => {});
+    // Pick up ?post=<id> from the URL so we can auto-scroll to that
+    // post once channels + posts load. Also mark every visible
+    // channel as read the moment the board opens -- clears the
+    // notification badge; if a new post lands after this, it counts
+    // as unread on the next refresh.
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const post = params.get("post");
+      if (post) setAnchorPostId(post);
+    }
+    fetch("/api/portal/board/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ all: true }),
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -131,8 +152,32 @@ export default function PortalBoardPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedChannel) loadContent();
+    if (selectedChannel) {
+      loadContent();
+      // Mark just this channel as read on switch. Cheap upsert;
+      // matches per-channel read tracking semantics -- opening one
+      // channel doesn't clear unread state for another.
+      fetch("/api/portal/board/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId: selectedChannel }),
+      }).catch(() => {});
+    }
   }, [selectedChannel]);
+
+  // Once posts render, if the URL asked for a specific post, scroll
+  // it into view and briefly ring-flash the card. Kicks whenever
+  // posts change so channel-switching to a channel that contains the
+  // anchor still finds it.
+  useEffect(() => {
+    if (!anchorPostId || posts.length === 0) return;
+    const el = typeof document !== "undefined" ? document.getElementById(`post-${anchorPostId}`) : null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    setFlashPostId(anchorPostId);
+    const t = setTimeout(() => setFlashPostId(null), 2500);
+    return () => clearTimeout(t);
+  }, [posts, anchorPostId]);
 
   async function loadChannels() {
     try {
@@ -372,9 +417,10 @@ export default function PortalBoardPage() {
               return (
                 <div
                   key={`post-${post.id}`}
-                  className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${
+                  id={`post-${post.id}`}
+                  className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-shadow ${
                     post.isPriority ? "border-primary/30 ring-1 ring-primary/10" : "border-gray-200"
-                  }`}
+                  } ${flashPostId === post.id ? "ring-2 ring-primary/60 shadow-md" : ""}`}
                 >
                   {/* Post header */}
                   <div className="p-4">

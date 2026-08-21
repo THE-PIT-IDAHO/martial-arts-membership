@@ -15,21 +15,37 @@ interface Conversation {
   updatedAt: string;
 }
 
+// Recent unread board posts across every channel the member can see.
+// Rendered as a "New in Dojo Board" section above the DM list.
+// Each row links straight to the specific post via ?post=<id>.
+interface BoardPostNotification {
+  id: string;
+  title: string;
+  snippet: string;
+  authorName: string;
+  channelId: string | null;
+  channelName: string | null;
+  createdAt: string;
+}
+
 export default function PortalMessagesPage() {
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [boardPosts, setBoardPosts] = useState<BoardPostNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [composeOpen, setComposeOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    fetch("/api/portal/messages")
-      .then((r) => r.json())
-      .then((data) => {
-        setConversations(data);
-        setLoading(false);
-      });
+    Promise.all([
+      fetch("/api/portal/messages").then((r) => r.json()).catch(() => []),
+      fetch("/api/portal/notifications/board-posts").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([conv, board]) => {
+      setConversations(Array.isArray(conv) ? conv : []);
+      if (board && Array.isArray(board.posts)) setBoardPosts(board.posts);
+      setLoading(false);
+    });
   }, []);
 
   async function sendNewMessage(e: React.FormEvent) {
@@ -111,6 +127,45 @@ export default function PortalMessagesPage() {
             </button>
           </div>
         </form>
+      )}
+
+      {/* New in Dojo Board -- unread posts across every channel the
+          member can see. Each row links straight to the specific post
+          via ?post=<id> so the board page auto-scrolls + highlights. */}
+      {boardPosts.length > 0 && (
+        <div className="mb-4">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+            <span>New in Dojo Board</span>
+            <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+              {boardPosts.length}{boardPosts.length === 20 ? "+" : ""}
+            </span>
+          </h2>
+          <div className="space-y-2">
+            {boardPosts.map((p) => (
+              <Link
+                key={p.id}
+                href={`/portal/board?post=${encodeURIComponent(p.id)}`}
+                className="block bg-white rounded-xl border border-gray-200 shadow-sm p-3 active:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{p.title}</p>
+                    <p className="text-xs text-gray-500 truncate mt-0.5">
+                      {p.authorName}
+                      {p.channelName ? ` · in ${p.channelName}` : ""}
+                    </p>
+                    {p.snippet && (
+                      <p className="text-xs text-gray-600 mt-1 line-clamp-2">{p.snippet}</p>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-400 whitespace-nowrap">
+                    {formatTimeAgo(p.createdAt)}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
       )}
 
       {conversations.length === 0 ? (

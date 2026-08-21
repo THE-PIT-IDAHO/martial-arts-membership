@@ -1076,6 +1076,23 @@ model DirectConversationMember {
   @@unique([conversationId, memberId])
 }
 
+// Per-member, per-channel "last read" timestamp for the Dojo Board.
+// A member's unread count on a channel = posts in that channel newer
+// than their lastReadAt row (or all posts if they have no row yet).
+// Written by /api/portal/board/read whenever the member opens the
+// board or switches into a channel.
+model MemberBoardChannelRead {
+  id         String   @id @default(cuid())
+  memberId   String
+  channelId  String
+  lastReadAt DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([memberId, channelId])
+  @@index([memberId])
+}
+
 model DirectMessage {
   id             String             @id @default(cuid())
   conversationId String
