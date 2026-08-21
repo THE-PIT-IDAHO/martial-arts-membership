@@ -5,6 +5,28 @@ import { canAddMember } from "@/lib/trial";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 import { getNextMemberNumber } from "@/lib/sequence";
+import { sendWaiverReceivedEmail } from "@/lib/notifications";
+
+/** Fire the "waiver received" acknowledgment. Fire-and-forget so a
+ *  Resend outage never blocks the successful submit response. Logs
+ *  any error so silent failures show up in Vercel runtime logs
+ *  (the old `.catch(() => {})` pattern hid every send failure). */
+function fireWaiverAck(params: {
+  email: string | null | undefined;
+  firstName: string | null | undefined;
+  memberId: string;
+  clientId: string;
+}) {
+  if (!params.email) return;
+  sendWaiverReceivedEmail({
+    email: params.email,
+    firstName: params.firstName || "there",
+    memberId: params.memberId,
+    clientId: params.clientId,
+  }).catch((err) => {
+    console.error("[waiver-submit] acknowledgment email failed:", err);
+  });
+}
 
 
 // POST /api/public/waiver-submit
@@ -95,9 +117,21 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
         waiverContent: "Submitted via waiver form",
         signatureData: body.signatureData || "submitted",
         pdfData: pdfBase64 || null,
-        confirmed: false,
+        confirmed: true,
+        confirmedAt: new Date(),
         clientId,
       },
+    });
+
+    // Ack the re-signer at whatever email they just entered (falls
+    // back to whatever's on file). Only skips when we truly have no
+    // address to send to.
+    const ackEmail = (emailUpdate?.email) ?? existing.email;
+    fireWaiverAck({
+      email: ackEmail,
+      firstName: firstName?.trim() || existing.firstName,
+      memberId: existing.id,
+      clientId,
     });
 
     return NextResponse.json({ member: { id: existing.id } }, { status: 200 });
@@ -120,6 +154,7 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
     return NextResponse.json({ error: emailCheck.reason }, { status: 409 });
   }
 
+  const now = new Date();
   const member = await prisma.member.create({
     data: {
       firstName: firstName.trim(),
@@ -134,16 +169,21 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
       emergencyContactName: emergencyContactName || null,
       emergencyContactPhone: emergencyContactPhone || null,
       medicalNotes: medicalNotes || null,
-      waiverSigned: false,
+      // Waivers auto-confirm on submit -- flag the member as signed
+      // right away so downstream reads (Waivers page counts, member
+      // profile "waiver on file" badge) light up immediately.
+      waiverSigned: true,
+      waiverSignedAt: now,
       status: "PROSPECT",
       memberNumber,
       clientId,
     },
   });
 
-  // Create SignedWaiver in pending (unconfirmed) state. SignedWaiver is
-  // the source of truth — we no longer also write to member.styleDocuments
-  // (that double-listed the same waiver on the portal Documents tab).
+  // SignedWaiver is created in auto-confirmed state -- admin no
+  // longer needs to approve. SignedWaiver is the source of truth for
+  // the documents tab; we don't also write to member.styleDocuments
+  // (that used to double-list the same waiver).
   await prisma.signedWaiver.create({
     data: {
       memberId: member.id,
@@ -152,9 +192,17 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
       waiverContent: "Submitted via waiver form",
       signatureData: body.signatureData || "submitted",
       pdfData: pdfBase64 || null,
-      confirmed: false,
+      confirmed: true,
+      confirmedAt: now,
       clientId,
     },
+  });
+
+  fireWaiverAck({
+    email: normalizedEmail,
+    firstName: firstName.trim(),
+    memberId: member.id,
+    clientId,
   });
 
   return NextResponse.json({ member: { id: member.id } }, { status: 201 });
@@ -389,7 +437,9 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
           emergencyContactPhone: c.emergencyContactPhone || emergencyContactPhone || null,
           emergencyContactRelationship: c.emergencyContactRelationship || null,
           medicalNotes: c.medicalNotes || null,
-          waiverSigned: false,
+          // Auto-confirmed on submit -- matches the adult flow.
+          waiverSigned: true,
+          waiverSignedAt: new Date(),
           status: "PROSPECT",
           memberNumber: depNumber,
           clientId,
@@ -406,7 +456,8 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
         waiverContent: "Submitted via guardian waiver form",
         signatureData,
         pdfData: c.pdfBase64 || null,
-        confirmed: false,
+        confirmed: true,
+        confirmedAt: new Date(),
         clientId,
       },
     });
@@ -440,9 +491,25 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
         signatureData,
         pdfData: (typeof parentPdfBase64 === "string" ? parentPdfBase64 : null)
           || (children[0]?.pdfBase64 || null),
-        confirmed: false,
+        confirmed: true,
+        confirmedAt: new Date(),
         clientId,
       },
+    });
+
+    // Ack the guardian ONCE for the whole submission, no matter how
+    // many kids were on it. Look up the guardian's email + first
+    // name fresh so we handle both the "existing parent" and
+    // "brand-new parent" branches without threading them through.
+    const guardianRow = await prisma.member.findUnique({
+      where: { id: guardian.id },
+      select: { email: true, firstName: true },
+    });
+    fireWaiverAck({
+      email: guardianRow?.email,
+      firstName: guardianRow?.firstName,
+      memberId: guardian.id,
+      clientId,
     });
   }
 

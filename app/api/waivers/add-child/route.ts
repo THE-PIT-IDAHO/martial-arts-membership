@@ -130,7 +130,9 @@ export async function POST(req: Request) {
         templateName: finalTemplateName,
         waiverContent: finalContent,
         signatureData,
-        confirmed: false,
+        // Auto-confirm on create (admin confirmation flow removed).
+        confirmed: true,
+        confirmedAt: new Date(),
         clientId: parent.clientId,
       },
     });
@@ -142,7 +144,9 @@ export async function POST(req: Request) {
         templateName: finalTemplateName,
         waiverContent: `${finalContent}\n\n(Updated to add minor: ${childFirstName} ${childLastName})`,
         signatureData,
-        confirmed: false,
+        // Auto-confirm on create (admin confirmation flow removed).
+        confirmed: true,
+        confirmedAt: new Date(),
         clientId: parent.clientId,
       },
     });

@@ -60,7 +60,10 @@ export async function POST(request: Request) {
         templateName,
         waiverContent,
         signatureData,
-        confirmed: false,
+        // Waivers auto-confirm on submit -- admin confirmation flow
+        // was removed. See prisma/migrations/20260821_waiver_auto_confirm.
+        confirmed: true,
+        confirmedAt: new Date(),
         clientId,
       },
     });

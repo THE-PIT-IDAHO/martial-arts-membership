@@ -1305,7 +1305,10 @@ model SignedWaiver {
   signedAt      DateTime        @default(now())
   ipAddress     String?
   pdfData       String?
-  confirmed     Boolean         @default(false)
+  // Default true: waivers no longer require admin approval. Kept as a
+  // column (rather than dropped) so historical audit / legacy queries
+  // still work; every new row lands as confirmed automatically.
+  confirmed     Boolean         @default(true)
   confirmedAt   DateTime?
   clientId      String          @default("default-client")
   createdAt     DateTime        @default(now())
