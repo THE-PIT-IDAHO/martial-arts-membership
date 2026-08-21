@@ -910,7 +910,95 @@ export async function sendTrialExpiringEmail(params: {
   }
 }
 
-// ─── Receipt Email ─────────────────────────────────────────────
+// ─── Purchase Complete (unified receipt + contract) ───────────
+//
+// Replaces the old separate sendReceiptEmail + sendContractSignedEmail
+// pair. One email with BOTH PDFs attached (receipt always; contract
+// only if one was signed in the same checkout). Uses the
+// "purchase_complete" template so operators can edit body/subject
+// from Emails > Email Templates.
+export async function sendPurchaseCompleteEmail(params: {
+  memberId: string;
+  memberName: string;
+  transactionNumber: string;
+  totalCents: number;
+  receiptPdfBase64: string;
+  receiptFileName: string;
+  contractPdfBase64?: string | null;
+  contractFileName?: string | null;
+  clientId?: string;
+}): Promise<void> {
+  const tag = `[sendPurchaseCompleteEmail] memberId=${params.memberId} txn=${params.transactionNumber}`;
+  console.log(`${tag} start`);
+  const clientId = await resolveClientId({ clientId: params.clientId, memberId: params.memberId });
+  if (!clientId) {
+    console.warn(`${tag} SKIPPED: no clientId resolvable from memberId`);
+    return;
+  }
+  const emails = await resolveRecipientEmails(params.memberId);
+  if (emails.length === 0) {
+    console.warn(`${tag} SKIPPED: no recipient emails (member has no email on file)`);
+    return;
+  }
+  const brand = await getGymBranding(clientId);
+  const minted = await mintPortalUrl(params.memberId);
+  const portalSection = renderPortalSectionHtml(minted);
+  const portalLoginUrl = minted?.url || "";
+
+  const hasContract = !!(params.contractPdfBase64 && params.contractFileName);
+  const contractSuffix = hasContract ? " and your signed contract" : "";
+  const totalAmount = `$${(params.totalCents / 100).toFixed(2)}`;
+
+  const resolved = await resolveTemplate(
+    "purchase_complete",
+    {
+      memberName: params.memberName,
+      gymName: brand.gymName,
+      gymEmail: brand.gymEmail,
+      transactionNumber: params.transactionNumber,
+      totalAmount,
+      contractSuffix,
+      portalSection,
+      portalLoginUrl,
+    },
+    { memberId: params.memberId, clientId },
+  );
+  if (!resolved) {
+    console.warn(`${tag} SKIPPED: purchase_complete template disabled for this tenant`);
+    return;
+  }
+  const { subject, bodyHtml } = resolved;
+  const html = wrapInTemplate(brand, bodyHtml);
+
+  // Both PDFs attached (contract only when present). Receipt is
+  // required -- if the caller couldn't generate one, we should still
+  // send the email but without any attachment, so the customer at
+  // least has the acknowledgment.
+  const attachments: Array<{ filename: string; content: string }> = [];
+  if (params.receiptPdfBase64 && params.receiptFileName) {
+    attachments.push({ filename: params.receiptFileName, content: params.receiptPdfBase64 });
+  }
+  if (hasContract) {
+    attachments.push({ filename: params.contractFileName!, content: params.contractPdfBase64! });
+  }
+
+  for (const to of emails) {
+    const ok = await sendEmail({
+      to,
+      subject,
+      html,
+      attachments,
+      memberId: params.memberId,
+      clientId,
+      eventType: "PURCHASE_COMPLETE",
+    });
+    console.log(`${tag} to=${to} sendEmail returned ${ok ? "true" : "false"}`);
+  }
+}
+
+// ─── Receipt Email (LEGACY -- kept for anything not yet migrated) ──
+// New code should call sendPurchaseCompleteEmail instead. This helper
+// still ships in case something depends on the old event key.
 export async function sendReceiptEmail(params: {
   memberId: string;
   memberName: string;

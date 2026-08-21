@@ -248,10 +248,50 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     variables: ["memberName", "className", "classDate", "classTime", "gymName"],
   },
 
-  // --- Contracts ---
+  // --- Purchase (POS) ---
   {
+    // Unified receipt + contract email. Fires whenever a member completes
+    // a POS purchase that includes a membership. Attaches the receipt PDF
+    // always; attaches the signed contract PDF too if one was signed in
+    // the same checkout flow. Replaces the old "Contract Signed" and the
+    // hard-coded "Your Receipt" email -- one editable template covers
+    // both the "purchase only" and "purchase + contract signed" cases.
+    eventKey: "purchase_complete",
+    name: "Purchase Complete",
+    subject: "Your Purchase — {{gymName}}",
+    bodyHtml: `<h2 style="color:#c41111;">Thanks for your purchase, {{memberName}}!</h2>
+    <p>We've attached your receipt{{contractSuffix}} to this email — please keep them for your records.</p>
+    <div style="margin:16px 0;padding:14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+      <p style="margin:0 0 4px;color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;">Transaction</p>
+      <p style="margin:0;font-weight:600;color:#111;">#{{transactionNumber}}</p>
+      <p style="margin:8px 0 0;color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;">Total</p>
+      <p style="margin:0;font-weight:600;color:#111;">{{totalAmount}}</p>
+    </div>
+    {{portalSection}}
+    <p style="color:#666;font-size:12px;margin-top:24px;">Questions? Reply to this email or reach us at {{gymEmail}}.</p>`,
+    variables: [
+      "memberName",
+      "gymName",
+      "gymEmail",
+      "transactionNumber",
+      "totalAmount",
+      // Auto-populated as ", along with your signed contract" when a
+      // contract PDF is attached; empty string otherwise. Lets one
+      // template cover both cases without a conditional.
+      "contractSuffix",
+      "portalSection",
+      "portalLoginUrl",
+    ],
+  },
+
+  // --- Contracts (legacy, kept for template row that already exists) ---
+  {
+    // Superseded by "purchase_complete" as of 2026-08-21 -- no code
+    // path calls this anymore. Left in the defaults so any DB row that
+    // was seeded from it remains readable; safe to disable from
+    // Emails > Email Templates.
     eventKey: "contract_signed",
-    name: "Contract Signed",
+    name: "Contract Signed (legacy)",
     subject: "Your Contract — {{planName}}",
     bodyHtml: `<h2 style="color:#c41111;">Your Signed Contract</h2>
     <p>Thank you, {{memberName}}! Your signed contract for <strong>{{planName}}</strong> is attached to this email.</p>
@@ -410,7 +450,8 @@ export const TEMPLATE_TRIGGERS: Record<string, { description: string; wired: boo
   custom_message: { description: 'Calendar → "Message Attendees" feature (manual admin send)', wired: true },
   low_stock_alert: { description: "POS inventory drops at/below reorderThreshold — sent to gymEmail", wired: true },
   promotion_eligibility: { description: "Weekly auto-billing sweep detects members at next-rank threshold — sent to gymEmail", wired: true },
-  contract_signed: { description: "Fires when a member signs a contract at POS — includes the signed PDF and a 7-day magic link to their portal", wired: true },
+  contract_signed: { description: "Superseded by \"Purchase Complete\" — no longer fires. Kept so existing customizations aren't lost.", wired: false },
+  purchase_complete: { description: "Fires when a member completes a POS purchase that includes a membership. Attaches the receipt PDF, and the signed contract PDF too if one was signed in the same checkout.", wired: true },
 };
 
 // Template category groupings for the UI
@@ -421,7 +462,7 @@ export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
   },
   {
     label: "Billing",
-    keys: ["invoice_created", "payment_received", "past_due", "dunning_friendly", "dunning_urgent", "dunning_final", "dunning_suspension"],
+    keys: ["purchase_complete", "invoice_created", "payment_received", "past_due", "dunning_friendly", "dunning_urgent", "dunning_final", "dunning_suspension"],
   },
   {
     label: "Membership",

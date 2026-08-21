@@ -276,17 +276,15 @@ export default function POSPage() {
 
   function completeTransaction(txn: { id: string; transactionNumber: string }) {
     setLastTransaction(txn);
-    // Fire and forget receipt email
-    fetch("/api/pos/send-receipt", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transactionId: txn.id }),
-    }).catch(() => {}); // silent fail — receipt is optional
 
-    // If the cart included a contract that the member signed earlier in
-    // this flow, save it now — only at this confirmed-success point. We
-    // also attach the transactionId so the contract record links to the
-    // sale that triggered it.
+    // Email path. Two cases:
+    //  A. Contract was signed in this checkout -- /api/contracts/sign
+    //     will save the SignedContract AND fire ONE combined
+    //     "Purchase Complete" email with BOTH the receipt PDF and the
+    //     contract PDF attached. Skip /api/pos/send-receipt so the
+    //     member doesn't receive two emails.
+    //  B. No contract -- fire /api/pos/send-receipt to send the
+    //     receipt-only "Purchase Complete" email.
     const pending = pendingContractRef.current;
     if (pending) {
       pendingContractRef.current = null;
@@ -297,6 +295,12 @@ export default function POSPage() {
       }).catch((err) => {
         console.error("Failed to save signed contract:", err);
       });
+    } else {
+      fetch("/api/pos/send-receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId: txn.id }),
+      }).catch(() => {}); // silent fail — receipt is optional
     }
   }
 

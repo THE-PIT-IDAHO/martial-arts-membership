@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
-import { sendContractSignedEmail } from "@/lib/notifications";
+import { sendPurchaseCompleteEmail } from "@/lib/notifications";
 import { uploadContractPdf } from "@/lib/contract-storage";
+import { buildReceiptFromTransactionId } from "@/lib/receipt-from-transaction";
 
 // POST /api/contracts/sign
 export async function POST(req: Request) {
@@ -101,23 +102,49 @@ export async function POST(req: Request) {
       }
     }
 
-    // Auto-email contract via the contract_signed template. Template
-    // handles the magic-link portal CTA and is editable from Emails →
-    // Email Templates. Awaited (was fire-and-forget) -- Vercel
-    // serverless kills dangling promises the instant the response
-    // returns, so fire-and-forget silently never completed on prod.
-    if (pdfBase64Clean) {
+    // Fire ONE combined "Purchase Complete" email with BOTH PDFs
+    // attached (receipt + contract). Requires the transactionId so we
+    // can pull the txn + line items server-side and build the receipt
+    // PDF here -- keeps the client from having to upload two PDFs, and
+    // means the POS page fires just ONE endpoint when a contract was
+    // signed (previously did /api/pos/send-receipt AND this route,
+    // producing two separate emails).
+    if (transactionId && pdfBase64Clean) {
       try {
-        await sendContractSignedEmail({
-          memberId,
-          memberName: memberName || "Member",
-          planName: planName || "Membership Agreement",
-          pdfBase64: pdfBase64Clean,
-          fileName,
-          clientId,
-        });
+        const receipt = await buildReceiptFromTransactionId(clientId, transactionId);
+        if (receipt) {
+          await sendPurchaseCompleteEmail({
+            memberId: receipt.memberId,
+            memberName: receipt.memberName,
+            transactionNumber: receipt.transactionNumber,
+            totalCents: receipt.totalCents,
+            receiptPdfBase64: receipt.pdfBase64,
+            receiptFileName: receipt.fileName,
+            contractPdfBase64: pdfBase64Clean,
+            contractFileName: fileName,
+            clientId,
+          });
+        } else {
+          console.warn(
+            "[contracts/sign] transaction not found; sending contract-only email fallback",
+          );
+          // Fallback: no transaction to derive a receipt from, but we
+          // still have a contract to deliver. Send with just the
+          // contract attached so the customer still gets the document.
+          await sendPurchaseCompleteEmail({
+            memberId,
+            memberName: memberName || "Member",
+            transactionNumber: "—",
+            totalCents: 0,
+            receiptPdfBase64: "",
+            receiptFileName: "",
+            contractPdfBase64: pdfBase64Clean,
+            contractFileName: fileName,
+            clientId,
+          });
+        }
       } catch (err) {
-        console.error("[contracts/sign] contract email failed:", err);
+        console.error("[contracts/sign] purchase-complete email failed:", err);
       }
     }
 

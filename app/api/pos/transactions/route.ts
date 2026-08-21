@@ -328,8 +328,16 @@ export async function POST(req: Request) {
           // Keep other statuses like COACH, PARENT but replace INACTIVE with ACTIVE
           const member = await prisma.member.findUnique({
             where: { id: memberId },
-            select: { id: true, status: true, stylesNotes: true, styleDocuments: true, primaryStyle: true, rank: true },
+            select: { id: true, firstName: true, lastName: true, status: true, stylesNotes: true, styleDocuments: true, primaryStyle: true, rank: true },
           });
+
+          // Snapshot BEFORE the status update so we can decide if this
+          // is a first-time conversion (PROSPECT -> ACTIVE) that
+          // deserves a welcome email. Existing ACTIVE members buying
+          // another membership don't re-trigger a welcome.
+          const wasProspect = member?.status
+            ? member.status.split(",").map((s: string) => s.trim()).includes("PROSPECT")
+            : false;
 
           if (member) {
             // Parse existing statuses (can be comma-separated like "INACTIVE,COACH")
@@ -352,6 +360,23 @@ export async function POST(req: Request) {
               where: { id: memberId },
               data: { status: newStatus },
             });
+
+            // First membership purchase for a prospect -> welcome
+            // email fires alongside the receipt/contract "Purchase
+            // Complete" email that the checkout flow sends. Awaited
+            // so Vercel serverless doesn't kill the promise before
+            // Resend gets the request.
+            if (wasProspect) {
+              try {
+                const { sendWelcomeEmail } = await import("@/lib/notifications");
+                await sendWelcomeEmail({
+                  memberId: member.id,
+                  memberName: `${member.firstName} ${member.lastName}`,
+                });
+              } catch (err) {
+                console.error("[pos/transactions] welcome email failed:", err);
+              }
+            }
           }
 
           // Auto-assign included styles, reactivate existing inactive styles, and add rank PDFs
