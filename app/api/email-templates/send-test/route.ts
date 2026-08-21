@@ -38,6 +38,24 @@ export async function POST(req: Request) {
   const gymEmail = s.gymEmail || "info@ourgym.com";
   const gymLogo = s.gymLogo || "";
 
+  // Sample values used to render {{variables}} in a test send. Any key
+  // that appears in a template body but is NOT in this map renders as
+  // the literal "{{key}}" text in the email (per interpolate() below),
+  // which is exactly what "Send Test" is supposed to demonstrate --
+  // real sends supply their own values. Add sample values here as new
+  // template variables are introduced.
+  const samplePortalUrl = "https://app.example.com/portal/verify?token=test-token-not-real";
+  const samplePortalSection = `
+    <div style="margin:24px 0;padding:18px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+      <h3 style="margin:0 0 8px;color:#111;">Access your member portal</h3>
+      <p style="margin:0 0 14px;color:#444;font-size:14px;">This is a preview of the "Open My Portal" card. In real sends this button uses a fresh 7-day magic-link URL.</p>
+      <p style="margin:0;">
+        <a href="${samplePortalUrl}" style="display:inline-block;padding:10px 20px;background:#c41111;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">
+          Open My Portal
+        </a>
+      </p>
+    </div>`;
+
   const sampleVars: Record<string, string> = {
     memberName: "Test User",
     firstName: "Test",
@@ -58,7 +76,7 @@ export async function POST(req: Request) {
     classDate: "Mon, Mar 2",
     classTime: "6:00 PM",
     waitlistPosition: "3",
-    loginUrl: "https://example.com/portal/verify?token=test",
+    loginUrl: samplePortalUrl,
     subject: "Test Subject",
     message: "This is a test email message.",
     effectiveDate: "April 1, 2026",
@@ -69,6 +87,18 @@ export async function POST(req: Request) {
     threshold: "5",
     eligibleList: "<p><em>Sample eligibility list</em></p>",
     eligibleCount: "1",
+    // Portal-access + purchase variables. Test sends were rendering
+    // {{portalSection}} and {{portalLoginUrl}} as literal text
+    // because these weren't in the sample map -- real sends supply
+    // them via mintPortalUrl().
+    portalSection: samplePortalSection,
+    portalLoginUrl: samplePortalUrl,
+    portalUrl: samplePortalUrl,
+    memberEmail: toEmail,
+    magicLoginUrl: samplePortalUrl,
+    transactionNumber: "TXN-TEST-2001",
+    totalAmount: "$99.00",
+    contractSuffix: " and your signed contract",
   };
 
   const renderedSubject = `[TEST] ${interpolate(subject, sampleVars)}`;
