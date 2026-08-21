@@ -2807,57 +2807,144 @@ export default function DojoBoardTab() {
         </div>
       )}
 
-      {/* Member List Modal */}
-      {showMemberList && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md max-h-[80vh] rounded-lg bg-white shadow-xl overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Channel Members</h3>
-              <button
-                onClick={() => setShowMemberList(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4">
-              {members.length === 0 ? (
-                <p className="text-center text-gray-500 text-sm">No members found</p>
-              ) : (
-                <div className="space-y-2">
-                  {members.slice(0, 20).map((member) => (
-                    <div
-                      key={member.id}
-                      className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">
-                        {member.firstName[0]}{member.lastName[0]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-gray-900">
-                          {member.firstName} {member.lastName}
-                        </div>
-                        <div className="text-xs text-gray-500 truncate">
-                          {member.primaryStyle || member.rank || "Student"}
-                        </div>
-                      </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        member.status === "ACTIVE"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}>
-                        {member.status}
-                      </span>
-                    </div>
-                  ))}
+      {/* Channel Members Modal
+          Shows who's in the active channel and, for channels whose
+          audience is a specific-members list, lets the admin remove
+          people one at a time without opening the full edit modal.
+          Rule-based channels (all / by style / by rank / by status)
+          get a read-only note explaining the audience is derived
+          from the rule -- to change WHO qualifies for those, edit
+          the channel and change the rule itself. */}
+      {showMemberList && (() => {
+        const chan = channels.find((c) => c.id === activeChannel);
+        const vis = chan?.visibility;
+        const isSpecific = vis?.type === "specific";
+        // For a specific-members channel: the members currently on
+        // the list, in the same order as memberIds. For rule-based
+        // channels: everyone (up to 50 shown) so the admin can eyeball
+        // who currently qualifies.
+        const listedMembers = isSpecific
+          ? (vis?.memberIds || [])
+              .map((mid) => members.find((m) => m.id === mid))
+              .filter((m): m is typeof members[number] => !!m)
+          : members.slice(0, 50);
+
+        async function removeMemberFromChannel(memberId: string) {
+          if (!chan || !isSpecific) return;
+          const currentIds = vis?.memberIds || [];
+          const nextIds = currentIds.filter((id) => id !== memberId);
+          // Optimistic update -- reflect the removal locally before
+          // the PATCH round-trip so the row disappears instantly.
+          setChannels((prev) =>
+            prev.map((c) =>
+              c.id === chan.id
+                ? { ...c, visibility: { ...(c.visibility || { type: "specific" }), type: "specific", memberIds: nextIds } as typeof c.visibility }
+                : c,
+            ),
+          );
+          try {
+            const res = await fetch(`/api/board/channels/${chan.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                visibility: { ...(vis || {}), type: "specific", memberIds: nextIds },
+              }),
+            });
+            if (!res.ok) throw new Error("Failed to remove member");
+          } catch (err) {
+            console.error("Failed to remove member from channel:", err);
+            // Roll back the optimistic update.
+            setChannels((prev) =>
+              prev.map((c) =>
+                c.id === chan.id
+                  ? { ...c, visibility: { ...(c.visibility || { type: "specific" }), type: "specific", memberIds: currentIds } as typeof c.visibility }
+                  : c,
+              ),
+            );
+            alert("Failed to remove member. Please try again.");
+          }
+        }
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="w-full max-w-md max-h-[80vh] rounded-lg bg-white shadow-xl overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Channel Members</h3>
+                  {chan && (
+                    <p className="text-xs text-gray-500 mt-0.5">{chan.name}</p>
+                  )}
                 </div>
-              )}
+                <button
+                  onClick={() => setShowMemberList(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4">
+                {!isSpecific && (
+                  <div className="mb-3 rounded-md border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+                    This channel&apos;s audience is set by a{" "}
+                    <strong>{vis?.type || "all-members"}</strong> rule. To change who&apos;s in
+                    it, use <strong>Edit Channel</strong>. The list below shows who currently
+                    qualifies.
+                  </div>
+                )}
+                {listedMembers.length === 0 ? (
+                  <p className="text-center text-gray-500 text-sm py-6">
+                    {isSpecific ? "No members added to this channel yet." : "No members found."}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {listedMembers.map((member) => (
+                      <div
+                        key={member.id}
+                        className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">
+                          {member.firstName[0]}{member.lastName[0]}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900 truncate">
+                            {member.firstName} {member.lastName}
+                          </div>
+                          <div className="text-xs text-gray-500 truncate">
+                            {member.primaryStyle || member.rank || "Student"}
+                          </div>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          member.status === "ACTIVE"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}>
+                          {member.status}
+                        </span>
+                        {isSpecific && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Remove ${member.firstName} ${member.lastName} from this channel?`)) {
+                                removeMemberFromChannel(member.id);
+                              }
+                            }}
+                            title="Remove from channel"
+                            className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 hover:border-red-300"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* New Conversation Modal */}
       {dmShowNewConversation && (
