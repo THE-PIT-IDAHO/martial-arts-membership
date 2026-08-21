@@ -66,6 +66,11 @@ export default function PortalDashboard() {
   const [children, setChildren] = useState<ChildInfo[]>([]);
   const [features, setFeatures] = useState<Record<string, boolean> | null>(null);
   const [loading, setLoading] = useState(true);
+  // Unread notification count (direct messages today; board posts in
+  // phase 2). Powers the red "N New Messages" pill next to the
+  // greeting -- fetched separately from the main page data so it can
+  // refresh on nav without re-pulling everything else.
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     Promise.all([
@@ -82,6 +87,12 @@ export default function PortalDashboard() {
       if (feat?.features) setFeatures(feat.features);
       setLoading(false);
     });
+    fetch("/api/portal/notifications/unread")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && typeof data.total === "number") setUnread(data.total);
+      })
+      .catch(() => {});
   }, []);
 
   if (loading) {
@@ -100,9 +111,22 @@ export default function PortalDashboard() {
     <div className="px-4 pt-6 pb-4 max-w-lg mx-auto">
       {/* Welcome Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Hi, {member.firstName}!
-        </h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-bold text-gray-900">
+            Hi, {member.firstName}!
+          </h1>
+          {unread > 0 && (
+            <Link
+              href="/portal/messages"
+              className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-sm font-semibold text-white shadow-sm hover:bg-red-700 active:scale-95 transition-all"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path fillRule="evenodd" d="M4.848 2.771A49.144 49.144 0 0112 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 01-3.476.383.39.39 0 00-.297.17l-2.755 4.133a.75.75 0 01-1.248 0l-2.755-4.133a.39.39 0 00-.297-.17 48.9 48.9 0 01-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97z" clipRule="evenodd" />
+              </svg>
+              {unread} New {unread === 1 ? "Message" : "Messages"}
+            </Link>
+          )}
+        </div>
         <p className="text-gray-500 mt-0.5">Welcome back to your portal.</p>
       </div>
 

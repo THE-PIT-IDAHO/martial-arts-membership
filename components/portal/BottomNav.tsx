@@ -89,6 +89,10 @@ const tabs = [
 export default function BottomNav() {
   const pathname = usePathname();
   const [features, setFeatures] = useState<Record<string, boolean> | null>(null);
+  // Unread badge count for the Messages tab. Refreshed whenever the
+  // route changes so opening + reading a conversation collapses the
+  // badge on next nav render without a full page reload.
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     fetch("/api/portal/features")
@@ -96,6 +100,15 @@ export default function BottomNav() {
       .then((data) => setFeatures(data.features))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    fetch("/api/portal/notifications/unread")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && typeof data.total === "number") setUnread(data.total);
+      })
+      .catch(() => {});
+  }, [pathname]);
 
   const visibleTabs = features
     ? tabs.filter((tab) => tab.featureKey === null || features[tab.featureKey] !== false)
@@ -120,6 +133,7 @@ export default function BottomNav() {
       <div className="flex items-stretch h-14 max-w-lg mx-auto px-1">
         {visibleTabs.map((tab) => {
           const active = isActive(tab);
+          const showBadge = tab.label === "Messages" && unread > 0;
           return (
             <Link
               key={tab.label}
@@ -128,7 +142,14 @@ export default function BottomNav() {
                 active ? "text-primary" : "text-gray-700"
               }`}
             >
-              {tab.icon(active)}
+              <div className="relative">
+                {tab.icon(active)}
+                {showBadge && (
+                  <span className="absolute -top-1.5 -right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
+              </div>
               <span className={`text-[10px] font-medium leading-tight truncate w-full text-center px-0.5 ${active ? "text-primary" : "text-gray-700"}`}>
                 {tab.label}
               </span>
