@@ -139,7 +139,7 @@ export default function CommunicationsPage() {
     <AppLayout>
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Communications</h1>
+          <h1 className="text-2xl font-bold">Emails</h1>
         </div>
 
         {/* Tab Bar */}
