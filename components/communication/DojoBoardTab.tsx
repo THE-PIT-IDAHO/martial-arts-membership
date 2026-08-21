@@ -325,12 +325,30 @@ export default function DojoBoardTab() {
   const MEMBER_STATUSES = ["PROSPECT", "ACTIVE", "INACTIVE", "PARENT", "COACH"];
 
   // Load channels from API
+  // Parse the visibility JSON on channels returned from the API.
+  // The DB stores visibility as a stringified JSON blob; the client's
+  // TrainingChannel type expects it as an object. Without this
+  // parse, channel.visibility.memberIds is always undefined -- so
+  // the "Specific Members" checkboxes in the edit modal always
+  // rendered empty even for channels that DO have members saved.
+  // Bug caught 2026-08-21.
+  function hydrateChannel(raw: TrainingChannel & { visibility?: unknown }): TrainingChannel {
+    const v = raw.visibility;
+    let parsed: TrainingChannel["visibility"] = undefined;
+    if (typeof v === "string") {
+      try { parsed = JSON.parse(v); } catch { parsed = undefined; }
+    } else if (v && typeof v === "object") {
+      parsed = v as TrainingChannel["visibility"];
+    }
+    return { ...raw, visibility: parsed };
+  }
+
   const loadChannels = useCallback(async () => {
     try {
       const res = await fetch("/api/board/channels");
       if (res.ok) {
         const data = await res.json();
-        const apiChannels = data.channels || [];
+        const apiChannels: TrainingChannel[] = (data.channels || []).map(hydrateChannel);
         // Always include default "All Members" channel if not present
         const hasAllChannel = apiChannels.some((c: TrainingChannel) => c.id === "all" || c.type === "all");
         if (!hasAllChannel && apiChannels.length === 0) {
@@ -344,9 +362,10 @@ export default function DojoBoardTab() {
           const res2 = await fetch("/api/board/channels");
           if (res2.ok) {
             const data2 = await res2.json();
-            setChannels(data2.channels || [DEFAULT_CHANNEL]);
-            if (data2.channels?.length > 0) {
-              setActiveChannel(data2.channels[0].id);
+            const hydrated: TrainingChannel[] = (data2.channels || []).map(hydrateChannel);
+            setChannels(hydrated.length > 0 ? hydrated : [DEFAULT_CHANNEL]);
+            if (hydrated.length > 0) {
+              setActiveChannel(hydrated[0].id);
             }
           }
         } else {
@@ -1327,6 +1346,29 @@ export default function DojoBoardTab() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
                       {channel.name}
+                      {(() => {
+                        // Member count next to the channel name. Exact
+                        // when the channel is scoped by specific members
+                        // (visibility.memberIds.length). For all-members
+                        // channels, uses the total gym roster loaded on
+                        // this tab. Rule-based channels (styles/ranks/
+                        // statuses) hide the count -- computing the
+                        // qualifying set client-side would duplicate the
+                        // portal-side visibility rules; not worth the
+                        // code for a sidebar hint.
+                        const vis = channel.visibility;
+                        let count: number | null = null;
+                        if (vis?.type === "specific") {
+                          count = (vis.memberIds || []).length;
+                        } else if (!vis || vis.type === "all") {
+                          count = members.length;
+                        }
+                        return count === null ? null : (
+                          <span className="text-[11px] font-normal text-gray-400">
+                            ({count})
+                          </span>
+                        );
+                      })()}
                       {channel.hasUpdates && (
                         <span className="w-2 h-2 bg-primary rounded-full"></span>
                       )}
