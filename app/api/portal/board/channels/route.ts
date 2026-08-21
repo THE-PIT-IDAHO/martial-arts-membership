@@ -28,9 +28,11 @@ export async function GET(req: NextRequest) {
         primaryStyle: true,
         rank: true,
         status: true,
+        // ALL memberships regardless of status -- broad vs active
+        // enrollment is decided per-channel below.
         memberships: {
-          where: { status: "ACTIVE" },
           select: {
+            status: true,
             membershipPlan: {
               select: { allowedStyles: true },
             },
@@ -43,20 +45,37 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Member not found" }, { status: 404 });
     }
 
-    // Build set of style IDs from ACTIVE memberships only. See
-    // lib/portal-board-visibility.ts for why primaryStyle is NOT used
-    // as a fallback -- lapsed members whose primaryStyle still says
-    // "Kore BJJ" should not qualify for an active-only channel.
-    const memberStyleIds = new Set<string>();
+    // Two style-id sets. See lib/portal-board-visibility.ts for the
+    // active-vs-broad semantics: "styles" alone (or "combined"
+    // WITHOUT an ACTIVE status filter) uses anyStyleIds; "combined"
+    // WITH ACTIVE status uses activeStyleIds so per-style enrollment
+    // is enforced.
+    const activeStyleIds = new Set<string>();
+    const anyStyleIds = new Set<string>();
     for (const ms of member.memberships) {
       const allowed = ms.membershipPlan.allowedStyles;
-      if (allowed) {
-        try {
-          const arr = JSON.parse(allowed);
-          if (Array.isArray(arr)) {
-            for (const sid of arr) memberStyleIds.add(sid);
-          }
-        } catch { /* ignore parse errors */ }
+      if (!allowed) continue;
+      try {
+        const arr = JSON.parse(allowed);
+        if (!Array.isArray(arr)) continue;
+        for (const sid of arr) {
+          anyStyleIds.add(sid);
+          if (ms.status === "ACTIVE") activeStyleIds.add(sid);
+        }
+      } catch { /* ignore */ }
+    }
+
+    // primaryStyle name -> id feeds anyStyleIds only (no way to tell
+    // if it's currently active).
+    if (member.primaryStyle) {
+      const styles = await prisma.style.findMany({
+        where: { clientId: member.clientId },
+        select: { id: true, name: true },
+      });
+      const names = member.primaryStyle.split(/[,\/]/).map((s) => s.trim().toLowerCase());
+      for (const n of names) {
+        const match = styles.find((s) => s.name.toLowerCase() === n);
+        if (match) anyStyleIds.add(match.id);
       }
     }
 
@@ -96,8 +115,9 @@ export async function GET(req: NextRequest) {
           return true;
 
         case "styles":
+          // Broad: any-status enrollment counts.
           if (!vis.styleIds || vis.styleIds.length === 0) return true;
-          return vis.styleIds.some((sid) => memberStyleIds.has(sid));
+          return vis.styleIds.some((sid) => anyStyleIds.has(sid));
 
         case "ranks":
           if (!vis.rankIds || vis.rankIds.length === 0) return true;
@@ -116,7 +136,12 @@ export async function GET(req: NextRequest) {
 
         case "combined": {
           // See lib/portal-board-visibility.ts for the shared rule.
-          if (vis.styleIds !== undefined && !vis.styleIds.some((sid) => memberStyleIds.has(sid))) return false;
+          if (vis.styleIds !== undefined) {
+            const requireActiveEnrollment =
+              !!vis.statuses && vis.statuses.includes("ACTIVE");
+            const pool = requireActiveEnrollment ? activeStyleIds : anyStyleIds;
+            if (!vis.styleIds.some((sid) => pool.has(sid))) return false;
+          }
           if (vis.rankIds !== undefined && !vis.rankIds.some((rid) => memberRankIds.has(rid))) return false;
           if (vis.statuses !== undefined && !vis.statuses.includes(member.status)) return false;
           if (vis.memberIds !== undefined && !vis.memberIds.includes(member.id)) return false;

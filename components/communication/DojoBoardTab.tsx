@@ -163,10 +163,15 @@ type Style = {
 //   - "combined" ................................ each dimension present
 //       as an array must match. Present-but-empty = nobody qualifies on
 //       that axis. All dimensions absent = everyone.
-// Style matching uses the member's ACTIVE memberships (via each plan's
-// allowedStyles), NOT their primaryStyle name -- a lapsed member whose
-// primaryStyle still reads "Kore BJJ" is intentionally excluded from
-// an active-only Kore BJJ channel. Rank matching still uses the name.
+//
+// Style axis has two "enrollment strengths":
+//   activeStyleIdsFor(m)  -- only status=ACTIVE memberships count
+//   anyStyleIdsFor(m)     -- any-status memberships + primaryStyle
+//
+// "styles" alone (no status filter) uses the broad set. "combined"
+// with an ACTIVE status filter uses the active set so a member whose
+// Kore BJJ membership is inactive is excluded from "Kore BJJ + Active"
+// even if they're active elsewhere.
 function activeStyleIdsFor(m: Member): Set<string> {
   const ids = new Set<string>();
   for (const ms of m.memberships || []) {
@@ -178,6 +183,26 @@ function activeStyleIdsFor(m: Member): Set<string> {
       if (Array.isArray(arr)) for (const sid of arr) ids.add(sid);
     } catch {
       /* ignore malformed */
+    }
+  }
+  return ids;
+}
+
+function anyStyleIdsFor(m: Member, styles: Style[]): Set<string> {
+  const ids = new Set<string>();
+  for (const ms of m.memberships || []) {
+    const allowed = ms.membershipPlan?.allowedStyles;
+    if (!allowed) continue;
+    try {
+      const arr = JSON.parse(allowed);
+      if (Array.isArray(arr)) for (const sid of arr) ids.add(sid);
+    } catch { /* ignore */ }
+  }
+  if (m.primaryStyle) {
+    const names = m.primaryStyle.split(/[,\/]/).map((s) => s.trim().toLowerCase());
+    for (const n of names) {
+      const match = styles.find((s) => s.name.toLowerCase() === n);
+      if (match) ids.add(match.id);
     }
   }
   return ids;
@@ -205,10 +230,14 @@ function countChannelMembers(
   const statuses = new Set(vis.statuses || []);
   const memberIdSet = new Set(vis.memberIds || []);
 
+  const requireActiveEnrollment =
+    vis.type === "combined" && vis.statuses !== undefined && statuses.has("ACTIVE");
+
   const matches = (m: Member): boolean => {
     if (vis.type === "styles") {
+      // Broad: any-status enrollment (including primaryStyle) counts.
       if (wantedStyleIds.size === 0) return true;
-      const mine = activeStyleIdsFor(m);
+      const mine = anyStyleIdsFor(m, styles);
       for (const sid of wantedStyleIds) if (mine.has(sid)) return true;
       return false;
     }
@@ -221,10 +250,11 @@ function countChannelMembers(
       return statuses.has(m.status);
     }
     // "combined": every present dimension must match. A present-but-empty
-    // dimension excludes everyone on that axis.
+    // dimension excludes everyone on that axis. Style axis switches to
+    // active-only enrollment when the ACTIVE status filter is also on.
     if (vis.styleIds !== undefined) {
       if (wantedStyleIds.size === 0) return false;
-      const mine = activeStyleIdsFor(m);
+      const mine = requireActiveEnrollment ? activeStyleIdsFor(m) : anyStyleIdsFor(m, styles);
       let anyMatch = false;
       for (const sid of wantedStyleIds) if (mine.has(sid)) { anyMatch = true; break; }
       if (!anyMatch) return false;

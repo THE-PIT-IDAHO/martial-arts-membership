@@ -9,9 +9,17 @@ import { prisma } from "@/lib/prisma";
  *   - { type: "ranks",    rankIds }   → members holding any listed rank
  *   - { type: "statuses", statuses }  → members whose status includes one of them
  *   - { type: "specific", memberIds } → members explicitly listed
+ *   - { type: "combined", ... }       → every listed dimension must match
  *
- * "Enrolled in a style" means the member's primaryStyle name matches,
- * OR one of their active memberships' allowedStyles includes the id.
+ * "Enrolled in a style" has TWO senses:
+ *   - broad  → any membership (any status) allowing the style, or
+ *              a primaryStyle name match. Used when the channel
+ *              filters by style ALONE (no status filter). A lapsed
+ *              Kore BJJ member still counts as "in Kore BJJ".
+ *   - active → only ACTIVE memberships allowing the style. Used when
+ *              the channel filters by style AND requires ACTIVE
+ *              status -- the member's KoreBJJ enrollment must be
+ *              active, not just their overall member status.
  *
  * Extracted from app/api/portal/board/posts/route.ts + channels/route.ts
  * so downstream code (notification counts, unread board post lists,
@@ -35,9 +43,11 @@ export async function getVisibleBoardChannelIds(memberId: string): Promise<Set<s
       primaryStyle: true,
       rank: true,
       status: true,
+      // Pull EVERY membership regardless of status. We split into
+      // active-only vs any-status sets below and pick per channel.
       memberships: {
-        where: { status: "ACTIVE" },
         select: {
+          status: true,
           membershipPlan: { select: { allowedStyles: true } },
         },
       },
@@ -45,23 +55,39 @@ export async function getVisibleBoardChannelIds(memberId: string): Promise<Set<s
   });
   if (!member) return new Set();
 
-  // Build member's style ids from ACTIVE memberships only. Deliberately
-  // does NOT fall back to member.primaryStyle -- an "In Kore BJJ"
-  // channel should not include lapsed members whose primaryStyle still
-  // says "Kore BJJ" but whose membership is inactive. The findUnique
-  // query above already filters memberships to status:"ACTIVE", so
-  // this iteration is inherently active-only. Coaches / prospects
-  // without memberships can still be granted access via the "Specific
-  // Members" picker on the channel.
-  const memberStyleIds = new Set<string>();
+  // Style-id sets keyed by "enrollment strength":
+  //   activeStyleIds -- only from status=ACTIVE memberships
+  //   anyStyleIds    -- from ANY membership + primaryStyle name lookup
+  const activeStyleIds = new Set<string>();
+  const anyStyleIds = new Set<string>();
   for (const ms of member.memberships) {
     const allowed = ms.membershipPlan.allowedStyles;
     if (!allowed) continue;
     try {
       const arr = JSON.parse(allowed);
-      if (Array.isArray(arr)) for (const sid of arr) memberStyleIds.add(sid);
+      if (!Array.isArray(arr)) continue;
+      for (const sid of arr) {
+        anyStyleIds.add(sid);
+        if (ms.status === "ACTIVE") activeStyleIds.add(sid);
+      }
     } catch {
-      /* ignore */
+      /* ignore malformed JSON */
+    }
+  }
+
+  // primaryStyle name -> id (fallback for members with no membership
+  // record but a listed style). Only feeds anyStyleIds -- there's no
+  // way to know if a name-only listing is currently "active", so it
+  // never contributes to activeStyleIds.
+  if (member.primaryStyle) {
+    const styles = await prisma.style.findMany({
+      where: { clientId: member.clientId },
+      select: { id: true, name: true },
+    });
+    const names = member.primaryStyle.split(/[,\/]/).map((s) => s.trim().toLowerCase());
+    for (const n of names) {
+      const match = styles.find((s) => s.name.toLowerCase() === n);
+      if (match) anyStyleIds.add(match.id);
     }
   }
 
@@ -99,7 +125,9 @@ export async function getVisibleBoardChannelIds(memberId: string): Promise<Set<s
         visible = true;
         break;
       case "styles":
-        visible = !vis.styleIds?.length || vis.styleIds.some((sid) => memberStyleIds.has(sid));
+        // No status filter -> broad match. A member with an inactive
+        // Kore BJJ membership still counts as "in Kore BJJ" here.
+        visible = !vis.styleIds?.length || vis.styleIds.some((sid) => anyStyleIds.has(sid));
         break;
       case "ranks":
         visible = !vis.rankIds?.length || vis.rankIds.some((rid) => memberRankIds.has(rid));
@@ -119,11 +147,21 @@ export async function getVisibleBoardChannelIds(memberId: string): Promise<Set<s
       case "combined": {
         // Every dimension the admin explicitly turned on (present as an
         // array, even if empty) must match. A present-but-empty array
-        // means nobody qualifies on that axis. A dimension left off
-        // entirely (undefined) is skipped. If NO dimensions are set,
-        // the channel is visible to everyone.
+        // means nobody qualifies on that axis. All dimensions absent =
+        // everyone. Style axis uses activeStyleIds only when the status
+        // filter requires ACTIVE (or ACTIVE-plus-others) -- e.g. a
+        // "Kore BJJ + Active" channel excludes a member whose Kore BJJ
+        // membership is INACTIVE even if they're active elsewhere. Any
+        // other status set (INACTIVE-only, PROSPECT, PARENT, COACH...)
+        // uses the broad set so a lapsed Kore BJJ member still counts
+        // as "in Kore BJJ" on that axis.
         let ok = true;
-        if (vis.styleIds !== undefined && !vis.styleIds.some((sid) => memberStyleIds.has(sid))) ok = false;
+        if (vis.styleIds !== undefined) {
+          const requireActiveEnrollment =
+            !!vis.statuses && vis.statuses.includes("ACTIVE");
+          const pool = requireActiveEnrollment ? activeStyleIds : anyStyleIds;
+          if (!vis.styleIds.some((sid) => pool.has(sid))) ok = false;
+        }
         if (ok && vis.rankIds !== undefined && !vis.rankIds.some((rid) => memberRankIds.has(rid))) ok = false;
         if (ok && vis.statuses !== undefined && !vis.statuses.includes(member.status)) ok = false;
         if (ok && vis.memberIds !== undefined && !vis.memberIds.includes(member.id)) ok = false;
