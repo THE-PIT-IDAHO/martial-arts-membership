@@ -1923,6 +1923,14 @@ export default function MemberProfilePage() {
 
   const [sendingReset, setSendingReset] = useState(false);
   const [sendingPortalAccess, setSendingPortalAccess] = useState(false);
+  // Direct-message-to-member modal state. Opens from the "Message"
+  // button on the Personal Info row; sends via POST /api/direct-messages
+  // which creates (or reuses) a 1:1 conversation and drops the message
+  // into the member's Portal > Messages inbox.
+  const [showMessageModal, setShowMessageModal] = useState(false);
+  const [messageDraft, setMessageDraft] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [messageResult, setMessageResult] = useState<string | null>(null);
   const [splittingAccount, setSplittingAccount] = useState(false);
 
   async function handleSplitAccount() {
@@ -1978,6 +1986,41 @@ export default function MemberProfilePage() {
       setError(err.message || "Failed to send portal access email");
     } finally {
       setSendingPortalAccess(false);
+    }
+  }
+
+  async function handleSendDirectMessage() {
+    if (!member) return;
+    const content = messageDraft.trim();
+    if (!content) return;
+    setSendingMessage(true);
+    setMessageResult(null);
+    try {
+      const res = await fetch("/api/direct-messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memberIds: [member.id],
+          content,
+          membersVisible: true,
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(errText || "Failed to send message");
+      }
+      setMessageResult("Sent!");
+      setMessageDraft("");
+      // Close the modal after a beat so the "Sent!" confirmation is visible.
+      setTimeout(() => {
+        setShowMessageModal(false);
+        setMessageResult(null);
+      }, 900);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to send";
+      setMessageResult(msg);
+    } finally {
+      setSendingMessage(false);
     }
   }
 
@@ -2609,6 +2652,18 @@ export default function MemberProfilePage() {
                   <h2 className="text-sm font-semibold">Personal Info</h2>
                   {!editingPersonal ? (
                     <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMessageDraft("");
+                          setMessageResult(null);
+                          setShowMessageModal(true);
+                        }}
+                        title="Send this member a direct message. Lands in their Portal > Messages inbox."
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                      >
+                        Message
+                      </button>
                       {member?.email && (
                         <>
                           <button
@@ -7386,6 +7441,70 @@ export default function MemberProfilePage() {
         </div>
       )}
 
+      {/* Direct message modal. Opens from the "Message" button on the
+          Personal Info row; POST goes to /api/direct-messages which
+          creates (or reuses) a 1:1 conversation and puts the message
+          in the member's Portal > Messages inbox. If the member is a
+          minor with parent-only comms, that endpoint automatically
+          routes the message to the parent(s) instead. */}
+      {showMessageModal && member && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">
+                  Message {member.firstName} {member.lastName}
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Lands in their Portal &gt; Messages inbox.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowMessageModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <textarea
+                autoFocus
+                value={messageDraft}
+                onChange={(e) => setMessageDraft(e.target.value)}
+                rows={5}
+                placeholder="Type your message..."
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+              />
+              {messageResult && (
+                <p
+                  className={`text-xs ${
+                    messageResult === "Sent!" ? "text-green-700" : "text-red-700"
+                  }`}
+                >
+                  {messageResult}
+                </p>
+              )}
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowMessageModal(false)}
+                  disabled={sendingMessage}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendDirectMessage}
+                  disabled={sendingMessage || !messageDraft.trim()}
+                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                >
+                  {sendingMessage ? "Sending..." : "Send Message"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
