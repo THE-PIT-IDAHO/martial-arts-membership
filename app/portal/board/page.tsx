@@ -269,14 +269,17 @@ export default function PortalBoardPage() {
         </button>
       </div>
 
-      {/* Channel filter pills */}
+      {/* Channel filter pills. flex-wrap so a member with lots of
+          channels sees every one at once (stacks onto multiple rows
+          on narrow screens) instead of the row running off the right
+          edge into a horizontal scroll they can miss. */}
       {channels.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto pb-3 mb-4 -mx-4 px-4 scrollbar-hide">
+        <div className="flex flex-wrap gap-2 mb-4">
           {channels.map((ch) => (
             <button
               key={ch.id}
               onClick={() => setSelectedChannel(ch.id)}
-              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 selectedChannel === ch.id
                   ? "bg-primary text-white"
                   : "bg-gray-100 text-gray-600 active:bg-gray-200"
