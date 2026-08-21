@@ -305,15 +305,14 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
   {
     eventKey: "magic_link",
     name: "Magic Link Login",
-    subject: "Sign in to {{gymName}}",
-    bodyHtml: `<h2 style="color:#c41111;">Your Login Link</h2>
-    <p>Hi {{memberName}},</p>
-    <p>Click the button below to sign in to your member portal:</p>
+    subject: "Welcome back to {{gymName}}",
+    bodyHtml: `<h2 style="color:#c41111;">Hey {{memberName}}!</h2>
+    <p>Ready to hop in? Tap the button below and you're signed in — no password needed.</p>
     <div style="text-align:center;margin:24px 0;">
-      <a href="{{loginUrl}}" style="display:inline-block;background:#c41111;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;">Sign In</a>
+      <a href="{{loginUrl}}" style="display:inline-block;background:#c41111;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;">Take Me In</a>
     </div>
-    <p style="color:#6b7280;font-size:14px;">This link expires in {{linkExpiry}}. If you didn't request this, you can safely ignore this email.</p>
-    <p style="color:#6b7280;font-size:12px;word-break:break-all;">Or copy this URL: {{loginUrl}}</p>`,
+    <p style="color:#6b7280;font-size:14px;">This link's good for the next {{linkExpiry}}. If you didn't ask for it, no worries — just ignore this email and nothing happens.</p>
+    <p style="color:#6b7280;font-size:12px;word-break:break-all;">Button not working? Copy this URL into your browser: {{loginUrl}}</p>`,
     variables: ["memberName", "loginUrl", "linkExpiry", "gymName"],
   },
 
