@@ -728,24 +728,37 @@ export default function POSPage() {
     setShowMembershipModal(true);
   }
 
-  // Calculate end date from start date and duration
+  // Calculate end date from start date and duration.
+  // Rendered inline in the Configure Membership modal, so a mid-typing
+  // startDate like "2026-08" (native date input's intermediate state
+  // while the operator types the year/month) must NOT throw --
+  // date.toISOString() on an invalid Date raises RangeError and takes
+  // down the whole POS page. Guard: bail to "" on any parse failure.
   function calculateEndDate(startDate: string, value: number, unit: string): string {
+    if (!startDate) return "";
     const date = new Date(startDate);
+    if (isNaN(date.getTime())) return "";
+    const n = Number.isFinite(value) && value > 0 ? value : 1;
     switch (unit) {
       case "days":
-        date.setDate(date.getDate() + value);
+        date.setDate(date.getDate() + n);
         break;
       case "weeks":
-        date.setDate(date.getDate() + value * 7);
+        date.setDate(date.getDate() + n * 7);
         break;
       case "months":
-        date.setMonth(date.getMonth() + value);
+        date.setMonth(date.getMonth() + n);
         break;
       case "years":
-        date.setFullYear(date.getFullYear() + value);
+        date.setFullYear(date.getFullYear() + n);
         break;
     }
-    return date.toISOString().split("T")[0];
+    if (isNaN(date.getTime())) return "";
+    try {
+      return date.toISOString().split("T")[0];
+    } catch {
+      return "";
+    }
   }
 
   // Add membership to cart from modal.
