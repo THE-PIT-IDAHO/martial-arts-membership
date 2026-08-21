@@ -43,25 +43,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Member not found" }, { status: 404 });
     }
 
-    // Build set of style IDs this member is actually enrolled in
-    const styles = await prisma.style.findMany({
-      where: { clientId: member.clientId },
-      select: { id: true, name: true },
-    });
+    // Build set of style IDs from ACTIVE memberships only. See
+    // lib/portal-board-visibility.ts for why primaryStyle is NOT used
+    // as a fallback -- lapsed members whose primaryStyle still says
+    // "Kore BJJ" should not qualify for an active-only channel.
     const memberStyleIds = new Set<string>();
-
-    // Match by primaryStyle name — this is the member's actual training style
-    if (member.primaryStyle) {
-      // primaryStyle may contain multiple styles separated by commas or " / "
-      const styleNames = member.primaryStyle.split(/[,\/]/).map((s) => s.trim().toLowerCase());
-      for (const sName of styleNames) {
-        const match = styles.find((s) => s.name.toLowerCase() === sName);
-        if (match) memberStyleIds.add(match.id);
-      }
-    }
-
-    // Match by membership plan allowedStyles — but only when explicitly set
-    // (null means "all classes allowed" which is a billing concern, not style enrollment)
     for (const ms of member.memberships) {
       const allowed = ms.membershipPlan.allowedStyles;
       if (allowed) {

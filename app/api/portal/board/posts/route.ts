@@ -31,24 +31,10 @@ async function getVisibleChannelIds(memberId: string): Promise<Set<string> | nul
 
   if (!member) return new Set();
 
-  // Build member's style IDs — based on actual enrolled styles.
-  // Scope by clientId so a style at a different gym with the same name
-  // can't match into this member's set.
-  const styles = await prisma.style.findMany({
-    where: { clientId: member.clientId },
-    select: { id: true, name: true },
-  });
+  // Build member's style IDs from ACTIVE memberships only. See
+  // lib/portal-board-visibility.ts for why primaryStyle is NOT used
+  // as a fallback.
   const memberStyleIds = new Set<string>();
-
-  if (member.primaryStyle) {
-    const styleNames = member.primaryStyle.split(/[,\/]/).map((s) => s.trim().toLowerCase());
-    for (const sName of styleNames) {
-      const match = styles.find((s) => s.name.toLowerCase() === sName);
-      if (match) memberStyleIds.add(match.id);
-    }
-  }
-
-  // Only use allowedStyles when explicitly set (null = billing concern, not enrollment)
   for (const ms of member.memberships) {
     const allowed = ms.membershipPlan.allowedStyles;
     if (allowed) {

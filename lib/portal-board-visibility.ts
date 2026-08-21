@@ -45,20 +45,15 @@ export async function getVisibleBoardChannelIds(memberId: string): Promise<Set<s
   });
   if (!member) return new Set();
 
-  // Build member's style ids (from primaryStyle names + membership allowedStyles).
-  const styles = await prisma.style.findMany({
-    where: { clientId: member.clientId },
-    select: { id: true, name: true },
-  });
+  // Build member's style ids from ACTIVE memberships only. Deliberately
+  // does NOT fall back to member.primaryStyle -- an "In Kore BJJ"
+  // channel should not include lapsed members whose primaryStyle still
+  // says "Kore BJJ" but whose membership is inactive. The findUnique
+  // query above already filters memberships to status:"ACTIVE", so
+  // this iteration is inherently active-only. Coaches / prospects
+  // without memberships can still be granted access via the "Specific
+  // Members" picker on the channel.
   const memberStyleIds = new Set<string>();
-
-  if (member.primaryStyle) {
-    const styleNames = member.primaryStyle.split(/[,\/]/).map((s) => s.trim().toLowerCase());
-    for (const sName of styleNames) {
-      const match = styles.find((s) => s.name.toLowerCase() === sName);
-      if (match) memberStyleIds.add(match.id);
-    }
-  }
   for (const ms of member.memberships) {
     const allowed = ms.membershipPlan.allowedStyles;
     if (!allowed) continue;

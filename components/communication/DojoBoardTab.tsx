@@ -82,6 +82,16 @@ type Member = {
   status: string;
   primaryStyle?: string;
   rank?: string;
+  // Included by /api/members. Used for strict style matching in
+  // countChannelMembers -- only active memberships count toward a
+  // "by style" channel, so a lapsed member whose primaryStyle still
+  // says "Kore BJJ" doesn't sneak into an active-only channel.
+  memberships?: Array<{
+    status: string;
+    membershipPlan: {
+      allowedStyles: string | null;
+    };
+  }>;
 };
 
 type ChannelFile = {
@@ -153,8 +163,26 @@ type Style = {
 //   - "combined" ................................ each dimension present
 //       as an array must match. Present-but-empty = nobody qualifies on
 //       that axis. All dimensions absent = everyone.
-// Note: Member.primaryStyle / .rank are NAMES, not ids -- we resolve
-// ids -> names against the loaded Style list to compare.
+// Style matching uses the member's ACTIVE memberships (via each plan's
+// allowedStyles), NOT their primaryStyle name -- a lapsed member whose
+// primaryStyle still reads "Kore BJJ" is intentionally excluded from
+// an active-only Kore BJJ channel. Rank matching still uses the name.
+function activeStyleIdsFor(m: Member): Set<string> {
+  const ids = new Set<string>();
+  for (const ms of m.memberships || []) {
+    if (ms.status !== "ACTIVE") continue;
+    const allowed = ms.membershipPlan?.allowedStyles;
+    if (!allowed) continue;
+    try {
+      const arr = JSON.parse(allowed);
+      if (Array.isArray(arr)) for (const sid of arr) ids.add(sid);
+    } catch {
+      /* ignore malformed */
+    }
+  }
+  return ids;
+}
+
 function countChannelMembers(
   channel: TrainingChannel,
   members: Member[],
@@ -168,11 +196,7 @@ function countChannelMembers(
     return vis.memberIds.length;
   }
 
-  const styleNames = new Set(
-    (vis.styleIds || [])
-      .map((id) => styles.find((s) => s.id === id)?.name.toLowerCase())
-      .filter((n): n is string => !!n),
-  );
+  const wantedStyleIds = new Set(vis.styleIds || []);
   const rankNames = new Set(
     (vis.rankIds || [])
       .flatMap((rid) => styles.flatMap((s) => s.ranks.filter((r) => r.id === rid).map((r) => r.name.toLowerCase())))
@@ -183,21 +207,27 @@ function countChannelMembers(
 
   const matches = (m: Member): boolean => {
     if (vis.type === "styles") {
-      if (!vis.styleIds || vis.styleIds.length === 0) return true;
-      return !!m.primaryStyle && styleNames.has(m.primaryStyle.toLowerCase());
+      if (wantedStyleIds.size === 0) return true;
+      const mine = activeStyleIdsFor(m);
+      for (const sid of wantedStyleIds) if (mine.has(sid)) return true;
+      return false;
     }
     if (vis.type === "ranks") {
-      if (!vis.rankIds || vis.rankIds.length === 0) return true;
+      if (rankNames.size === 0) return true;
       return !!m.rank && rankNames.has(m.rank.toLowerCase());
     }
     if (vis.type === "statuses") {
-      if (!vis.statuses || vis.statuses.length === 0) return true;
+      if (statuses.size === 0) return true;
       return statuses.has(m.status);
     }
     // "combined": every present dimension must match. A present-but-empty
     // dimension excludes everyone on that axis.
     if (vis.styleIds !== undefined) {
-      if (!m.primaryStyle || !styleNames.has(m.primaryStyle.toLowerCase())) return false;
+      if (wantedStyleIds.size === 0) return false;
+      const mine = activeStyleIdsFor(m);
+      let anyMatch = false;
+      for (const sid of wantedStyleIds) if (mine.has(sid)) { anyMatch = true; break; }
+      if (!anyMatch) return false;
     }
     if (vis.rankIds !== undefined) {
       if (!m.rank || !rankNames.has(m.rank.toLowerCase())) return false;
@@ -1060,24 +1090,35 @@ export default function DojoBoardTab() {
     setShowChannelModal(false);
   }
 
+  // Live estimated count shown in the Edit Channel modal footer.
+  // Delegates to countChannelMembers so the estimate exactly matches
+  // what the sidebar count + portal visibility check will produce
+  // once saved. The synthetic channel below folds channelFilters +
+  // channelVisibility into the same visibility shape handleSaveChannel
+  // will POST, so the preview stays honest across all combinations
+  // (single filter, combined filters, empty specific list, etc.).
   function calculateChannelMemberCount(): number {
-    switch (channelVisibility) {
-      case "all":
-        return members.length;
-      case "styles":
-        // Count members with matching styles
-        return members.filter(m => {
-          if (!m.primaryStyle) return false;
-          const styleNames = styles.filter(s => selectedStyleIds.includes(s.id)).map(s => s.name.toLowerCase());
-          return styleNames.includes(m.primaryStyle.toLowerCase());
-        }).length;
-      case "statuses":
-        return members.filter(m => selectedStatuses.includes(m.status)).length;
-      case "specific":
-        return selectedMemberIds.length;
-      default:
-        return 0;
-    }
+    const isCombined = channelFilters.size > 0;
+    const type = isCombined ? "combined" : channelVisibility;
+    const styleFilterOn = channelFilters.has("styles") || channelVisibility === "styles";
+    const rankFilterOn = channelFilters.has("ranks") || channelVisibility === "ranks";
+    const statusFilterOn = channelFilters.has("statuses") || channelVisibility === "statuses";
+    const specificFilterOn = channelFilters.has("specific") || channelVisibility === "specific";
+    const synthetic: TrainingChannel = {
+      id: "__preview",
+      name: "__preview",
+      type: "custom",
+      memberCount: 0,
+      hasUpdates: false,
+      visibility: {
+        type: type as any,
+        styleIds: styleFilterOn ? selectedStyleIds : undefined,
+        rankIds: rankFilterOn ? selectedRankIds : undefined,
+        statuses: statusFilterOn ? selectedStatuses : undefined,
+        memberIds: specificFilterOn ? selectedMemberIds : undefined,
+      },
+    };
+    return countChannelMembers(synthetic, members, styles);
   }
 
   function toggleStyleSelection(styleId: string) {
