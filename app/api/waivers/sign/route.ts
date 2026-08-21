@@ -77,19 +77,22 @@ export async function POST(request: Request) {
     }).catch(() => {});
 
     // Fire the "waiver received" acknowledgment the instant they hit
-    // submit -- most people expect an immediate confirmation email
-    // after signing an online form, not silence until an admin
-    // manually clicks Confirm on the Waivers page. Fire-and-forget:
-    // Resend failure doesn't block the signed-waiver response.
+    // submit. Awaited before the response because Vercel serverless
+    // terminates the function process the moment we respond -- any
+    // pending promise gets killed mid-flight (the old fire-and-forget
+    // form left the "start" log line but nothing after it, and no
+    // email ever landed).
     if (member.email) {
-      sendWaiverReceivedEmail({
-        email: member.email,
-        firstName: member.firstName || "there",
-        memberId,
-        clientId,
-      }).catch((err) => {
+      try {
+        await sendWaiverReceivedEmail({
+          email: member.email,
+          firstName: member.firstName || "there",
+          memberId,
+          clientId,
+        });
+      } catch (err) {
         console.error("[waivers/sign] acknowledgment email failed:", err);
-      });
+      }
     }
 
     return NextResponse.json({ signedWaiver: signed }, { status: 201 });

@@ -7,25 +7,31 @@ import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 import { getNextMemberNumber } from "@/lib/sequence";
 import { sendWaiverReceivedEmail } from "@/lib/notifications";
 
-/** Fire the "waiver received" acknowledgment. Fire-and-forget so a
- *  Resend outage never blocks the successful submit response. Logs
- *  any error so silent failures show up in Vercel runtime logs
- *  (the old `.catch(() => {})` pattern hid every send failure). */
-function fireWaiverAck(params: {
+/** Fire the "waiver received" acknowledgment and AWAIT it. Vercel
+ *  serverless kills the function process the instant the response is
+ *  sent, so any dangling promise (the old fire-and-forget pattern)
+ *  gets terminated mid-flight -- you see the "start" log line then
+ *  nothing, no email, no error. Awaiting adds a few hundred ms to
+ *  the response but makes the send actually complete. Errors are
+ *  caught locally so a Resend outage never fails the waiver-submit
+ *  response itself. */
+async function fireWaiverAck(params: {
   email: string | null | undefined;
   firstName: string | null | undefined;
   memberId: string;
   clientId: string;
 }) {
   if (!params.email) return;
-  sendWaiverReceivedEmail({
-    email: params.email,
-    firstName: params.firstName || "there",
-    memberId: params.memberId,
-    clientId: params.clientId,
-  }).catch((err) => {
+  try {
+    await sendWaiverReceivedEmail({
+      email: params.email,
+      firstName: params.firstName || "there",
+      memberId: params.memberId,
+      clientId: params.clientId,
+    });
+  } catch (err) {
     console.error("[waiver-submit] acknowledgment email failed:", err);
-  });
+  }
 }
 
 
@@ -127,7 +133,7 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
     // back to whatever's on file). Only skips when we truly have no
     // address to send to.
     const ackEmail = (emailUpdate?.email) ?? existing.email;
-    fireWaiverAck({
+    await fireWaiverAck({
       email: ackEmail,
       firstName: firstName?.trim() || existing.firstName,
       memberId: existing.id,
@@ -198,7 +204,7 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
     },
   });
 
-  fireWaiverAck({
+  await fireWaiverAck({
     email: normalizedEmail,
     firstName: firstName.trim(),
     memberId: member.id,
@@ -505,7 +511,7 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
       where: { id: guardian.id },
       select: { email: true, firstName: true },
     });
-    fireWaiverAck({
+    await fireWaiverAck({
       email: guardianRow?.email,
       firstName: guardianRow?.firstName,
       memberId: guardian.id,

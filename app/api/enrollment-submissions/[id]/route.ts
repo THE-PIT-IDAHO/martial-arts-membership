@@ -87,11 +87,17 @@ export async function PATCH(req: Request, { params }: Params) {
         },
       });
 
-      // Send welcome email
-      sendWelcomeEmail({
-        memberId: member.id,
-        memberName: `${member.firstName} ${member.lastName}`,
-      }).catch(() => {});
+      // Send welcome email. Awaited because Vercel serverless kills
+      // the function the instant we respond -- fire-and-forget silently
+      // never completed. Adds a bit to response time; guarantees send.
+      try {
+        await sendWelcomeEmail({
+          memberId: member.id,
+          memberName: `${member.firstName} ${member.lastName}`,
+        });
+      } catch (err) {
+        console.error("[enrollment-submissions] welcome email failed:", err);
+      }
 
       return NextResponse.json({ success: true, memberId: member.id });
     }

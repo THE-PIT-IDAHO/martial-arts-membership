@@ -431,11 +431,20 @@ export async function POST(req: Request) {
       },
     });
 
-    // Send welcome email (fire and forget)
-    sendWelcomeEmail({
-      memberId: member.id,
-      memberName: `${member.firstName} ${member.lastName}`,
-    }).catch(() => {});
+    // Send welcome email. Awaited (was previously fire-and-forget)
+    // because Vercel serverless kills the function process the
+    // instant the response is sent, cutting off any dangling promise
+    // mid-flight -- the old .catch(() => {}) also swallowed every
+    // error. Adds ~200-500ms to the response; guarantees the send
+    // actually completes and surfaces errors in Vercel logs.
+    try {
+      await sendWelcomeEmail({
+        memberId: member.id,
+        memberName: `${member.firstName} ${member.lastName}`,
+      });
+    } catch (err) {
+      console.error("[members] welcome email failed:", err);
+    }
 
     logAudit({
       entityType: "Member",
