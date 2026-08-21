@@ -514,6 +514,12 @@ export async function sendWaiverReceivedEmail(params: {
   firstName: string;
   clientId?: string;
   memberId?: string;
+  // Signed waiver PDF (base64, no data-URI prefix) + filename to
+  // attach so the recipient has the document for their records.
+  // Both must be present for the attachment to include; missing one
+  // silently drops the attachment (the email still sends).
+  pdfBase64?: string | null;
+  fileName?: string | null;
 }) {
   const tag = `[sendWaiverReceivedEmail] to=${params.email} memberId=${params.memberId || "?"} clientId=${params.clientId || "?"}`;
   console.log(`${tag} start`);
@@ -546,15 +552,19 @@ export async function sendWaiverReceivedEmail(params: {
   }
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
+  const attachments = params.pdfBase64 && params.fileName
+    ? [{ filename: params.fileName, content: params.pdfBase64 }]
+    : undefined;
   const ok = await sendEmail({
     to: [params.email],
     subject,
     html,
+    attachments,
     clientId: params.clientId,
     memberId: params.memberId,
     eventType: "WAIVER_CONFIRMED",
   });
-  console.log(`${tag} sendEmail returned ${ok ? "true (sent)" : "false (see warning above for reason)"}`);
+  console.log(`${tag} sendEmail returned ${ok ? "true (sent)" : "false (see warning above for reason)"} (attachment=${attachments ? "yes" : "no"})`);
 }
 
 // Keep old name as alias for backwards compatibility

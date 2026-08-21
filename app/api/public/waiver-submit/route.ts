@@ -20,6 +20,13 @@ async function fireWaiverAck(params: {
   firstName: string | null | undefined;
   memberId: string;
   clientId: string;
+  // Signed waiver PDF (base64) + display filename. Attached to the
+  // ack email so the recipient has the document for their records.
+  // Both optional -- if missing, the email still sends without an
+  // attachment (some flows -- like an admin re-sign with just a
+  // signature scribble -- don't have a PDF to attach).
+  pdfBase64?: string | null;
+  fileName?: string | null;
 }) {
   if (!params.email) return;
   try {
@@ -28,10 +35,28 @@ async function fireWaiverAck(params: {
       firstName: params.firstName || "there",
       memberId: params.memberId,
       clientId: params.clientId,
+      pdfBase64: stripDataUri(params.pdfBase64),
+      fileName: params.fileName,
     });
   } catch (err) {
     console.error("[waiver-submit] acknowledgment email failed:", err);
   }
+}
+
+/** Data URLs prefix the base64 with "data:application/pdf;base64," --
+ *  strip that so Resend doesn't reject the attachment. Safe to call
+ *  on values that don't have the prefix. */
+function stripDataUri(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const comma = s.indexOf(",");
+  return comma >= 0 && s.slice(0, comma).includes(";base64") ? s.slice(comma + 1) : s;
+}
+
+/** Build a clean, human-readable filename for the attached waiver
+ *  PDF, e.g. "Waiver - John Smith - General Waiver.pdf". */
+function waiverFileName(firstName: string | null | undefined, lastName: string | null | undefined, templateName: string): string {
+  const who = `${firstName || ""} ${lastName || ""}`.trim() || "Member";
+  return `Waiver - ${who} - ${templateName}.pdf`;
 }
 
 
@@ -133,11 +158,14 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
     // back to whatever's on file). Only skips when we truly have no
     // address to send to.
     const ackEmail = (emailUpdate?.email) ?? existing.email;
+    const ackFirstName = firstName?.trim() || existing.firstName;
     await fireWaiverAck({
       email: ackEmail,
-      firstName: firstName?.trim() || existing.firstName,
+      firstName: ackFirstName,
       memberId: existing.id,
       clientId,
+      pdfBase64: pdfBase64 || null,
+      fileName: waiverFileName(ackFirstName, lastName?.trim() || existing.lastName, resolvedTemplate?.name || "Waiver"),
     });
 
     return NextResponse.json({ member: { id: existing.id } }, { status: 200 });
@@ -209,6 +237,8 @@ async function handleAdultSubmit(body: Record<string, string>, clientId: string)
     firstName: firstName.trim(),
     memberId: member.id,
     clientId,
+    pdfBase64: pdfBase64 || null,
+    fileName: waiverFileName(firstName.trim(), lastName.trim(), resolvedTemplate?.name || "Waiver"),
   });
 
   return NextResponse.json({ member: { id: member.id } }, { status: 201 });
@@ -507,15 +537,26 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
     // many kids were on it. Look up the guardian's email + first
     // name fresh so we handle both the "existing parent" and
     // "brand-new parent" branches without threading them through.
+    // Parent PDF preferred; falls back to the first child's PDF if
+    // no dedicated parent copy was included in the submission.
     const guardianRow = await prisma.member.findUnique({
       where: { id: guardian.id },
-      select: { email: true, firstName: true },
+      select: { email: true, firstName: true, lastName: true },
     });
+    const guardianPdf =
+      (typeof parentPdfBase64 === "string" ? parentPdfBase64 : null)
+      || (children[0]?.pdfBase64 || null);
     await fireWaiverAck({
       email: guardianRow?.email,
       firstName: guardianRow?.firstName,
       memberId: guardian.id,
       clientId,
+      pdfBase64: guardianPdf,
+      fileName: waiverFileName(
+        guardianRow?.firstName,
+        guardianRow?.lastName,
+        resolvedTemplate?.name || "Waiver",
+      ),
     });
   }
 
