@@ -1415,11 +1415,12 @@ export default function DojoBoardTab() {
     <div className="space-y-3">
 
         <div className="flex h-[calc(100vh-10rem)] gap-4">
-          {/* Left Sidebar - Training Channels. self-start so the sidebar
-              grows to fit its channel list instead of stretching to the
-              parent's fixed viewport height + scrolling internally. Main
-              feed column still keeps its scroll behavior. */}
-          <div className="w-60 shrink-0 self-start rounded-lg border border-gray-200 bg-white flex flex-col">
+          {/* Left Sidebar - Training Channels. min-w keeps it at least
+              as wide as before; max-w lets it stretch up to xs (~20rem)
+              for longer channel names without truncating and pushing
+              the edit button off-row. Row content wraps instead of
+              truncating so the count + edit icon always fit. */}
+          <div className="min-w-[15rem] max-w-xs shrink-0 self-start rounded-lg border border-gray-200 bg-white flex flex-col">
             <div className="p-3 border-b border-gray-200 bg-gray-50">
               <h2 className="text-sm font-semibold text-gray-700">Training Channels</h2>
             </div>
@@ -1427,7 +1428,7 @@ export default function DojoBoardTab() {
             {channels.map((channel) => (
               <div
                 key={channel.id}
-                className={`group flex items-center gap-2 px-3 py-2.5 transition-colors ${
+                className={`group flex items-start gap-2 px-3 py-2.5 transition-colors ${
                   activeChannel === channel.id && activeView !== "messages" && activeView !== "events"
                     ? "bg-primary/10 border-l-2 border-primary"
                     : "hover:bg-gray-50"
@@ -1435,13 +1436,13 @@ export default function DojoBoardTab() {
               >
                 <button
                   onClick={() => { setActiveChannel(channel.id); if (activeView === "messages" || activeView === "events") setActiveView("feed"); }}
-                  className="flex-1 flex items-center gap-3 text-left"
+                  className="flex-1 min-w-0 flex items-start gap-3 text-left"
                 >
-                  <div className={`p-1.5 rounded-md ${activeChannel === channel.id && activeView !== "messages" && activeView !== "events" ? "bg-primary text-white" : "bg-gray-200 text-gray-600"}`}>
+                  <div className={`p-1.5 rounded-md shrink-0 ${activeChannel === channel.id && activeView !== "messages" && activeView !== "events" ? "bg-primary text-white" : "bg-gray-200 text-gray-600"}`}>
                     {getChannelIcon(channel.type)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate flex items-center gap-1.5">
+                    <div className="text-sm font-medium text-gray-900 break-words flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                       {channel.name}
                       {(() => {
                         // Member count next to the channel name -- shown
@@ -1465,7 +1466,7 @@ export default function DojoBoardTab() {
                 {channel.id !== "all" && (
                   <button
                     onClick={(e) => { e.stopPropagation(); openEditChannel(channel); }}
-                    className="p-1.5 text-gray-400 hover:text-primary hover:bg-gray-100 rounded transition-colors"
+                    className="shrink-0 p-1.5 text-gray-400 hover:text-primary hover:bg-gray-100 rounded transition-colors"
                     title="Edit channel"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
