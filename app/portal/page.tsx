@@ -81,7 +81,27 @@ export default function PortalDashboard() {
       fetch("/api/portal/features").then((r) => r.json()).catch(() => ({})),
     ]).then(([me, bk, tr, fam, feat]) => {
       setMember(me);
-      setBookings(Array.isArray(bk) ? bk.filter((b: BookingInfo) => b.status === "CONFIRMED").slice(0, 3) : []);
+      // Sort chronologically: bookingDate asc (soonest day first),
+      // then start-time-of-day asc (earliest class of the day first).
+      // API sorts by bookingDate only, so same-day bookings tie there
+      // and end up in insert order without this second-pass sort. We
+      // pull start-of-day from classSession.startsAt's hour+minute
+      // rather than the full timestamp because the template's DATE
+      // portion is the schedule-creation date (often years old) and
+      // would scramble same-day ordering.
+      const sortedBookings = Array.isArray(bk)
+        ? [...bk]
+            .filter((b: BookingInfo) => b.status === "CONFIRMED")
+            .sort((a, b) => {
+              const dayDiff = new Date(a.bookingDate).getTime() - new Date(b.bookingDate).getTime();
+              if (dayDiff !== 0) return dayDiff;
+              const aStart = new Date(a.classSession.startsAt);
+              const bStart = new Date(b.classSession.startsAt);
+              return (aStart.getHours() * 60 + aStart.getMinutes()) - (bStart.getHours() * 60 + bStart.getMinutes());
+            })
+            .slice(0, 3)
+        : [];
+      setBookings(sortedBookings);
       if (tr?.trial) setTrial(tr.trial);
       if (fam?.children) setChildren(fam.children);
       if (feat?.features) setFeatures(feat.features);

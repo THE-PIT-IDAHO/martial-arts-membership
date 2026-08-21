@@ -32,12 +32,28 @@ export default function PortalBookingsPage() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [cancellingApptId, setCancellingApptId] = useState<string | null>(null);
 
+  // Sort chronologically: bookingDate asc (soonest day first), then
+  // start-time-of-day asc (earliest class of the day first). API
+  // sorts by bookingDate only, so same-day bookings tie there and
+  // end up in insert order without this. Pulling start-of-day from
+  // classSession.startsAt's hour+minute rather than the full
+  // timestamp because the template's date portion (often years old)
+  // would scramble same-day ordering.
+  function chronological(a: Booking, b: Booking): number {
+    const dayDiff = new Date(a.bookingDate).getTime() - new Date(b.bookingDate).getTime();
+    if (dayDiff !== 0) return dayDiff;
+    const aStart = new Date(a.classSession.startsAt);
+    const bStart = new Date(b.classSession.startsAt);
+    return (aStart.getHours() * 60 + aStart.getMinutes()) - (bStart.getHours() * 60 + bStart.getMinutes());
+  }
+
   function loadBookings() {
     Promise.all([
       fetch("/api/portal/bookings").then((r) => r.json()),
       fetch("/api/portal/appointments/mine").then((r) => r.json()),
     ]).then(([bookingData, apptData]) => {
-      setBookings(bookingData);
+      const sorted = Array.isArray(bookingData) ? [...bookingData].sort(chronological) : [];
+      setBookings(sorted);
       setAppointments(apptData.appointments || []);
       setLoading(false);
     });
