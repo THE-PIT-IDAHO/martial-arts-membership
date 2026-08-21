@@ -1415,12 +1415,15 @@ export default function DojoBoardTab() {
     <div className="space-y-3">
 
         <div className="flex h-[calc(100vh-10rem)] gap-4">
-          {/* Left Sidebar - Training Channels */}
-          <div className="w-60 shrink-0 rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col">
+          {/* Left Sidebar - Training Channels. self-start so the sidebar
+              grows to fit its channel list instead of stretching to the
+              parent's fixed viewport height + scrolling internally. Main
+              feed column still keeps its scroll behavior. */}
+          <div className="w-60 shrink-0 self-start rounded-lg border border-gray-200 bg-white flex flex-col">
             <div className="p-3 border-b border-gray-200 bg-gray-50">
               <h2 className="text-sm font-semibold text-gray-700">Training Channels</h2>
             </div>
-          <div className="flex-1 overflow-y-auto">
+          <div>
             {channels.map((channel) => (
               <div
                 key={channel.id}
