@@ -17,13 +17,74 @@ export async function GET(req: NextRequest) {
     },
     include: {
       classSession: {
-        select: { name: true, startsAt: true, endsAt: true, coachName: true, styleName: true },
+        select: {
+          name: true,
+          startsAt: true,
+          endsAt: true,
+          coachName: true,
+          styleName: true,
+          // Needed to filter out ghost bookings whose ClassSession no
+          // longer runs on the bookingDate (e.g. schedule was moved
+          // from Friday 7pm to Thursday 7pm after the booking was
+          // created). Without the filter, the portal home shows a
+          // class that doesn't actually exist that day.
+          isRecurring: true,
+          excludedDates: true,
+          scheduleStartDate: true,
+          scheduleEndDate: true,
+          isOngoing: true,
+        },
       },
     },
     orderBy: { bookingDate: "asc" },
   });
 
-  return NextResponse.json(bookings);
+  // Drop bookings whose ClassSession's schedule no longer covers the
+  // bookingDate. Rules mirror the kiosk's + portal-classes' "does
+  // this class run today?" check: same day-of-week for recurring
+  // classes, exact date for one-offs, respect excludedDates and
+  // scheduleStart/End window. Ghost bookings usually appear when a
+  // class's day/time is changed after a member has already booked.
+  const filtered = bookings.filter((b) => {
+    const cls = b.classSession;
+    if (!cls) return false;
+    const booking = new Date(b.bookingDate);
+    const start = new Date(cls.startsAt);
+    // One-off classes: bookingDate must equal the class's start date.
+    if (!cls.isRecurring) {
+      return (
+        booking.getFullYear() === start.getFullYear() &&
+        booking.getMonth() === start.getMonth() &&
+        booking.getDate() === start.getDate()
+      );
+    }
+    // Recurring: same day-of-week as the template.
+    if (booking.getDay() !== start.getDay()) return false;
+    // Schedule window.
+    if (cls.scheduleStartDate) {
+      const s = new Date(cls.scheduleStartDate);
+      s.setHours(0, 0, 0, 0);
+      if (booking < s) return false;
+    }
+    if (cls.scheduleEndDate && !cls.isOngoing) {
+      const e = new Date(cls.scheduleEndDate);
+      e.setHours(23, 59, 59, 999);
+      if (booking > e) return false;
+    }
+    // Excluded specific dates (holiday, one-off cancellation).
+    if (cls.excludedDates) {
+      try {
+        const ex: string[] = JSON.parse(cls.excludedDates);
+        const ymd = `${booking.getFullYear()}-${String(booking.getMonth() + 1).padStart(2, "0")}-${String(booking.getDate()).padStart(2, "0")}`;
+        if (ex.includes(ymd)) return false;
+      } catch {
+        // Malformed excludedDates JSON -- assume no exclusions.
+      }
+    }
+    return true;
+  });
+
+  return NextResponse.json(filtered);
 }
 
 export async function POST(req: NextRequest) {
