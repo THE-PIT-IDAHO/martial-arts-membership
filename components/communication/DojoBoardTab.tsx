@@ -2808,33 +2808,29 @@ export default function DojoBoardTab() {
       )}
 
       {/* Channel Members Modal
-          Shows who's in the active channel and, for channels whose
-          audience is a specific-members list, lets the admin remove
-          people one at a time without opening the full edit modal.
-          Rule-based channels (all / by style / by rank / by status)
-          get a read-only note explaining the audience is derived
-          from the rule -- to change WHO qualifies for those, edit
-          the channel and change the rule itself. */}
+          Checkbox list -- ONE row per gym member, checkbox reflects
+          whether they're in this channel. Toggle to add / remove
+          without opening the full edit modal or hunting for a
+          Remove button. Matches the checkbox pattern already used
+          in the create/edit-channel modal below.
+          For channels whose visibility is rule-based (all / by
+          style / by rank / by status), checkboxes are hidden --
+          removing one wouldn't stick because the rule would just
+          re-include them. Info banner points at Edit Channel. */}
       {showMemberList && (() => {
         const chan = channels.find((c) => c.id === activeChannel);
         const vis = chan?.visibility;
         const isSpecific = vis?.type === "specific";
-        // For a specific-members channel: the members currently on
-        // the list, in the same order as memberIds. For rule-based
-        // channels: everyone (up to 50 shown) so the admin can eyeball
-        // who currently qualifies.
-        const listedMembers = isSpecific
-          ? (vis?.memberIds || [])
-              .map((mid) => members.find((m) => m.id === mid))
-              .filter((m): m is typeof members[number] => !!m)
-          : members.slice(0, 50);
+        const currentIds = new Set<string>((vis?.memberIds || []));
 
-        async function removeMemberFromChannel(memberId: string) {
+        async function toggleMemberInChannel(memberId: string) {
           if (!chan || !isSpecific) return;
-          const currentIds = vis?.memberIds || [];
-          const nextIds = currentIds.filter((id) => id !== memberId);
-          // Optimistic update -- reflect the removal locally before
-          // the PATCH round-trip so the row disappears instantly.
+          const isIn = currentIds.has(memberId);
+          const nextIds = isIn
+            ? [...currentIds].filter((id) => id !== memberId)
+            : [...currentIds, memberId];
+          // Optimistic update -- the checkbox flips instantly.
+          const rollback = [...currentIds];
           setChannels((prev) =>
             prev.map((c) =>
               c.id === chan.id
@@ -2850,29 +2846,38 @@ export default function DojoBoardTab() {
                 visibility: { ...(vis || {}), type: "specific", memberIds: nextIds },
               }),
             });
-            if (!res.ok) throw new Error("Failed to remove member");
+            if (!res.ok) throw new Error("Failed to update channel members");
           } catch (err) {
-            console.error("Failed to remove member from channel:", err);
+            console.error("Failed to toggle member in channel:", err);
             // Roll back the optimistic update.
             setChannels((prev) =>
               prev.map((c) =>
                 c.id === chan.id
-                  ? { ...c, visibility: { ...(c.visibility || { type: "specific" }), type: "specific", memberIds: currentIds } as typeof c.visibility }
+                  ? { ...c, visibility: { ...(c.visibility || { type: "specific" }), type: "specific", memberIds: rollback } as typeof c.visibility }
                   : c,
               ),
             );
-            alert("Failed to remove member. Please try again.");
+            alert("Failed to update channel. Please try again.");
           }
         }
 
+        // For rule-based channels, still show who currently qualifies
+        // as a read-only preview so the admin can eyeball who's in.
+        const displayedMembers = isSpecific
+          ? members
+          : members.slice(0, 100);
+        const inChannelCount = isSpecific ? currentIds.size : displayedMembers.length;
+
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-full max-w-md max-h-[80vh] rounded-lg bg-white shadow-xl overflow-hidden flex flex-col">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md max-h-[85vh] rounded-lg bg-white shadow-xl overflow-hidden flex flex-col">
               <div className="p-4 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold">Channel Members</h3>
                   {chan && (
-                    <p className="text-xs text-gray-500 mt-0.5">{chan.name}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {chan.name} · {inChannelCount} {inChannelCount === 1 ? "member" : "members"}
+                    </p>
                   )}
                 </div>
                 <button
@@ -2893,51 +2898,67 @@ export default function DojoBoardTab() {
                     qualifies.
                   </div>
                 )}
-                {listedMembers.length === 0 ? (
+                {displayedMembers.length === 0 ? (
                   <p className="text-center text-gray-500 text-sm py-6">
-                    {isSpecific ? "No members added to this channel yet." : "No members found."}
+                    No members found.
                   </p>
                 ) : (
-                  <div className="space-y-2">
-                    {listedMembers.map((member) => (
-                      <div
-                        key={member.id}
-                        className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">
-                          {member.firstName[0]}{member.lastName[0]}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900 truncate">
-                            {member.firstName} {member.lastName}
+                  <div className="space-y-1">
+                    {displayedMembers.map((member) => {
+                      const isIn = currentIds.has(member.id);
+                      // For rule-based channels, present the row as
+                      // read-only info (no checkbox interaction).
+                      // Matches the checkbox pattern from the edit
+                      // modal for specific channels.
+                      const row = (
+                        <>
+                          {isSpecific && (
+                            <input
+                              type="checkbox"
+                              checked={isIn}
+                              onChange={() => toggleMemberInChannel(member.id)}
+                              className="rounded border-gray-300 h-4 w-4"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          )}
+                          <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold shrink-0">
+                            {member.firstName[0]}{member.lastName[0]}
                           </div>
-                          <div className="text-xs text-gray-500 truncate">
-                            {member.primaryStyle || member.rank || "Student"}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-900 truncate">
+                              {member.firstName} {member.lastName}
+                            </div>
+                            <div className="text-xs text-gray-500 truncate">
+                              {member.primaryStyle || member.rank || "Student"}
+                            </div>
                           </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
+                            member.status === "ACTIVE"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-gray-100 text-gray-600"
+                          }`}>
+                            {member.status}
+                          </span>
+                        </>
+                      );
+                      return isSpecific ? (
+                        <label
+                          key={member.id}
+                          className={`flex items-center gap-3 p-2 rounded-md cursor-pointer ${
+                            isIn ? "bg-primary/10" : "hover:bg-gray-50"
+                          }`}
+                        >
+                          {row}
+                        </label>
+                      ) : (
+                        <div
+                          key={member.id}
+                          className="flex items-center gap-3 p-2 rounded-md"
+                        >
+                          {row}
                         </div>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          member.status === "ACTIVE"
-                            ? "bg-green-100 text-green-700"
-                            : "bg-gray-100 text-gray-600"
-                        }`}>
-                          {member.status}
-                        </span>
-                        {isSpecific && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (confirm(`Remove ${member.firstName} ${member.lastName} from this channel?`)) {
-                                removeMemberFromChannel(member.id);
-                              }
-                            }}
-                            title="Remove from channel"
-                            className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 hover:border-red-300"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
