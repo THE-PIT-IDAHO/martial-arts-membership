@@ -230,12 +230,22 @@ export default function PortalDashboard() {
           </div>
           <div className="space-y-2">
             {bookings.map((b) => {
+              // classSession.startsAt is the TEMPLATE's original
+              // datetime -- fine for pulling the time-of-day, but
+              // its DATE is when the schedule was first created
+              // (May 2026 for these long-standing recurring classes).
+              // The actual class occurrence lives on bookingDate.
+              // Bug before this fix: portal home showed the template
+              // date, so "next Kore BJJ" read "May 28" instead of
+              // "Aug 28." Matches how /portal/bookings already
+              // renders its rows.
+              const bookDate = new Date(b.bookingDate);
               const start = new Date(b.classSession.startsAt);
               return (
                 <div key={b.id} className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
                   <p className="font-semibold text-gray-900">{b.classSession.name}</p>
                   <p className="text-sm text-gray-500 mt-0.5">
-                    {start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                    {bookDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                     {" at "}
                     {start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
                   </p>
