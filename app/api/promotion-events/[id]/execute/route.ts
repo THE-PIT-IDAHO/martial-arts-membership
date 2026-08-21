@@ -169,13 +169,19 @@ export async function POST(
           success: true,
         });
 
-        // Send promotion congrats email (fire and forget)
-        sendPromotionCongratsEmail({
-          memberId: participant.memberId,
-          memberName: participant.memberName,
-          newRank: participant.promotingToRank,
-          styleName: eventStyleName,
-        }).catch(() => {});
+        // Awaited (was fire-and-forget). Vercel serverless terminates
+        // the function process the instant the response goes out, so
+        // any dangling promise gets killed mid-flight.
+        try {
+          await sendPromotionCongratsEmail({
+            memberId: participant.memberId,
+            memberName: participant.memberName,
+            newRank: participant.promotingToRank,
+            styleName: eventStyleName,
+          });
+        } catch (err) {
+          console.error("[promotion-events/execute] congrats email failed:", err);
+        }
       } catch (err) {
         console.error(`Error promoting ${participant.memberName}:`, err);
         results.push({

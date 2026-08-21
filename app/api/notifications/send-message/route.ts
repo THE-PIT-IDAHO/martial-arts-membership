@@ -25,12 +25,21 @@ export async function POST(req: Request) {
 
     let sent = 0;
     for (const member of members) {
-      sendCustomMessageEmail({
-        memberId: member.id,
-        memberName: `${member.firstName} ${member.lastName}`,
-        subject: subject || "Message from your gym",
-        message,
-      }).catch(() => {});
+      // Awaited (was fire-and-forget). Vercel kills dangling promises
+      // when the response returns. In a loop, awaiting each send
+      // slows the whole thing linearly but is far more reliable than
+      // hoping N parallel promises all resolve before Vercel tears
+      // down the function.
+      try {
+        await sendCustomMessageEmail({
+          memberId: member.id,
+          memberName: `${member.firstName} ${member.lastName}`,
+          subject: subject || "Message from your gym",
+          message,
+        });
+      } catch (err) {
+        console.error("[notifications/send-message] send failed for member", member.id, err);
+      }
       sent++;
     }
 

@@ -108,14 +108,19 @@ export async function PATCH(
         data: { lastPaymentDate: new Date() },
       });
 
-      // Send payment received email (fire and forget)
-      sendPaymentReceivedEmail({
-        memberId: invoice.membership.memberId,
-        memberName: `${invoice.member.firstName} ${invoice.member.lastName}`,
-        amountCents: invoice.amountCents,
-        invoiceNumber: invoice.invoiceNumber || undefined,
-        planName: invoice.membership.membershipPlan.name,
-      }).catch(() => {});
+      // Awaited (was fire-and-forget). Vercel kills dangling promises
+      // the instant the response returns.
+      try {
+        await sendPaymentReceivedEmail({
+          memberId: invoice.membership.memberId,
+          memberName: `${invoice.member.firstName} ${invoice.member.lastName}`,
+          amountCents: invoice.amountCents,
+          invoiceNumber: invoice.invoiceNumber || undefined,
+          planName: invoice.membership.membershipPlan.name,
+        });
+      } catch (err) {
+        console.error("[invoices/[id]] payment-received email failed:", err);
+      }
     } else if (status === "VOID") {
       data.status = "VOID";
     } else if (status === "FAILED") {

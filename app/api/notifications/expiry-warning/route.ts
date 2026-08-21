@@ -35,12 +35,18 @@ export async function POST(req: Request) {
     for (const ms of expiringMemberships) {
       if (!ms.member.emailOptIn || !ms.member.email || !ms.endDate) continue;
 
-      sendMembershipExpiryWarningEmail({
-        memberId: ms.member.id,
-        memberName: `${ms.member.firstName} ${ms.member.lastName}`,
-        planName: ms.membershipPlan.name,
-        expiryDate: ms.endDate,
-      }).catch(() => {});
+      // Awaited (was fire-and-forget). Vercel kills dangling promises
+      // when the response returns.
+      try {
+        await sendMembershipExpiryWarningEmail({
+          memberId: ms.member.id,
+          memberName: `${ms.member.firstName} ${ms.member.lastName}`,
+          planName: ms.membershipPlan.name,
+          expiryDate: ms.endDate,
+        });
+      } catch (err) {
+        console.error("[notifications/expiry-warning] send failed for member", ms.member.id, err);
+      }
       sent++;
     }
 

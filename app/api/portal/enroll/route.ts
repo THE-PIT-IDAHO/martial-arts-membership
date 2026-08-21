@@ -104,11 +104,17 @@ export async function POST(req: Request) {
 
     // Send confirmation email to applicant -- scoped so the branding
     // and toggles reflect THIS gym, not the platform-default fallback.
-    sendEnrollmentConfirmationEmail({
-      email: email.trim().toLowerCase(),
-      firstName: firstName.trim(),
-      clientId,
-    }).catch(() => {});
+    // Awaited (was fire-and-forget). Vercel kills dangling promises
+    // when the response returns.
+    try {
+      await sendEnrollmentConfirmationEmail({
+        email: email.trim().toLowerCase(),
+        firstName: firstName.trim(),
+        clientId,
+      });
+    } catch (err) {
+      console.error("[portal/enroll] enrollment-confirmation email failed:", err);
+    }
 
     return NextResponse.json({ success: true, id: submission.id, planName }, { status: 201 });
   } catch (error) {

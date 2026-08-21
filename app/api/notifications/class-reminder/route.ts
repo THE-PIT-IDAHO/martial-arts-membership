@@ -60,13 +60,19 @@ export async function POST(req: Request) {
       });
 
       for (const member of activeMembers) {
-        sendClassReminderEmail({
-          memberId: member.id,
-          memberName: `${member.firstName} ${member.lastName}`,
-          className: cls.name,
-          classDate,
-          classTime,
-        }).catch(() => {});
+        // Awaited (was fire-and-forget). Vercel kills dangling
+        // promises when the response returns.
+        try {
+          await sendClassReminderEmail({
+            memberId: member.id,
+            memberName: `${member.firstName} ${member.lastName}`,
+            className: cls.name,
+            classDate,
+            classTime,
+          });
+        } catch (err) {
+          console.error("[notifications/class-reminder] send failed for member", member.id, err);
+        }
         sent++;
       }
     }

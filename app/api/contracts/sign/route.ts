@@ -101,20 +101,24 @@ export async function POST(req: Request) {
       }
     }
 
-    // Auto-email contract via the contract_signed template. Template handles
-    // the magic-link portal CTA and is editable from Communications → Email
-    // Templates. Fire-and-forget so the API response isn't blocked on Resend.
+    // Auto-email contract via the contract_signed template. Template
+    // handles the magic-link portal CTA and is editable from Emails →
+    // Email Templates. Awaited (was fire-and-forget) -- Vercel
+    // serverless kills dangling promises the instant the response
+    // returns, so fire-and-forget silently never completed on prod.
     if (pdfBase64Clean) {
-      sendContractSignedEmail({
-        memberId,
-        memberName: memberName || "Member",
-        planName: planName || "Membership Agreement",
-        pdfBase64: pdfBase64Clean,
-        fileName,
-        clientId,
-      }).catch((err) => {
-        console.error("Failed to send contract email:", err);
-      });
+      try {
+        await sendContractSignedEmail({
+          memberId,
+          memberName: memberName || "Member",
+          planName: planName || "Membership Agreement",
+          pdfBase64: pdfBase64Clean,
+          fileName,
+          clientId,
+        });
+      } catch (err) {
+        console.error("[contracts/sign] contract email failed:", err);
+      }
     }
 
     return NextResponse.json({ contract }, { status: 201 });

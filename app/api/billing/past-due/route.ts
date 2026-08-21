@@ -32,14 +32,19 @@ export async function POST(req: Request) {
       });
       updated++;
 
-      // Send past due alert email (fire and forget)
-      sendPastDueAlertEmail({
-        memberId: invoice.member.id,
-        memberName: `${invoice.member.firstName} ${invoice.member.lastName}`,
-        amountCents: invoice.amountCents,
-        invoiceNumber: invoice.invoiceNumber || undefined,
-        dueDate: invoice.dueDate,
-      }).catch(() => {});
+      // Awaited (was fire-and-forget). Vercel kills dangling promises
+      // the instant the response returns.
+      try {
+        await sendPastDueAlertEmail({
+          memberId: invoice.member.id,
+          memberName: `${invoice.member.firstName} ${invoice.member.lastName}`,
+          amountCents: invoice.amountCents,
+          invoiceNumber: invoice.invoiceNumber || undefined,
+          dueDate: invoice.dueDate,
+        });
+      } catch (err) {
+        console.error("[billing/past-due] past-due email failed:", err);
+      }
     }
 
     return NextResponse.json({ updated });

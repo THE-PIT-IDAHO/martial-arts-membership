@@ -229,18 +229,23 @@ async function handleBookingPost(req: NextRequest) {
     }
   }
 
-  // Send booking email
+  // Send booking email. Awaited (was fire-and-forget). Vercel kills
+  // dangling promises when the response returns.
   if (member) {
     const classStart = new Date(cls.startsAt);
-    sendBookingConfirmationEmail({
-      memberId: bookingMemberId,
-      memberName: `${member.firstName} ${member.lastName}`,
-      className: cls.name,
-      classDate: parsedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
-      classTime: classStart.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
-      status: result.status,
-      waitlistPosition: result.waitlistPosition ?? undefined,
-    }).catch(() => {});
+    try {
+      await sendBookingConfirmationEmail({
+        memberId: bookingMemberId,
+        memberName: `${member.firstName} ${member.lastName}`,
+        className: cls.name,
+        classDate: parsedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
+        classTime: classStart.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+        status: result.status,
+        waitlistPosition: result.waitlistPosition ?? undefined,
+      });
+    } catch (err) {
+      console.error("[portal/bookings] booking-confirmation email failed:", err);
+    }
   }
 
   return NextResponse.json(result);

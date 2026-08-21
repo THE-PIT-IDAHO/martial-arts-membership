@@ -92,13 +92,19 @@ export async function DELETE(
 
       // Notify promoted member
       const classStart = new Date(booking.classSession.startsAt);
-      sendWaitlistPromotionEmail({
-        memberId: nextWaitlisted.member.id,
-        memberName: `${nextWaitlisted.member.firstName} ${nextWaitlisted.member.lastName}`,
-        className: booking.classSession.name,
-        classDate: booking.bookingDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
-        classTime: classStart.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
-      }).catch(() => {});
+      // Awaited (was fire-and-forget). Vercel kills dangling promises
+      // when the response returns.
+      try {
+        await sendWaitlistPromotionEmail({
+          memberId: nextWaitlisted.member.id,
+          memberName: `${nextWaitlisted.member.firstName} ${nextWaitlisted.member.lastName}`,
+          className: booking.classSession.name,
+          classDate: booking.bookingDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
+          classTime: classStart.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+        });
+      } catch (err) {
+        console.error("[portal/bookings/[id]] waitlist-promotion email failed:", err);
+      }
     }
   }
 

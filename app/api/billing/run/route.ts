@@ -100,15 +100,20 @@ export async function POST(req: Request) {
           });
           created++;
 
-          // Send invoice created email (fire and forget)
-          sendInvoiceCreatedEmail({
-            memberId: ms.member.id,
-            memberName: `${ms.member.firstName} ${ms.member.lastName}`,
-            invoiceNumber,
-            amountCents,
-            dueDate,
-            planName: ms.membershipPlan.name,
-          }).catch(() => {});
+          // Awaited (was fire-and-forget). Vercel kills dangling
+          // promises the instant the response returns.
+          try {
+            await sendInvoiceCreatedEmail({
+              memberId: ms.member.id,
+              memberName: `${ms.member.firstName} ${ms.member.lastName}`,
+              invoiceNumber,
+              amountCents,
+              dueDate,
+              planName: ms.membershipPlan.name,
+            });
+          } catch (err) {
+            console.error("[billing/run] invoice-created email failed:", err);
+          }
         } catch (e: unknown) {
           // Unique constraint violation = already created for this period
           if (e && typeof e === "object" && "code" in e && (e as { code: string }).code === "P2002") {
