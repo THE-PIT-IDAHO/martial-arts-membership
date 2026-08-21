@@ -257,7 +257,7 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     // hard-coded "Your Receipt" email -- one editable template covers
     // both the "purchase only" and "purchase + contract signed" cases.
     eventKey: "purchase_complete",
-    name: "Purchase Complete",
+    name: "Receipt & Contract",
     subject: "Your Purchase — {{gymName}}",
     // Portal-access section deliberately NOT included here -- the
     // Welcome email owns the "sign in and set up your portal" moment.
