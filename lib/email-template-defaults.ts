@@ -288,24 +288,7 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     ],
   },
 
-  // --- Contracts (legacy, kept for template row that already exists) ---
-  {
-    // Superseded by "purchase_complete" as of 2026-08-21 -- no code
-    // path calls this anymore. Left in the defaults so any DB row that
-    // was seeded from it remains readable; safe to disable from
-    // Emails > Email Templates.
-    eventKey: "contract_signed",
-    name: "Contract Signed (legacy)",
-    subject: "Your Contract — {{planName}}",
-    bodyHtml: `<h2 style="color:#c41111;">Your Signed Contract</h2>
-    <p>Thank you, {{memberName}}! Your signed contract for <strong>{{planName}}</strong> is attached to this email.</p>
-    <p>Please keep this document for your records.</p>
-    {{portalSection}}
-    <p style="color:#666;font-size:12px;margin-top:24px;">If you have any questions, please contact us at {{gymEmail}}.</p>`,
-    variables: ["memberName", "planName", "gymName", "gymEmail", "portalSection", "portalLoginUrl"],
-  },
-
-  // --- Enrollment ---
+  // --- Enrollment (waiver acknowledgment) ---
   {
     eventKey: "enrollment_confirmation",
     name: "Waiver Confirmation",
@@ -316,54 +299,6 @@ export const DEFAULT_EMAIL_TEMPLATES: DefaultEmailTemplate[] = [
     {{portalSection}}
     <p>Thank you for completing your waiver. If you have any questions, feel free to contact us at {{gymEmail}}.</p>`,
     variables: ["firstName", "gymName", "gymEmail", "portalSection", "portalLoginUrl"],
-  },
-
-  // --- Waiver ---
-  {
-    eventKey: "waiver_welcome",
-    name: "Waiver Welcome / Portal Access",
-    subject: "Welcome to {{gymName}} — Your Portal Access",
-    bodyHtml: `<h2 style="color:#c41111;">Welcome to {{gymName}}!</h2>
-    <p>Hi {{memberName}},</p>
-    <p>Thank you for completing your liability waiver. You're all set to start training!</p>
-    <div style="background:#fef2f2;padding:16px;border-radius:8px;margin:16px 0;border:1px solid #fecaca;">
-      <p style="margin:0 0 8px;font-weight:600;font-size:16px;">Access Your Member Portal</p>
-      <p style="margin:0 0 12px;color:#6b7280;">View your classes, track your progress, manage your account, and more.</p>
-      <a href="{{portalUrl}}" style="display:inline-block;background:#c41111;color:#ffffff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Go to Member Portal</a>
-    </div>
-    <p style="font-size:14px;"><strong>How to sign in:</strong></p>
-    <ol style="font-size:14px;color:#374151;">
-      <li>Click the button above or go to <a href="{{portalUrl}}">{{portalUrl}}</a></li>
-      <li>Enter your email address: <strong>{{memberEmail}}</strong></li>
-      <li>Click "Send Magic Link"</li>
-      <li>Check your inbox for a login link and click it — no password needed!</li>
-    </ol>
-    <p>If you have any questions, feel free to contact us at {{gymEmail}}.</p>
-    <p>See you on the mat!</p>`,
-    variables: ["memberName", "memberEmail", "portalUrl", "gymName", "gymEmail"],
-  },
-
-  {
-    eventKey: "waiver_confirmed",
-    name: "Waiver Confirmed / Portal Access",
-    subject: "Your Waiver Has Been Confirmed — {{gymName}}",
-    bodyHtml: `<h2 style="color:#c41111;">Your Waiver is Confirmed!</h2>
-    <p>Hi {{memberName}},</p>
-    <p>Great news! Your liability waiver at <strong>{{gymName}}</strong> has been reviewed and confirmed. You're all set to start training!</p>
-    <div style="background:#fef2f2;padding:16px;border-radius:8px;margin:16px 0;border:1px solid #fecaca;">
-      <p style="margin:0 0 8px;font-weight:600;font-size:16px;">Access Your Member Portal</p>
-      <p style="margin:0 0 12px;color:#6b7280;">View your classes, track your progress, manage your account, and more.</p>
-      <a href="{{magicLoginUrl}}" style="display:inline-block;background:#c41111;color:#ffffff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Log In Now</a>
-    </div>
-    <p style="font-size:14px;">This login link expires in 15 minutes. After that, you can always sign in at:</p>
-    <ol style="font-size:14px;color:#374151;">
-      <li>Go to <a href="{{portalUrl}}">{{portalUrl}}</a></li>
-      <li>Enter your email: <strong>{{memberEmail}}</strong></li>
-      <li>Click "Send Magic Link" to receive a new login link</li>
-    </ol>
-    <p>If you have any questions, contact us at {{gymEmail}}.</p>
-    <p>See you on the mat!</p>`,
-    variables: ["memberName", "memberEmail", "portalUrl", "magicLoginUrl", "gymName", "gymEmail"],
   },
 
   // --- Auth ---
@@ -429,9 +364,7 @@ export function getDefaultTemplate(eventKey: string): DefaultEmailTemplate | und
 // exists but nothing in the code calls it yet (toggle is dormant).
 export const TEMPLATE_TRIGGERS: Record<string, { description: string; wired: boolean }> = {
   welcome: { description: "When a new member is created (POST /api/members or signup flow)", wired: true },
-  enrollment_confirmation: { description: "When admin clicks Confirm on a pending waiver", wired: true },
-  waiver_welcome: { description: "Helper exists — not yet called from any route", wired: false },
-  waiver_confirmed: { description: "Helper exists — not yet called from any route", wired: false },
+  enrollment_confirmation: { description: "When a member submits the online waiver form", wired: true },
   birthday: { description: "Daily cron at 13:00 UTC checks every member's DOB and sends a greeting (once per year)", wired: true },
   inactive_reengagement: { description: "Weekly Sunday cron — sends to ACTIVE members with no attendance in 30+ days (60-day cooldown between sends)", wired: true },
   promotion_congrats: { description: "When admin executes a PromotionEvent (promotes a member to a new rank)", wired: true },
@@ -454,7 +387,6 @@ export const TEMPLATE_TRIGGERS: Record<string, { description: string; wired: boo
   custom_message: { description: 'Calendar → "Message Attendees" feature (manual admin send)', wired: true },
   low_stock_alert: { description: "POS inventory drops at/below reorderThreshold — sent to gymEmail", wired: true },
   promotion_eligibility: { description: "Weekly auto-billing sweep detects members at next-rank threshold — sent to gymEmail", wired: true },
-  contract_signed: { description: "Superseded by \"Purchase Complete\" — no longer fires. Kept so existing customizations aren't lost.", wired: false },
   purchase_complete: { description: "Fires when a member completes a POS purchase that includes a membership. Attaches the receipt PDF, and the signed contract PDF too if one was signed in the same checkout.", wired: true },
 };
 
@@ -462,7 +394,7 @@ export const TEMPLATE_TRIGGERS: Record<string, { description: string; wired: boo
 export const TEMPLATE_CATEGORIES: { label: string; keys: string[] }[] = [
   {
     label: "Member Lifecycle",
-    keys: ["welcome", "enrollment_confirmation", "waiver_welcome", "waiver_confirmed", "contract_signed", "birthday", "inactive_reengagement", "promotion_congrats"],
+    keys: ["welcome", "enrollment_confirmation", "birthday", "inactive_reengagement", "promotion_congrats"],
   },
   {
     label: "Billing",

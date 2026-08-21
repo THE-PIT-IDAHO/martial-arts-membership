@@ -560,94 +560,6 @@ export async function sendWaiverReceivedEmail(params: {
 // Keep old name as alias for backwards compatibility
 export const sendEnrollmentConfirmationEmail = sendWaiverReceivedEmail;
 
-// --- 11d. Contract Signed (sent to member after POS contract sign) ---
-
-export async function sendContractSignedEmail(params: {
-  memberId: string;
-  memberName: string;
-  planName: string;
-  pdfBase64: string;
-  fileName: string;
-  clientId?: string;
-}) {
-  const emails = await resolveRecipientEmails(params.memberId);
-  if (emails.length === 0) return;
-  const brand = await getGymBranding(params.clientId);
-  const minted = await mintPortalUrl(params.memberId);
-  const portalSection = renderPortalSectionHtml(minted);
-  const portalLoginUrl = minted?.url || "";
-  const resolved = await resolveTemplate("contract_signed", {
-    memberName: params.memberName,
-    planName: params.planName,
-    gymName: brand.gymName,
-    gymEmail: brand.gymEmail,
-    portalSection,
-    portalLoginUrl,
-  }, { memberId: params.memberId });
-  if (!resolved) return;
-  const { subject, bodyHtml } = resolved;
-  const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({
-    to: emails,
-    subject,
-    html,
-    attachments: [{ filename: params.fileName, content: params.pdfBase64 }],
-    clientId: params.clientId,
-    memberId: params.memberId,
-    eventType: "CONTRACT_SIGNED",
-  });
-}
-
-// --- 11b. Waiver Welcome (portal access email sent after waiver submission) ---
-
-export async function sendWaiverWelcomeEmail(params: {
-  email: string;
-  memberName: string;
-  portalUrl: string;
-  memberId?: string;
-  clientId?: string;
-}) {
-  const clientId = await resolveClientId({ clientId: params.clientId, memberId: params.memberId });
-  if (!clientId) return;
-  const brand = await getGymBranding(clientId);
-  const resolved = await resolveTemplate("waiver_welcome", {
-    memberName: params.memberName,
-    memberEmail: params.email,
-    portalUrl: params.portalUrl,
-    gymName: brand.gymName,
-    gymEmail: brand.gymEmail,
-  }, { memberId: params.memberId, clientId: params.clientId });
-  if (!resolved) return;
-  const { subject, bodyHtml } = resolved;
-  const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [params.email], subject, html, memberId: params.memberId, clientId, eventType: "WAIVER_WELCOME" });
-}
-
-// --- 11c. Waiver Confirmed (sent after admin confirms waiver) ---
-
-export async function sendWaiverConfirmationEmail(params: {
-  email: string;
-  memberName: string;
-  portalUrl: string;
-  magicLoginUrl: string;
-  clientId?: string;
-  memberId?: string;
-}) {
-  const brand = await getGymBranding(params.clientId);
-  const resolved = await resolveTemplate("waiver_confirmed", {
-    memberName: params.memberName,
-    memberEmail: params.email,
-    portalUrl: params.portalUrl,
-    magicLoginUrl: params.magicLoginUrl,
-    gymName: brand.gymName,
-    gymEmail: brand.gymEmail,
-  }, { memberId: params.memberId, clientId: params.clientId });
-  if (!resolved) return;
-  const { subject, bodyHtml } = resolved;
-  const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({ to: [params.email], subject, html, clientId: params.clientId, memberId: params.memberId, eventType: "WAIVER_CONFIRMED" });
-}
-
 // --- 12. Custom Message (for calendar "message attendees") ---
 
 export async function sendCustomMessageEmail(params: {
@@ -912,7 +824,7 @@ export async function sendTrialExpiringEmail(params: {
 
 // ─── Purchase Complete (unified receipt + contract) ───────────
 //
-// Replaces the old separate sendReceiptEmail + sendContractSignedEmail
+// Replaces the old separate receipt + contract signed emails
 // pair. One email with BOTH PDFs attached (receipt always; contract
 // only if one was signed in the same checkout). Uses the
 // "purchase_complete" template so operators can edit body/subject

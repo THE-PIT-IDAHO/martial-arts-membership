@@ -22,9 +22,9 @@ export async function POST(req: Request) {
     // Verify memberId belongs to this tenant BEFORE anything is
     // written or emailed. Without this, an admin can post any gym's
     // memberId + an attacker-controlled PDF, and the endpoint would
-    // fire sendContractSignedEmail which resolves recipient emails
-    // from the foreign member and delivers the PDF to their inbox.
-    // Phishing vector.
+    // fire the purchase-complete email which resolves recipient
+    // emails from the foreign member and delivers the PDF to their
+    // inbox. Phishing vector.
     const member = await prisma.member.findUnique({
       where: { id: memberId },
       select: { clientId: true },
