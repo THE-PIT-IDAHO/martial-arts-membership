@@ -2732,32 +2732,53 @@ export default function DojoBoardTab() {
                     {members.length === 0 ? (
                       <p className="text-sm text-gray-500 p-2">No members found</p>
                     ) : (
-                      members.map((member) => (
-                        <label
-                          key={member.id}
-                          className={`flex items-center gap-2 p-2 rounded-md cursor-pointer ${
-                            selectedMemberIds.includes(member.id) ? "bg-primary/10" : "hover:bg-gray-50"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedMemberIds.includes(member.id)}
-                            onChange={() => toggleMemberSelection(member.id)}
-                            className="rounded border-gray-300"
-                          />
-                          <div className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">
-                            {member.firstName[0]}{member.lastName[0]}
-                          </div>
-                          <span className="text-sm text-gray-700">
-                            {member.firstName} {member.lastName}
-                          </span>
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${
-                            member.status === "ACTIVE" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                          }`}>
-                            {member.status}
-                          </span>
-                        </label>
-                      ))
+                      // Toggle button per row instead of a <label>/<input>
+                      // pair -- earlier version rendered checkboxes that
+                      // wouldn't stay checked. The label click and the
+                      // input click were racing (double-firing onChange)
+                      // in some browsers, leaving the checked prop pointing
+                      // at stale state. A single-source-of-truth button
+                      // with an explicit onClick avoids the race and makes
+                      // the whole row the tap target on mobile.
+                      members.map((member) => {
+                        const isSelected = selectedMemberIds.includes(member.id);
+                        return (
+                          <button
+                            type="button"
+                            key={member.id}
+                            onClick={() => toggleMemberSelection(member.id)}
+                            className={`w-full flex items-center gap-2 p-2 rounded-md text-left ${
+                              isSelected ? "bg-primary/10" : "hover:bg-gray-50"
+                            }`}
+                          >
+                            <span
+                              className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                                isSelected
+                                  ? "bg-primary border-primary text-white"
+                                  : "bg-white border-gray-300"
+                              }`}
+                              aria-hidden="true"
+                            >
+                              {isSelected && (
+                                <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.5 6.5l2.5 2.5 4.5-5.5" />
+                                </svg>
+                              )}
+                            </span>
+                            <div className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold shrink-0">
+                              {member.firstName[0]}{member.lastName[0]}
+                            </div>
+                            <span className="text-sm text-gray-700 truncate">
+                              {member.firstName} {member.lastName}
+                            </span>
+                            <span className={`ml-auto text-xs px-1.5 py-0.5 rounded shrink-0 ${
+                              member.status === "ACTIVE" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                            }`}>
+                              {member.status}
+                            </span>
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </div>
