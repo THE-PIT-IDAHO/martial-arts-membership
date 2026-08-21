@@ -515,7 +515,10 @@ export async function sendWaiverReceivedEmail(params: {
   clientId?: string;
   memberId?: string;
 }) {
+  const tag = `[sendWaiverReceivedEmail] to=${params.email} memberId=${params.memberId || "?"} clientId=${params.clientId || "?"}`;
+  console.log(`${tag} start`);
   const brand = await getGymBranding(params.clientId);
+  console.log(`${tag} branding ok (gym=${brand.gymName})`);
   // Mint the portal magic link once and share it across both
   // {{portalSection}} (the styled card) and {{portalLoginUrl}} (the
   // raw URL, for custom inline links in operator-edited templates).
@@ -529,10 +532,21 @@ export async function sendWaiverReceivedEmail(params: {
     portalSection,
     portalLoginUrl,
   }, { memberId: params.memberId, clientId: params.clientId });
-  if (!resolved) return;
+  if (!resolved) {
+    // Most common reasons resolveTemplate returns null:
+    //   1. The tenant disabled the "enrollment_confirmation" (a.k.a.
+    //      Waiver Confirmation) template in Emails > Email Templates.
+    //   2. clientId couldn't be resolved (bad memberId, no tenant
+    //      context) -- getGymBranding above would also have logged.
+    console.warn(
+      `${tag} SKIPPED: resolveTemplate("enrollment_confirmation") returned null. ` +
+        `Check Emails > Email Templates > Waiver Confirmation is enabled for clientId=${params.clientId || "?"}.`,
+    );
+    return;
+  }
   const { subject, bodyHtml } = resolved;
   const html = wrapInTemplate(brand, bodyHtml);
-  await sendEmail({
+  const ok = await sendEmail({
     to: [params.email],
     subject,
     html,
@@ -540,6 +554,7 @@ export async function sendWaiverReceivedEmail(params: {
     memberId: params.memberId,
     eventType: "WAIVER_CONFIRMED",
   });
+  console.log(`${tag} sendEmail returned ${ok ? "true (sent)" : "false (see warning above for reason)"}`);
 }
 
 // Keep old name as alias for backwards compatibility
