@@ -463,12 +463,10 @@ type ColumnId =
   | `styleCoach:${string}`
   | `styleNextRank:${string}`;
 
-// Base columns that count as "Member Details" for alignment purposes.
-// These headers + cells stay left-aligned; everything else (belt ranks,
-// membership, attendance, style-scoped columns, class-type counts)
-// centers. Kept in sync with the "Member Details" fields in
-// COLUMN_FIELDS so a new toggle there lands in the same alignment
-// bucket without a second edit.
+// Base columns kept left-aligned: the whole Member Details block plus
+// Membership Plan (plan names are long and read better anchored to the
+// left edge). Everything else -- belt ranks, other membership metadata,
+// attendance, per-style + class-type columns -- centers.
 const MEMBER_DETAIL_COLUMNS = new Set<string>([
   "firstName",
   "lastName",
@@ -478,6 +476,7 @@ const MEMBER_DETAIL_COLUMNS = new Set<string>([
   "phone",
   "joinDate",
   "waiver",
+  "membershipPlan",
 ]);
 
 // Default column order (base columns only - class type columns are appended dynamically)
