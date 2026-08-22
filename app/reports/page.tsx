@@ -51,26 +51,27 @@ type ReportDataFields = {
   showMedicalNotes: boolean;
   showWaiverStatus: boolean;
 
-  // Belt Ranks & Styles.
-  // The old "primary" concept (showBeltRanks / showPrimaryStyle /
-  // showNextRank / showRanksByStyle) plus the per-selected-style Belt
-  // Size / Belt Text / Coach extras (showBeltSizeByStyle,
-  // showBeltTextByStyle, showCoachByStyle) were retired -- see the
-  // simplified COLUMN_FIELDS "Belt Ranks & Styles" entry. Reports
-  // saved before the retirement lose those columns silently.
+  // Styles & Belt Ranks. Each "*ByStyle" flag drives a per-style
+  // column that renders inside the row expanded for that style. Belt
+  // Text + Coach per-style are the retired variants -- ONLY Current
+  // Rank, Next Rank, and Belt Size survive as per-style options.
   showStyleBreakdown: boolean;
   showRankDistribution: boolean;
   showUpcomingPromotions: boolean;
   showLatestPromotion: boolean;
   // Coach who promoted the member -- primary style entry's `coach`
-  // value out of stylesNotes.
+  // value out of stylesNotes. NOT rendered as a Column option (Cruz
+  // removed it from the UI); kept on the type + gate for legacy
+  // reports that still have it enabled.
   showCoach: boolean;
   // "Ready to promote" flag from /api/promotions/eligible. Cell shows
   // the styles a member is currently eligible in, or a dash.
   showPromotionEligible: boolean;
-  // Next rank per selected style. Combined with row expansion, each
-  // row gets its own style's next rank.
+  // Per-selected-style columns. Combined with row expansion, each
+  // row gets its own style's values.
+  showRankByStyle: boolean;
   showNextRankByStyle: boolean;
+  showBeltSizeByStyle: boolean;
 
   // Memberships & Payments
   showMembershipTypes: boolean;
@@ -162,7 +163,9 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showLatestPromotion: false,
   showCoach: false,
   showPromotionEligible: false,
+  showRankByStyle: false,
   showNextRankByStyle: false,
+  showBeltSizeByStyle: false,
   showMembershipTypes: false,
   showMembershipPlans: false,
   showMonthlyPayments: false,
@@ -274,17 +277,17 @@ const COLUMN_FIELDS = [
     ],
   },
   {
-    name: "Belt Ranks & Styles",
-    // Simplified per Cruz's ask: no "primary" style/rank concept -- the
-    // report expands one row per (member x selected style), so each row
-    // implicitly carries its own style + rank. Options are limited to
-    // Next Rank (per row), plus non-rank metadata (Latest Promotion,
-    // Coach, Promotion Eligible). The Current Rank column is implied
-    // once at least one style is chosen and always shown.
+    // Renamed per Cruz -- style comes first, ranks second, both in
+    // the section title and in the modal layout. The Style subsection
+    // (selectedStylesForRank checkboxes) renders above the Ranks
+    // subsection; see the "Styles & Belt Ranks" branch in the
+    // COLUMN_FIELDS render block.
+    name: "Styles & Belt Ranks",
     fields: [
+      { key: "showRankByStyle", label: "Current Rank" },
       { key: "showNextRankByStyle", label: "Next Rank" },
+      { key: "showBeltSizeByStyle", label: "Belt Size" },
       { key: "showLatestPromotion", label: "Latest Promotion" },
-      { key: "showCoach", label: "Coach" },
       { key: "showPromotionEligible", label: "Promotion Eligible" },
     ],
   },
@@ -984,14 +987,15 @@ export default function ReportsPage() {
     const classTypeColumns: ColumnId[] = (activeReport.selectedClassTypes || []).map(
       (ct) => `classType:${ct}` as ColumnId
     );
-    const styleRankColumns: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
-      (style) => `styleRank:${style}` as ColumnId
-    );
-    // Belt Size / Belt Text / Coach per-style columns retired from the
-    // UI per Cruz's simplification. Legacy reports may still have the
-    // flags true; force the columns off unconditionally so those old
-    // reports render cleanly under the new schema.
-    const styleBeltSizeColumns: ColumnId[] = [];
+    const styleRankColumns: ColumnId[] = activeReport.fields.showRankByStyle
+      ? (activeReport.selectedStylesForRank || []).map((style) => `styleRank:${style}` as ColumnId)
+      : [];
+    const styleBeltSizeColumns: ColumnId[] = activeReport.fields.showBeltSizeByStyle
+      ? (activeReport.selectedStylesForRank || []).map((style) => `styleBeltSize:${style}` as ColumnId)
+      : [];
+    // Belt Text + per-style Coach retired for good (not re-added when
+    // Cruz reshaped the Ranks subsection). Leave the ColumnId variants
+    // so legacy columnOrder arrays still parse.
     const styleBeltTextColumns: ColumnId[] = [];
     const styleCoachColumns: ColumnId[] = [];
     const styleNextRankColumns: ColumnId[] = activeReport.fields.showNextRankByStyle
@@ -2537,12 +2541,13 @@ export default function ReportsPage() {
                     const exportClassTypeCols: ColumnId[] = (activeReport.selectedClassTypes || []).map(
                       (ct) => `classType:${ct}` as ColumnId,
                     );
-                    const exportStyleRankCols: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
-                      (style) => `styleRank:${style}` as ColumnId,
-                    );
-                    // Belt Size / Belt Text / Coach per-style columns
-                    // retired from the UI (see the render-side generator).
-                    const exportStyleBeltSizeCols: ColumnId[] = [];
+                    const exportStyleRankCols: ColumnId[] = activeReport.fields.showRankByStyle
+                      ? (activeReport.selectedStylesForRank || []).map((style) => `styleRank:${style}` as ColumnId)
+                      : [];
+                    const exportStyleBeltSizeCols: ColumnId[] = activeReport.fields.showBeltSizeByStyle
+                      ? (activeReport.selectedStylesForRank || []).map((style) => `styleBeltSize:${style}` as ColumnId)
+                      : [];
+                    // Belt Text + Coach per-style are retired for good.
                     const exportStyleBeltTextCols: ColumnId[] = [];
                     const exportStyleCoachCols: ColumnId[] = [];
                     const exportStyleNextRankCols: ColumnId[] = activeReport.fields.showNextRankByStyle
@@ -2564,8 +2569,8 @@ export default function ReportsPage() {
                     ];
                     const enabledColIds: ColumnId[] = exportColumnOrder.filter((colId) => {
                       if (isClassTypeColumn(colId)) return (activeReport.selectedClassTypes || []).includes(getClassTypeName(colId));
-                      if (isStyleRankColumn(colId)) return (activeReport.selectedStylesForRank || []).includes(getStyleRankName(colId));
-                      if (isStyleBeltSizeColumn(colId)) return false;
+                      if (isStyleRankColumn(colId)) return activeReport.fields.showRankByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleRankName(colId));
+                      if (isStyleBeltSizeColumn(colId)) return activeReport.fields.showBeltSizeByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleBeltSizeName(colId));
                       if (isStyleBeltTextColumn(colId)) return false;
                       if (isStyleCoachColumn(colId)) return false;
                       if (isStyleNextRankColumn(colId)) return activeReport.fields.showNextRankByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleNextRankName(colId));
@@ -2627,6 +2632,7 @@ export default function ReportsPage() {
                       }
                       if (isStyleBeltSizeColumn(colId)) {
                         const styleName = getStyleBeltSizeName(colId);
+                        if (m._reportStyle && m._reportStyle !== styleName) return "";
                         if (m.stylesNotes) {
                           try {
                             const arr = JSON.parse(m.stylesNotes);
@@ -2840,12 +2846,13 @@ export default function ReportsPage() {
                             const classTypeColumns: ColumnId[] = (activeReport.selectedClassTypes || []).map(
                               (ct) => `classType:${ct}` as ColumnId
                             );
-                            const styleRankColumns: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
-                              (style) => `styleRank:${style}` as ColumnId
-                            );
-                            // Belt Size / Belt Text / Coach per-style columns
-                            // retired -- see the main render-side generator.
-                            const styleBeltSizeColumns: ColumnId[] = [];
+                            const styleRankColumns: ColumnId[] = activeReport.fields.showRankByStyle
+                              ? (activeReport.selectedStylesForRank || []).map((style) => `styleRank:${style}` as ColumnId)
+                              : [];
+                            const styleBeltSizeColumns: ColumnId[] = activeReport.fields.showBeltSizeByStyle
+                              ? (activeReport.selectedStylesForRank || []).map((style) => `styleBeltSize:${style}` as ColumnId)
+                              : [];
+                            // Belt Text + Coach per-style are retired for good.
                             const styleBeltTextColumns: ColumnId[] = [];
                             const styleCoachColumns: ColumnId[] = [];
                             const styleNextRankColumns: ColumnId[] = activeReport.fields.showNextRankByStyle
@@ -2884,10 +2891,17 @@ export default function ReportsPage() {
                               // Handle style rank columns
                               if (isStyleRankColumn(colId)) {
                                 const styleName = getStyleRankName(colId);
-                                return (activeReport.selectedStylesForRank || []).includes(styleName);
+                                return activeReport.fields.showRankByStyle
+                                  && (activeReport.selectedStylesForRank || []).includes(styleName);
                               }
-                              // Belt Size / Belt Text / Coach per-style columns retired.
-                              if (isStyleBeltSizeColumn(colId)) return false;
+                              // Belt Size restored -- gated on showBeltSizeByStyle
+                              // + the style being in selectedStylesForRank.
+                              if (isStyleBeltSizeColumn(colId)) {
+                                const styleName = getStyleBeltSizeName(colId);
+                                return activeReport.fields.showBeltSizeByStyle
+                                  && (activeReport.selectedStylesForRank || []).includes(styleName);
+                              }
+                              // Belt Text + Coach per-style retired for good.
                               if (isStyleBeltTextColumn(colId)) return false;
                               if (isStyleCoachColumn(colId)) return false;
                               // Handle style next-rank columns
@@ -2972,10 +2986,17 @@ export default function ReportsPage() {
                                   </div>
                                 );
                               }
+                              if (isStyleBeltSizeColumn(colId)) {
+                                return (
+                                  <div className="leading-tight">
+                                    <div>{getStyleBeltSizeName(colId)}</div>
+                                    <div>Belt Size</div>
+                                  </div>
+                                );
+                              }
                               // Retired per-style column types kept for type
                               // exhaustiveness even though the generator no
                               // longer emits them for new reports.
-                              if (isStyleBeltSizeColumn(colId)) return "Belt Size";
                               if (isStyleBeltTextColumn(colId)) return "Belt Text";
                               if (isStyleCoachColumn(colId)) return "Coach";
                               switch (colId) {
@@ -3109,9 +3130,13 @@ export default function ReportsPage() {
                                       }
                                       // Handle style belt-size columns — read
                                       // beltSize from the member's stylesNotes
-                                      // entry for the matching style.
+                                      // entry for the matching style. Row
+                                      // expanded, so blank the cell in every
+                                      // per-style column that doesn't match
+                                      // this row's assigned style.
                                       if (isStyleBeltSizeColumn(colId)) {
                                         const styleName = getStyleBeltSizeName(colId);
+                                        if (m._reportStyle && m._reportStyle !== styleName) return "";
                                         if (m.stylesNotes) {
                                           try {
                                             const arr = JSON.parse(m.stylesNotes);
@@ -4392,47 +4417,45 @@ export default function ReportsPage() {
                   <p className="text-xs text-green-700 mb-4">Select which columns of information to show for each member</p>
 
                   <div className="space-y-3">
-                    {COLUMN_FIELDS.map((category) => (
+                    {COLUMN_FIELDS.map((category) => {
+                      // The Styles & Belt Ranks card is split into two
+                      // subsections: STYLES first (which styles get a
+                      // column set), then RANKS (which per-style column
+                      // types to show + the non-style-specific promotion
+                      // extras). Every other category renders as a plain
+                      // field grid.
+                      const isStylesAndRanks = category.name === "Styles & Belt Ranks";
+                      return (
                       <div key={category.name} className="bg-white border border-gray-200 rounded-lg p-3">
                         <div className="flex items-center justify-between mb-2">
                           <h4 className="text-xs font-semibold text-gray-700 uppercase">{category.name}</h4>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => toggleEditingCategoryFields(category.fields, true)}
-                              className="text-[10px] text-primary hover:text-primaryDark"
-                            >
-                              Select All
-                            </button>
-                            <span className="text-gray-300">|</span>
-                            <button
-                              type="button"
-                              onClick={() => toggleEditingCategoryFields(category.fields, false)}
-                              className="text-[10px] text-gray-500 hover:text-gray-700"
-                            >
-                              Clear All
-                            </button>
-                          </div>
+                          {!isStylesAndRanks && (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleEditingCategoryFields(category.fields, true)}
+                                className="text-[10px] text-primary hover:text-primaryDark"
+                              >
+                                Select All
+                              </button>
+                              <span className="text-gray-300">|</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleEditingCategoryFields(category.fields, false)}
+                                className="text-[10px] text-gray-500 hover:text-gray-700"
+                              >
+                                Clear All
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                          {category.fields.map((field) => (
-                            <label key={field.key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900">
-                              <input
-                                type="checkbox"
-                                checked={(editingConfig.fields as any)[field.key] || false}
-                                onChange={(e) => updateEditingField(field.key as keyof ReportDataFields, e.target.checked)}
-                                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                              />
-                              <span className="text-xs">{field.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                        {/* Style checkboxes for Belt Ranks & Styles */}
-                        {category.name === "Belt Ranks & Styles" && availableStyles.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-gray-100">
+                        {/* Styles subsection FIRST for Styles & Belt Ranks --
+                            hidden entirely if the gym has no styles yet. */}
+                        {isStylesAndRanks && availableStyles.length > 0 && (
+                          <div className="mb-3">
                             <div className="flex items-center justify-between mb-2">
-                              <label className="block text-xs font-medium text-gray-700">
-                                Show Rank Columns for Styles
+                              <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
+                                Styles
                               </label>
                               <div className="flex gap-2">
                                 <button
@@ -4474,11 +4497,48 @@ export default function ReportsPage() {
                             </div>
                             <p className="text-[10px] text-gray-400 mt-1">
                               {(editingConfig.selectedStylesForRank || []).length === 0
-                                ? "No style rank columns selected"
-                                : `Showing rank columns for ${(editingConfig.selectedStylesForRank || []).length} style(s)`}
+                                ? "No styles selected -- rank columns hidden"
+                                : `Row expands per (member x selected style) for ${(editingConfig.selectedStylesForRank || []).length} style(s)`}
                             </p>
                           </div>
                         )}
+                        {isStylesAndRanks && (
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
+                              Ranks
+                            </label>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleEditingCategoryFields(category.fields, true)}
+                                className="text-[10px] text-primary hover:text-primaryDark"
+                              >
+                                Select All
+                              </button>
+                              <span className="text-gray-300">|</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleEditingCategoryFields(category.fields, false)}
+                                className="text-[10px] text-gray-500 hover:text-gray-700"
+                              >
+                                Clear All
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {category.fields.map((field) => (
+                            <label key={field.key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900">
+                              <input
+                                type="checkbox"
+                                checked={(editingConfig.fields as any)[field.key] || false}
+                                onChange={(e) => updateEditingField(field.key as keyof ReportDataFields, e.target.checked)}
+                                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                              />
+                              <span className="text-xs">{field.label}</span>
+                            </label>
+                          ))}
+                        </div>
                         {/* Dynamic Class Type Selector */}
                         {(category as any).hasClassTypeSelector && availableClassTypes.length > 0 && (
                           <div className="mt-3 pt-3 border-t border-gray-100">
@@ -4511,7 +4571,8 @@ export default function ReportsPage() {
                           </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
