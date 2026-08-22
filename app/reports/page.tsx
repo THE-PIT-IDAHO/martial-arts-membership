@@ -931,6 +931,9 @@ export default function ReportsPage() {
   const [availableStyles, setAvailableStyles] = useState<{
     id: string;
     name: string;
+    // Optional short name from the Style form -- surfaces in per-style
+    // report column headers ("Kempo" instead of "Hawaiian Kempo - Adult").
+    shortName?: string | null;
     beltConfig?: string | null;
     ranks?: Array<{ id: string; name: string; order: number }>;
   }[]>([]);
@@ -2617,15 +2620,23 @@ export default function ReportsPage() {
                         default: return false;
                       }
                     });
+                    // Prefer the Style's shortName in export headers too
+                    // ("Kempo Current Rank" instead of "Hawaiian Kempo -
+                    // Adult Current Rank"). Falls back to the full name.
+                    const exportStyleLabel = (styleName: string): string => {
+                      const match = availableStyles.find(
+                        (s) => s.name.toLowerCase() === styleName.toLowerCase(),
+                      );
+                      return match?.shortName?.trim() || styleName;
+                    };
                     const exportHeaderFor = (colId: ColumnId): string => {
                       if (isClassTypeColumn(colId)) return getClassTypeName(colId);
                       // Flat CSV/PDF headers keep the style name inline so
-                      // each column is unambiguous ("Kore BJJ Current Rank"
-                      // vs. "Kempo Current Rank"). The on-screen table
+                      // each column is unambiguous. The on-screen table
                       // stacks the same info on two lines instead.
-                      if (isStyleRankColumn(colId)) return `${getStyleRankName(colId)} Current Rank`;
-                      if (isStyleBeltSizeColumn(colId)) return `${getStyleBeltSizeName(colId)} Belt Size`;
-                      if (isStyleNextRankColumn(colId)) return `${getStyleNextRankName(colId)} Next Rank`;
+                      if (isStyleRankColumn(colId)) return `${exportStyleLabel(getStyleRankName(colId))} Current Rank`;
+                      if (isStyleBeltSizeColumn(colId)) return `${exportStyleLabel(getStyleBeltSizeName(colId))} Belt Size`;
+                      if (isStyleNextRankColumn(colId)) return `${exportStyleLabel(getStyleNextRankName(colId))} Next Rank`;
                       if (isStyleBeltTextColumn(colId)) return "Belt Text";
                       if (isStyleCoachColumn(colId)) return "Coach";
                       if (colId === "totalClasses") return "Total Classes";
@@ -2979,6 +2990,18 @@ export default function ReportsPage() {
                               }
                             });
 
+                            // Prefer the Style's shortName ("Kempo") over the
+                            // full name ("Hawaiian Kempo - Adult") in per-style
+                            // headers so long style names don't dominate the
+                            // header row. Falls back to the full name when no
+                            // shortName is set. Case-insensitive match on name.
+                            const styleHeaderLabel = (styleName: string): string => {
+                              const match = availableStyles.find(
+                                (s) => s.name.toLowerCase() === styleName.toLowerCase(),
+                              );
+                              return match?.shortName?.trim() || styleName;
+                            };
+
                             // Helper to render header for a column. Returns
                             // ReactNode (not string) so per-style columns can
                             // stack "Style / Rank" on two lines per Cruz's
@@ -2987,14 +3010,13 @@ export default function ReportsPage() {
                               if (isClassTypeColumn(colId)) {
                                 return getClassTypeName(colId);
                               }
-                              // Style-scoped columns show the style name on
-                              // the top line and the metric ("Rank" / "Next
-                              // Rank") on the bottom. Kept tight so the
-                              // header doesn't dominate the row height.
+                              // Style-scoped columns show the style short name
+                              // on the top line and the metric ("Current Rank"
+                              // / "Next Rank" / "Belt Size") on the bottom.
                               if (isStyleRankColumn(colId)) {
                                 return (
                                   <div className="leading-tight">
-                                    <div>{getStyleRankName(colId)}</div>
+                                    <div>{styleHeaderLabel(getStyleRankName(colId))}</div>
                                     <div>Current Rank</div>
                                   </div>
                                 );
@@ -3002,7 +3024,7 @@ export default function ReportsPage() {
                               if (isStyleNextRankColumn(colId)) {
                                 return (
                                   <div className="leading-tight">
-                                    <div>{getStyleNextRankName(colId)}</div>
+                                    <div>{styleHeaderLabel(getStyleNextRankName(colId))}</div>
                                     <div>Next Rank</div>
                                   </div>
                                 );
@@ -3010,7 +3032,7 @@ export default function ReportsPage() {
                               if (isStyleBeltSizeColumn(colId)) {
                                 return (
                                   <div className="leading-tight">
-                                    <div>{getStyleBeltSizeName(colId)}</div>
+                                    <div>{styleHeaderLabel(getStyleBeltSizeName(colId))}</div>
                                     <div>Belt Size</div>
                                   </div>
                                 );

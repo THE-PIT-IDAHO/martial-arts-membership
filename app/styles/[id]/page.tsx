@@ -208,15 +208,18 @@ export default function StyleEditPage(props: PageProps) {
 
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Short Name / Code
+                  Class ID
                 </label>
                 <input
                   type="text"
                   value={shortName}
                   onChange={(e) => setShortName(e.target.value)}
                   className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  placeholder="HK, BJJ, MMA, etc."
+                  placeholder="Kempo, BJJ, MMA, etc."
                 />
+                <p className="mt-1 text-[10px] text-gray-500">
+                  Short label used in report column headers (e.g. "Kempo" in place of the full name).
+                </p>
               </div>
             </div>
 

@@ -165,16 +165,19 @@ export default function NewStylePage() {
 
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700">
-                Short Name
+                Class ID
               </label>
               <input
                 type="text"
                 className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                 value={shortName}
                 onChange={(e) => setShortName(e.target.value)}
-                placeholder="e.g., BJJ, TKD"
+                placeholder="e.g., BJJ, TKD, Kempo"
                 disabled={creating}
               />
+              <p className="mt-1 text-[10px] text-gray-500">
+                Short label used in report column headers.
+              </p>
             </div>
           </div>
 
