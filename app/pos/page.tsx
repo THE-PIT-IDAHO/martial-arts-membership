@@ -1074,8 +1074,13 @@ export default function POSPage() {
       }
     }
 
-    // Show contract signing screen for membership/service sales
-    if ((hasMembership || hasService) && selectedMember) {
+    // Show the signing screen for:
+    //   - membership / service sales (contract agreement), OR
+    //   - any card charge (CARD or SAVED_CARD) on a chosen member so
+    //     the signature captures consent for that charge -- same way
+    //     a card receipt is signed at retail.
+    const hasCardCharge = paymentSplits.some((s) => s.method === "CARD" || s.method === "SAVED_CARD");
+    if ((hasMembership || hasService || hasCardCharge) && selectedMember) {
       setShowContractSigning(true);
       return;
     }
@@ -3693,9 +3698,25 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
     }
 
     if (paymentIntent?.status === "succeeded") {
+      // AWAIT the save so the request actually completes -- the fetch
+      // was fire-and-forget and onSuccess would unmount this modal
+      // before the PUT even finished, cancelling the "attach + set
+      // default" round-trip and leaving the member's card unsaved.
       if (saveCard && memberId && paymentIntent.payment_method) {
         const pmId = typeof paymentIntent.payment_method === "string" ? paymentIntent.payment_method : paymentIntent.payment_method.id;
-        fetch(`/api/members/${memberId}/payment-methods/${pmId}/default`, { method: "PUT" }).catch(() => {});
+        try {
+          const saveRes = await fetch(`/api/members/${memberId}/payment-methods/${pmId}/default`, { method: "PUT" });
+          if (!saveRes.ok) {
+            const body = await saveRes.json().catch(() => ({}));
+            console.warn("[POS] save-card failed:", body?.error || saveRes.statusText);
+            // Charge already succeeded; surface a soft note but still
+            // hand back to the caller so the sale completes.
+            setError(`Charge succeeded, but saving the card failed: ${body?.error || saveRes.statusText}`);
+          }
+        } catch (err) {
+          console.warn("[POS] save-card threw:", err);
+          setError("Charge succeeded, but saving the card failed. Try attaching it from the member's profile.");
+        }
       }
       onSuccess(paymentIntent.id || paymentIntentId || "");
     } else {
