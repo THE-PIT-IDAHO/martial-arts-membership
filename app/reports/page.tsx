@@ -51,30 +51,25 @@ type ReportDataFields = {
   showMedicalNotes: boolean;
   showWaiverStatus: boolean;
 
-  // Belt Ranks & Styles
-  showBeltRanks: boolean;
-  showRanksByStyle: boolean;
-  showPrimaryStyle: boolean;
+  // Belt Ranks & Styles.
+  // The old "primary" concept (showBeltRanks / showPrimaryStyle /
+  // showNextRank / showRanksByStyle) plus the per-selected-style Belt
+  // Size / Belt Text / Coach extras (showBeltSizeByStyle,
+  // showBeltTextByStyle, showCoachByStyle) were retired -- see the
+  // simplified COLUMN_FIELDS "Belt Ranks & Styles" entry. Reports
+  // saved before the retirement lose those columns silently.
   showStyleBreakdown: boolean;
   showRankDistribution: boolean;
   showUpcomingPromotions: boolean;
-  // Non-style-specific rank extras -- scoped by each member's
-  // primaryStyle (Latest Promotion is the most recent lastPromotionDate
-  // across ALL of a member's styles).
   showLatestPromotion: boolean;
-  showNextRank: boolean;
   // Coach who promoted the member -- primary style entry's `coach`
   // value out of stylesNotes.
   showCoach: boolean;
   // "Ready to promote" flag from /api/promotions/eligible. Cell shows
   // the styles a member is currently eligible in, or a dash.
   showPromotionEligible: boolean;
-  // Per-selected-style extras — surface a Belt Size, Belt Text, Coach
-  // and/or Next Rank column for every style listed in
-  // selectedStylesForRank.
-  showBeltSizeByStyle: boolean;
-  showBeltTextByStyle: boolean;
-  showCoachByStyle: boolean;
+  // Next rank per selected style. Combined with row expansion, each
+  // row gets its own style's next rank.
   showNextRankByStyle: boolean;
 
   // Memberships & Payments
@@ -161,19 +156,12 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showEmergencyContacts: false,
   showMedicalNotes: false,
   showWaiverStatus: false,
-  showBeltRanks: false,
-  showRanksByStyle: false,
-  showPrimaryStyle: false,
   showStyleBreakdown: false,
   showRankDistribution: false,
   showUpcomingPromotions: false,
   showLatestPromotion: false,
-  showNextRank: false,
   showCoach: false,
   showPromotionEligible: false,
-  showBeltSizeByStyle: false,
-  showBeltTextByStyle: false,
-  showCoachByStyle: false,
   showNextRankByStyle: false,
   showMembershipTypes: false,
   showMembershipPlans: false,
@@ -2514,6 +2502,32 @@ export default function ReportsPage() {
                     const endIndex = Math.min(startIndex + membersPerPage, totalMembers);
                     const paginatedMembers = sortedMembers.slice(startIndex, endIndex);
 
+                    // Row-expansion helper: emits one row per (member x
+                    // selected style they have). Members with none of the
+                    // chosen styles are dropped. When no styles are
+                    // selected for display, passes the list through
+                    // unchanged. Reused by the CSV + PDF export paths so
+                    // downloads mirror the on-screen table.
+                    const expandForReport = (list: any[]): any[] => {
+                      const selectedStyles: string[] = activeReport.selectedStylesForRank || [];
+                      if (selectedStyles.length === 0) return list;
+                      const out: any[] = [];
+                      for (const mBase of list) {
+                        const memberStyles = new Set<string>();
+                        if (mBase.primaryStyle) memberStyles.add(mBase.primaryStyle);
+                        if (mBase.stylesNotes) {
+                          try {
+                            const arr = JSON.parse(mBase.stylesNotes);
+                            if (Array.isArray(arr)) for (const s of arr) if (s?.name) memberStyles.add(s.name);
+                          } catch { /* ignore */ }
+                        }
+                        const matching = selectedStyles.filter((s) => memberStyles.has(s));
+                        if (matching.length === 0) continue;
+                        for (const rowStyle of matching) out.push({ ...mBase, _reportStyle: rowStyle });
+                      }
+                      return out;
+                    };
+
                     // Build enabledColIds + headerFor + cellText ONCE per render
                     // instead of inside every click handler. Both the CSV export
                     // and the PDF export (below) now walk the exact same column
@@ -2562,11 +2576,8 @@ export default function ReportsPage() {
                         case "memberNumber": return activeReport.fields.showMemberNumber;
                         case "email": return activeReport.fields.showMemberEmails;
                         case "phone": return activeReport.fields.showMemberPhones;
-                        // Legacy "primary" columns retired -- see the
-                        // matching switch in the on-screen dispatcher.
-                        case "style": return false;
-                        case "rank": return false;
-                        case "nextRank": return false;
+                        // Legacy "primary" columns retired -- fall through
+                        // to default: return false.
                         case "latestPromotion": return activeReport.fields.showLatestPromotion;
                         case "coach": return activeReport.fields.showCoach;
                         case "promotionEligible": return activeReport.fields.showPromotionEligible;
@@ -2598,6 +2609,10 @@ export default function ReportsPage() {
                       if (isClassTypeColumn(colId)) return String(m.attendanceCounts?.[getClassTypeName(colId)] || 0);
                       if (isStyleRankColumn(colId)) {
                         const styleName = getStyleRankName(colId);
+                        // Row-expanded exports: blank the cell in every
+                        // per-style column that doesn't match this row's
+                        // assigned style, mirroring the on-screen table.
+                        if (m._reportStyle && m._reportStyle !== styleName) return "";
                         if (m.primaryStyle === styleName) return m.rank || "";
                         if (m.stylesNotes) {
                           try {
@@ -2641,6 +2656,7 @@ export default function ReportsPage() {
                       }
                       if (isStyleNextRankColumn(colId)) {
                         const styleName = getStyleNextRankName(colId);
+                        if (m._reportStyle && m._reportStyle !== styleName) return "";
                         let currentRank: string | null = null;
                         if (m.stylesNotes) {
                           try {
@@ -2735,7 +2751,10 @@ export default function ReportsPage() {
                                 // above), so the printed PDF matches what
                                 // the user sees.
                                 const pdfHeaders = enabledColIds.map((c) => exportHeaderFor(c));
-                                const pdfRows = sortedMembers.map((m: any) => enabledColIds.map((c) => exportCellText(m, c)));
+                                // Mirror on-screen row expansion so the PDF
+                                // matches the table (one row per member x
+                                // selected style they have).
+                                const pdfRows = expandForReport(sortedMembers).map((m: any) => enabledColIds.map((c) => exportCellText(m, c)));
                                 // Match the on-screen "text-primary" cells --
                                 // the first-name / last-name columns are
                                 // rendered as red Link labels in the table
@@ -2778,7 +2797,7 @@ export default function ReportsPage() {
                                 };
                                 const csvLines = [
                                   enabledColIds.map((c) => escapeCsv(exportHeaderFor(c))).join(","),
-                                  ...sortedMembers.map((m: any) =>
+                                  ...expandForReport(sortedMembers).map((m: any) =>
                                     enabledColIds.map((c) => escapeCsv(exportCellText(m, c))).join(","),
                                   ),
                                 ];
@@ -2890,17 +2909,10 @@ export default function ReportsPage() {
                                   return activeReport.fields.showMemberEmails;
                                 case "phone":
                                   return activeReport.fields.showMemberPhones;
-                                // "style" / "rank" / "nextRank" base columns removed
-                                // from the UI (Cruz: no "primary" concept). Row
-                                // expansion produces per-style rows and per-style
-                                // columns instead. Legacy reports with these
-                                // flags true are silently downgraded.
-                                case "style":
-                                  return false;
-                                case "rank":
-                                  return false;
-                                case "nextRank":
-                                  return false;
+                                // "style" / "rank" / "nextRank" base columns
+                                // retired -- fall through to default: false.
+                                // Row expansion + per-style columns replace
+                                // the old "primary" concept.
                                 case "latestPromotion":
                                   return activeReport.fields.showLatestPromotion;
                                 case "coach":
