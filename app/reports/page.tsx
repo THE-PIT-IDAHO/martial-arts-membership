@@ -2603,12 +2603,15 @@ export default function ReportsPage() {
                     });
                     const exportHeaderFor = (colId: ColumnId): string => {
                       if (isClassTypeColumn(colId)) return getClassTypeName(colId);
-                      if (isStyleRankColumn(colId)) return "Current Rank";
-                      if (isStyleBeltSizeColumn(colId)) return "Belt Size";
+                      // Flat CSV/PDF headers keep the style name inline so
+                      // each column is unambiguous ("Kore BJJ Current Rank"
+                      // vs. "Kempo Current Rank"). The on-screen table
+                      // stacks the same info on two lines instead.
+                      if (isStyleRankColumn(colId)) return `${getStyleRankName(colId)} Current Rank`;
+                      if (isStyleBeltSizeColumn(colId)) return `${getStyleBeltSizeName(colId)} Belt Size`;
+                      if (isStyleNextRankColumn(colId)) return `${getStyleNextRankName(colId)} Next Rank`;
                       if (isStyleBeltTextColumn(colId)) return "Belt Text";
                       if (isStyleCoachColumn(colId)) return "Coach";
-                      if (isStyleNextRankColumn(colId)) return "Next Rank";
-                      if (colId === "rank") return "Rank";
                       if (colId === "totalClasses") return "Total Classes";
                       return COLUMN_LABELS[colId as BaseColumnId] || String(colId);
                     };
@@ -2976,7 +2979,7 @@ export default function ReportsPage() {
                                 return (
                                   <div className="leading-tight">
                                     <div>{getStyleRankName(colId)}</div>
-                                    <div>Rank</div>
+                                    <div>Current Rank</div>
                                   </div>
                                 );
                               }
@@ -3012,8 +3015,13 @@ export default function ReportsPage() {
                             return (
                               <table className="min-w-full text-sm">
                                 <thead className="bg-white">
-                                  <tr className="text-left text-xs text-gray-500 uppercase">
-                                    {enabledColumns.map((colId) => (
+                                  <tr className="text-xs text-gray-500 uppercase">
+                                    {enabledColumns.map((colId) => {
+                                      // Every header centers except First Name
+                                      // and Last Name -- those stay left-aligned
+                                      // so long member names read naturally.
+                                      const leftAlign = colId === "firstName" || colId === "lastName";
+                                      return (
                                       <th
                                         key={colId}
                                         draggable
@@ -3028,7 +3036,7 @@ export default function ReportsPage() {
                                         }}
                                         onClick={() => handleColumnSort(colId)}
                                         className={`pb-2 font-medium cursor-pointer select-none hover:text-primary ${
-                                          colId === "totalClasses" || isClassTypeColumn(colId) ? "text-center" : ""
+                                          leftAlign ? "text-left" : "text-center"
                                         } ${
                                           draggingColumn === colId ? "bg-gray-100" : ""
                                         } ${
@@ -3037,7 +3045,8 @@ export default function ReportsPage() {
                                       >
                                         {renderHeader(colId)}
                                       </th>
-                                    ))}
+                                      );
+                                    })}
                                   </tr>
                                 </thead>
                                 <tbody>
