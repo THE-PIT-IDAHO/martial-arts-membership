@@ -3221,9 +3221,11 @@ export default function POSPage() {
                             {item.membershipStartDate && (
                               <div><span className="font-medium">Start Date:</span> {parseLocalDate(item.membershipStartDate).toLocaleDateString()}</div>
                             )}
-                            {(item.firstMonthDiscountOnly || showDiscount) && (
-                              <div><span className="font-medium">First Payment:</span> {formatCents(firstMonthCents)}</div>
-                            )}
+                            {/* First Payment: always shown so the member can
+                                verify what will actually be charged today,
+                                whether it's the plan default, a manual price
+                                override, or a discounted first payment. */}
+                            <div><span className="font-medium">First Payment:</span> {formatCents(firstMonthCents)}</div>
                             {plan?.contractLengthMonths && (
                               <div><span className="font-medium">Contract Length:</span> {formatDuration(plan.contractLengthMonths)}</div>
                             )}
