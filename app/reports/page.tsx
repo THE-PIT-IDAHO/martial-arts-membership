@@ -1901,38 +1901,36 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Tabs. Wraps onto multiple rows so every report title stays
-            visible on narrow screens instead of hiding behind a
-            horizontal scroll. Border-b lives on each pill instead of
-            the row so wrapped rows don't spawn stray underlines. */}
-        <div>
-          <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
-            {enabledReports.map((report) => (
-              <button
-                key={report.id}
-                type="button"
-                onClick={() => setActiveTab(report.id)}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === report.id
-                    ? "border-primary text-primary"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                {report.name}
-              </button>
-            ))}
+        {/* Tabs -- chip-style so they wrap cleanly onto multiple rows on
+            narrow screens instead of hiding behind a horizontal scroll.
+            Active tab is a filled primary pill; inactive tabs are quiet
+            outlines. No shared underline (which looked disjointed once
+            a row wrapped). */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {enabledReports.map((report) => (
             <button
+              key={report.id}
               type="button"
-              onClick={() => addReport()}
-              className="px-3 py-2 text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1 border-b-2 border-transparent"
-              title="Add Report"
+              onClick={() => setActiveTab(report.id)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-full border transition-colors ${
+                activeTab === report.id
+                  ? "bg-primary text-white border-primary"
+                  : "bg-white text-gray-600 border-gray-200 hover:text-gray-900 hover:border-gray-300"
+              }`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
+              {report.name}
             </button>
-          </div>
-          <div className="border-b border-gray-200" />
+          ))}
+          <button
+            type="button"
+            onClick={() => addReport()}
+            className="px-2.5 py-1.5 rounded-full border border-dashed border-gray-300 text-gray-400 hover:text-gray-600 hover:border-gray-400 flex items-center"
+            title="Add Report"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
         </div>
 
         {/* Error */}
