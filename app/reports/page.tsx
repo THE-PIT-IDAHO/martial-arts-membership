@@ -939,6 +939,11 @@ export default function ReportsPage() {
   }[]>([]);
   const [availableRanks, setAvailableRanks] = useState<{ id: string; name: string; styleId: string; styleName: string; order: number }[]>([]);
   const [availableClassTypes, setAvailableClassTypes] = useState<string[]>([]);
+  // Global (tenant-scoped) map of class-type name -> short "Class ID"
+  // label shown in per-class-type column headers. Persisted via the
+  // Settings KV table under key "class_type_aliases" so every report
+  // shares one canonical short label per class type.
+  const [classTypeAliases, setClassTypeAliases] = useState<Record<string, string>>({});
   const [availableMembershipTypes, setAvailableMembershipTypes] = useState<{ id: string; name: string }[]>([]);
   const [availableMembershipPlans, setAvailableMembershipPlans] = useState<{ id: string; name: string }[]>([]);
 
@@ -1127,6 +1132,47 @@ export default function ReportsPage() {
       console.warn("Failed to save report configs", err);
     }
   }, [reportConfigs, hasLoadedFromStorage]);
+
+  // Hydrate class-type aliases from the Settings KV once on mount.
+  // Separate from the big report fetch so an aliases lookup failure
+  // can't blow up the whole page.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/settings?key=class_type_aliases");
+        if (!res.ok) return;
+        const data = await res.json();
+        const raw = data?.setting?.value;
+        if (!raw || cancelled) return;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          setClassTypeAliases(parsed as Record<string, string>);
+        }
+      } catch { /* ignore -- fall back to raw class type names */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist a single class-type alias to the Settings KV. Called on
+  // blur so the operator can type freely without hammering the API.
+  // Empty / whitespace-only values remove the alias entry.
+  async function saveClassTypeAlias(classType: string, alias: string) {
+    const trimmed = alias.trim();
+    const next: Record<string, string> = { ...classTypeAliases };
+    if (trimmed) next[classType] = trimmed;
+    else delete next[classType];
+    setClassTypeAliases(next);
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "class_type_aliases", value: JSON.stringify(next) }),
+      });
+    } catch (err) {
+      console.warn("Failed to save class-type alias:", err);
+    }
+  }
 
   useEffect(() => {
     async function fetchReportData() {
@@ -2630,7 +2676,10 @@ export default function ReportsPage() {
                       return match?.shortName?.trim() || styleName;
                     };
                     const exportHeaderFor = (colId: ColumnId): string => {
-                      if (isClassTypeColumn(colId)) return getClassTypeName(colId);
+                      if (isClassTypeColumn(colId)) {
+                        const raw = getClassTypeName(colId);
+                        return classTypeAliases[raw]?.trim() || raw;
+                      }
                       // Flat CSV/PDF headers keep the style name inline so
                       // each column is unambiguous. The on-screen table
                       // stacks the same info on two lines instead.
@@ -3008,7 +3057,10 @@ export default function ReportsPage() {
                             // preferred header format.
                             const renderHeader = (colId: ColumnId): React.ReactNode => {
                               if (isClassTypeColumn(colId)) {
-                                return getClassTypeName(colId);
+                                // Prefer the tenant-wide Class ID alias when
+                                // set (e.g. "KB" for "Adults Kickboxing").
+                                const raw = getClassTypeName(colId);
+                                return classTypeAliases[raw]?.trim() || raw;
                               }
                               // Style-scoped columns show the style short name
                               // on the top line and the metric ("Current Rank"
@@ -4602,28 +4654,50 @@ export default function ReportsPage() {
                             <label className="block text-xs font-medium text-gray-700 mb-2">
                               Class Types to Show (each as separate column)
                             </label>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                              {availableClassTypes.map((classType) => (
-                                <label key={classType} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900">
+                            {/* Stacked list so each row can host both the
+                                enable-checkbox and an inline "Class ID"
+                                input. Aliases persist globally so every
+                                report uses the same short label. */}
+                            <div className="space-y-1.5">
+                              {availableClassTypes.map((classType) => {
+                                const checked = (editingConfig.selectedClassTypes || []).includes(classType);
+                                return (
+                                <div key={classType} className="flex items-center gap-2">
+                                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900 flex-1 min-w-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(e) => {
+                                        const current = editingConfig.selectedClassTypes || [];
+                                        if (e.target.checked) {
+                                          updateEditingConfig({ selectedClassTypes: [...current, classType] });
+                                        } else {
+                                          updateEditingConfig({ selectedClassTypes: current.filter((ct) => ct !== classType) });
+                                        }
+                                      }}
+                                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary shrink-0"
+                                    />
+                                    <span className="text-xs truncate">{classType}</span>
+                                  </label>
                                   <input
-                                    type="checkbox"
-                                    checked={(editingConfig.selectedClassTypes || []).includes(classType)}
-                                    onChange={(e) => {
-                                      const current = editingConfig.selectedClassTypes || [];
-                                      if (e.target.checked) {
-                                        updateEditingConfig({ selectedClassTypes: [...current, classType] });
-                                      } else {
-                                        updateEditingConfig({ selectedClassTypes: current.filter((ct) => ct !== classType) });
+                                    type="text"
+                                    defaultValue={classTypeAliases[classType] || ""}
+                                    onBlur={(e) => {
+                                      const next = e.target.value;
+                                      if ((classTypeAliases[classType] || "") !== next.trim()) {
+                                        void saveClassTypeAlias(classType, next);
                                       }
                                     }}
-                                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                    placeholder="Class ID"
+                                    title="Short label for this class type in report column headers. Leave blank to use the full class type name."
+                                    className="w-28 rounded-md border border-gray-200 px-2 py-1 text-[11px] text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                                   />
-                                  <span className="text-xs">{classType}</span>
-                                </label>
-                              ))}
+                                </div>
+                                );
+                              })}
                             </div>
                             <p className="text-[10px] text-gray-400 mt-1">
-                              Each selected class type will appear as a separate column showing the count for each member.
+                              Each selected class type will appear as a separate column showing the count for each member. Set a Class ID to shorten the column header (applies to every report).
                             </p>
                           </div>
                         )}
