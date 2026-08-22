@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 import dynamic from "next/dynamic";
 import { checkMemberRequirements, type ReqMember, type ReqStyle } from "@/lib/class-requirements";
+import { getMemberStatusBadgeClasses } from "@/lib/member-status-colors";
 
 const DashboardCharts = dynamic(() => import("@/components/dashboard-charts"), { ssr: false });
 
@@ -337,13 +338,13 @@ export default function DashboardPage() {
     }
   };
 
+  // Route through the shared member-status palette so the New This
+  // Week pills match the members list (previously PROSPECT was blue
+  // here and yellow there). TRIAL isn't in the canonical set -- keep
+  // its purple as a local override.
   const statusBadge = (s: string) => {
-    switch (s) {
-      case "ACTIVE": return "bg-green-100 text-green-700";
-      case "PROSPECT": return "bg-blue-100 text-blue-700";
-      case "TRIAL": return "bg-purple-100 text-purple-700";
-      default: return "bg-gray-100 text-gray-600";
-    }
+    if (s === "TRIAL") return "bg-purple-100 text-purple-700";
+    return getMemberStatusBadgeClasses(s);
   };
 
   // --- Interactive class functions ---

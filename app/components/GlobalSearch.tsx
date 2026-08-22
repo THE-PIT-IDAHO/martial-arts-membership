@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { getMemberStatusBadgeClasses } from "@/lib/member-status-colors";
 
 type Member = {
   id: string;
@@ -122,27 +123,11 @@ export default function GlobalSearch() {
     return priorityStatus;
   };
 
+  // Route through the shared palette so search-result pills match the
+  // members list + dashboard. Previous hand-rolled colors (PROSPECT
+  // blue, PARENT amber, BANNED red) drifted from the canonical set.
   const getStatusColor = (status: string) => {
-    const priorityStatus = getPriorityStatus(status);
-    switch (priorityStatus) {
-      case "COACH":
-        return "bg-purple-100 text-purple-800";
-      case "ACTIVE":
-        return "bg-green-100 text-green-800";
-      case "INACTIVE":
-        return "bg-gray-100 text-gray-800";
-      case "CANCELLED":
-      case "CANCELED":
-        return "bg-red-100 text-red-800";
-      case "BANNED":
-        return "bg-red-100 text-red-800";
-      case "PROSPECT":
-        return "bg-blue-100 text-blue-800";
-      case "PARENT":
-        return "bg-amber-100 text-amber-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
+    return getMemberStatusBadgeClasses(getPriorityStatus(status));
   };
 
   // Format status for display - show only the priority status

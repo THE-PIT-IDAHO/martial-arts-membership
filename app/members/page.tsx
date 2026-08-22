@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
+import { getMemberStatusColors } from "@/lib/member-status-colors";
 
 type MemberRow = {
   id: string;
@@ -1041,27 +1042,11 @@ export default function MembersPage() {
   // --------------------------------------------------
   // Render helpers
   // --------------------------------------------------
-  function getStatusColors(status: string) {
-    const normalized = (status || "").toUpperCase();
-
-    if (normalized === "ACTIVE") {
-      return { bg: "bg-green-100", text: "text-green-800", border: "border-green-300" };
-    } else if (normalized === "PROSPECT") {
-      return { bg: "bg-yellow-100", text: "text-yellow-800", border: "border-yellow-300" };
-    } else if (normalized === "INACTIVE") {
-      return { bg: "bg-primary/10", text: "text-primary", border: "border-primary/30" };
-    } else if (normalized === "PARENT") {
-      return { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-300" };
-    } else if (normalized === "COACH") {
-      return { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-300" };
-    } else if (normalized === "BANNED") {
-      return { bg: "bg-gray-200", text: "text-gray-900", border: "border-gray-400" };
-    } else if (normalized === "CANCELED") {
-      return { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-300" };
-    }
-
-    return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-300" };
-  }
+  // Palette lives in lib/member-status-colors.ts so the dashboard,
+  // global search, and member detail pill all agree on the color for
+  // each status. Kept as a thin local alias for readability at call
+  // sites in this file.
+  const getStatusColors = getMemberStatusColors;
 
   // Priority order for displaying a single status: Coach, Active, Parent, Inactive, Prospect, Banned
   const STATUS_PRIORITY = ["COACH", "ACTIVE", "PARENT", "INACTIVE", "PROSPECT", "BANNED"];

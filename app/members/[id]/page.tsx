@@ -8,6 +8,7 @@ import { formatPaymentMethod } from "@/lib/payment-utils";
 import { getTodayString, parseLocalDate } from "@/lib/dates";
 import { getStyleProgress, type AttendanceRow } from "@/lib/rank-progress";
 import { getEffectivePriceAfterDiscountCents } from "@/lib/member-discount-math";
+import { getMemberStatusPillClasses } from "@/lib/member-status-colors";
 
 // Belt rendering helpers (mirrored from portal/styles)
 function TintedLayer({ src, color }: { src: string; color: string }) {
@@ -360,26 +361,8 @@ function sortStatusesByPriority(statuses: string[]): string[] {
   });
 }
 
-function getStatusBadgeClasses(status: string): string {
-  switch (status) {
-    case "ACTIVE":
-      return "bg-green-100 text-green-800 border-green-300";
-    case "PROSPECT":
-      return "bg-yellow-100 text-yellow-800 border-yellow-300";
-    case "INACTIVE":
-      return "bg-primary/10 text-primary border-primary/30";
-    case "CANCELED":
-      return "bg-orange-100 text-orange-800 border-orange-300";
-    case "PARENT":
-      return "bg-blue-100 text-blue-800 border-blue-300";
-    case "COACH":
-      return "bg-purple-100 text-purple-800 border-purple-300";
-    case "BANNED":
-      return "bg-gray-200 text-gray-900 border-gray-400";
-    default:
-      return "bg-gray-100 text-gray-800 border-gray-300";
-  }
-}
+// Shared palette in lib/member-status-colors.ts.
+const getStatusBadgeClasses = getMemberStatusPillClasses;
 
 // Relationship types
 // Family relationships. PAYS_FOR / PAID_FOR_BY moved to a dedicated
