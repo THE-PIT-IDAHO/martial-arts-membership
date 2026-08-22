@@ -463,6 +463,23 @@ type ColumnId =
   | `styleCoach:${string}`
   | `styleNextRank:${string}`;
 
+// Base columns that count as "Member Details" for alignment purposes.
+// These headers + cells stay left-aligned; everything else (belt ranks,
+// membership, attendance, style-scoped columns, class-type counts)
+// centers. Kept in sync with the "Member Details" fields in
+// COLUMN_FIELDS so a new toggle there lands in the same alignment
+// bucket without a second edit.
+const MEMBER_DETAIL_COLUMNS = new Set<string>([
+  "firstName",
+  "lastName",
+  "status",
+  "memberNumber",
+  "email",
+  "phone",
+  "joinDate",
+  "waiver",
+]);
+
 // Default column order (base columns only - class type columns are appended dynamically)
 const DEFAULT_COLUMN_ORDER: BaseColumnId[] = [
   "firstName",
@@ -3017,10 +3034,11 @@ export default function ReportsPage() {
                                 <thead className="bg-white">
                                   <tr className="text-xs text-gray-500 uppercase">
                                     {enabledColumns.map((colId) => {
-                                      // Every header centers except First Name
-                                      // and Last Name -- those stay left-aligned
-                                      // so long member names read naturally.
-                                      const leftAlign = colId === "firstName" || colId === "lastName";
+                                      // Every header centers except the
+                                      // Member Details columns -- those stay
+                                      // left-aligned so contact info reads
+                                      // naturally along the column edge.
+                                      const leftAlign = MEMBER_DETAIL_COLUMNS.has(colId as string);
                                       return (
                                       <th
                                         key={colId}
@@ -3321,14 +3339,21 @@ export default function ReportsPage() {
 
                                     return (
                                       <tr key={m._reportStyle ? `${m.id}-${m._reportStyle}` : m.id} className="border-t border-gray-100">
-                                        {enabledColumns.map((colId) => (
+                                        {enabledColumns.map((colId) => {
+                                          // Cell alignment mirrors the header:
+                                          // Member Details columns stay left,
+                                          // everything else centers.
+                                          const leftAlign = MEMBER_DETAIL_COLUMNS.has(colId as string);
+                                          const nameCol = colId === "firstName" || colId === "lastName";
+                                          return (
                                           <td
                                             key={colId}
-                                            className={`py-2 ${colId === "firstName" || colId === "lastName" ? "" : "text-gray-600"} ${colId === "totalClasses" || isClassTypeColumn(colId) ? "text-center" : ""}`}
+                                            className={`py-2 ${nameCol ? "" : "text-gray-600"} ${leftAlign ? "text-left" : "text-center"}`}
                                           >
                                             {renderCell(colId)}
                                           </td>
-                                        ))}
+                                          );
+                                        })}
                                       </tr>
                                     );
                                     });
