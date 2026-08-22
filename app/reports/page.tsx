@@ -1901,15 +1901,18 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="border-b border-gray-200">
-          <div className="flex items-center gap-1 overflow-x-auto">
+        {/* Tabs. Wraps onto multiple rows so every report title stays
+            visible on narrow screens instead of hiding behind a
+            horizontal scroll. Border-b lives on each pill instead of
+            the row so wrapped rows don't spawn stray underlines. */}
+        <div>
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
             {enabledReports.map((report) => (
               <button
                 key={report.id}
                 type="button"
                 onClick={() => setActiveTab(report.id)}
-                className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === report.id
                     ? "border-primary text-primary"
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
@@ -1921,7 +1924,7 @@ export default function ReportsPage() {
             <button
               type="button"
               onClick={() => addReport()}
-              className="px-3 py-2 text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1"
+              className="px-3 py-2 text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1 border-b-2 border-transparent"
               title="Add Report"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1929,6 +1932,7 @@ export default function ReportsPage() {
               </svg>
             </button>
           </div>
+          <div className="border-b border-gray-200" />
         </div>
 
         {/* Error */}
