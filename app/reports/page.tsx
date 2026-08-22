@@ -287,18 +287,17 @@ const COLUMN_FIELDS = [
   },
   {
     name: "Belt Ranks & Styles",
+    // Simplified per Cruz's ask: no "primary" style/rank concept -- the
+    // report expands one row per (member x selected style), so each row
+    // implicitly carries its own style + rank. Options are limited to
+    // Next Rank (per row), plus non-rank metadata (Latest Promotion,
+    // Coach, Promotion Eligible). The Current Rank column is implied
+    // once at least one style is chosen and always shown.
     fields: [
-      { key: "showBeltRanks", label: "Belt Rank" },
-      { key: "showPrimaryStyle", label: "Primary Style" },
-      { key: "showNextRank", label: "Next Rank" },
+      { key: "showNextRankByStyle", label: "Next Rank" },
       { key: "showLatestPromotion", label: "Latest Promotion" },
       { key: "showCoach", label: "Coach" },
       { key: "showPromotionEligible", label: "Promotion Eligible" },
-      { key: "showRanksByStyle", label: "Ranks by Style" },
-      { key: "showBeltSizeByStyle", label: "Belt Size (per selected style)" },
-      { key: "showBeltTextByStyle", label: "Belt Text (per selected style)" },
-      { key: "showCoachByStyle", label: "Coach (per selected style)" },
-      { key: "showNextRankByStyle", label: "Next Rank (per selected style)" },
     ],
   },
   {
@@ -1000,21 +999,13 @@ export default function ReportsPage() {
     const styleRankColumns: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
       (style) => `styleRank:${style}` as ColumnId
     );
-    const styleBeltSizeColumns: ColumnId[] = activeReport.fields.showBeltSizeByStyle
-      ? (activeReport.selectedStylesForRank || []).map(
-          (style) => `styleBeltSize:${style}` as ColumnId
-        )
-      : [];
-    const styleBeltTextColumns: ColumnId[] = activeReport.fields.showBeltTextByStyle
-      ? (activeReport.selectedStylesForRank || []).map(
-          (style) => `styleBeltText:${style}` as ColumnId
-        )
-      : [];
-    const styleCoachColumns: ColumnId[] = activeReport.fields.showCoachByStyle
-      ? (activeReport.selectedStylesForRank || []).map(
-          (style) => `styleCoach:${style}` as ColumnId
-        )
-      : [];
+    // Belt Size / Belt Text / Coach per-style columns retired from the
+    // UI per Cruz's simplification. Legacy reports may still have the
+    // flags true; force the columns off unconditionally so those old
+    // reports render cleanly under the new schema.
+    const styleBeltSizeColumns: ColumnId[] = [];
+    const styleBeltTextColumns: ColumnId[] = [];
+    const styleCoachColumns: ColumnId[] = [];
     const styleNextRankColumns: ColumnId[] = activeReport.fields.showNextRankByStyle
       ? (activeReport.selectedStylesForRank || []).map(
           (style) => `styleNextRank:${style}` as ColumnId
@@ -2535,15 +2526,11 @@ export default function ReportsPage() {
                     const exportStyleRankCols: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
                       (style) => `styleRank:${style}` as ColumnId,
                     );
-                    const exportStyleBeltSizeCols: ColumnId[] = activeReport.fields.showBeltSizeByStyle
-                      ? (activeReport.selectedStylesForRank || []).map((style) => `styleBeltSize:${style}` as ColumnId)
-                      : [];
-                    const exportStyleBeltTextCols: ColumnId[] = activeReport.fields.showBeltTextByStyle
-                      ? (activeReport.selectedStylesForRank || []).map((style) => `styleBeltText:${style}` as ColumnId)
-                      : [];
-                    const exportStyleCoachCols: ColumnId[] = activeReport.fields.showCoachByStyle
-                      ? (activeReport.selectedStylesForRank || []).map((style) => `styleCoach:${style}` as ColumnId)
-                      : [];
+                    // Belt Size / Belt Text / Coach per-style columns
+                    // retired from the UI (see the render-side generator).
+                    const exportStyleBeltSizeCols: ColumnId[] = [];
+                    const exportStyleBeltTextCols: ColumnId[] = [];
+                    const exportStyleCoachCols: ColumnId[] = [];
                     const exportStyleNextRankCols: ColumnId[] = activeReport.fields.showNextRankByStyle
                       ? (activeReport.selectedStylesForRank || []).map((style) => `styleNextRank:${style}` as ColumnId)
                       : [];
@@ -2564,9 +2551,9 @@ export default function ReportsPage() {
                     const enabledColIds: ColumnId[] = exportColumnOrder.filter((colId) => {
                       if (isClassTypeColumn(colId)) return (activeReport.selectedClassTypes || []).includes(getClassTypeName(colId));
                       if (isStyleRankColumn(colId)) return (activeReport.selectedStylesForRank || []).includes(getStyleRankName(colId));
-                      if (isStyleBeltSizeColumn(colId)) return activeReport.fields.showBeltSizeByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleBeltSizeName(colId));
-                      if (isStyleBeltTextColumn(colId)) return activeReport.fields.showBeltTextByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleBeltTextName(colId));
-                      if (isStyleCoachColumn(colId)) return activeReport.fields.showCoachByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleCoachName(colId));
+                      if (isStyleBeltSizeColumn(colId)) return false;
+                      if (isStyleBeltTextColumn(colId)) return false;
+                      if (isStyleCoachColumn(colId)) return false;
                       if (isStyleNextRankColumn(colId)) return activeReport.fields.showNextRankByStyle && (activeReport.selectedStylesForRank || []).includes(getStyleNextRankName(colId));
                       switch (colId) {
                         case "firstName":
@@ -2575,9 +2562,11 @@ export default function ReportsPage() {
                         case "memberNumber": return activeReport.fields.showMemberNumber;
                         case "email": return activeReport.fields.showMemberEmails;
                         case "phone": return activeReport.fields.showMemberPhones;
-                        case "style": return activeReport.fields.showPrimaryStyle;
-                        case "rank": return activeReport.fields.showBeltRanks;
-                        case "nextRank": return activeReport.fields.showNextRank;
+                        // Legacy "primary" columns retired -- see the
+                        // matching switch in the on-screen dispatcher.
+                        case "style": return false;
+                        case "rank": return false;
+                        case "nextRank": return false;
                         case "latestPromotion": return activeReport.fields.showLatestPromotion;
                         case "coach": return activeReport.fields.showCoach;
                         case "promotionEligible": return activeReport.fields.showPromotionEligible;
@@ -2601,7 +2590,7 @@ export default function ReportsPage() {
                       if (isStyleBeltTextColumn(colId)) return "Belt Text";
                       if (isStyleCoachColumn(colId)) return "Coach";
                       if (isStyleNextRankColumn(colId)) return "Next Rank";
-                      if (colId === "rank") return "Primary Rank";
+                      if (colId === "rank") return "Rank";
                       if (colId === "totalClasses") return "Total Classes";
                       return COLUMN_LABELS[colId as BaseColumnId] || String(colId);
                     };
@@ -2835,21 +2824,11 @@ export default function ReportsPage() {
                             const styleRankColumns: ColumnId[] = (activeReport.selectedStylesForRank || []).map(
                               (style) => `styleRank:${style}` as ColumnId
                             );
-                            const styleBeltSizeColumns: ColumnId[] = activeReport.fields.showBeltSizeByStyle
-                              ? (activeReport.selectedStylesForRank || []).map(
-                                  (style) => `styleBeltSize:${style}` as ColumnId
-                                )
-                              : [];
-                            const styleBeltTextColumns: ColumnId[] = activeReport.fields.showBeltTextByStyle
-                              ? (activeReport.selectedStylesForRank || []).map(
-                                  (style) => `styleBeltText:${style}` as ColumnId
-                                )
-                              : [];
-                            const styleCoachColumns: ColumnId[] = activeReport.fields.showCoachByStyle
-                              ? (activeReport.selectedStylesForRank || []).map(
-                                  (style) => `styleCoach:${style}` as ColumnId
-                                )
-                              : [];
+                            // Belt Size / Belt Text / Coach per-style columns
+                            // retired -- see the main render-side generator.
+                            const styleBeltSizeColumns: ColumnId[] = [];
+                            const styleBeltTextColumns: ColumnId[] = [];
+                            const styleCoachColumns: ColumnId[] = [];
                             const styleNextRankColumns: ColumnId[] = activeReport.fields.showNextRankByStyle
                               ? (activeReport.selectedStylesForRank || []).map(
                                   (style) => `styleNextRank:${style}` as ColumnId
@@ -2888,24 +2867,10 @@ export default function ReportsPage() {
                                 const styleName = getStyleRankName(colId);
                                 return (activeReport.selectedStylesForRank || []).includes(styleName);
                               }
-                              // Handle style belt-size columns
-                              if (isStyleBeltSizeColumn(colId)) {
-                                const styleName = getStyleBeltSizeName(colId);
-                                return activeReport.fields.showBeltSizeByStyle
-                                  && (activeReport.selectedStylesForRank || []).includes(styleName);
-                              }
-                              // Handle style belt-text columns
-                              if (isStyleBeltTextColumn(colId)) {
-                                const styleName = getStyleBeltTextName(colId);
-                                return activeReport.fields.showBeltTextByStyle
-                                  && (activeReport.selectedStylesForRank || []).includes(styleName);
-                              }
-                              // Handle style coach columns
-                              if (isStyleCoachColumn(colId)) {
-                                const styleName = getStyleCoachName(colId);
-                                return activeReport.fields.showCoachByStyle
-                                  && (activeReport.selectedStylesForRank || []).includes(styleName);
-                              }
+                              // Belt Size / Belt Text / Coach per-style columns retired.
+                              if (isStyleBeltSizeColumn(colId)) return false;
+                              if (isStyleBeltTextColumn(colId)) return false;
+                              if (isStyleCoachColumn(colId)) return false;
                               // Handle style next-rank columns
                               if (isStyleNextRankColumn(colId)) {
                                 const styleName = getStyleNextRankName(colId);
@@ -2925,12 +2890,17 @@ export default function ReportsPage() {
                                   return activeReport.fields.showMemberEmails;
                                 case "phone":
                                   return activeReport.fields.showMemberPhones;
+                                // "style" / "rank" / "nextRank" base columns removed
+                                // from the UI (Cruz: no "primary" concept). Row
+                                // expansion produces per-style rows and per-style
+                                // columns instead. Legacy reports with these
+                                // flags true are silently downgraded.
                                 case "style":
-                                  return activeReport.fields.showPrimaryStyle;
+                                  return false;
                                 case "rank":
-                                  return activeReport.fields.showBeltRanks;
+                                  return false;
                                 case "nextRank":
-                                  return activeReport.fields.showNextRank;
+                                  return false;
                                 case "latestPromotion":
                                   return activeReport.fields.showLatestPromotion;
                                 case "coach":
@@ -2962,36 +2932,41 @@ export default function ReportsPage() {
                               }
                             });
 
-                            // Helper to render header for a column
-                            const renderHeader = (colId: ColumnId) => {
-                              // Handle class type columns
+                            // Helper to render header for a column. Returns
+                            // ReactNode (not string) so per-style columns can
+                            // stack "Style / Rank" on two lines per Cruz's
+                            // preferred header format.
+                            const renderHeader = (colId: ColumnId): React.ReactNode => {
                               if (isClassTypeColumn(colId)) {
                                 return getClassTypeName(colId);
                               }
-                              // Per-style columns: use short labels since the
-                              // header pane repeats the style name via the
-                              // "Showing X Ranks" subhead. Prevents columns
-                              // like "Kore BJJ - Adults Next Rank" from
-                              // taking up half the table width.
+                              // Style-scoped columns show the style name on
+                              // the top line and the metric ("Rank" / "Next
+                              // Rank") on the bottom. Kept tight so the
+                              // header doesn't dominate the row height.
                               if (isStyleRankColumn(colId)) {
-                                return "Current Rank";
-                              }
-                              if (isStyleBeltSizeColumn(colId)) {
-                                return "Belt Size";
-                              }
-                              if (isStyleBeltTextColumn(colId)) {
-                                return "Belt Text";
-                              }
-                              if (isStyleCoachColumn(colId)) {
-                                return "Coach";
+                                return (
+                                  <div className="leading-tight">
+                                    <div>{getStyleRankName(colId)}</div>
+                                    <div>Rank</div>
+                                  </div>
+                                );
                               }
                               if (isStyleNextRankColumn(colId)) {
-                                return "Next Rank";
+                                return (
+                                  <div className="leading-tight">
+                                    <div>{getStyleNextRankName(colId)}</div>
+                                    <div>Next Rank</div>
+                                  </div>
+                                );
                               }
-                              // Handle base columns
+                              // Retired per-style column types kept for type
+                              // exhaustiveness even though the generator no
+                              // longer emits them for new reports.
+                              if (isStyleBeltSizeColumn(colId)) return "Belt Size";
+                              if (isStyleBeltTextColumn(colId)) return "Belt Text";
+                              if (isStyleCoachColumn(colId)) return "Coach";
                               switch (colId) {
-                                case "rank":
-                                  return "Primary Rank";
                                 case "totalClasses":
                                   return "Total Classes";
                                 default:
@@ -3031,8 +3006,35 @@ export default function ReportsPage() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {paginatedMembers.map((m: any) => {
-                                    // Get primary rank for the "rank" column
+                                  {paginatedMembers.flatMap((mBase: any) => {
+                                    // Row expansion: when the report has any styles
+                                    // selected for rank display, emit one row per
+                                    // (member x selected style they have). A member
+                                    // enrolled in Kore BJJ + Kempo where both are
+                                    // selected gets two rows; someone with only one
+                                    // gets one row; someone with neither is dropped
+                                    // (per Cruz -- no blank rows for missing styles).
+                                    // When no styles are selected, fall back to one
+                                    // row per member so the report still renders
+                                    // before the operator picks any styles.
+                                    const selectedStyles: string[] = activeReport.selectedStylesForRank || [];
+                                    let rows: any[];
+                                    if (selectedStyles.length === 0) {
+                                      rows = [mBase];
+                                    } else {
+                                      const memberStyles = new Set<string>();
+                                      if (mBase.primaryStyle) memberStyles.add(mBase.primaryStyle);
+                                      if (mBase.stylesNotes) {
+                                        try {
+                                          const arr = JSON.parse(mBase.stylesNotes);
+                                          if (Array.isArray(arr)) for (const s of arr) if (s?.name) memberStyles.add(s.name);
+                                        } catch { /* ignore */ }
+                                      }
+                                      const matching = selectedStyles.filter((s) => memberStyles.has(s));
+                                      if (matching.length === 0) return [];
+                                      rows = matching.map((rowStyle) => ({ ...mBase, _reportStyle: rowStyle }));
+                                    }
+                                    return rows.map((m: any) => {
                                     const displayRank = m.rank || "—";
                                     // Determine which status to display based on active filters
                                     let displayStatus = m.status || "—";
@@ -3069,14 +3071,17 @@ export default function ReportsPage() {
                                         const classTypeName = getClassTypeName(colId);
                                         return m.attendanceCounts?.[classTypeName] || 0;
                                       }
-                                      // Handle style rank columns
+                                      // Handle style rank columns. With row
+                                      // expansion, only populate the cell in the
+                                      // column matching THIS row's assigned style
+                                      // (m._reportStyle) so a two-row member
+                                      // doesn't repeat their rank in every column.
                                       if (isStyleRankColumn(colId)) {
                                         const styleName = getStyleRankName(colId);
-                                        // Check if member's primary style matches
+                                        if (m._reportStyle && m._reportStyle !== styleName) return "";
                                         if (m.primaryStyle === styleName) {
                                           return m.rank || "—";
                                         }
-                                        // Check stylesNotes for the rank
                                         if (m.stylesNotes) {
                                           try {
                                             const stylesArray = JSON.parse(m.stylesNotes);
@@ -3138,6 +3143,9 @@ export default function ReportsPage() {
                                       // no matching style is enrolled.
                                       if (isStyleNextRankColumn(colId)) {
                                         const styleName = getStyleNextRankName(colId);
+                                        // Only populate the cell in the column
+                                        // matching this row's assigned style.
+                                        if (m._reportStyle && m._reportStyle !== styleName) return "";
                                         let currentRank: string | null = null;
                                         if (m.stylesNotes) {
                                           try {
@@ -3264,7 +3272,7 @@ export default function ReportsPage() {
                                     };
 
                                     return (
-                                      <tr key={m.id} className="border-t border-gray-100">
+                                      <tr key={m._reportStyle ? `${m.id}-${m._reportStyle}` : m.id} className="border-t border-gray-100">
                                         {enabledColumns.map((colId) => (
                                           <td
                                             key={colId}
@@ -3275,6 +3283,7 @@ export default function ReportsPage() {
                                         ))}
                                       </tr>
                                     );
+                                    });
                                   })}
                                 </tbody>
                                 {isRecurringReport && (() => {
@@ -4010,16 +4019,31 @@ export default function ReportsPage() {
                               )}
 
                               {/* Rank Filter Checkboxes - Grouped by Style */}
-                              {(category as any).hasRankCheckboxes && availableRanks.length > 0 && (
+                              {(category as any).hasRankCheckboxes && availableRanks.length > 0 && (() => {
+                                // Restrict the rank picker to styles the operator
+                                // has selected in the Style Filter. Prevents a
+                                // Kempo rank from appearing in the list when the
+                                // report only targets Kore BJJ. When no styles are
+                                // chosen (filterByStyles empty), fall back to all
+                                // styles so the picker still works before a Style
+                                // Filter is set.
+                                const styleFilter = editingConfig.filterByStyles || [];
+                                const pickerStyles = styleFilter.length > 0
+                                  ? availableStyles.filter(s => styleFilter.includes(s.name))
+                                  : availableStyles;
+                                const pickerRanks = availableRanks.filter(r =>
+                                  pickerStyles.some(s => s.id === r.styleId)
+                                );
+                                return (
                                 <div>
                                   <div className="flex items-center justify-between mb-2">
                                     <label className="block text-xs font-medium text-gray-700">
-                                      Ranks (by Style)
+                                      Ranks {styleFilter.length > 0 ? `(from ${styleFilter.length} chosen style${styleFilter.length === 1 ? "" : "s"})` : "(by Style)"}
                                     </label>
                                     <div className="flex gap-2">
                                       <button
                                         type="button"
-                                        onClick={() => updateEditingConfig({ filterByRanks: availableRanks.map(r => `${r.styleName}:${r.name}`) })}
+                                        onClick={() => updateEditingConfig({ filterByRanks: pickerRanks.map(r => `${r.styleName}:${r.name}`) })}
                                         className="text-[10px] text-primary hover:text-primaryDark"
                                       >
                                         Select All
@@ -4036,10 +4060,10 @@ export default function ReportsPage() {
                                   </div>
                                   {/* Group ranks by style */}
                                   <div className="space-y-3">
-                                    {availableStyles
-                                      .filter(style => availableRanks.some(r => r.styleId === style.id))
+                                    {pickerStyles
+                                      .filter(style => pickerRanks.some(r => r.styleId === style.id))
                                       .map((style) => {
-                                        const styleRanks = availableRanks
+                                        const styleRanks = pickerRanks
                                           .filter(r => r.styleId === style.id)
                                           .sort((a, b) => a.order - b.order);
                                         const allStyleRanksSelected = styleRanks.every(r =>
@@ -4101,7 +4125,8 @@ export default function ReportsPage() {
                                       : `Showing ${(editingConfig.filterByRanks || []).length} rank(s)`}
                                   </p>
                                 </div>
-                              )}
+                                );
+                              })()}
 
                               {/* Membership Type Filter Checkboxes */}
                               {(category as any).hasMembershipTypeFilter && availableMembershipTypes.length > 0 && (
