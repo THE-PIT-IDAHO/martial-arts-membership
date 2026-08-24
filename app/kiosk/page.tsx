@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { filterAndRankMembers } from "@/lib/member-search";
+import { OnScreenKeyboard } from "@/components/kiosk/OnScreenKeyboard";
 
 type GymSettings = {
   name: string;
@@ -601,6 +602,11 @@ export default function KioskPage() {
   const selectedClassRef = useRef(selectedClass);
   selectedClassRef.current = selectedClass;
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Toggle for the on-screen QWERTY. Kiosk tablets often have a
+  // Bluetooth barcode scanner paired, which suppresses the OS
+  // keyboard system-wide. This lets the operator tap-to-type names
+  // without unpairing the scanner.
+  const [showSearchKeyboard, setShowSearchKeyboard] = useState(false);
 
   const loadAttendees = useCallback(async (classId: string) => {
     try {
@@ -1059,6 +1065,37 @@ export default function KioskPage() {
                       </button>
                     )}
                   </div>
+                  {/* Keyboard toggle -- when a Bluetooth barcode scanner
+                      is paired, the tablet OS hides its on-screen
+                      keyboard. Tap here to reveal an on-page QWERTY
+                      that works regardless of paired hardware. */}
+                  <div className="flex justify-end mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowSearchKeyboard((v) => !v)}
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      {showSearchKeyboard ? "Hide keyboard" : "Show keyboard"}
+                    </button>
+                  </div>
+                  {showSearchKeyboard && (
+                    <div className="mb-4 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                      <OnScreenKeyboard
+                        mode="qwerty"
+                        onKey={(k) => handleSearch(searchQuery + k)}
+                        onBackspace={() => handleSearch(searchQuery.slice(0, -1))}
+                        onEnter={() => {
+                          const val = searchQuery.trim();
+                          if (val.includes("member=") || val.startsWith("{") || val.startsWith("http")) {
+                            handleQrScan(val);
+                            setSearchQuery("");
+                            return;
+                          }
+                          if (searchResults.length > 0) handleSelectMember(searchResults[0]);
+                        }}
+                      />
+                    </div>
+                  )}
                   {/* Search Results */}
                   {searchResults.length > 0 && (
                     <div className="space-y-2 mb-6 max-h-[300px] overflow-y-auto">

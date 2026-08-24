@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
+import { OnScreenKeyboard } from "@/components/kiosk/OnScreenKeyboard";
 
 type Style = {
   id: string;
@@ -33,6 +34,7 @@ export default function KioskSettingsPage() {
   const [styles, setStyles] = useState<Style[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showPinKeypad, setShowPinKeypad] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -151,6 +153,26 @@ export default function KioskSettingsPage() {
               <p className="mt-1 text-xs text-gray-500">
                 4-6 digit pin required to exit kiosk mode. Leave blank to disable.
               </p>
+              {/* On-screen keypad -- Android tablets with a Bluetooth
+                  barcode scanner paired hide the OS keyboard system-
+                  wide, so this button reveals a tap-to-type keypad
+                  that always works regardless of paired hardware. */}
+              <button
+                type="button"
+                onClick={() => setShowPinKeypad((v) => !v)}
+                className="mt-2 text-xs text-primary hover:underline"
+              >
+                {showPinKeypad ? "Hide on-screen keypad" : "Show on-screen keypad"}
+              </button>
+              {showPinKeypad && (
+                <div className="mt-2 max-w-xs">
+                  <OnScreenKeyboard
+                    mode="numeric"
+                    onKey={(k) => setSettings((prev) => ({ ...prev, exitPin: (prev.exitPin + k).slice(0, 6) }))}
+                    onBackspace={() => setSettings((prev) => ({ ...prev, exitPin: prev.exitPin.slice(0, -1) }))}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
