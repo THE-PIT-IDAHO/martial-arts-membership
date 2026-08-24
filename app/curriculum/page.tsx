@@ -451,6 +451,18 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
   const [addingItem, setAddingItem] = useState(false);
   // Which items currently have their sub-exercise bundle editor open.
   const [expandedBundle, setExpandedBundle] = useState<Record<string, boolean>>({});
+  // Which row's ⋯ action menu is open (only one at a time). Value is
+  // the item.id -- null means no menu open.
+  const [openRowMenu, setOpenRowMenu] = useState<string | null>(null);
+  useEffect(() => {
+    if (!openRowMenu) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t || !t.closest("[data-row-menu]")) setOpenRowMenu(null);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [openRowMenu]);
   const [editPopup, setEditPopup] = useState<{ itemId: string; value: string } | null>(null);
   const popupEditorRef = useRef<HTMLDivElement>(null);
 
@@ -891,17 +903,49 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
                 </td>
               </>}
               <td className="px-2 py-1 text-center">
-                <div className="flex items-center justify-center gap-1">
-                  {sectionType === "workout" && (
-                    <button
-                      onClick={() => setExpandedBundle((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
-                      className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark"
-                      title="Group several exercises under this item; one stopwatch and one checkmark cover them all."
-                    >
-                      {bundleOpen ? "Hide" : subs.length > 0 ? `Bundle (${subs.length})` : "Bundle"}
-                    </button>
+                {/* Row actions collapsed into a ⋯ menu. Bundle only
+                    appears for workout sections; the sub-exercise
+                    chips still render under the description so bundles
+                    are visible without opening the menu. */}
+                <div className="relative inline-block" data-row-menu>
+                  <button
+                    type="button"
+                    onClick={() => setOpenRowMenu((v) => (v === item.id ? null : item.id))}
+                    className="rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-gray-500 hover:bg-gray-50"
+                    title="Row actions"
+                    aria-haspopup="menu"
+                    aria-expanded={openRowMenu === item.id}
+                  >
+                    ⋯
+                  </button>
+                  {openRowMenu === item.id && (
+                    <div className="absolute right-0 top-full mt-1 z-30 w-44 rounded-lg border border-gray-200 bg-white shadow-xl py-1" role="menu">
+                      {sectionType === "workout" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenRowMenu(null);
+                            setExpandedBundle((prev) => ({ ...prev, [item.id]: !prev[item.id] }));
+                          }}
+                          className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+                          role="menuitem"
+                          title="Group several exercises under this item; one stopwatch and one checkmark cover them all."
+                        >
+                          {bundleOpen ? "Hide Bundle" : subs.length > 0 ? `Open Bundle (${subs.length})` : "Open Bundle"}
+                        </button>
+                      )}
+                      {sectionType === "workout" && <div className="my-1 border-t border-gray-100" />}
+                      <button
+                        type="button"
+                        onClick={() => { setOpenRowMenu(null); deleteItem(item.id, item.name); }}
+                        className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-red-50 hover:text-red-700"
+                        role="menuitem"
+                        title="Remove this item from this rank's curriculum"
+                      >
+                        Delete Row
+                      </button>
+                    </div>
                   )}
-                  <button onClick={() => deleteItem(item.id, item.name)} className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50" title="Remove this item from this rank's curriculum">Delete</button>
                 </div>
               </td>
             </tr>
@@ -1013,6 +1057,19 @@ export default function CurriculumV2Page() {
   const [newCategoryName, setNewCategoryName] = useState("");
   // Which top-table items have their sub-exercise editor open.
   const [topExpandedBundle, setTopExpandedBundle] = useState<Record<string, boolean>>({});
+  // Which top-table row's ⋯ action menu is open (only one at a time).
+  // Value keys off row.itemId so a not-yet-saved row (isNew) uses its
+  // index; kept simple since new rows don't render the menu anyway.
+  const [openTopRowMenu, setOpenTopRowMenu] = useState<string | null>(null);
+  useEffect(() => {
+    if (!openTopRowMenu) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t || !t.closest("[data-top-row-menu]")) setOpenTopRowMenu(null);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [openTopRowMenu]);
   const [popupCell, setPopupCell] = useState<{ rowIdx: number; field: keyof Row; value: string } | null>(null);
   const popupCellEditorRef = useRef<HTMLDivElement>(null);
   const popupCellTabHandledRef = useRef(false);
@@ -2658,17 +2715,45 @@ export default function CurriculumV2Page() {
                     </>}
                     <td className="px-2 py-1 text-center">
                       {!row.isNew && (
-                        <div className="flex items-center justify-center gap-1">
-                          {topSectionType === "workout" && (
-                            <button
-                              onClick={() => setTopExpandedBundle((prev) => ({ ...prev, [row.itemId]: !prev[row.itemId] }))}
-                              className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark"
-                              title="Group several exercises under this item; one stopwatch and one checkmark cover them all."
-                            >
-                              {topBundleOpen ? "Hide" : topSubs.length > 0 ? `Bundle (${topSubs.length})` : "Bundle"}
-                            </button>
+                        <div className="relative inline-block" data-top-row-menu>
+                          <button
+                            type="button"
+                            onClick={() => setOpenTopRowMenu((v) => (v === row.itemId ? null : row.itemId))}
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-[11px] font-semibold text-gray-500 hover:bg-gray-50"
+                            title="Row actions"
+                            aria-haspopup="menu"
+                            aria-expanded={openTopRowMenu === row.itemId}
+                          >
+                            ⋯
+                          </button>
+                          {openTopRowMenu === row.itemId && (
+                            <div className="absolute right-0 top-full mt-1 z-30 w-44 rounded-lg border border-gray-200 bg-white shadow-xl py-1" role="menu">
+                              {topSectionType === "workout" && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenTopRowMenu(null);
+                                    setTopExpandedBundle((prev) => ({ ...prev, [row.itemId]: !prev[row.itemId] }));
+                                  }}
+                                  className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+                                  role="menuitem"
+                                  title="Group several exercises under this item; one stopwatch and one checkmark cover them all."
+                                >
+                                  {topBundleOpen ? "Hide Bundle" : topSubs.length > 0 ? `Open Bundle (${topSubs.length})` : "Open Bundle"}
+                                </button>
+                              )}
+                              {topSectionType === "workout" && <div className="my-1 border-t border-gray-100" />}
+                              <button
+                                type="button"
+                                onClick={() => { setOpenTopRowMenu(null); deleteRow(idx); }}
+                                className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-red-50 hover:text-red-700"
+                                role="menuitem"
+                                title="Remove this item from this rank's curriculum"
+                              >
+                                Delete Row
+                              </button>
+                            </div>
                           )}
-                          <button onClick={() => deleteRow(idx)} className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50" title="Remove this item from this rank's curriculum">Delete</button>
                         </div>
                       )}
                     </td>
