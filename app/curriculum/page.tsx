@@ -1102,6 +1102,20 @@ export default function CurriculumV2Page() {
   }, [popupCell]);
 
   const [showAddCategory, setShowAddCategory] = useState(false);
+  // Header split-button + selector-strip overflow menu open state, plus
+  // one shared outside-click closer -- same pattern SectionHeader uses.
+  const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+  useEffect(() => {
+    if (!showSaveMenu && !showCategoryMenu) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t || !t.closest("[data-save-menu]")) setShowSaveMenu(false);
+      if (!t || !t.closest("[data-category-menu]")) setShowCategoryMenu(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showSaveMenu, showCategoryMenu]);
   const [styleCatNames, setStyleCatNames] = useState<string[]>([]);
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [reorderList, setReorderList] = useState<{ id: string; name: string }[]>([]);
@@ -2241,16 +2255,54 @@ export default function CurriculumV2Page() {
             <h1 className="text-2xl font-bold">Curriculum Builder</h1>
             <p className="text-sm text-gray-500">Select a category and start typing</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={handleSave} disabled={saving} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50" title="Save your edits to this rank's curriculum. Members won't see the changes until you also Publish.">
+          {/* Split-button: primary Save on the left, small ▾ on the
+              right revealing the two Publish variants. Keeps the
+              header from carrying three near-identical buttons while
+              every action stays one click away. */}
+          <div className="relative inline-flex" data-save-menu>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded-l-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+              title="Save your edits to this rank's curriculum. Members won't see the changes until you also Publish."
+            >
               {saving ? "Saving..." : hasChanges ? "Save Changes" : "Save"}
             </button>
-            <button onClick={handleSaveAndPublish} disabled={publishing} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50" title="Save your edits AND publish this rank's curriculum PDF so members and testing can use the new version.">
-              {publishing ? "Publishing..." : "Save & Publish"}
+            <button
+              type="button"
+              onClick={() => setShowSaveMenu((v) => !v)}
+              disabled={publishing}
+              className="rounded-r-md bg-primary px-2 py-1 text-xs font-semibold text-white border-l border-white/30 hover:bg-primaryDark disabled:opacity-50"
+              title="More save + publish options"
+              aria-haspopup="menu"
+              aria-expanded={showSaveMenu}
+            >
+              ▾
             </button>
-            <button onClick={handlePublishAll} disabled={publishing} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50" title="Regenerate and publish the curriculum PDF for EVERY rank in this style at once. Use after big changes that touched many ranks.">
-              {publishing ? "Publishing..." : "Publish All Ranks"}
-            </button>
+            {showSaveMenu && (
+              <div className="absolute right-0 top-full mt-1 z-40 w-64 rounded-lg border border-gray-200 bg-white shadow-xl py-1" role="menu">
+                <button
+                  type="button"
+                  onClick={() => { setShowSaveMenu(false); handleSaveAndPublish(); }}
+                  disabled={publishing}
+                  className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                  role="menuitem"
+                  title="Save your edits AND publish this rank's curriculum PDF so members and testing can use the new version."
+                >
+                  {publishing ? "Publishing..." : "Save & Publish (this rank)"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowSaveMenu(false); handlePublishAll(); }}
+                  disabled={publishing}
+                  className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                  role="menuitem"
+                  title="Regenerate and publish the curriculum PDF for EVERY rank in this style at once. Use after big changes that touched many ranks."
+                >
+                  {publishing ? "Publishing..." : "Publish All Ranks"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -2275,58 +2327,89 @@ export default function CurriculumV2Page() {
                 {allCategories.length === 0 && <option value="">No categories</option>}
                 {allCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              <button onClick={() => setShowAddCategory(!showAddCategory)} className="rounded-md bg-primary px-2 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark" title={showAddCategory ? "Cancel adding a new category" : "Create a new curriculum category (e.g. Techniques, Combos, Fitness) on this rank"}>
-                {showAddCategory ? "Cancel" : "Add Category"}
-              </button>
-              {selectedCategoryId && !["Knowledge", "Techniques", "Combos", "Fitness", "Sparring", "Forms/Katas", "Board Breaking"].includes(allCategories.find(c => c.id === selectedCategoryId)?.name || "") && (
+              {/* Category management collapsed into a single ⋯ menu so
+                  the header stays a Style / Rank / Category strip
+                  instead of a wall of buttons. Individual actions
+                  keep their existing behavior. */}
+              <div className="relative" data-category-menu>
                 <button
-                  onClick={async () => {
-                    const cat = allCategories.find(c => c.id === selectedCategoryId);
-                    if (!cat) return;
-                    if (!confirm(`Remove "${cat.name}" from all ranks? This deletes the category and all its items permanently.`)) return;
-                    try {
-                      // Delete from current rank
-                      const testId = getTestId();
-                      if (testId) await fetch(`/api/rank-tests/${testId}/categories?categoryId=${cat.id}`, { method: "DELETE" });
-                      // Delete from all other ranks
-                      const otherRanks = ranks.filter(r => r.id !== selectedRankId);
-                      await Promise.all(otherRanks.map(async (rank) => {
-                        const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
-                        if (!res.ok) return;
-                        const d = await res.json();
-                        const tests: RankTest[] = d.rankTests || d.tests || [];
-                        for (const t of tests) {
-                          const c = t.categories.find(tc => tc.name.trim().toLowerCase() === cat.name.trim().toLowerCase());
-                          if (c) await fetch(`/api/rank-tests/${t.id}/categories?categoryId=${c.id}`, { method: "DELETE" });
-                        }
-                      }));
-                      // Reload
-                      const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
-                      if (res.ok) {
-                        const d = await res.json();
-                        const tests = d.rankTests || d.tests || [];
-                        setRankTests(tests);
-                        const cats = buildCategoryList(tests);
-                        setAllCategories(cats);
-                        const target = cats[0];
-                        if (target) { setSelectedCategoryId(target.id); buildRowsForCategory(tests, target.id); }
-                        else { setSelectedCategoryId(""); setRows([]); }
-                      }
-                    } catch { alert("Failed to remove category"); }
-                  }}
-                  className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100"
-                  title="Delete this category and all of its items from EVERY rank in this style. Can't be undone."
+                  type="button"
+                  onClick={() => setShowCategoryMenu((v) => !v)}
+                  className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                  title="Category actions: add, remove, reorder"
+                  aria-haspopup="menu"
+                  aria-expanded={showCategoryMenu}
                 >
-                  Remove Category
+                  ⋯
                 </button>
-              )}
-              <button
-                onClick={openReorderModal}
-                className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100"
-                title="Drag categories to change the order they appear in on this rank (and optionally across every rank)"
-              >
-                Reorder
-              </button>
+                {showCategoryMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-40 w-56 rounded-lg border border-gray-200 bg-white shadow-xl py-1" role="menu">
+                    <button
+                      type="button"
+                      onClick={() => { setShowCategoryMenu(false); setShowAddCategory((v) => !v); }}
+                      className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+                      role="menuitem"
+                      title={showAddCategory ? "Cancel adding a new category" : "Create a new curriculum category on this rank"}
+                    >
+                      {showAddCategory ? "Cancel Add Category" : "Add Category"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowCategoryMenu(false); openReorderModal(); }}
+                      className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+                      role="menuitem"
+                      title="Drag categories to change the order they appear in on this rank (and optionally across every rank)"
+                    >
+                      Reorder Categories
+                    </button>
+                    {selectedCategoryId && !["Knowledge", "Techniques", "Combos", "Fitness", "Sparring", "Forms/Katas", "Board Breaking"].includes(allCategories.find(c => c.id === selectedCategoryId)?.name || "") && (
+                      <>
+                        <div className="my-1 border-t border-gray-100" />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setShowCategoryMenu(false);
+                            const cat = allCategories.find(c => c.id === selectedCategoryId);
+                            if (!cat) return;
+                            if (!confirm(`Remove "${cat.name}" from all ranks? This deletes the category and all its items permanently.`)) return;
+                            try {
+                              const testId = getTestId();
+                              if (testId) await fetch(`/api/rank-tests/${testId}/categories?categoryId=${cat.id}`, { method: "DELETE" });
+                              const otherRanks = ranks.filter(r => r.id !== selectedRankId);
+                              await Promise.all(otherRanks.map(async (rank) => {
+                                const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${rank.id}`);
+                                if (!res.ok) return;
+                                const d = await res.json();
+                                const tests: RankTest[] = d.rankTests || d.tests || [];
+                                for (const t of tests) {
+                                  const c = t.categories.find(tc => tc.name.trim().toLowerCase() === cat.name.trim().toLowerCase());
+                                  if (c) await fetch(`/api/rank-tests/${t.id}/categories?categoryId=${c.id}`, { method: "DELETE" });
+                                }
+                              }));
+                              const res = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+                              if (res.ok) {
+                                const d = await res.json();
+                                const tests = d.rankTests || d.tests || [];
+                                setRankTests(tests);
+                                const cats = buildCategoryList(tests);
+                                setAllCategories(cats);
+                                const target = cats[0];
+                                if (target) { setSelectedCategoryId(target.id); buildRowsForCategory(tests, target.id); }
+                                else { setSelectedCategoryId(""); setRows([]); }
+                              }
+                            } catch { alert("Failed to remove category"); }
+                          }}
+                          className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-red-50 hover:text-red-700"
+                          role="menuitem"
+                          title="Delete this category and all of its items from EVERY rank in this style. Can't be undone."
+                        >
+                          Remove Category
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
