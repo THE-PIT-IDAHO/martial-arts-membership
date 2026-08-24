@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { matchesMemberSearch } from "@/lib/member-search";
+import { filterAndRankMembers } from "@/lib/member-search";
 
 type GymSettings = {
   name: string;
@@ -785,13 +785,11 @@ export default function KioskPage() {
       return;
     }
 
-    // Normal name search — route through the shared matcher so kiosk
-    // finds members by first/last (in either order), email, phone, or
-    // member number, matching what /api/members?search= + the POS +
-    // members list already do.
-    const results = members
-      .filter((m) => matchesMemberSearch(m, query))
-      .slice(0, 8);
+    // Normal name search — route through the shared matcher + ranker
+    // so kiosk finds members by first/last (in either order), email,
+    // phone, or member number AND floats prefix hits ("nic" -> Nick
+    // before Dominick) above mid-word matches.
+    const results = filterAndRankMembers(members, query).slice(0, 8);
 
     setSearchResults(results);
   }, [members, selectedClass, canMemberCheckInToClass, handleQrScan]);

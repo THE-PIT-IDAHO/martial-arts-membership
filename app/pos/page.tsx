@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 import Link from "next/link";
 import { serializePaymentMethod } from "@/lib/payment-utils";
+import { filterAndRankMembers } from "@/lib/member-search";
 import { getTodayString, parseLocalDate } from "@/lib/dates";
 import { generateWaiverPdf, type InfoBlock, type BodySection } from "@/lib/waiver-pdf";
 
@@ -568,20 +569,12 @@ export default function POSPage() {
     return true;
   });
 
-  // Filter members
-  const filteredMembers = members.filter(member => {
-    if (memberSearch) {
-      const search = memberSearch.toLowerCase();
-      const fullName = `${member.firstName} ${member.lastName}`.toLowerCase();
-      return (
-        fullName.includes(search) ||
-        member.email?.toLowerCase().includes(search) ||
-        member.phone?.includes(search) ||
-        member.memberNumber?.toString().includes(search)
-      );
-    }
-    return true;
-  }).slice(0, 10);
+  // Filter + rank members via the shared search helper so POS uses
+  // the same behavior as the kiosk + /api/members?search=. Prefix
+  // matches float above mid-word matches ("nic" -> Nick before
+  // Dominick) instead of whatever insertion order the members array
+  // arrived in.
+  const filteredMembers = (memberSearch ? filterAndRankMembers(members, memberSearch) : members).slice(0, 10);
 
   // Get total stock for an item (sum of variants or base quantity)
   function getTotalStock(item: POSItem): number {

@@ -9,7 +9,7 @@ import { canAddMember } from "@/lib/trial";
 import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 import { getNextMemberNumber } from "@/lib/sequence";
 import { getEffectivePriceAfterDiscountCents } from "@/lib/billing";
-import { buildMemberSearchWhere } from "@/lib/member-search";
+import { buildMemberSearchWhere, scoreMemberSearchMatch } from "@/lib/member-search";
 
 function toDateOrNull(value: any): Date | null {
   if (!value) return null;
@@ -186,8 +186,24 @@ export async function GET(req: Request) {
         })
       : uniqueMembers;
 
-    // Apply limit after deduplication and style filtering
-    const limitedMembers = limit ? membersWithAllowedStyle.slice(0, parseInt(limit, 10)) : membersWithAllowedStyle;
+    // When a search query is in play, re-sort by relevance so prefix
+    // matches on firstName / lastName float above mid-word matches
+    // (typing "nic" should land Nick + Nicole before Dominick, not
+    // whichever alphabetical row Postgres picked first).
+    const rankedMembers = search
+      ? [...membersWithAllowedStyle].sort((a, b) => {
+          const sB = scoreMemberSearchMatch(b, search);
+          const sA = scoreMemberSearchMatch(a, search);
+          if (sB !== sA) return sB - sA;
+          const al = (a.lastName || "").toLowerCase();
+          const bl = (b.lastName || "").toLowerCase();
+          if (al !== bl) return al.localeCompare(bl);
+          return (a.firstName || "").toLowerCase().localeCompare((b.firstName || "").toLowerCase());
+        })
+      : membersWithAllowedStyle;
+
+    // Apply limit after deduplication, style filtering, and (optional) relevance sort
+    const limitedMembers = limit ? rankedMembers.slice(0, parseInt(limit, 10)) : rankedMembers;
 
     // Bulk-fetch MEMBERSHIP + ALL scope discount rows for every member
     // in one round-trip so the per-member loop below can apply them

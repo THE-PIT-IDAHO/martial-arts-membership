@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
 import { getMemberStatusColors } from "@/lib/member-status-colors";
+import { scoreMemberSearchMatch } from "@/lib/member-search";
 
 type MemberRow = {
   id: string;
@@ -942,6 +943,17 @@ export default function MembersPage() {
 
     const sorted = [...filtered].sort((a, b) => {
       const dir = sortDirection === "asc" ? 1 : -1;
+
+      // When a search is active, rank by match relevance FIRST so a
+      // prefix hit ("nic" -> Nick) rises above a mid-word hit ("nic"
+      // matching Dominick). User's column-sort choice becomes the
+      // tie-break within the same relevance score, so clicking a
+      // column header still works as expected within a match tier.
+      if (q) {
+        const sB = scoreMemberSearchMatch(b, q);
+        const sA = scoreMemberSearchMatch(a, q);
+        if (sB !== sA) return sB - sA;
+      }
 
       if (sortKey === "firstName") {
         const aVal = (a.firstName ?? "").toLowerCase();

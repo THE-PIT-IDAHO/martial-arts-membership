@@ -105,6 +105,87 @@ export function matchesMemberSearch(
 }
 
 /**
+ * Relevance score for a member against a search query. Bigger = better.
+ * Use to sort a matched set so prefix hits float above mid-word hits.
+ *
+ * Example: searching "nic" ranks Nick (firstName starts-with) above
+ * Dominick (firstName contains "nic" mid-word) which ranks above a
+ * member whose email happens to contain "nic".
+ *
+ * Score is a per-token sum -- so "nick smith" ranks a member whose
+ * firstName is Nick AND lastName is Smith above one who only matches
+ * "nick" on lastName.
+ *
+ * Field weights (per token):
+ *   firstName / lastName exact         100
+ *   firstName / lastName starts-with    50
+ *   firstName / lastName contains       10
+ *   memberNumber exact                  40
+ *   email starts-with                   20
+ *   email contains                       5
+ *   phone contains                       3
+ */
+export function scoreMemberSearchMatch(
+  member: SearchableMember,
+  query: string,
+): number {
+  const q = (query || "").trim();
+  if (q.length < MIN_QUERY_LEN) return 0;
+  const tokens = tokenize(q);
+  const first = (member.firstName || "").toLowerCase();
+  const last = (member.lastName || "").toLowerCase();
+  const email = (member.email || "").toLowerCase();
+  const phone = (member.phone || "").toLowerCase();
+  const memberNum = member.memberNumber != null ? String(member.memberNumber) : "";
+
+  let total = 0;
+  for (const rawTok of tokens) {
+    const t = rawTok.toLowerCase();
+    let best = 0;
+
+    if (first === t || last === t) best = Math.max(best, 100);
+    else if (first.startsWith(t) || last.startsWith(t)) best = Math.max(best, 50);
+    else if (first.includes(t) || last.includes(t)) best = Math.max(best, 10);
+
+    if (memberNum === t) best = Math.max(best, 40);
+
+    if (email.startsWith(t)) best = Math.max(best, 20);
+    else if (email.includes(t)) best = Math.max(best, 5);
+
+    if (phone.includes(t)) best = Math.max(best, 3);
+
+    total += best;
+  }
+  return total;
+}
+
+/**
+ * Convenience: filter + rank in one call. Members not matching the
+ * query are dropped; matches are returned sorted by descending score,
+ * then alphabetically by lastName/firstName as a stable tie-break.
+ */
+export function filterAndRankMembers<M extends SearchableMember>(
+  members: M[],
+  query: string,
+): M[] {
+  const q = (query || "").trim();
+  if (q.length < MIN_QUERY_LEN) return members;
+  const matched: Array<{ m: M; score: number }> = [];
+  for (const m of members) {
+    if (!matchesMemberSearch(m, q)) continue;
+    matched.push({ m, score: scoreMemberSearchMatch(m, q) });
+  }
+  matched.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const al = (a.m.lastName || "").toLowerCase();
+    const bl = (b.m.lastName || "").toLowerCase();
+    if (al !== bl) return al.localeCompare(bl);
+    return (a.m.firstName || "").toLowerCase().localeCompare((b.m.firstName || "").toLowerCase());
+  });
+  return matched.map((x) => x.m);
+}
+
+/**
  * Shared "does this member have this status?" test. Member.status is
  * a comma-separated string ("ACTIVE,COACH"), so exact equality
  * (`m.status === "ACTIVE"`) drops anyone with a compound status.
