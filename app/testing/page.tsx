@@ -1194,15 +1194,17 @@ export default function TestingPage() {
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(14);
     pdf.text(gymSettings.name || "Martial Arts School", headerLeftX, yPos + 5);
+    // Subtitle = the testing event's name so each PDF is self-labeled
+    // ("Aug 2026 Belt Test" instead of a generic "Testing Report Card"
+    // that every event's PDF would repeat).
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(9);
     setInk(subRGB);
-    pdf.text("Testing Report Card", headerLeftX, yPos + 10);
-    // Right-side date/event
+    if (event.name) pdf.text(event.name, headerLeftX, yPos + 10);
+    // Right-side: date only (event name moved to subtitle above).
     pdf.setFontSize(9);
     setInk(subRGB);
     pdf.text(new Date(event.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }), pageWidth - margin, yPos + 5, { align: "right" });
-    if (event.name) pdf.text(event.name, pageWidth - margin, yPos + 10, { align: "right" });
     setInk(inkRGB);
     yPos += 18;
     setFill(rule);
@@ -1416,18 +1418,14 @@ export default function TestingPage() {
       pdf.setFont("helvetica", "normal");
     }
 
-    // Footer -- fixed at the bottom of the last page. Signature line
-    // on the left, "issued on" timestamp on the right so the report
-    // card feels signed off rather than just printed.
+    // Footer -- issued-on timestamp right-aligned at the bottom of the
+    // last page. Coach signature line removed per Cruz's ask.
     const footerY = pageHeight - margin - 4;
     setFill(rule);
     pdf.rect(margin, footerY - 8, maxWidth, 0.4, "F");
     setInk(subRGB);
     pdf.setFontSize(8);
     pdf.setFont("helvetica", "normal");
-    pdf.text("Coach signature:", margin, footerY - 2);
-    setFill([180, 180, 180]);
-    pdf.rect(margin + 28, footerY - 2.5, 55, 0.3, "F");
     pdf.text(`Issued: ${new Date().toLocaleString()}`, pageWidth - margin, footerY - 2, { align: "right" });
     setInk(inkRGB);
 
@@ -3910,20 +3908,20 @@ export default function TestingPage() {
                         <div className="inline-flex gap-2 mt-1">
                           <button
                             onClick={() => setManualStatus(manualStatus === "PASSED" ? null : "PASSED")}
-                            className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                            className={`px-3 py-1 text-xs font-semibold rounded-md border transition-colors ${
                               manualStatus === "PASSED"
-                                ? "bg-green-600 text-white"
-                                : "bg-green-100 text-green-700 hover:bg-green-200"
+                                ? "bg-green-600 text-white border-green-600"
+                                : "bg-white text-green-700 border-green-500 hover:bg-green-50"
                             }`}
                           >
                             PASS
                           </button>
                           <button
                             onClick={() => setManualStatus(manualStatus === "FAILED" ? null : "FAILED")}
-                            className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                            className={`px-3 py-1 text-xs font-semibold rounded-md border transition-colors ${
                               manualStatus === "FAILED"
-                                ? "bg-red-600 text-white"
-                                : "bg-red-100 text-red-700 hover:bg-red-200"
+                                ? "bg-red-600 text-white border-red-600"
+                                : "bg-white text-red-700 border-red-500 hover:bg-red-50"
                             }`}
                           >
                             FAIL
@@ -4561,7 +4559,7 @@ export default function TestingPage() {
                             });
                           }}
                           disabled={bulkSelectedForStatus.size === 0}
-                          className="px-2 py-0.5 text-xs font-semibold rounded transition-colors bg-green-100 text-green-700 border border-green-300 hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="px-2 py-0.5 text-xs font-semibold rounded transition-colors bg-white text-green-700 border border-green-500 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Pass Selected
                         </button>
@@ -4578,7 +4576,7 @@ export default function TestingPage() {
                             });
                           }}
                           disabled={bulkSelectedForStatus.size === 0}
-                          className="px-2 py-0.5 text-xs font-semibold rounded transition-colors bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="px-2 py-0.5 text-xs font-semibold rounded transition-colors bg-white text-red-700 border border-red-500 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Fail Selected
                         </button>
@@ -4705,44 +4703,99 @@ export default function TestingPage() {
           );
         })()}
 
-        {/* PDF Viewer Modal */}
+        {/* PDF Viewer Modal. Iframes cannot render a raw
+            `data:application/pdf;base64,...` URI in modern Chrome /
+            Edge -- the browser sandboxes it and shows a blank page.
+            <PdfViewerModal/> converts the data URI into a Blob URL on
+            open (Blob URLs render fine in iframes) and revokes it on
+            close so we don't leak memory. */}
         {viewingPdfUrl && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 h-[85vh] flex flex-col">
-              {/* Header */}
-              <div className="flex items-center justify-between p-3 border-b bg-gray-50 rounded-t-lg">
-                <h3 className="text-sm font-semibold text-gray-900">{viewingPdfTitle}</h3>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={viewingPdfUrl}
-                    download
-                    className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                  >
-                    Download
-                  </a>
-                  <button
-                    onClick={() => {
-                      setViewingPdfUrl(null);
-                      setViewingPdfTitle("");
-                    }}
-                    className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-              {/* PDF Content */}
-              <div className="flex-1 overflow-hidden">
-                <iframe
-                  src={viewingPdfUrl}
-                  className="w-full h-full border-0"
-                  title="PDF Viewer"
-                />
-              </div>
-            </div>
-          </div>
+          <PdfViewerModal
+            url={viewingPdfUrl}
+            title={viewingPdfTitle}
+            onClose={() => {
+              setViewingPdfUrl(null);
+              setViewingPdfTitle("");
+            }}
+          />
         )}
       </div>
     </AppLayout>
+  );
+}
+
+// Converts a data-URI PDF into a Blob URL for iframe rendering. Falls
+// back to the original URL when it's already an http(s) URL (older
+// records with hosted PDFs). Object URL is revoked on unmount so a
+// long session viewing many PDFs doesn't leak.
+function PdfViewerModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  const [iframeSrc, setIframeSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    if (url.startsWith("data:")) {
+      try {
+        const commaIdx = url.indexOf(",");
+        const meta = url.substring(5, commaIdx); // e.g. application/pdf;base64
+        const isBase64 = meta.includes(";base64");
+        const mime = isBase64 ? meta.replace(";base64", "") : meta;
+        const payload = url.substring(commaIdx + 1);
+        const bin = isBase64 ? atob(payload) : decodeURIComponent(payload);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const blob = new Blob([bytes], { type: mime || "application/pdf" });
+        objectUrl = URL.createObjectURL(blob);
+        setIframeSrc(objectUrl);
+      } catch (err) {
+        console.error("[PdfViewerModal] failed to convert data URI to blob:", err);
+        setIframeSrc(url);
+      }
+    } else {
+      setIframeSrc(url);
+    }
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [url]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between p-3 border-b bg-gray-50 rounded-t-lg">
+          <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+          <div className="flex items-center gap-2">
+            <a
+              href={iframeSrc || url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+              title="Open the PDF in a new browser tab"
+            >
+              Open in new tab
+            </a>
+            <a
+              href={url}
+              download
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+            >
+              Download
+            </a>
+            <button
+              onClick={onClose}
+              className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          {iframeSrc ? (
+            <iframe src={iframeSrc} className="w-full h-full border-0" title="PDF Viewer" />
+          ) : (
+            <div className="flex items-center justify-center h-full text-sm text-gray-500">Loading PDF…</div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
