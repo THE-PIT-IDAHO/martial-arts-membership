@@ -5,7 +5,13 @@ import { getClientId } from "@/lib/tenant";
 
 type Params = { params: Promise<{ id: string }> };
 
-// GET /api/members/[id]/payment-methods — list saved cards for a member
+// GET /api/members/[id]/payment-methods — list saved cards for a
+// member. If a PAYS_FOR relationship exists (someone else pays this
+// member's charges), returns the payer's cards instead + a
+// `paidByMember` reference so the caller can label it "on behalf of
+// so-and-so". Matches the fallback the auto-billing cron + POS
+// charge-saved-card endpoint already do; ensures POS presents the
+// same card the charge will actually hit.
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id: memberId } = await params;
   const clientId = await getClientId(_req);
@@ -19,18 +25,45 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
 
-  if (!member?.stripeCustomerId) {
-    return NextResponse.json({ paymentMethods: [], defaultId: null });
+  // Look for a PAYS_FOR row where this member is the payee. If found,
+  // pivot to the payer's card. Scoped to this tenant to prevent a
+  // stray cross-tenant row from surfacing a foreign gym's card.
+  const payerRow = await prisma.memberRelationship.findFirst({
+    where: { relationship: "PAYS_FOR", toMemberId: memberId },
+    select: {
+      fromMemberId: true,
+      fromMember: { select: { id: true, firstName: true, lastName: true, clientId: true } },
+    },
+  });
+  const payerBelongsToTenant = !!payerRow?.fromMember && payerRow.fromMember.clientId === clientId;
+  const billedMemberId = payerBelongsToTenant ? payerRow!.fromMemberId : memberId;
+  const paidByMember = payerBelongsToTenant
+    ? { id: payerRow!.fromMember!.id, firstName: payerRow!.fromMember!.firstName, lastName: payerRow!.fromMember!.lastName }
+    : null;
+
+  // Reload if we pivoted (need the payer's stripeCustomerId + default).
+  const billedMember = billedMemberId === memberId
+    ? member
+    : await prisma.member.findUnique({
+        where: { id: billedMemberId },
+        select: { clientId: true, stripeCustomerId: true, defaultPaymentMethodId: true },
+      });
+  if (!billedMember || billedMember.clientId !== clientId) {
+    return NextResponse.json({ paymentMethods: [], defaultId: null, paidByMember });
+  }
+
+  if (!billedMember.stripeCustomerId) {
+    return NextResponse.json({ paymentMethods: [], defaultId: null, paidByMember });
   }
 
   const stripeClient = await getStripeClient(clientId);
   if (!stripeClient) {
-    return NextResponse.json({ paymentMethods: [], defaultId: null });
+    return NextResponse.json({ paymentMethods: [], defaultId: null, paidByMember });
   }
 
   try {
     const methods = await stripeClient.paymentMethods.list({
-      customer: member.stripeCustomerId,
+      customer: billedMember.stripeCustomerId,
       type: "card",
     });
 
@@ -44,7 +77,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
     return NextResponse.json({
       paymentMethods,
-      defaultId: member.defaultPaymentMethodId,
+      defaultId: billedMember.defaultPaymentMethodId,
+      paidByMember,
     });
   } catch (error) {
     console.error("Error fetching payment methods:", error);

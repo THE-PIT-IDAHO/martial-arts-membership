@@ -2231,24 +2231,16 @@ export default function MemberProfilePage() {
     (m) => m.id !== memberId
   );
 
-  // Derived from existing family relationships: members linked to this person
-  // (any direction, any family type). Used as the candidate pool for the
-  // Pays For / Paid For By picker in Account Summary, since the user only
-  // wants billing relationships set between people who are already family.
-  const relatedMembersForBilling = (() => {
-    const seen = new Set<string>();
-    const out: Array<{ id: string; firstName: string; lastName: string }> = [];
-    for (const r of relationships) {
-      if (r.relationship === "PAYS_FOR") continue; // skip billing rows
-      const other = r.fromMemberId === memberId ? r.toMember : r.fromMember;
-      if (other.id === memberId) continue;
-      if (!seen.has(other.id)) {
-        seen.add(other.id);
-        out.push({ id: other.id, firstName: other.firstName, lastName: other.lastName });
-      }
-    }
-    return out;
-  })();
+  // Candidate pool for the Pays For / Paid For By picker. Originally
+  // restricted to already-linked family members; Cruz wants billing
+  // to work between ANY two members regardless of family status
+  // (spouses, grandparents, coaches, etc.), so this is now every
+  // other member at the gym. The picker itself narrows via search.
+  const relatedMembersForBilling = availableMembersForRelationships.map((m) => ({
+    id: m.id,
+    firstName: m.firstName,
+    lastName: m.lastName,
+  }));
 
   // Who currently pays for this member (looks for a PAYS_FOR row where
   // this member is the toMember — the payee).
@@ -5625,10 +5617,11 @@ export default function MemberProfilePage() {
                       </div>
                     </div>
 
-                    {/* Billing relationships: who pays for whom. The picker
-                        is restricted to people already linked via a family
-                        relationship — set up the family connection first,
-                        then mark them as payer/payee here. */}
+                    {/* Billing relationships: who pays for whom. Any two
+                        members can be linked -- no family relationship
+                        required. Once set, every future POS purchase and
+                        every recurring auto-billing charge on the payee
+                        routes to the payer's card. */}
                     <div className="mt-4 pt-4 border-t border-gray-100">
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
@@ -5642,9 +5635,8 @@ export default function MemberProfilePage() {
                                 setBillingPickerMode("paid_for_by");
                                 setBillingPickerError(null);
                               }}
-                              disabled={relatedMembersForBilling.length === 0}
-                              className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
-                              title={relatedMembersForBilling.length === 0 ? "Add a family relationship first" : "Mark someone as paying for this member"}
+                              className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white hover:bg-primaryDark"
+                              title="Mark another member as paying for this member (their card gets charged for POS + recurring billing)"
                             >
                               Set Paid For By
                             </button>
@@ -5656,9 +5648,8 @@ export default function MemberProfilePage() {
                                 setBillingPickerMode("pays_for");
                                 setBillingPickerError(null);
                               }}
-                              disabled={relatedMembersForBilling.length === 0}
-                              className="rounded-md border border-primary px-2 py-1 text-[10px] font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
-                              title={relatedMembersForBilling.length === 0 ? "Add a family relationship first" : "Mark this member as paying for someone"}
+                              className="rounded-md border border-primary px-2 py-1 text-[10px] font-semibold text-primary hover:bg-primary/10"
+                              title="Mark this member as paying for someone else (this member's card handles their POS + recurring billing)"
                             >
                               Add Pays For
                             </button>
@@ -5813,7 +5804,7 @@ export default function MemberProfilePage() {
 
                   {paidForByRel && (
                     <div className="mb-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
-                      Recurring charges for this member are billed to{" "}
+                      Recurring + POS charges for this member are billed to{" "}
                       <Link
                         href={`/members/${paidForByRel.fromMember.id}`}
                         className="font-semibold underline hover:text-blue-900"
@@ -5821,6 +5812,27 @@ export default function MemberProfilePage() {
                         {paidForByRel.fromMember.firstName} {paidForByRel.fromMember.lastName}
                       </Link>
                       's card on file. Manage that card on their profile.
+                    </div>
+                  )}
+
+                  {/* Payer-side callout: highlight who this member is
+                      currently paying for so the operator sees at a
+                      glance where this card is being used. */}
+                  {paysForRels.length > 0 && (
+                    <div className="mb-2 rounded-md bg-primary/5 border border-primary/20 px-3 py-2 text-xs text-gray-800">
+                      This card also covers charges for:{" "}
+                      {paysForRels.map((r, i) => (
+                        <span key={r.id}>
+                          <Link
+                            href={`/members/${r.toMember.id}`}
+                            className="font-semibold text-primary underline hover:text-primaryDark"
+                          >
+                            {r.toMember.firstName} {r.toMember.lastName}
+                          </Link>
+                          {i < paysForRels.length - 1 ? ", " : ""}
+                        </span>
+                      ))}
+                      .
                     </div>
                   )}
 

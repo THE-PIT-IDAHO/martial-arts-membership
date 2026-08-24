@@ -43,13 +43,24 @@ export async function POST(req: Request) {
   });
   const currency = currSetting?.value || "usd";
 
-  // Get or create Stripe customer -- verify tenant first so a
-  // caller can't attach a foreign gym's member to our Stripe account
-  // by supplying their memberId.
+  // Get or create the Stripe customer. If a PAYS_FOR relationship
+  // exists (someone else pays for this member), pivot to the payer
+  // -- their Stripe customer + card gets the charge. Matches the
+  // auto-billing + charge-saved-card routing so every payment path
+  // for a payee routes to the same payer's card whether it's a
+  // recurring bill or a one-off POS purchase.
   let stripeCustomerId: string | undefined;
   if (memberId) {
+    const payerRow = await prisma.memberRelationship.findFirst({
+      where: { relationship: "PAYS_FOR", toMemberId: memberId },
+      select: { fromMemberId: true, fromMember: { select: { clientId: true } } },
+    });
+    const billedMemberId = payerRow?.fromMember?.clientId === clientId
+      ? payerRow.fromMemberId
+      : memberId;
+
     const member = await prisma.member.findUnique({
-      where: { id: memberId },
+      where: { id: billedMemberId },
       select: { clientId: true, stripeCustomerId: true, email: true, firstName: true, lastName: true },
     });
     if (!member || member.clientId !== clientId) {
@@ -61,11 +72,11 @@ export async function POST(req: Request) {
       const customer = await stripeClient.customers.create({
         email: member.email || undefined,
         name: `${member.firstName} ${member.lastName}`,
-        metadata: { memberId },
+        metadata: { memberId: billedMemberId },
       });
       stripeCustomerId = customer.id;
       await prisma.member.update({
-        where: { id: memberId },
+        where: { id: billedMemberId },
         data: { stripeCustomerId: customer.id },
       });
     }
