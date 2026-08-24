@@ -3567,7 +3567,12 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saveCard, setSaveCard] = useState(false);
-  const [cardholderName, setCardholderName] = useState(data.memberName || "");
+  // Start blank -- Cruz doesn't want the member's name pre-filled since
+  // a family member's card is a common case and the auto-fill nudged
+  // operators into leaving the wrong name on the transaction. Placeholder
+  // still shows the member's name as a hint; submit falls back to it if
+  // the operator leaves it empty.
+  const [cardholderName, setCardholderName] = useState("");
   // $0 sales still need to save the card (recurring will bill against
   // it later), so the modal always opens in "payment" mode UNLESS the
   // total is zero -- in which case we flip to Stripe's SetupIntent
