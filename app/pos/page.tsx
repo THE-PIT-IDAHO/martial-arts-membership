@@ -753,6 +753,11 @@ export default function POSPage() {
         date.setFullYear(date.getFullYear() + n);
         break;
     }
+    // End date is EXCLUSIVE -- a 1-year membership starting Apr 1
+    // runs through Mar 31 the following year, then the next billing
+    // period picks up Apr 1. Without the -1 the membership shows an
+    // extra day and looks identical to the next-payment date.
+    date.setDate(date.getDate() - 1);
     if (isNaN(date.getTime())) return "";
     try {
       return date.toISOString().split("T")[0];

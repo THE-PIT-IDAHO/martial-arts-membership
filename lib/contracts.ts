@@ -14,13 +14,22 @@ interface PlanForContract {
   cancellationNoticeDays?: number | null;
 }
 
-/** Calculate contract end date from start + plan.contractLengthMonths */
+/**
+ * Calculate contract end date from start + plan.contractLengthMonths.
+ *
+ * End-EXCLUSIVE semantics: a 1-year contract starting Apr 1 ends
+ * Mar 31 the following year; the next billing period picks up Apr 1.
+ * The old implementation returned Apr 1 -> Apr 1 which effectively
+ * gave the member one extra day and made the contract end date look
+ * identical to the next-payment date.
+ */
 export function calculateContractEndDate(
   startDate: Date | string,
   contractLengthMonths: number
 ): Date {
   const d = new Date(startDate);
   d.setMonth(d.getMonth() + contractLengthMonths);
+  d.setDate(d.getDate() - 1);
   return d;
 }
 
