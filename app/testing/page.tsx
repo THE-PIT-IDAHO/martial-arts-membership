@@ -1141,15 +1141,18 @@ export default function TestingPage() {
     }
   };
 
-  // Generate test result PDF
+  // Generate test result PDF. `status` is the tri-state final result
+  // (PASSED / FAILED / INCOMPLETE); the older `passed: boolean` signature
+  // collapsed INCOMPLETE into FAILED which read like a real fail.
   const generateTestResultPdf = (
     participant: TestingParticipant,
     event: TestingEvent,
     curriculum: RankTest,
     scores: ItemScores,
     overallScore: number,
-    passed: boolean
+    status: "PASSED" | "FAILED" | "INCOMPLETE"
   ): string => {
+    const passed = status === "PASSED";
     const pdf = new jsPDF();
     const pageWidth = pdf.internal.pageSize.getWidth();
     const margin = 20;
@@ -1315,25 +1318,35 @@ export default function TestingPage() {
     pdf.line(margin, yPos, pageWidth - margin, yPos);
     yPos += 10;
 
-    // Overall result
+    // Overall result -- tri-state so INCOMPLETE doesn't print as FAILED.
     pdf.setFontSize(14);
     pdf.setFont("helvetica", "bold");
     pdf.text("OVERALL RESULT:", margin, yPos);
-    if (passed) {
+    if (status === "PASSED") {
       pdf.setTextColor(0, 128, 0);
       pdf.text("PASSED", margin + 50, yPos);
-    } else {
+    } else if (status === "FAILED") {
       pdf.setTextColor(200, 0, 0);
       pdf.text("FAILED", margin + 50, yPos);
+    } else {
+      pdf.setTextColor(128, 128, 128);
+      pdf.text("INCOMPLETE", margin + 50, yPos);
     }
     pdf.setTextColor(0, 0, 0);
     yPos += 8;
 
-    // Score
+    // Score. Denominator and numerator both drawn from the SAME
+    // visibleCategories set the saved percentage was computed from --
+    // the older total used curriculum.categories (all items, filtered
+    // + unfiltered) while overallScore used visibleCategories only,
+    // producing nonsense like "100% (20/23)".
     pdf.setFontSize(11);
     pdf.setFont("helvetica", "normal");
-    const totalItems = curriculum.categories.reduce((sum, cat) => sum + cat.items.length, 0);
-    const passedItems = Object.values(scores).filter(s => s?.passed).length;
+    const visibleItemIds = new Set(
+      visibleCategories(curriculum.categories).flatMap((cat) => cat.items.map((i) => i.id)),
+    );
+    const totalItems = visibleItemIds.size;
+    const passedItems = Array.from(visibleItemIds).filter((id) => scores[id]?.passed).length;
     pdf.text(`Score: ${overallScore}% (${passedItems}/${totalItems} items)`, margin, yPos);
     yPos += 10;
 
@@ -1647,30 +1660,46 @@ export default function TestingPage() {
 
     setSavingGrades(true);
     try {
-      // Calculate overall pass/fail based on required items
-      let allRequiredPassed = true;
+      // Walk the visible items exactly once and collect everything
+      // the status/percent need: totals, passes, fails, ungraded.
       let totalItems = 0;
       let passedItems = 0;
+      let failedItems = 0;
+      let ungradedItems = 0;
+      let anyRequiredFailed = false;
 
       if (rankTestCurriculum) {
         visibleCategories(rankTestCurriculum.categories).forEach(category => {
           category.items.forEach(item => {
             totalItems++;
             const score = itemScores[item.id];
-            if (score?.passed) {
-              passedItems++;
-            } else if (item.required) {
-              allRequiredPassed = false;
+            if (score?.passed) passedItems++;
+            else if (score?.failed) {
+              failedItems++;
+              if (item.required) anyRequiredFailed = true;
+            } else {
+              ungradedItems++;
             }
           });
         });
       }
 
-      // Calculate percentage score
       const percentScore = totalItems > 0 ? Math.round((passedItems / totalItems) * 100) : 0;
 
-      // Use manual status if set, otherwise keep as INCOMPLETE
-      const finalStatus = manualStatus || "INCOMPLETE";
+      // Auto-derive the overall status from the item grades when the
+      // admin hasn't manually overridden it. Prevents the "every item
+      // PASSED but overall reads FAILED" mismatch the old code
+      // produced (finalStatus defaulted to INCOMPLETE, which rendered
+      // as FAILED on the binary-passed PDF).
+      //   - any required item failed  -> FAILED
+      //   - all items graded + passed -> PASSED
+      //   - anything else             -> INCOMPLETE
+      const derivedStatus: "PASSED" | "FAILED" | "INCOMPLETE" = anyRequiredFailed
+        ? "FAILED"
+        : ungradedItems === 0 && failedItems === 0 && totalItems > 0
+          ? "PASSED"
+          : "INCOMPLETE";
+      const finalStatus = manualStatus || derivedStatus;
 
       const res = await fetch(`/api/testing/${selectedEvent.id}/participants`, {
         method: "PATCH",
@@ -1696,7 +1725,7 @@ export default function TestingPage() {
               rankTestCurriculum,
               itemScores,
               percentScore,
-              finalStatus === "PASSED"
+              finalStatus as "PASSED" | "FAILED" | "INCOMPLETE"
             );
             await uploadAndSavePdf(pdfBlob, gradingParticipant, selectedEvent);
           } catch (pdfErr) {
@@ -1917,22 +1946,38 @@ export default function TestingPage() {
         targets.map(async ({ participant: p, curriculum }) => {
           const participantScores = bulkItemScores[p.id] || {};
 
-          // Calculate pass/fail using THIS participant's own curriculum.
+          // Walk this participant's own curriculum ONCE so pct + derived
+          // status use identical numerator/denominator sets.
           let totalItems = 0;
           let passedItems = 0;
+          let failedItems = 0;
+          let ungradedItems = 0;
+          let anyRequiredFailed = false;
           if (curriculum) {
             visibleCategories(curriculum.categories).forEach((category) => {
               category.items.forEach((item) => {
                 totalItems++;
                 const score = participantScores[item.id];
                 if (score?.passed) passedItems++;
+                else if (score?.failed) {
+                  failedItems++;
+                  if (item.required) anyRequiredFailed = true;
+                } else {
+                  ungradedItems++;
+                }
               });
             });
           }
           const percentScore = totalItems > 0 ? Math.round((passedItems / totalItems) * 100) : 0;
 
-          // Use manual status if set, otherwise keep as INCOMPLETE
-          const finalStatus = bulkManualStatus[p.id] || "INCOMPLETE";
+          // Derived status mirrors the individual grading sheet: manual
+          // override wins, else pass/fail/incomplete comes from grades.
+          const derivedStatus: "PASSED" | "FAILED" | "INCOMPLETE" = anyRequiredFailed
+            ? "FAILED"
+            : ungradedItems === 0 && failedItems === 0 && totalItems > 0
+              ? "PASSED"
+              : "INCOMPLETE";
+          const finalStatus = bulkManualStatus[p.id] || derivedStatus;
 
           const res = await fetch(`/api/testing/${selectedEvent.id}/participants`, {
             method: "PATCH",
@@ -1953,7 +1998,7 @@ export default function TestingPage() {
             ok: res.ok,
             scores: participantScores,
             percentScore,
-            passed: finalStatus === "PASSED",
+            status: finalStatus as "PASSED" | "FAILED" | "INCOMPLETE",
           };
         }),
       );
@@ -1977,7 +2022,7 @@ export default function TestingPage() {
                 result.curriculum!,
                 result.scores,
                 result.percentScore,
-                result.passed,
+                result.status,
               );
               await uploadAndSavePdf(pdfBlob, result.participant, selectedEvent);
             } catch (pdfErr) {
