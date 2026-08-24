@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/app-layout";
 import EmailTemplatesTab from "@/components/communication/EmailTemplatesTab";
+import { memberHasStatus } from "@/lib/member-search";
 
 type Tab = "compose" | "templates";
 type Member = {
@@ -56,7 +57,10 @@ export default function CommunicationsPage() {
   function getRecipients(): Member[] {
     switch (recipientMode) {
       case "all":
-        return members.filter(m => m.email && m.status === "ACTIVE");
+        // memberHasStatus tokenizes the comma-separated status string
+        // ("ACTIVE,COACH") -- exact === "ACTIVE" was silently dropping
+        // any coach/parent who was also active.
+        return members.filter(m => m.email && memberHasStatus(m.status, "ACTIVE"));
       case "style": {
         if (!selectedStyleId) return [];
         const style = styles.find(s => s.id === selectedStyleId);
@@ -88,7 +92,9 @@ export default function CommunicationsPage() {
         });
       }
       case "status":
-        return members.filter(m => m.email && selectedStatuses.has(m.status));
+        // Same reason as "all" -- match against ANY of the tokens in
+        // the member's comma-separated status string.
+        return members.filter(m => m.email && Array.from(selectedStatuses).some(s => memberHasStatus(m.status, s)));
       case "specific":
         return members.filter(m => selectedMemberIds.has(m.id));
       default:

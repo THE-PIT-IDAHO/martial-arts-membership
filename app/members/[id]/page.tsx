@@ -9,6 +9,7 @@ import { getTodayString, parseLocalDate } from "@/lib/dates";
 import { getStyleProgress, type AttendanceRow } from "@/lib/rank-progress";
 import { getEffectivePriceAfterDiscountCents } from "@/lib/member-discount-math";
 import { getMemberStatusPillClasses } from "@/lib/member-status-colors";
+import { matchesMemberSearch } from "@/lib/member-search";
 
 // Belt rendering helpers (mirrored from portal/styles)
 function TintedLayer({ src, color }: { src: string; color: string }) {
@@ -312,6 +313,12 @@ type MemberSummary = {
   firstName: string;
   lastName: string;
   status: string;
+  // Extra fields let the Relationships picker's shared search helper
+  // match on email / phone / member number just like every other
+  // search input in the app.
+  email?: string | null;
+  phone?: string | null;
+  memberNumber?: number | null;
 };
 
 type MembershipRecord = {
@@ -978,7 +985,10 @@ export default function MemberProfilePage() {
           id: m.id,
           firstName: m.firstName,
           lastName: m.lastName,
-          status: m.status
+          status: m.status,
+          email: m.email ?? null,
+          phone: m.phone ?? null,
+          memberNumber: m.memberNumber ?? null,
         }));
         setAllMembers(list);
       } catch (e) {
@@ -3589,7 +3599,7 @@ export default function MemberProfilePage() {
                 )}
 
                 {addingRelationship && (() => {
-                  const q = relationshipSearchQuery.trim().toLowerCase();
+                  const q = relationshipSearchQuery.trim();
                   // Hide members already linked via any non-billing relationship
                   // so we don't suggest duplicates. Billing rows (PAYS_FOR) are
                   // a separate concept and don't block re-adding a family link.
@@ -3599,10 +3609,9 @@ export default function MemberProfilePage() {
                       .map((r) => (r.fromMemberId === memberId ? r.toMemberId : r.fromMemberId)),
                   );
                   const matches = q
-                    ? availableMembersForRelationships.filter((m) => {
-                        const name = `${m.firstName} ${m.lastName}`.toLowerCase();
-                        return name.includes(q);
-                      }).slice(0, 8)
+                    ? availableMembersForRelationships
+                        .filter((m) => matchesMemberSearch(m, q))
+                        .slice(0, 8)
                     : [];
                   const selected = newRelationshipMemberId
                     ? availableMembersForRelationships.find((m) => m.id === newRelationshipMemberId)

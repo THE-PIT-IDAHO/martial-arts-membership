@@ -29,51 +29,48 @@ export async function GET(req: Request) {
     const styleName = searchParams.get("styleName");
     const styleId = searchParams.get("styleId"); // Filter by membership that allows this style
 
-    const whereClause: any = { clientId };
+    // Every filter gets appended to a single AND array so multiple
+    // filters (status + styleName + search) combine cleanly without
+    // stomping on each other's OR clause.
+    const andClauses: any[] = [];
+
     if (status) {
-      // Member.status is a comma-separated string (e.g. "ACTIVE,COACH"), so
-      // we use contains-based matching. Special-case ACTIVE to exclude
-      // "INACTIVE" substring matches.
-      if (status === "ACTIVE") {
-        whereClause.status = { contains: "ACTIVE" };
-        whereClause.NOT = { status: { contains: "INACTIVE" } };
-      } else {
-        whereClause.status = { contains: status };
-      }
+      // Member.status is a comma-separated string ("ACTIVE,COACH").
+      // Match on whole tokens (never "INACTIVE" for "ACTIVE") by
+      // testing every position the token can occupy in the stored
+      // string: sole value, start, end, or middle.
+      const s = status.toUpperCase();
+      andClauses.push({
+        OR: [
+          { status: { equals: s } },
+          { status: { startsWith: `${s},` } },
+          { status: { endsWith: `,${s}` } },
+          { status: { contains: `,${s},` } },
+        ],
+      });
     }
 
-    // Filter by style name (checks primaryStyle or stylesNotes JSON)
+    // Filter by style name (checks primaryStyle or stylesNotes JSON).
     if (styleName) {
-      whereClause.OR = [
-        { primaryStyle: styleName },
-        { stylesNotes: { contains: styleName } },
-      ];
+      andClauses.push({
+        OR: [
+          { primaryStyle: styleName },
+          { stylesNotes: { contains: styleName } },
+        ],
+      });
     }
 
     // Add search filter for name / email / phone / member number.
     // Delegates to the shared lib/member-search.ts helper so every
     // search input (POS, kiosk, global search, dashboard, etc.) uses
-    // the same token-based AND matcher. The old ad-hoc split treated
-    // parts[0] as firstName-only + parts[1..] as lastName-only, which
-    // meant "Smith John" (last-first) and "Mary Jane Smith" (member
-    // whose firstName is "Mary Jane") both silently returned zero.
+    // the same token-based AND matcher.
     if (search) {
       const searchClause = buildMemberSearchWhere(search);
-      if (searchClause) {
-        if (styleName) {
-          whereClause.AND = [
-            { OR: whereClause.OR },
-            searchClause,
-          ];
-          delete whereClause.OR;
-        } else {
-          whereClause.AND = [
-            ...(Array.isArray(whereClause.AND) ? whereClause.AND : []),
-            searchClause,
-          ];
-        }
-      }
+      if (searchClause) andClauses.push(searchClause);
     }
+
+    const whereClause: any = { clientId };
+    if (andClauses.length > 0) whereClause.AND = andClauses;
 
     const members = await prisma.member.findMany({
       where: whereClause,
