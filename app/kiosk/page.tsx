@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { matchesMemberSearch } from "@/lib/member-search";
 
 type GymSettings = {
   name: string;
@@ -784,13 +785,12 @@ export default function KioskPage() {
       return;
     }
 
-    // Normal name search — show all members, not just class-eligible
-    const q = query.toLowerCase();
+    // Normal name search — route through the shared matcher so kiosk
+    // finds members by first/last (in either order), email, phone, or
+    // member number, matching what /api/members?search= + the POS +
+    // members list already do.
     const results = members
-      .filter((m) => {
-        const fullName = `${m.firstName} ${m.lastName}`.toLowerCase();
-        return fullName.includes(q);
-      })
+      .filter((m) => matchesMemberSearch(m, query))
       .slice(0, 8);
 
     setSearchResults(results);

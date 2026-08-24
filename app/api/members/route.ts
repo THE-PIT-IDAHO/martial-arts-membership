@@ -1,7 +1,6 @@
 // app/api/members/route.ts
 
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendWelcomeEmail } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";
@@ -10,6 +9,7 @@ import { canAddMember } from "@/lib/trial";
 import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 import { getNextMemberNumber } from "@/lib/sequence";
 import { getEffectivePriceAfterDiscountCents } from "@/lib/billing";
+import { buildMemberSearchWhere } from "@/lib/member-search";
 
 function toDateOrNull(value: any): Date | null {
   if (!value) return null;
@@ -50,45 +50,28 @@ export async function GET(req: Request) {
       ];
     }
 
-    // Add search filter for name or member number
-    if (search && search.length >= 2) {
-      const parts = search.trim().split(/\s+/);
-      const searchConditions: Prisma.MemberWhereInput[] = [];
-
-      if (parts.length >= 2) {
-        // "John Smith" → match firstName contains "John" AND lastName contains "Smith"
-        searchConditions.push(
-          { AND: [
-            { firstName: { contains: parts[0], mode: "insensitive" } },
-            { lastName: { contains: parts.slice(1).join(" "), mode: "insensitive" } },
-          ]},
-          // Also try single-field matches
-          { firstName: { contains: search, mode: "insensitive" } },
-          { lastName: { contains: search, mode: "insensitive" } },
-          { email: { contains: search, mode: "insensitive" } },
-        );
-      } else {
-        searchConditions.push(
-          { firstName: { contains: search, mode: "insensitive" } },
-          { lastName: { contains: search, mode: "insensitive" } },
-          { email: { contains: search, mode: "insensitive" } },
-        );
-      }
-      // Also search by member number if the search is numeric
-      const searchNum = parseInt(search, 10);
-      if (!isNaN(searchNum)) {
-        searchConditions.push({ memberNumber: searchNum });
-      }
-
-      // If we already have style filter, use AND to combine
-      if (styleName) {
-        whereClause.AND = [
-          { OR: whereClause.OR },
-          { OR: searchConditions },
-        ];
-        delete whereClause.OR;
-      } else {
-        whereClause.OR = searchConditions;
+    // Add search filter for name / email / phone / member number.
+    // Delegates to the shared lib/member-search.ts helper so every
+    // search input (POS, kiosk, global search, dashboard, etc.) uses
+    // the same token-based AND matcher. The old ad-hoc split treated
+    // parts[0] as firstName-only + parts[1..] as lastName-only, which
+    // meant "Smith John" (last-first) and "Mary Jane Smith" (member
+    // whose firstName is "Mary Jane") both silently returned zero.
+    if (search) {
+      const searchClause = buildMemberSearchWhere(search);
+      if (searchClause) {
+        if (styleName) {
+          whereClause.AND = [
+            { OR: whereClause.OR },
+            searchClause,
+          ];
+          delete whereClause.OR;
+        } else {
+          whereClause.AND = [
+            ...(Array.isArray(whereClause.AND) ? whereClause.AND : []),
+            searchClause,
+          ];
+        }
       }
     }
 
