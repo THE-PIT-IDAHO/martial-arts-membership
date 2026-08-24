@@ -217,6 +217,7 @@ function SubExerciseEditor({
           type="button"
           onClick={addRow}
           className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
+          title="Add another exercise to this bundle"
         >
           + Add exercise
         </button>
@@ -225,6 +226,7 @@ function SubExerciseEditor({
           onClick={save}
           disabled={!dirty || saving}
           className="rounded-md bg-primary px-3 py-1 text-[11px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+          title="Save changes made to this bundle's exercises"
         >
           {saving ? "Saving..." : dirty ? "Save bundle" : "Saved"}
         </button>
@@ -424,7 +426,7 @@ function RichInput({ defaultValue, onSave, className, onEditClick }: { defaultVa
         style={{ height: "28px", lineHeight: "28px", display: "flex", alignItems: "center" }}
       />
       {overflows && (
-        <button type="button" onClick={onEditClick} className="shrink-0 rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark">Edit</button>
+        <button type="button" onClick={onEditClick} className="shrink-0 rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark" title="Rename this section">Edit</button>
       )}
     </div>
   );
@@ -780,7 +782,7 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
         onDeleteFromAllRanks={onDeleteFromAllRanks}
         copyToRanksSlot={
           <div className="relative">
-            <button onClick={() => setShowCopyMenu(!showCopyMenu)} disabled={copying || items.length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+            <button onClick={() => setShowCopyMenu(!showCopyMenu)} disabled={copying || items.length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50" title="Copy every item in this section into other ranks of the same style">
               {copying ? "Copying..." : "Copy to Ranks"}
             </button>
             {showCopyMenu && (
@@ -799,11 +801,11 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
                   Replace existing items
                 </label>
                 <div className="flex gap-1 pt-1 border-t border-gray-100">
-                  <button onClick={() => setCopySelectedRanks(new Set(ranks.filter(r => r.id !== selectedRankId).map(r => r.id)))} className="text-[10px] text-primary hover:underline">All</button>
-                  <button onClick={() => setCopySelectedRanks(new Set())} className="text-[10px] text-gray-400 hover:underline">None</button>
+                  <button onClick={() => setCopySelectedRanks(new Set(ranks.filter(r => r.id !== selectedRankId).map(r => r.id)))} className="text-[10px] text-primary hover:underline" title="Select every rank in this style">All</button>
+                  <button onClick={() => setCopySelectedRanks(new Set())} className="text-[10px] text-gray-400 hover:underline" title="Clear the rank selection">None</button>
                   <div className="flex-1" />
-                  <button onClick={copyToRanks} disabled={copySelectedRanks.size === 0} className="rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50">Copy</button>
-                  <button onClick={() => setShowCopyMenu(false)} className="rounded border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                  <button onClick={copyToRanks} disabled={copySelectedRanks.size === 0} className="rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50" title="Copy this section's items into the ranks checked above">Copy</button>
+                  <button onClick={() => setShowCopyMenu(false)} className="rounded border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-50" title="Close without copying">Cancel</button>
                 </div>
               </div>
             )}
@@ -895,7 +897,7 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
                       {bundleOpen ? "Hide" : subs.length > 0 ? `Bundle (${subs.length})` : "Bundle"}
                     </button>
                   )}
-                  <button onClick={() => deleteItem(item.id, item.name)} className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50">Delete</button>
+                  <button onClick={() => deleteItem(item.id, item.name)} className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50" title="Remove this item from this rank's curriculum">Delete</button>
                 </div>
               </td>
             </tr>
@@ -960,14 +962,14 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
         >
           <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
             <h2 className="text-sm font-bold text-gray-900">Edit Description <span className="text-gray-400 font-normal text-[10px]">(drag corner to resize)</span></h2>
-            <button tabIndex={-1} onClick={async () => { await updateField(editPopup.itemId, "description", editPopup.value); setEditPopup(null); await onReload(); }} className="text-gray-400 hover:text-gray-600">
+            <button tabIndex={-1} onClick={async () => { await updateField(editPopup.itemId, "description", editPopup.value); setEditPopup(null); await onReload(); }} className="text-gray-400 hover:text-gray-600" title="Save and close">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
           <div className="border-b border-gray-200 px-5 py-2 flex items-center gap-1">
-            <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("bold"); }} className="rounded px-2 py-1 text-xs font-bold text-gray-700 hover:bg-gray-100">B</button>
-            <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("italic"); }} className="rounded px-2 py-1 text-xs italic text-gray-700 hover:bg-gray-100">I</button>
-            <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("underline"); }} className="rounded px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-100">U</button>
+            <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("bold"); }} className="rounded px-2 py-1 text-xs font-bold text-gray-700 hover:bg-gray-100" title="Bold">B</button>
+            <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("italic"); }} className="rounded px-2 py-1 text-xs italic text-gray-700 hover:bg-gray-100" title="Italic">I</button>
+            <button type="button" tabIndex={-1} onMouseDown={e => { e.preventDefault(); document.execCommand("underline"); }} className="rounded px-2 py-1 text-xs underline text-gray-700 hover:bg-gray-100" title="Underline">U</button>
           </div>
           <div className="flex-1 overflow-y-auto p-5 min-h-0">
              <div
@@ -980,8 +982,8 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
              />
           </div>
           <div className="border-t border-gray-200 px-5 py-3 flex justify-end gap-2">
-            <button tabIndex={-1} onClick={async () => { const el = document.getElementById("cat-popup-editor"); if (el) await updateField(editPopup.itemId, "description", el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0")); setEditPopup(null); await onReload(); }} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Save</button>
-            <button tabIndex={-1} onClick={() => setEditPopup(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button tabIndex={-1} onClick={async () => { const el = document.getElementById("cat-popup-editor"); if (el) await updateField(editPopup.itemId, "description", el.innerHTML.replace(/([^\s>])&nbsp;/g, "$1 ").replace(/&nbsp;/g, "\u00A0")); setEditPopup(null); await onReload(); }} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark" title="Save the edited description">Save</button>
+            <button tabIndex={-1} onClick={() => setEditPopup(null)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50" title="Close without saving changes">Cancel</button>
           </div>
         </div>
       </div>
@@ -2220,13 +2222,13 @@ export default function CurriculumV2Page() {
             <p className="text-sm text-gray-500">Select a category and start typing</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={handleSave} disabled={saving} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+            <button onClick={handleSave} disabled={saving} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50" title="Save your edits to this rank's curriculum. Members won't see the changes until you also Publish.">
               {saving ? "Saving..." : hasChanges ? "Save Changes" : "Save"}
             </button>
-            <button onClick={handleSaveAndPublish} disabled={publishing} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+            <button onClick={handleSaveAndPublish} disabled={publishing} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50" title="Save your edits AND publish this rank's curriculum PDF so members and testing can use the new version.">
               {publishing ? "Publishing..." : "Save & Publish"}
             </button>
-            <button onClick={handlePublishAll} disabled={publishing} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50">
+            <button onClick={handlePublishAll} disabled={publishing} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50" title="Regenerate and publish the curriculum PDF for EVERY rank in this style at once. Use after big changes that touched many ranks.">
               {publishing ? "Publishing..." : "Publish All Ranks"}
             </button>
           </div>
@@ -2253,7 +2255,7 @@ export default function CurriculumV2Page() {
                 {allCategories.length === 0 && <option value="">No categories</option>}
                 {allCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              <button onClick={() => setShowAddCategory(!showAddCategory)} className="rounded-md bg-primary px-2 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark">
+              <button onClick={() => setShowAddCategory(!showAddCategory)} className="rounded-md bg-primary px-2 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark" title={showAddCategory ? "Cancel adding a new category" : "Create a new curriculum category (e.g. Techniques, Combos, Fitness) on this rank"}>
                 {showAddCategory ? "Cancel" : "Add Category"}
               </button>
               {selectedCategoryId && !["Knowledge", "Techniques", "Combos", "Fitness", "Sparring", "Forms/Katas", "Board Breaking"].includes(allCategories.find(c => c.id === selectedCategoryId)?.name || "") && (
@@ -2293,6 +2295,7 @@ export default function CurriculumV2Page() {
                     } catch { alert("Failed to remove category"); }
                   }}
                   className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100"
+                  title="Delete this category and all of its items from EVERY rank in this style. Can't be undone."
                 >
                   Remove Category
                 </button>
@@ -2300,6 +2303,7 @@ export default function CurriculumV2Page() {
               <button
                 onClick={openReorderModal}
                 className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100"
+                title="Drag categories to change the order they appear in on this rank (and optionally across every rank)"
               >
                 Reorder
               </button>
@@ -2317,7 +2321,7 @@ export default function CurriculumV2Page() {
                 className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 autoFocus
               />
-              <button onClick={addCategory} disabled={!newCategoryName.trim()} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+              <button onClick={addCategory} disabled={!newCategoryName.trim()} className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50" title="Create the new category with the name you typed">
                 Add
               </button>
             </div>
@@ -2347,7 +2351,7 @@ export default function CurriculumV2Page() {
               onDeleteFromAllRanks={() => selectedCategory && deleteCustomCategory(selectedCategory.id, selectedCategory.name)}
               copyToRanksSlot={
                 <div className="relative inline-block">
-                  <button onClick={() => setShowMainCopyMenu(!showMainCopyMenu)} disabled={copyingMain || rows.filter(r => r.description?.trim()).length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                  <button onClick={() => setShowMainCopyMenu(!showMainCopyMenu)} disabled={copyingMain || rows.filter(r => r.description?.trim()).length === 0} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50" title="Copy every item in this whole category into other ranks of the same style">
                     {copyingMain ? "Copying..." : "Copy to Ranks"}
                   </button>
                   {showMainCopyMenu && (
@@ -2366,11 +2370,11 @@ export default function CurriculumV2Page() {
                         Replace existing items
                       </label>
                       <div className="flex gap-1 pt-1 border-t border-gray-100">
-                        <button onClick={() => setMainCopySelectedRanks(new Set(ranks.filter(r => r.id !== selectedRankId).map(r => r.id)))} className="text-[10px] text-primary hover:underline">All</button>
-                        <button onClick={() => setMainCopySelectedRanks(new Set())} className="text-[10px] text-gray-400 hover:underline">None</button>
+                        <button onClick={() => setMainCopySelectedRanks(new Set(ranks.filter(r => r.id !== selectedRankId).map(r => r.id)))} className="text-[10px] text-primary hover:underline" title="Select every rank in this style">All</button>
+                        <button onClick={() => setMainCopySelectedRanks(new Set())} className="text-[10px] text-gray-400 hover:underline" title="Clear the rank selection">None</button>
                         <div className="flex-1" />
-                        <button onClick={copyMainCategoryToRanks} disabled={mainCopySelectedRanks.size === 0} className="rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50">Copy</button>
-                        <button onClick={() => setShowMainCopyMenu(false)} className="rounded border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+                        <button onClick={copyMainCategoryToRanks} disabled={mainCopySelectedRanks.size === 0} className="rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50" title="Copy this category's items into the ranks checked above">Copy</button>
+                        <button onClick={() => setShowMainCopyMenu(false)} className="rounded border border-gray-300 px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-50" title="Close without copying">Cancel</button>
                       </div>
                     </div>
                   )}
@@ -2485,6 +2489,7 @@ export default function CurriculumV2Page() {
                               type="button"
                               onClick={() => setPopupCell({ rowIdx: idx, field: "description", value: row.description })}
                               className="shrink-0 rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark"
+                              title="Open a full-size editor for this item's description (bold, italics, longer text)"
                             >
                               Edit
                             </button>
@@ -2556,7 +2561,7 @@ export default function CurriculumV2Page() {
                               {topBundleOpen ? "Hide" : topSubs.length > 0 ? `Bundle (${topSubs.length})` : "Bundle"}
                             </button>
                           )}
-                          <button onClick={() => deleteRow(idx)} className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50">Delete</button>
+                          <button onClick={() => deleteRow(idx)} className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50" title="Remove this item from this rank's curriculum">Delete</button>
                         </div>
                       )}
                     </td>
@@ -2694,7 +2699,7 @@ export default function CurriculumV2Page() {
           <div className="w-full max-w-sm rounded-lg bg-white shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
               <h2 className="text-sm font-bold text-gray-900">Reorder Sections</h2>
-              <button onClick={() => setShowReorderModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowReorderModal(false)} className="text-gray-400 hover:text-gray-600" title="Close without saving the new order">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
@@ -2720,10 +2725,10 @@ export default function CurriculumV2Page() {
                 <span className="text-xs text-gray-600">Lock this rank&apos;s order</span>
               </label>
               <div className="flex justify-end gap-2">
-                <button onClick={saveReorder} disabled={savingReorder} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+                <button onClick={saveReorder} disabled={savingReorder} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50" title="Save the new category order">
                   {savingReorder ? "Saving..." : "Save Order"}
                 </button>
-                <button onClick={() => setShowReorderModal(false)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button onClick={() => setShowReorderModal(false)} className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50" title="Close without saving the new order">Cancel</button>
               </div>
             </div>
           </div>
@@ -2749,6 +2754,7 @@ export default function CurriculumV2Page() {
               }}
               disabled={disclaimerSaving}
               className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+              title="Save the disclaimer text shown at the bottom of every curriculum PDF for this style"
             >
               {disclaimerSaving ? "Saving..." : "Save"}
             </button>
@@ -2781,6 +2787,7 @@ export default function CurriculumV2Page() {
                   setPopupCell(null);
                 }}
                 className="text-gray-400 hover:text-gray-600"
+                title="Save and close"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -2811,12 +2818,14 @@ export default function CurriculumV2Page() {
                   setPopupCell(null);
                 }}
                 className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                title="Save the edited description"
               >
                 Save
               </button>
               <button tabIndex={-1}
                 onClick={() => setPopupCell(null)}
                 className="rounded-md border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                title="Close without saving changes"
               >
                 Cancel
               </button>
