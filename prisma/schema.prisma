@@ -1269,6 +1269,30 @@ model EmailTemplate {
   @@unique([eventKey, clientId])
 }
 
+// Persisted report configurations. Previously each user's saved
+// reports lived in browser localStorage, which meant a report built
+// at the gym computer wasn't visible when Cruz logged in from his
+// home PC. Now scoped per-tenant so every staff member at a gym sees
+// the same shared set from any device.
+model SavedReportConfig {
+  id              String   @id @default(cuid())
+  clientId        String
+  // Track who created / last edited the report so a future
+  // "personal vs shared" split has an anchor. Not enforced today --
+  // everyone at the tenant sees every report.
+  createdByUserId String?
+  // Full ReportConfig JSON blob (name, dateRange, fields, filters,
+  // selectedStyles, columnOrder, etc.). Client parses on load.
+  configJson      String
+  // Denormalized name for admin/audit convenience; source of truth
+  // is inside configJson.
+  name            String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clientId, updatedAt])
+}
+
 model Location {
   id        String   @id @default(cuid())
   name      String

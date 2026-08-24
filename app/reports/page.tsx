@@ -1097,40 +1097,111 @@ export default function ReportsPage() {
     }
   }, [enabledReports, activeTab, tabFromUrl, initialTabSet]);
 
-  // Load saved configs from localStorage on mount
+  // Load saved configs from the server on mount. Falls back to a
+  // one-time migration from localStorage so reports built on the old
+  // client-only storage carry over to the new tenant-wide store the
+  // first time this device loads /reports after the upgrade.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as ReportConfig[];
-        const withDefaults = parsed.map((r) => ({
-          ...r,
-          type: r.type || (r.id as ReportType),
-          fields: { ...DEFAULT_FIELDS, ...(r.fields || {}) },
-        }));
-        // Merge in any DEFAULT_REPORTS that the user doesn't have yet
-        // (e.g. new built-in reports added in later versions).
-        const existingIds = new Set(withDefaults.map((r) => r.id));
-        const missingDefaults = DEFAULT_REPORTS.filter((r) => !existingIds.has(r.id));
-        setReportConfigs([...missingDefaults, ...withDefaults]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/reports");
+        if (!res.ok) throw new Error(`server ${res.status}`);
+        const data = await res.json();
+        const serverConfigs: ReportConfig[] = (data.reports || []).map((r: { config: unknown }) => {
+          const c = (r.config as Partial<ReportConfig>) || {};
+          return {
+            ...c,
+            fields: { ...DEFAULT_FIELDS, ...(c.fields || {}) },
+          } as ReportConfig;
+        });
+
+        // One-time localStorage -> server migration. Only runs when the
+        // server has nothing yet AND localStorage has something -- so a
+        // reset from another device can't come back on next login.
+        if (serverConfigs.length === 0) {
+          try {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+              const parsed = JSON.parse(stored) as ReportConfig[];
+              await Promise.all(parsed.map((r) => fetch("/api/reports", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: r.id, name: r.name || r.id, config: r }),
+              })));
+              // Refetch after upload
+              const res2 = await fetch("/api/reports");
+              if (res2.ok) {
+                const data2 = await res2.json();
+                const migrated: ReportConfig[] = (data2.reports || []).map((r: { config: unknown }) => {
+                  const c = (r.config as Partial<ReportConfig>) || {};
+                  return { ...c, fields: { ...DEFAULT_FIELDS, ...(c.fields || {}) } } as ReportConfig;
+                });
+                if (!cancelled) hydrateConfigs(migrated);
+                // Retire the localStorage copy so future edits don't
+                // race with the server copy.
+                localStorage.removeItem(STORAGE_KEY);
+                setHasLoadedFromStorage(true);
+                return;
+              }
+            }
+          } catch (err) {
+            console.warn("[reports] localStorage migration skipped:", err);
+          }
+        }
+
+        if (!cancelled) hydrateConfigs(serverConfigs);
+      } catch (err) {
+        console.warn("[reports] failed to load from server, falling back to localStorage:", err);
+        // Server offline / auth issue -- keep the old localStorage path
+        // as a soft fallback so the page still renders.
+        try {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored) as ReportConfig[];
+            const withDefaults = parsed.map((r) => ({
+              ...r,
+              type: r.type || (r.id as ReportType),
+              fields: { ...DEFAULT_FIELDS, ...(r.fields || {}) },
+            }));
+            if (!cancelled) hydrateConfigs(withDefaults);
+          }
+        } catch { /* ignore */ }
+      } finally {
+        if (!cancelled) setHasLoadedFromStorage(true);
       }
-    } catch (err) {
-      console.warn("Failed to load report configs", err);
+    })();
+    return () => { cancelled = true; };
+
+    function hydrateConfigs(configs: ReportConfig[]) {
+      // Merge in any DEFAULT_REPORTS that the tenant doesn't have yet
+      // (e.g. new built-in reports added in later versions).
+      const existingIds = new Set(configs.map((r) => r.id));
+      const missingDefaults = DEFAULT_REPORTS.filter((r) => !existingIds.has(r.id));
+      setReportConfigs([...missingDefaults, ...configs]);
     }
-    // Mark as loaded so we can start saving
-    setHasLoadedFromStorage(true);
   }, []);
 
-  // Save configs to localStorage whenever they change (but only after initial load)
+  // Persist config changes to the server whenever reportConfigs
+  // changes (but only after initial load). Debounced so a burst of
+  // toggles / renames coalesces into one POST per report.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!hasLoadedFromStorage) return; // Don't save until we've loaded first
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(reportConfigs));
-    } catch (err) {
-      console.warn("Failed to save report configs", err);
-    }
+    if (!hasLoadedFromStorage) return;
+    const t = setTimeout(() => {
+      // Push every report -- server upsert is idempotent so this is
+      // safe to run over-eagerly. If a report was deleted client-side,
+      // handleDeleteReport already called DELETE, so it's not here.
+      for (const cfg of reportConfigs) {
+        fetch("/api/reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: cfg.id, name: cfg.name || cfg.id, config: cfg }),
+        }).catch((err) => console.warn("[reports] save failed for", cfg.id, err));
+      }
+    }, 400);
+    return () => clearTimeout(t);
   }, [reportConfigs, hasLoadedFromStorage]);
 
   // Hydrate class-type aliases from the Settings KV once on mount.
@@ -1742,6 +1813,11 @@ export default function ReportsPage() {
       const remaining = reportConfigs.filter((r) => r.id !== id && r.enabled);
       setActiveTab(remaining[0]?.id || null);
     }
+    // Mirror the local delete to the server so it doesn't reappear
+    // on next load. Fire-and-forget: local UI already updated.
+    fetch(`/api/reports/${id}`, { method: "DELETE" }).catch((err) => {
+      console.warn("[reports] server delete failed for", id, err);
+    });
   }
 
   // Clone an existing report as a new custom report. Everything the
@@ -1906,10 +1982,21 @@ export default function ReportsPage() {
   }
 
   function resetToDefaults() {
+    // Grab current ids BEFORE state resets so we can wipe them from
+    // the server -- otherwise custom reports come back on reload.
+    const idsToWipe = reportConfigs.map((r) => r.id);
+    const defaultIds = new Set(DEFAULT_REPORTS.map((r) => r.id));
     setReportConfigs(DEFAULT_REPORTS);
     setActiveTab(DEFAULT_REPORTS[0].id);
     if (typeof window !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);
+    }
+    // Server-side: delete every non-default report row for this
+    // tenant. Fire-and-forget; the debounced save effect above will
+    // resave the DEFAULT_REPORTS afterwards.
+    for (const id of idsToWipe) {
+      if (defaultIds.has(id)) continue;
+      fetch(`/api/reports/${id}`, { method: "DELETE" }).catch(() => {});
     }
   }
 
