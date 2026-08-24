@@ -661,6 +661,17 @@ export default function TestingPage() {
         if (eventRes.ok) {
           const eventData = await eventRes.json();
           setSelectedEvent(eventData.event);
+          // Push every newly-published participant's result PDF into
+          // their member documents. Server-side "Mark Complete" only
+          // stamps resultsPublishedAt on graded rows (PASSED / FAILED
+          // / INCOMPLETE), so we mirror that filter here to avoid
+          // spamming ungraded members with a bogus document.
+          const publishedGraded = (eventData.event.participants as TestingParticipant[]).filter(
+            (p) => p.resultsPublishedAt && p.resultPdfUrl && ["PASSED", "FAILED", "INCOMPLETE"].includes(p.status),
+          );
+          for (const p of publishedGraded) {
+            await publishPdfToMemberDocs(p, eventData.event);
+          }
         }
       } else {
         alert("Failed to mark event complete");
@@ -686,6 +697,11 @@ export default function TestingPage() {
         alert("Failed to publish test result");
         return;
       }
+      // Now that this participant is officially published, copy their
+      // result PDF into their member documents so it shows up in the
+      // portal alongside their other files.
+      const p = selectedEvent.participants.find((x) => x.id === participantId);
+      if (p) await publishPdfToMemberDocs(p, selectedEvent);
       const eventRes = await fetch(`/api/testing/${selectedEvent.id}`);
       if (eventRes.ok) {
         const eventData = await eventRes.json();
@@ -710,6 +726,13 @@ export default function TestingPage() {
           }),
         ),
       );
+      // Copy each published participant's result PDF into their
+      // member documents. Runs sequentially so a slow member update
+      // can't corrupt another member's styleDocuments JSON blob.
+      for (const pid of participantIds) {
+        const p = selectedEvent.participants.find((x) => x.id === pid);
+        if (p) await publishPdfToMemberDocs(p, selectedEvent);
+      }
       const eventRes = await fetch(`/api/testing/${selectedEvent.id}`);
       if (eventRes.ok) {
         const eventData = await eventRes.json();
@@ -1058,12 +1081,9 @@ export default function TestingPage() {
           }),
         });
 
-        // Also add to member's styleDocuments
-        await addPdfToMemberDocuments(
-          editingParticipant.memberId,
-          dataUrl,
-          `${selectedEvent.name} - ${editingParticipant.testingForRank || "Test"} Results`
-        );
+        // NOTE: no addPdfToMemberDocuments here either. The document
+        // copy is gated on Mark Complete so the member doesn't see
+        // the PDF until the admin publishes.
       }
     } catch (err) {
       console.error("Error uploading PDF:", err);
@@ -1396,7 +1416,12 @@ export default function TestingPage() {
     event: TestingEvent
   ): Promise<string | null> => {
     try {
-      // Save to participant record
+      // Save to participant record so the admin can preview it in the
+      // results grid. Deliberately does NOT push the PDF into the
+      // member's styleDocuments -- that would leak an un-signed-off
+      // grade to the member's portal before the admin has officially
+      // marked the participant / event Complete. The document copy
+      // happens during handlePublishParticipant(s) + handleCompleteEvent.
       await fetch(`/api/testing/${event.id}/participants`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1406,18 +1431,26 @@ export default function TestingPage() {
         }),
       });
 
-      // Add to member's documents
-      await addPdfToMemberDocuments(
-        participant.memberId,
-        pdfDataUrl,
-        `${event.name} - ${participant.testingForRank || "Test"} Results`
-      );
-
       return pdfDataUrl;
     } catch (err) {
       console.error("Error saving PDF:", err);
       return null;
     }
+  };
+
+  // Copy a participant's result PDF into their member documents. Called
+  // ONLY from the publish flows below so members receive the PDF at the
+  // moment the admin marks the test Complete, never before.
+  const publishPdfToMemberDocs = async (
+    participant: { memberId: string; testingForRank?: string | null; resultPdfUrl?: string | null },
+    event: { name: string },
+  ) => {
+    if (!participant.resultPdfUrl || !participant.memberId) return;
+    await addPdfToMemberDocuments(
+      participant.memberId,
+      participant.resultPdfUrl,
+      `${event.name} - ${participant.testingForRank || "Test"} Results`,
+    );
   };
 
   // Grading sheet functions
