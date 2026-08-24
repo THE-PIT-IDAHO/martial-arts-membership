@@ -820,7 +820,9 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
         <thead className="bg-gray-100 border-b border-gray-300">
           <tr>
             <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500" style={{ width: "100%", minWidth: "250px" }}>Item Information</th>
-            <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
+            {sectionType !== "information" && (
+              <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
+            )}
             {sectionType === "workout" && <>
               <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
               <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
@@ -865,7 +867,9 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
                   </div>
                 )}
               </td>
-              <td className="px-2 py-1"><input type="text" defaultValue={(item as Record<string, unknown>).videoUrl as string || ""} onBlur={e => updateField(item.id, "videoUrl", e.target.value || null)} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+              {sectionType !== "information" && (
+                <td className="px-2 py-1"><input type="text" defaultValue={(item as Record<string, unknown>).videoUrl as string || ""} onBlur={e => updateField(item.id, "videoUrl", e.target.value || null)} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+              )}
               {sectionType === "workout" && <>
                 <td className="px-2 py-1"><input type="number" min={0} defaultValue={item.reps ?? ""} onBlur={e => updateField(item.id, "reps", e.target.value ? parseInt(e.target.value) : null)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
                 <td className="px-2 py-1"><input type="number" min={0} defaultValue={item.sets ?? ""} onBlur={e => updateField(item.id, "sets", e.target.value ? parseInt(e.target.value) : null)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
@@ -923,7 +927,9 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
           {/* Add new row */}
           <tr className="border-t border-gray-200 bg-gray-100">
             <td className="px-2 py-1 overflow-hidden" style={{ maxWidth: 0 }}><input type="text" value={newItemDesc} onChange={e => setNewItemDesc(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addItem(); }} onPaste={handleAddRowPaste} placeholder="Type to add..." className="w-full rounded border border-gray-300 px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
-            <td className="px-2 py-1"><input type="text" value="" onChange={() => {}} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+            {sectionType !== "information" && (
+              <td className="px-2 py-1"><input type="text" value="" onChange={() => {}} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
+            )}
             {sectionType === "workout" && <>
               <td className="px-2 py-1"><input type="number" min={0} value={newItemReps} onChange={e => setNewItemReps(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
               <td className="px-2 py-1"><input type="number" min={0} value={newItemSets} onChange={e => setNewItemSets(e.target.value)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" /></td>
@@ -2385,7 +2391,9 @@ export default function CurriculumV2Page() {
               <thead className="bg-gray-100 border-b border-gray-300">
                 <tr>
                   <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500" style={{ width: "100%", minWidth: "250px" }}>Item Information</th>
-                  <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
+                  {topSectionType !== "information" && (
+                    <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-24">Video</th>
+                  )}
                   {topSectionType === "workout" && <>
                     <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Reps</th>
                     <th className="px-3 py-2 text-center text-[11px] font-semibold uppercase text-gray-500 w-14">Sets</th>
@@ -2514,9 +2522,11 @@ export default function CurriculumV2Page() {
                         </div>
                       )}
                     </td>
-                    <td className="px-2 py-1">
-                      <input type="text" data-row={idx} data-col={1} value={row.videoUrl} onChange={e => updateRow(idx, "videoUrl", e.target.value)} onKeyDown={e => handleKeyDown(e, idx, 1)} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
-                    </td>
+                    {topSectionType !== "information" && (
+                      <td className="px-2 py-1">
+                        <input type="text" data-row={idx} data-col={1} value={row.videoUrl} onChange={e => updateRow(idx, "videoUrl", e.target.value)} onKeyDown={e => handleKeyDown(e, idx, 1)} placeholder="URL" className="w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
+                      </td>
+                    )}
                     {topSectionType === "workout" && <>
                       <td className="px-2 py-1">
                         <input type="number" min={0} data-row={idx} data-col={2} value={row.reps} onChange={e => updateRow(idx, "reps", e.target.value)} onPaste={e => handlePaste(e, idx, 2)} onKeyDown={e => handleKeyDown(e, idx, 2)} placeholder="#" className="no-spinner w-full rounded border border-gray-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-primary bg-white" />
