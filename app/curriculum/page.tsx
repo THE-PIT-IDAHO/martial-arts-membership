@@ -1550,12 +1550,26 @@ export default function CurriculumV2Page() {
       e.preventDefault();
       // Non-workout sections only render two data-col cells
       // (description + video) so Tab needs to wrap after col 1 there
-      // instead of hunting for cols 2-8 that don't exist.
-      const cols = topSectionType === "workout" ? 9 : 2;
+      // instead of hunting for cols 2-8 that don't exist. Information
+      // sections drop video entirely -> just col 0.
+      const cols = topSectionType === "workout" ? 9 : topSectionType === "information" ? 1 : 2;
       let nextRow = rowIdx;
       let nextCol = colIdx + 1;
       if (nextCol >= cols) { nextCol = 0; nextRow++; }
-      if (nextRow >= rows.length) return;
+      // Past the last row -> append a new empty row so the operator
+      // can keep typing without reaching for the mouse. Matches the
+      // dedicated "add new" input behavior used by CategorySpreadsheet
+      // when a section is collapsed below the fold.
+      if (nextRow >= rows.length) {
+        setRows((prev) => [...prev, emptyRow(prev.length)]);
+        setHasChanges(true);
+        // Wait for the new row to render, then focus into it.
+        requestAnimationFrame(() => {
+          const nextInput = tableRef.current?.querySelector(`[data-row="${nextRow}"][data-col="${nextCol}"]`) as HTMLElement;
+          nextInput?.focus();
+        });
+        return;
+      }
       const nextInput = tableRef.current?.querySelector(`[data-row="${nextRow}"][data-col="${nextCol}"]`) as HTMLElement;
       nextInput?.focus();
     }
