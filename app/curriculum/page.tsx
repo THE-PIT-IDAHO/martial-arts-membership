@@ -2620,8 +2620,53 @@ export default function CurriculumV2Page() {
           });
           if (catsWithItems.length === 0) return null;
 
+          // Compute item counts once so the collapsed header can show
+          // "N items" without hitting rankTests again per render.
+          const itemCountFor = (catId: string): number => {
+            let n = 0;
+            for (const test of rankTests) {
+              const c = test.categories.find((tc) => tc.id === catId);
+              if (c) n += c.items.length;
+            }
+            return n;
+          };
+
           return (
-            <div className="space-y-3 mt-2">
+            <div className="space-y-2 mt-2">
+              {/* Section header + expand-all/collapse-all */}
+              <div className="flex items-center justify-between px-1">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Other Categories on This Rank ({catsWithItems.length})
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Open every <details> inside this section.
+                      document
+                        .querySelectorAll<HTMLDetailsElement>("[data-other-cat-details]")
+                        .forEach((d) => { d.open = true; });
+                    }}
+                    className="text-[10px] text-primary hover:underline"
+                    title="Expand every other category"
+                  >
+                    Expand all
+                  </button>
+                  <span className="text-gray-300">|</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      document
+                        .querySelectorAll<HTMLDetailsElement>("[data-other-cat-details]")
+                        .forEach((d) => { d.open = false; });
+                    }}
+                    className="text-[10px] text-gray-400 hover:underline"
+                    title="Collapse every other category"
+                  >
+                    Collapse all
+                  </button>
+                </div>
+              </div>
               {catsWithItems.map(cat => {
                 // allCategories only tracks id/name/testId; the full
                 // Category (with `type`) lives on rankTests. Look it up
@@ -2631,7 +2676,28 @@ export default function CurriculumV2Page() {
                   const c = test.categories.find((tc) => tc.id === cat.id);
                   if (c?.type) { liveType = c.type; break; }
                 }
+                const count = itemCountFor(cat.id);
                 return (
+                <details
+                  key={cat.id}
+                  data-other-cat-details
+                  className="group rounded-lg border border-gray-200 bg-white overflow-hidden"
+                >
+                  <summary className="cursor-pointer list-none px-3 py-2 flex items-center justify-between hover:bg-gray-50 select-none">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg
+                        className="w-3.5 h-3.5 text-gray-400 shrink-0 transition-transform group-open:rotate-90"
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      <span className="text-sm font-medium text-gray-800 truncate">{cat.name}</span>
+                      <span className="text-[10px] font-normal text-gray-400 whitespace-nowrap">
+                        {count} {count === 1 ? "item" : "items"}
+                      </span>
+                    </div>
+                  </summary>
+                  <div className="border-t border-gray-100">
                 <CategorySpreadsheet
                   key={cat.id}
                   categoryId={cat.id}
@@ -2686,6 +2752,8 @@ export default function CurriculumV2Page() {
                   onDeleteFromAllRanks={() => deleteCustomCategory(cat.id, cat.name)}
                   ranks={ranks}
                 />
+                  </div>
+                </details>
                 );
               })}
             </div>
