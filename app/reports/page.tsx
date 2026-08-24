@@ -3642,6 +3642,22 @@ export default function ReportsPage() {
                             both. Enrolments are computed once when either
                             toggle is on so the two views share data. */}
                         {(activeReport.fields.showBeltOrderRoster || activeReport.fields.showBeltOrderPerMember) && (() => {
+                          // Constrain enrolments to the styles this report
+                          // is scoped to -- otherwise a Kore BJJ member
+                          // who is also enrolled in Kempo would drop a
+                          // Kempo belt into a "Kore BJJ promotion" order.
+                          // Priority: Style Filter (the "who to include"
+                          // filter) wins; if unset, fall back to the
+                          // Styles picker in Section 2 (Columns).
+                          const scopedStyleNames = (activeReport.filterByStyles && activeReport.filterByStyles.length > 0)
+                            ? activeReport.filterByStyles
+                            : (activeReport.selectedStylesForRank || []);
+                          const styleFilter: Set<string> | null = scopedStyleNames.length > 0
+                            ? new Set(scopedStyleNames.map((s) => s.toLowerCase()))
+                            : null;
+                          const styleAllowed = (name: string) =>
+                            !styleFilter || styleFilter.has(name.toLowerCase());
+
                           type Enrol = { memberId: string; memberName: string; style: string; rank: string; size: string };
                           const enrolments: Enrol[] = [];
                           for (const m of sortedMembers) {
@@ -3657,6 +3673,7 @@ export default function ReportsPage() {
                             for (const n of notes) {
                               if (n?.active === false) continue;
                               if (!n?.name) continue;
+                              if (!styleAllowed(n.name)) continue;
                               enrolments.push({
                                 memberId: m.id,
                                 memberName: `${m.firstName} ${m.lastName}`.trim(),
@@ -3666,7 +3683,7 @@ export default function ReportsPage() {
                               });
                               pushedAny = true;
                             }
-                            if (!pushedAny && m.primaryStyle) {
+                            if (!pushedAny && m.primaryStyle && styleAllowed(m.primaryStyle)) {
                               enrolments.push({
                                 memberId: m.id,
                                 memberName: `${m.firstName} ${m.lastName}`.trim(),
