@@ -1144,6 +1144,10 @@ export default function TestingPage() {
   // Generate test result PDF. `status` is the tri-state final result
   // (PASSED / FAILED / INCOMPLETE); the older `passed: boolean` signature
   // collapsed INCOMPLETE into FAILED which read like a real fail.
+  //
+  // Report-card layout: compact header, participant strip, colored
+  // result banner, per-category cards with tally + two-column item
+  // grid, notes, and a coach signature line at the bottom.
   const generateTestResultPdf = (
     participant: TestingParticipant,
     event: TestingEvent,
@@ -1152,215 +1156,214 @@ export default function TestingPage() {
     overallScore: number,
     status: "PASSED" | "FAILED" | "INCOMPLETE"
   ): string => {
-    const passed = status === "PASSED";
     const pdf = new jsPDF();
     const pageWidth = pdf.internal.pageSize.getWidth();
-    const margin = 20;
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 15;
     const maxWidth = pageWidth - margin * 2;
-    let yPos = 20;
+    let yPos = margin;
 
-    // Header - Logo + Gym Name
+    // ---- Palette (report-card feel) ----
+    const passRGB: [number, number, number] = [34, 139, 34];
+    const failRGB: [number, number, number] = [200, 30, 30];
+    const incRGB:  [number, number, number] = [130, 130, 130];
+    const passBgRGB: [number, number, number] = [232, 245, 233];
+    const failBgRGB: [number, number, number] = [253, 230, 230];
+    const incBgRGB:  [number, number, number] = [240, 240, 240];
+    const inkRGB:  [number, number, number] = [30, 30, 30];
+    const subRGB:  [number, number, number] = [100, 100, 100];
+    const rule:    [number, number, number] = [220, 220, 220];
+    const statusColor = status === "PASSED" ? passRGB : status === "FAILED" ? failRGB : incRGB;
+    const statusBg    = status === "PASSED" ? passBgRGB : status === "FAILED" ? failBgRGB : incBgRGB;
+    const setInk = (c: [number, number, number]) => pdf.setTextColor(c[0], c[1], c[2]);
+    const setFill = (c: [number, number, number]) => pdf.setFillColor(c[0], c[1], c[2]);
+    const ensurePage = (needed: number) => {
+      if (yPos + needed > pageHeight - margin) { pdf.addPage(); yPos = margin; }
+    };
+
+    // ---- Header: logo | gym name / title / event | date ----
+    let headerLeftX = margin;
     if (gymLogoImg) {
-      const logoH = 12;
+      const logoH = 14;
       const aspect = gymLogoImg.naturalWidth / gymLogoImg.naturalHeight;
       const logoW = logoH * aspect;
-      pdf.addImage(gymLogoImg, margin, yPos - 4, logoW, logoH);
+      pdf.addImage(gymLogoImg, margin, yPos, logoW, logoH);
+      headerLeftX = margin + logoW + 4;
     }
-    pdf.setFontSize(18);
+    setInk(inkRGB);
     pdf.setFont("helvetica", "bold");
-    pdf.text(gymSettings.name || "Martial Arts School", pageWidth / 2, yPos, { align: "center" });
-    yPos += 8;
     pdf.setFontSize(14);
-    pdf.text("TEST RESULTS", pageWidth / 2, yPos, { align: "center" });
-    yPos += 15;
-
-    // Participant Info
-    pdf.setFontSize(11);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Participant:", margin, yPos);
+    pdf.text(gymSettings.name || "Martial Arts School", headerLeftX, yPos + 5);
     pdf.setFont("helvetica", "normal");
-    pdf.text(participant.memberName, margin + 30, yPos);
-    yPos += 6;
-
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Current Rank:", margin, yPos);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(participant.currentRank || "N/A", margin + 35, yPos);
-
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Testing For:", pageWidth / 2, yPos);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(participant.testingForRank || "N/A", pageWidth / 2 + 28, yPos);
-    yPos += 10;
-
-    // Event Info
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Test Event:", margin, yPos);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(event.name, margin + 28, yPos);
+    pdf.setFontSize(9);
+    setInk(subRGB);
+    pdf.text("Testing Report Card", headerLeftX, yPos + 10);
+    // Right-side date/event
+    pdf.setFontSize(9);
+    setInk(subRGB);
+    pdf.text(new Date(event.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }), pageWidth - margin, yPos + 5, { align: "right" });
+    if (event.name) pdf.text(event.name, pageWidth - margin, yPos + 10, { align: "right" });
+    setInk(inkRGB);
+    yPos += 18;
+    setFill(rule);
+    pdf.rect(margin, yPos, maxWidth, 0.4, "F");
     yPos += 5;
 
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Date:", margin, yPos);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(new Date(event.date).toLocaleDateString(), margin + 15, yPos);
-
-    if (event.location) {
+    // ---- Participant strip (inline: 4 cols) ----
+    const stripY = yPos;
+    const colW = maxWidth / 4;
+    const labelFields: Array<[string, string]> = [
+      ["PARTICIPANT", participant.memberName],
+      ["STYLE", event.styleName || "—"],
+      ["CURRENT RANK", participant.currentRank || "—"],
+      ["TESTING FOR", participant.testingForRank || "—"],
+    ];
+    labelFields.forEach(([label, value], i) => {
+      const x = margin + colW * i;
+      pdf.setFontSize(7);
       pdf.setFont("helvetica", "bold");
-      pdf.text("Location:", pageWidth / 2, yPos);
-      pdf.setFont("helvetica", "normal");
-      pdf.text(event.location, pageWidth / 2 + 22, yPos);
-    }
-    yPos += 5;
-
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Style:", margin, yPos);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(event.styleName, margin + 15, yPos);
-    yPos += 10;
-
-    // Horizontal line
-    pdf.setDrawColor(200, 200, 200);
-    pdf.line(margin, yPos, pageWidth - margin, yPos);
-    yPos += 8;
-
-    // Curriculum breakdown
-    for (const category of visibleCategories(curriculum.categories)) {
-      // Check for page break
-      if (yPos > 260) {
-        pdf.addPage();
-        yPos = 20;
-      }
-
-      // Category header
-      pdf.setFontSize(11);
+      setInk(subRGB);
+      pdf.text(label, x, stripY + 3);
+      pdf.setFontSize(10);
       pdf.setFont("helvetica", "bold");
-      pdf.setFillColor(240, 240, 240);
-      pdf.rect(margin, yPos - 4, maxWidth, 7, "F");
-      pdf.text(category.name.toUpperCase(), margin + 2, yPos);
-      yPos += 8;
+      setInk(inkRGB);
+      const truncated = pdf.splitTextToSize(value, colW - 2)[0];
+      pdf.text(truncated, x, stripY + 9);
+    });
+    yPos = stripY + 14;
 
-      // Items
-      pdf.setFontSize(9);
-      for (const item of category.items) {
-        if (yPos > 270) {
-          pdf.addPage();
-          yPos = 20;
-        }
-
-        const score = scores[item.id];
-        const isPassed = score?.passed ?? false;
-        const isFailed = score?.failed ?? false;
-
-        // Status indicator
-        let statusSymbol = "[ ]"; // incomplete
-        let statusText = "INCOMPLETE";
-        if (isPassed) {
-          statusSymbol = "[X]";
-          statusText = "PASSED";
-        } else if (isFailed) {
-          statusSymbol = "[X]";
-          statusText = "FAILED";
-        }
-
-        // Draw status
-        pdf.setFont("helvetica", "bold");
-        if (isPassed) {
-          pdf.setTextColor(0, 128, 0); // green
-        } else if (isFailed) {
-          pdf.setTextColor(200, 0, 0); // red
-        } else {
-          pdf.setTextColor(128, 128, 128); // gray
-        }
-        pdf.text(statusSymbol, margin, yPos);
-
-        // Item name (PDF: collapse newlines so a multi-line knowledge item
-        // doesn't blow out a single text row — the on-screen view shows the
-        // full text; the printed grading sheet keeps each row to one line.)
-        pdf.setTextColor(0, 0, 0);
-        pdf.setFont("helvetica", "normal");
-        const itemText = getItemDisplay(item).split("\n")[0];
-        pdf.text(itemText, margin + 12, yPos);
-
-        // Time/notes if present
-        if (score?.notes) {
-          pdf.setTextColor(100, 100, 100);
-          const noteText = item.timeLimit ? `(${score.notes})` : `- ${score.notes}`;
-          pdf.text(noteText, margin + 12 + pdf.getTextWidth(itemText) + 2, yPos);
-          pdf.setTextColor(0, 0, 0);
-        }
-
-        // Status text on right
-        pdf.setFont("helvetica", "italic");
-        if (isPassed) {
-          pdf.setTextColor(0, 128, 0);
-        } else if (isFailed) {
-          pdf.setTextColor(200, 0, 0);
-        } else {
-          pdf.setTextColor(128, 128, 128);
-        }
-        pdf.text(statusText, pageWidth - margin, yPos, { align: "right" });
-        pdf.setTextColor(0, 0, 0);
-
-        yPos += 5;
-      }
-      yPos += 3;
-    }
-
-    // Final result section
-    if (yPos > 240) {
-      pdf.addPage();
-      yPos = 20;
-    }
-    yPos += 5;
-    pdf.setDrawColor(200, 200, 200);
-    pdf.line(margin, yPos, pageWidth - margin, yPos);
-    yPos += 10;
-
-    // Overall result -- tri-state so INCOMPLETE doesn't print as FAILED.
+    // ---- Result banner ----
+    ensurePage(22);
+    const bannerH = 16;
+    setFill(statusBg);
+    pdf.rect(margin, yPos, maxWidth, bannerH, "F");
+    setFill(statusColor);
+    pdf.rect(margin, yPos, 3, bannerH, "F"); // colored accent stripe
+    // Big status text
+    pdf.setFont("helvetica", "bold");
     pdf.setFontSize(14);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("OVERALL RESULT:", margin, yPos);
-    if (status === "PASSED") {
-      pdf.setTextColor(0, 128, 0);
-      pdf.text("PASSED", margin + 50, yPos);
-    } else if (status === "FAILED") {
-      pdf.setTextColor(200, 0, 0);
-      pdf.text("FAILED", margin + 50, yPos);
-    } else {
-      pdf.setTextColor(128, 128, 128);
-      pdf.text("INCOMPLETE", margin + 50, yPos);
-    }
-    pdf.setTextColor(0, 0, 0);
-    yPos += 8;
-
-    // Score. Denominator and numerator both drawn from the SAME
-    // visibleCategories set the saved percentage was computed from --
-    // the older total used curriculum.categories (all items, filtered
-    // + unfiltered) while overallScore used visibleCategories only,
-    // producing nonsense like "100% (20/23)".
-    pdf.setFontSize(11);
-    pdf.setFont("helvetica", "normal");
+    setInk(statusColor);
+    pdf.text(status, margin + 8, yPos + 10);
+    // Score on right
     const visibleItemIds = new Set(
       visibleCategories(curriculum.categories).flatMap((cat) => cat.items.map((i) => i.id)),
     );
     const totalItems = visibleItemIds.size;
     const passedItems = Array.from(visibleItemIds).filter((id) => scores[id]?.passed).length;
-    pdf.text(`Score: ${overallScore}% (${passedItems}/${totalItems} items)`, margin, yPos);
-    yPos += 10;
+    pdf.setFontSize(18);
+    setInk(inkRGB);
+    pdf.text(`${overallScore}%`, pageWidth - margin - 2, yPos + 10, { align: "right" });
+    pdf.setFontSize(8);
+    pdf.setFont("helvetica", "normal");
+    setInk(subRGB);
+    pdf.text(`${passedItems} of ${totalItems} items passed`, pageWidth - margin - 2, yPos + 14, { align: "right" });
+    yPos += bannerH + 6;
 
-    // Notes (if present) - supports bold formatting from HTML
-    if (participant.notes) {
-      if (yPos > 250) {
-        pdf.addPage();
-        yPos = 20;
+    // ---- Category cards ----
+    // Each category is its own titled block with per-item pass/fail
+    // tally in the header. Items render in a 2-column grid within
+    // the block so a page holds more without feeling cramped.
+    for (const category of visibleCategories(curriculum.categories)) {
+      const items = category.items;
+      const rowsInGrid = Math.ceil(items.length / 2);
+      const rowH = 5.5;
+      const headerH = 8;
+      const blockH = headerH + rowsInGrid * rowH + 3;
+      ensurePage(blockH + 4);
+
+      // Compute this category's tally
+      let catPassed = 0, catFailed = 0;
+      for (const it of items) {
+        const s = scores[it.id];
+        if (s?.passed) catPassed++;
+        else if (s?.failed) catFailed++;
       }
-      pdf.setFontSize(10);
+      const catStatus: [number, number, number] = catFailed > 0 ? failRGB : catPassed === items.length ? passRGB : incRGB;
+
+      // Header row: colored accent + name + tally
+      setFill(catStatus);
+      pdf.rect(margin, yPos, 2, headerH, "F");
+      setFill([248, 248, 248]);
+      pdf.rect(margin + 2, yPos, maxWidth - 2, headerH, "F");
       pdf.setFont("helvetica", "bold");
-      pdf.text("Notes:", margin, yPos);
-      yPos += 5;
-      pdf.setTextColor(60, 60, 60);
+      pdf.setFontSize(10);
+      setInk(inkRGB);
+      pdf.text(category.name.toUpperCase(), margin + 5, yPos + 5.5);
+      pdf.setFontSize(9);
+      setInk(catStatus);
+      pdf.text(`${catPassed}/${items.length}`, pageWidth - margin - 2, yPos + 5.5, { align: "right" });
+      setInk(inkRGB);
+      yPos += headerH;
+
+      // Two-column item grid
+      pdf.setFontSize(8.5);
+      const colGap = 4;
+      const itemColW = (maxWidth - colGap) / 2;
+      for (let r = 0; r < rowsInGrid; r++) {
+        ensurePage(rowH);
+        for (let c = 0; c < 2; c++) {
+          const idx = r * 2 + c;
+          if (idx >= items.length) break;
+          const item = items[idx];
+          const score = scores[item.id];
+          const isPassed = !!score?.passed;
+          const isFailed = !!score?.failed;
+          const rowStatus = isPassed ? passRGB : isFailed ? failRGB : incRGB;
+          const cellX = margin + c * (itemColW + colGap);
+
+          // Status dot
+          pdf.setDrawColor(rowStatus[0], rowStatus[1], rowStatus[2]);
+          setFill(isPassed || isFailed ? rowStatus : [255, 255, 255]);
+          pdf.circle(cellX + 2.5, yPos + rowH / 2 - 0.5, 1.6, "FD");
+
+          // Item name (single line, truncated to cell width)
+          setInk(inkRGB);
+          pdf.setFont("helvetica", "normal");
+          const rawName = getItemDisplay(item).split("\n")[0];
+          const nameLines = pdf.splitTextToSize(rawName, itemColW - 20);
+          pdf.text(nameLines[0], cellX + 6, yPos + rowH / 2 + 1);
+
+          // Small note (time/comment) after the name in muted color
+          if (score?.notes) {
+            const noteText = item.timeLimit ? ` (${score.notes})` : ` — ${score.notes}`;
+            const nameW = pdf.getTextWidth(nameLines[0]);
+            setInk(subRGB);
+            pdf.setFontSize(7);
+            const noteFit = pdf.splitTextToSize(noteText, itemColW - 20 - nameW - 12)[0] || "";
+            pdf.text(noteFit, cellX + 6 + nameW, yPos + rowH / 2 + 1);
+            pdf.setFontSize(8.5);
+            setInk(inkRGB);
+          }
+
+          // Right-cell status pill text
+          setInk(rowStatus);
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(7);
+          const statusLabel = isPassed ? "PASS" : isFailed ? "FAIL" : "—";
+          pdf.text(statusLabel, cellX + itemColW - 2, yPos + rowH / 2 + 1, { align: "right" });
+          pdf.setFontSize(8.5);
+          pdf.setFont("helvetica", "normal");
+          setInk(inkRGB);
+        }
+        yPos += rowH;
+      }
+      yPos += 3;
+    }
+
+    // Notes (if present) - supports bold formatting from HTML.
+    if (participant.notes) {
+      ensurePage(20);
+      yPos += 3;
+      pdf.setFontSize(8);
+      pdf.setFont("helvetica", "bold");
+      setInk(subRGB);
+      pdf.text("COACH'S NOTES", margin, yPos);
+      yPos += 4;
+      setFill(rule);
+      pdf.rect(margin, yPos, 30, 0.4, "F");
+      yPos += 4;
+      setInk([60, 60, 60]);
+      pdf.setFontSize(10);
 
       // Parse HTML content for bold formatting
       const segments = parseHtmlForPdf(participant.notes);
@@ -1413,10 +1416,20 @@ export default function TestingPage() {
       pdf.setFont("helvetica", "normal");
     }
 
-    // Timestamp
+    // Footer -- fixed at the bottom of the last page. Signature line
+    // on the left, "issued on" timestamp on the right so the report
+    // card feels signed off rather than just printed.
+    const footerY = pageHeight - margin - 4;
+    setFill(rule);
+    pdf.rect(margin, footerY - 8, maxWidth, 0.4, "F");
+    setInk(subRGB);
     pdf.setFontSize(8);
-    pdf.setTextColor(128, 128, 128);
-    pdf.text(`Graded on: ${new Date().toLocaleString()}`, margin, yPos);
+    pdf.setFont("helvetica", "normal");
+    pdf.text("Coach signature:", margin, footerY - 2);
+    setFill([180, 180, 180]);
+    pdf.rect(margin + 28, footerY - 2.5, 55, 0.3, "F");
+    pdf.text(`Issued: ${new Date().toLocaleString()}`, pageWidth - margin, footerY - 2, { align: "right" });
+    setInk(inkRGB);
 
     // Return as base64 data URL
     return pdf.output("datauristring");
