@@ -3868,18 +3868,24 @@ export default function TestingPage() {
                     {/* Summary - responsive grid */}
                     <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
                       <h4 className="font-semibold text-sm mb-2">Summary</h4>
+                      {(() => {
+                        // Compute totals from the SAME visibleCategories set
+                        // that percentScore + status derivation use, otherwise
+                        // this summary and the saved score disagree (e.g. 20/23
+                        // showing on top and 100% saved underneath because 3
+                        // items are hidden but included here).
+                        const visIds = new Set(visibleCategories(rankTestCurriculum.categories).flatMap((c) => c.items.map((i) => i.id)));
+                        const visTotal = visIds.size;
+                        const visPassed = Array.from(visIds).filter((id) => itemScores[id]?.passed).length;
+                        return (
                       <div className="flex flex-wrap gap-3 sm:gap-6 text-xs sm:text-sm">
                         <div>
                           <span className="text-gray-500">Total:</span>{" "}
-                          <span className="font-medium">
-                            {rankTestCurriculum.categories.reduce((sum, c) => sum + c.items.length, 0)}
-                          </span>
+                          <span className="font-medium">{visTotal}</span>
                         </div>
                         <div>
                           <span className="text-gray-500">Passed:</span>{" "}
-                          <span className="font-medium text-green-600">
-                            {Object.values(itemScores).filter(s => s.passed).length}
-                          </span>
+                          <span className="font-medium text-green-600">{visPassed}</span>
                         </div>
                         <div>
                           <span className="text-gray-500">Failed:</span>{" "}
@@ -3890,12 +3896,14 @@ export default function TestingPage() {
                         <div>
                           <span className="text-gray-500">Req. Left:</span>{" "}
                           <span className="font-medium text-orange-600">
-                            {rankTestCurriculum.categories.reduce((sum, c) =>
+                            {visibleCategories(rankTestCurriculum.categories).reduce((sum, c) =>
                               sum + c.items.filter(item => item.required && !itemScores[item.id]?.passed).length
                             , 0)}
                           </span>
                         </div>
                       </div>
+                        );
+                      })()}
                       {/* Manual Pass/Fail Override */}
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <span className="text-xs text-gray-500 mr-2">Final Result:</span>
@@ -4098,8 +4106,9 @@ export default function TestingPage() {
                         >
                           {sheetParticipants.map((p) => {
                             const scores = bulkItemScores[p.id] || {};
-                            const totalItems = sheetCurriculum.categories.reduce((sum, c) => sum + c.items.length, 0);
-                            const passedItems = Object.values(scores).filter(s => s.passed).length;
+                            const visIds = new Set(visibleCategories(sheetCurriculum.categories).flatMap((c) => c.items.map((i) => i.id)));
+                            const totalItems = visIds.size;
+                            const passedItems = Array.from(visIds).filter((id) => scores[id]?.passed).length;
                             return (
                               <option key={p.id} value={p.id}>
                                 {p.memberName} ({passedItems}/{totalItems})
@@ -4111,7 +4120,7 @@ export default function TestingPage() {
                         <div className="flex gap-1 mt-2 overflow-x-auto pb-1">
                           {sheetParticipants.map((p, idx) => {
                             const scores = bulkItemScores[p.id] || {};
-                            const requiredRemaining = sheetCurriculum.categories.reduce((sum, c) =>
+                            const requiredRemaining = visibleCategories(sheetCurriculum.categories).reduce((sum, c) =>
                               sum + c.items.filter(item => item.required && !scores[item.id]?.passed).length
                             , 0);
                             const isSelected = mobileSelectedParticipant === p.id;
@@ -4141,9 +4150,10 @@ export default function TestingPage() {
                         const currentP = sheetParticipants.find(p => p.id === mobileSelectedParticipant);
                         if (!currentP) return null;
                         const scores = bulkItemScores[currentP.id] || {};
-                        const totalItems = sheetCurriculum.categories.reduce((sum, c) => sum + c.items.length, 0);
-                        const passedItems = Object.values(scores).filter(s => s.passed).length;
-                        const requiredRemaining = sheetCurriculum.categories.reduce((sum, c) =>
+                        const visIds = new Set(visibleCategories(sheetCurriculum.categories).flatMap((c) => c.items.map((i) => i.id)));
+                        const totalItems = visIds.size;
+                        const passedItems = Array.from(visIds).filter((id) => scores[id]?.passed).length;
+                        const requiredRemaining = visibleCategories(sheetCurriculum.categories).reduce((sum, c) =>
                           sum + c.items.filter(item => item.required && !scores[item.id]?.passed).length
                         , 0);
                         const percentScore = totalItems > 0 ? Math.round((passedItems / totalItems) * 100) : 0;
@@ -4578,9 +4588,13 @@ export default function TestingPage() {
                     <div className="grid gap-2">
                       {sheetParticipants.map((p) => {
                         const scores = bulkItemScores[p.id] || {};
-                        const totalItems = sheetCurriculum.categories.reduce((sum, c) => sum + c.items.length, 0);
-                        const passedItems = Object.values(scores).filter(s => s.passed).length;
-                        const requiredRemaining = sheetCurriculum.categories.reduce((sum, c) =>
+                        // Match the save-side + PDF math: visible items only,
+                        // so this "N/M (P%)" summary agrees with the saved
+                        // score + the Past Results view.
+                        const visIds = new Set(visibleCategories(sheetCurriculum.categories).flatMap((c) => c.items.map((i) => i.id)));
+                        const totalItems = visIds.size;
+                        const passedItems = Array.from(visIds).filter((id) => scores[id]?.passed).length;
+                        const requiredRemaining = visibleCategories(sheetCurriculum.categories).reduce((sum, c) =>
                           sum + c.items.filter(item => item.required && !scores[item.id]?.passed).length
                         , 0);
                         const percentScore = totalItems > 0 ? Math.round((passedItems / totalItems) * 100) : 0;
