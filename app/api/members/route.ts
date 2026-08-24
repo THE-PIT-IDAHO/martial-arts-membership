@@ -217,6 +217,27 @@ export async function GET(req: Request) {
       discountsByMember.set(row.memberId, bucket);
     }
 
+    // Outstanding balance = sum of amountCents on unpaid invoices
+    // (PENDING / FAILED / PAST_DUE). One groupBy hits the DB once for
+    // every member in the current page rather than N+1 queries.
+    const outstandingByMember = new Map<string, number>();
+    if (memberIds.length > 0) {
+      const rows = await prisma.invoice.groupBy({
+        by: ["memberId"],
+        where: {
+          memberId: { in: memberIds },
+          status: { in: ["PENDING", "FAILED", "PAST_DUE"] },
+        },
+        _sum: { amountCents: true, creditAppliedCents: true },
+      });
+      for (const r of rows) {
+        // Subtract creditApplied so the outstanding number reflects
+        // what the member ACTUALLY still owes after account credit.
+        const owed = (r._sum.amountCents || 0) - (r._sum.creditAppliedCents || 0);
+        outstandingByMember.set(r.memberId, Math.max(0, owed));
+      }
+    }
+
     // Calculate monthly payment and extract membership info for each member
     const membersWithMembershipInfo = limitedMembers.map((m) => {
       let monthlyPaymentCents = 0;
@@ -300,6 +321,7 @@ export async function GET(req: Request) {
         membershipEndDate,
         nextPaymentDate,
         lastPaymentDate,
+        outstandingBalanceCents: outstandingByMember.get(m.id) || 0,
       };
     });
 

@@ -85,6 +85,9 @@ type ReportDataFields = {
   showMembershipExpiring: boolean;
   showTrialMembers: boolean;
   showAutoRenewStatus: boolean;
+  // Sum of unpaid invoice amounts (PENDING / FAILED / PAST_DUE) per
+  // member. Comes from /api/members's outstandingBalanceCents.
+  showOutstandingBalance: boolean;
 
   // Attendance
   showTotalCheckIns: boolean;
@@ -108,7 +111,6 @@ type ReportDataFields = {
   showTopProducts: boolean;
   showSalesByCategory: boolean;
   showRefunds: boolean;
-  showOutstandingBalance: boolean;
   showRevenueTrend: boolean;
 
   // Classes & Programs
@@ -177,6 +179,7 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showMembershipExpiring: false,
   showTrialMembers: false,
   showAutoRenewStatus: false,
+  showOutstandingBalance: false,
   showTotalCheckIns: true,
   showAvgDailyCheckIns: true,
   showUniqueAttendees: true,
@@ -196,7 +199,6 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showTopProducts: true,
   showSalesByCategory: false,
   showRefunds: false,
-  showOutstandingBalance: false,
   showRevenueTrend: false,
   showClassSchedule: false,
   showClassAttendance: false,
@@ -297,6 +299,7 @@ const COLUMN_FIELDS = [
       { key: "showMembershipTypes", label: "Membership Type" },
       { key: "showMembershipPlans", label: "Membership Plan" },
       { key: "showMonthlyPayments", label: "Monthly Payment" },
+      { key: "showOutstandingBalance", label: "Outstanding Balance" },
       { key: "showNextPaymentDate", label: "Next Payment Date" },
       { key: "showLastPaymentDate", label: "Last Payment Date" },
       { key: "showAutoRenewStatus", label: "Auto-Renew Status" },
@@ -358,7 +361,6 @@ const STATISTICS_FIELDS = [
       { key: "showTopProducts", label: "Top Products" },
       { key: "showSalesByCategory", label: "Sales by Category" },
       { key: "showRefunds", label: "Refunds" },
-      { key: "showOutstandingBalance", label: "Outstanding Balances" },
       { key: "showRevenueTrend", label: "Revenue Trend Chart" },
     ],
   },
@@ -450,7 +452,7 @@ type PaymentSummary = {
 };
 
 // Base column identifiers for the member list table
-type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "promotionEligible" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
+type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "promotionEligible" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "outstandingBalance" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
 
 // Column ID can be a base column, a class type column, or one of the
 // per-style extras (current rank / belt size / belt text / next rank).
@@ -498,6 +500,7 @@ const DEFAULT_COLUMN_ORDER: BaseColumnId[] = [
   "membershipType",
   "membershipPlan",
   "monthlyPayment",
+  "outstandingBalance",
   "nextPaymentDate",
   "lastPaymentDate",
   "autoRenew",
@@ -524,6 +527,7 @@ const COLUMN_LABELS: Record<BaseColumnId, string> = {
   membershipType: "Membership Type",
   membershipPlan: "Membership Plan",
   monthlyPayment: "Monthly Payment",
+  outstandingBalance: "Outstanding Balance",
   nextPaymentDate: "Next Payment",
   lastPaymentDate: "Last Payment",
   autoRenew: "Auto-Renew",
@@ -2610,6 +2614,10 @@ export default function ReportsPage() {
                             aVal = a.monthlyPaymentCents || 0;
                             bVal = b.monthlyPaymentCents || 0;
                             break;
+                          case "outstandingBalance":
+                            aVal = a.outstandingBalanceCents || 0;
+                            bVal = b.outstandingBalanceCents || 0;
+                            break;
                           case "nextPaymentDate":
                             aVal = a.nextPaymentDate ? new Date(a.nextPaymentDate).getTime() : Number.MAX_SAFE_INTEGER;
                             bVal = b.nextPaymentDate ? new Date(b.nextPaymentDate).getTime() : Number.MAX_SAFE_INTEGER;
@@ -2745,6 +2753,7 @@ export default function ReportsPage() {
                         case "membershipType": return activeReport.fields.showMembershipTypes;
                         case "membershipPlan": return activeReport.fields.showMembershipPlans;
                         case "monthlyPayment": return activeReport.fields.showMonthlyPayments;
+                        case "outstandingBalance": return activeReport.fields.showOutstandingBalance;
                         case "nextPaymentDate": return activeReport.fields.showNextPaymentDate;
                         case "lastPaymentDate": return activeReport.fields.showLastPaymentDate;
                         case "autoRenew": return activeReport.fields.showAutoRenewStatus;
@@ -2881,6 +2890,7 @@ export default function ReportsPage() {
                         case "membershipType": return m.membershipTypeName || "";
                         case "membershipPlan": return m.membershipPlanName || "";
                         case "monthlyPayment": return `$${((m.monthlyPaymentCents || 0) / 100).toFixed(2)}`;
+                        case "outstandingBalance": return `$${((m.outstandingBalanceCents || 0) / 100).toFixed(2)}`;
                         case "nextPaymentDate": return m.nextPaymentDate ? new Date(m.nextPaymentDate).toLocaleDateString() : "";
                         case "lastPaymentDate": return m.lastPaymentDate ? new Date(m.lastPaymentDate).toLocaleDateString() : "";
                         case "autoRenew": return m.autoRenew ? "Yes" : "No";
@@ -3111,6 +3121,8 @@ export default function ReportsPage() {
                                   return activeReport.fields.showMembershipPlans;
                                 case "monthlyPayment":
                                   return activeReport.fields.showMonthlyPayments;
+                                case "outstandingBalance":
+                                  return activeReport.fields.showOutstandingBalance;
                                 case "nextPaymentDate":
                                   return activeReport.fields.showNextPaymentDate;
                                 case "lastPaymentDate":
@@ -3482,6 +3494,13 @@ export default function ReportsPage() {
                                           // (was rendering "—" for 0, which made it look like the data
                                           // was missing instead of "no active priced membership").
                                           return `$${((m.monthlyPaymentCents || 0) / 100).toFixed(2)}`;
+                                        case "outstandingBalance": {
+                                          const cents = m.outstandingBalanceCents || 0;
+                                          if (cents === 0) return <span className="text-gray-400">$0.00</span>;
+                                          // Non-zero balance rendered in a warning-red tint so a report
+                                          // scanning for delinquent members surfaces them instantly.
+                                          return <span className="text-red-600 font-semibold">${(cents / 100).toFixed(2)}</span>;
+                                        }
                                         case "nextPaymentDate":
                                           return m.nextPaymentDate ? new Date(m.nextPaymentDate).toLocaleDateString() : "—";
                                         case "lastPaymentDate":
