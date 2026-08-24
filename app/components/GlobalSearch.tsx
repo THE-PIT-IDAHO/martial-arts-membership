@@ -176,9 +176,13 @@ export default function GlobalSearch() {
         )}
       </div>
 
-      {/* Dropdown Results */}
+      {/* Dropdown Results. On mobile the input is narrow, so we
+          anchor the dropdown to the input's right edge and let it
+          extend leftward to fill nearly the whole viewport (giving
+          full member names room to breathe). On >=sm we revert to
+          filling the input's own width. */}
       {isOpen && results.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden z-[100]">
+        <div className="absolute top-full mt-2 right-0 w-[calc(100vw-1rem)] max-w-md sm:left-0 sm:right-0 sm:w-auto sm:max-w-none bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden z-[100]">
           <div className="max-h-80 overflow-y-auto">
             {results.map((member, idx) => (
               <button
@@ -210,7 +214,7 @@ export default function GlobalSearch() {
 
       {/* No Results */}
       {isOpen && query.length >= 2 && results.length === 0 && !loading && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 p-4 text-center text-gray-500 text-sm z-[100]">
+        <div className="absolute top-full mt-2 right-0 w-[calc(100vw-1rem)] max-w-md sm:left-0 sm:right-0 sm:w-auto sm:max-w-none bg-white rounded-lg shadow-xl border border-gray-200 p-4 text-center text-gray-500 text-sm z-[100]">
           No members found for "{query}"
         </div>
       )}
