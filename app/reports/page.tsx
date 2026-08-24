@@ -57,11 +57,14 @@ type ReportDataFields = {
   // Rank, Next Rank, and Belt Size survive as per-style options.
   showStyleBreakdown: boolean;
   showRankDistribution: boolean;
-  // Belt Order Roster -- aggregate tally of style + rank + size for
+  // Belt Order Tally -- aggregate count of style + rank + size for
   // every member in the current filter set. Answers "how many belts
-  // do I need to order for the next promotion?" plus a per-member
-  // list so you can see who each belt is going to.
+  // do I need to order for the next promotion?"
   showBeltOrderRoster: boolean;
+  // Per-Member Detail -- one row per (member x active style) with
+  // rank + belt size. Independent of the tally so an operator can
+  // print JUST the order sheet OR JUST the per-member breakdown.
+  showBeltOrderPerMember: boolean;
   showUpcomingPromotions: boolean;
   showLatestPromotion: boolean;
   // Coach who promoted the member -- primary style entry's `coach`
@@ -167,6 +170,7 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showStyleBreakdown: false,
   showRankDistribution: false,
   showBeltOrderRoster: false,
+  showBeltOrderPerMember: false,
   showUpcomingPromotions: false,
   showLatestPromotion: false,
   showCoach: false,
@@ -339,7 +343,8 @@ const STATISTICS_FIELDS = [
     fields: [
       { key: "showStyleBreakdown", label: "Style Breakdown" },
       { key: "showRankDistribution", label: "Rank Distribution Chart" },
-      { key: "showBeltOrderRoster", label: "Belt Order Roster (tally + per-member list)" },
+      { key: "showBeltOrderRoster", label: "Belt Order Tally (aggregate: qty by style/rank/size)" },
+      { key: "showBeltOrderPerMember", label: "Belt Order Per-Member Detail (one row per member/style)" },
       { key: "showUpcomingPromotions", label: "Upcoming Promotions" },
     ],
   },
@@ -3631,11 +3636,12 @@ export default function ReportsPage() {
                             </div>
                           </div>
                         )}
-                        {/* Belt Order Roster: aggregate tally + per-member
-                            list of style/rank/size across the currently
-                            filtered members. Answers "how many belts do I
-                            need to order for this upcoming test?" */}
-                        {activeReport.fields.showBeltOrderRoster && (() => {
+                        {/* Belt Order sections. Each toggle is independent
+                            so an operator can print JUST the aggregate
+                            order sheet, JUST the per-member breakdown, or
+                            both. Enrolments are computed once when either
+                            toggle is on so the two views share data. */}
+                        {(activeReport.fields.showBeltOrderRoster || activeReport.fields.showBeltOrderPerMember) && (() => {
                           type Enrol = { memberId: string; memberName: string; style: string; rank: string; size: string };
                           const enrolments: Enrol[] = [];
                           for (const m of sortedMembers) {
@@ -3671,6 +3677,15 @@ export default function ReportsPage() {
                             }
                           }
 
+                          if (enrolments.length === 0) {
+                            return (
+                              <div className="mt-6 border-t border-gray-200 pt-4">
+                                <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Belt Order</h4>
+                                <p className="text-sm text-gray-500">No enrolled styles found for the current member set.</p>
+                              </div>
+                            );
+                          }
+
                           // Aggregate: Style -> Rank -> Size -> count.
                           type Bucket = { style: string; rank: string; size: string; count: number };
                           const tally = new Map<string, Bucket>();
@@ -3684,75 +3699,70 @@ export default function ReportsPage() {
                             a.style.localeCompare(b.style) || a.rank.localeCompare(b.rank) || a.size.localeCompare(b.size),
                           );
 
-                          if (enrolments.length === 0) {
-                            return (
-                              <div className="mt-6 border-t border-gray-200 pt-4">
-                                <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Belt Order Roster</h4>
-                                <p className="text-sm text-gray-500">No enrolled styles found for the current member set.</p>
-                              </div>
-                            );
-                          }
-
                           return (
                             <div className="mt-6 border-t border-gray-200 pt-4 space-y-4">
-                              <div>
-                                <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
-                                  Belt Order Tally ({buckets.length} unique {buckets.length === 1 ? "combination" : "combinations"})
-                                </h4>
-                                <div className="overflow-x-auto">
-                                  <table className="min-w-full text-sm">
-                                    <thead>
-                                      <tr className="text-left text-xs text-gray-500 uppercase">
-                                        <th className="pb-2 font-medium">Style</th>
-                                        <th className="pb-2 font-medium">Rank</th>
-                                        <th className="pb-2 font-medium">Size</th>
-                                        <th className="pb-2 font-medium text-right">Order Qty</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {buckets.map((b, i) => (
-                                        <tr key={i} className="border-t border-gray-100">
-                                          <td className="py-1.5 text-gray-900 font-medium">{b.style}</td>
-                                          <td className="py-1.5 text-gray-700">{b.rank}</td>
-                                          <td className="py-1.5 text-gray-700">{b.size}</td>
-                                          <td className="py-1.5 text-right font-semibold text-gray-900">{b.count}</td>
+                              {activeReport.fields.showBeltOrderRoster && (
+                                <div>
+                                  <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
+                                    Belt Order Tally ({buckets.length} unique {buckets.length === 1 ? "combination" : "combinations"})
+                                  </h4>
+                                  <div className="overflow-x-auto">
+                                    <table className="min-w-full text-sm">
+                                      <thead>
+                                        <tr className="text-left text-xs text-gray-500 uppercase">
+                                          <th className="pb-2 font-medium">Style</th>
+                                          <th className="pb-2 font-medium">Rank</th>
+                                          <th className="pb-2 font-medium">Size</th>
+                                          <th className="pb-2 font-medium text-right">Order Qty</th>
                                         </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
+                                      </thead>
+                                      <tbody>
+                                        {buckets.map((b, i) => (
+                                          <tr key={i} className="border-t border-gray-100">
+                                            <td className="py-1.5 text-gray-900 font-medium">{b.style}</td>
+                                            <td className="py-1.5 text-gray-700">{b.rank}</td>
+                                            <td className="py-1.5 text-gray-700">{b.size}</td>
+                                            <td className="py-1.5 text-right font-semibold text-gray-900">{b.count}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
 
-                              <div>
-                                <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
-                                  Per-Member Detail ({enrolments.length} {enrolments.length === 1 ? "entry" : "entries"})
-                                </h4>
-                                <div className="overflow-x-auto">
-                                  <table className="min-w-full text-sm">
-                                    <thead>
-                                      <tr className="text-left text-xs text-gray-500 uppercase">
-                                        <th className="pb-2 font-medium">Member</th>
-                                        <th className="pb-2 font-medium">Style</th>
-                                        <th className="pb-2 font-medium">Rank</th>
-                                        <th className="pb-2 font-medium">Size</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {enrolments
-                                        .slice()
-                                        .sort((a, b) => a.memberName.localeCompare(b.memberName) || a.style.localeCompare(b.style))
-                                        .map((e, i) => (
-                                        <tr key={i} className="border-t border-gray-100">
-                                          <td className="py-1.5 text-gray-900">{e.memberName}</td>
-                                          <td className="py-1.5 text-gray-700">{e.style}</td>
-                                          <td className="py-1.5 text-gray-700">{e.rank}</td>
-                                          <td className="py-1.5 text-gray-700">{e.size}</td>
+                              {activeReport.fields.showBeltOrderPerMember && (
+                                <div>
+                                  <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
+                                    Belt Order Per-Member Detail ({enrolments.length} {enrolments.length === 1 ? "entry" : "entries"})
+                                  </h4>
+                                  <div className="overflow-x-auto">
+                                    <table className="min-w-full text-sm">
+                                      <thead>
+                                        <tr className="text-left text-xs text-gray-500 uppercase">
+                                          <th className="pb-2 font-medium">Member</th>
+                                          <th className="pb-2 font-medium">Style</th>
+                                          <th className="pb-2 font-medium">Rank</th>
+                                          <th className="pb-2 font-medium">Size</th>
                                         </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
+                                      </thead>
+                                      <tbody>
+                                        {enrolments
+                                          .slice()
+                                          .sort((a, b) => a.memberName.localeCompare(b.memberName) || a.style.localeCompare(b.style))
+                                          .map((e, i) => (
+                                          <tr key={i} className="border-t border-gray-100">
+                                            <td className="py-1.5 text-gray-900">{e.memberName}</td>
+                                            <td className="py-1.5 text-gray-700">{e.style}</td>
+                                            <td className="py-1.5 text-gray-700">{e.rank}</td>
+                                            <td className="py-1.5 text-gray-700">{e.size}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
                           );
                         })()}
