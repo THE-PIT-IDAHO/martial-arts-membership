@@ -641,6 +641,38 @@ function computeNextRankFromPrimary(
 // member has no promotions recorded, so no-promotion rows sort to the
 // bottom in ascending order). Consumers wanting a display string call
 // computeLatestPromotion.
+// Set of the member's currently-ACTIVE style names, lowercased.
+// Source of truth is stylesNotes[].active -- the placard's "Mark
+// Active / Mark Inactive" toggle writes here. `primaryStyle` is
+// only used as a legacy fallback when stylesNotes is missing or
+// unparseable (older imports); once a member has proper stylesNotes,
+// an inactive style must NEVER leak back in through primaryStyle,
+// otherwise a member who quit Hawaiian Kempo still shows on the
+// Hawaiian Kempo report.
+function getMemberActiveStyleNames(
+  m: { primaryStyle?: string | null; stylesNotes?: string | null },
+): Set<string> {
+  const out = new Set<string>();
+  let sawStylesNotes = false;
+  if (m.stylesNotes) {
+    try {
+      const arr = JSON.parse(m.stylesNotes);
+      if (Array.isArray(arr)) {
+        sawStylesNotes = true;
+        for (const s of arr as Array<{ name?: string; active?: boolean }>) {
+          if (s?.name && s.active !== false) {
+            out.add(String(s.name).toLowerCase());
+          }
+        }
+      }
+    } catch { /* ignore -- treat as legacy */ }
+  }
+  if (!sawStylesNotes && m.primaryStyle) {
+    out.add(m.primaryStyle.toLowerCase());
+  }
+  return out;
+}
+
 function latestPromotionTime(m: { stylesNotes?: string | null }): number {
   if (!m.stylesNotes) return 0;
   try {
@@ -2295,31 +2327,15 @@ export default function ReportsPage() {
                         if (!m.monthlyPaymentCents || m.monthlyPaymentCents <= 0) return false;
                       }
 
-                      // Filter by styles if specified (multiple selection)
+                      // Filter by styles if specified (multiple selection).
+                      // Matches ACTIVE styles only -- a member whose
+                      // Hawaiian Kempo entry is toggled inactive drops
+                      // off the Hawaiian Kempo report even if their
+                      // account is still active in another style.
                       if (activeReport.filterByStyles && activeReport.filterByStyles.length > 0) {
-                        let memberHasSelectedStyle = false;
-
-                        // Normalize filter styles to lowercase for case-insensitive comparison
                         const filterStylesLower = activeReport.filterByStyles.map(s => s.toLowerCase());
-
-                        // Check primaryStyle (case-insensitive)
-                        if (m.primaryStyle && filterStylesLower.includes(m.primaryStyle.toLowerCase())) {
-                          memberHasSelectedStyle = true;
-                        }
-
-                        // Check stylesNotes for any of the selected styles (case-insensitive)
-                        if (!memberHasSelectedStyle && m.stylesNotes) {
-                          try {
-                            const stylesArray = JSON.parse(m.stylesNotes);
-                            if (Array.isArray(stylesArray)) {
-                              memberHasSelectedStyle = stylesArray.some((s: any) =>
-                                s.name && filterStylesLower.includes(s.name.toLowerCase())
-                              );
-                            }
-                          } catch {}
-                        }
-
-                        if (!memberHasSelectedStyle) return false;
+                        const activeNames = getMemberActiveStyleNames(m);
+                        if (!filterStylesLower.some((f) => activeNames.has(f))) return false;
                       }
 
                       // Filter by ranks if specified (multiple selection)
@@ -2713,15 +2729,10 @@ export default function ReportsPage() {
                       if (selectedStyles.length === 0) return list;
                       const out: any[] = [];
                       for (const mBase of list) {
-                        const memberStyles = new Set<string>();
-                        if (mBase.primaryStyle) memberStyles.add(mBase.primaryStyle);
-                        if (mBase.stylesNotes) {
-                          try {
-                            const arr = JSON.parse(mBase.stylesNotes);
-                            if (Array.isArray(arr)) for (const s of arr) if (s?.name) memberStyles.add(s.name);
-                          } catch { /* ignore */ }
-                        }
-                        const matching = selectedStyles.filter((s) => memberStyles.has(s));
+                        const activeNames = getMemberActiveStyleNames(mBase);
+                        // Preserve the operator's cased spelling for
+                        // the row label, but match on lowercase.
+                        const matching = selectedStyles.filter((s) => activeNames.has(s.toLowerCase()));
                         if (matching.length === 0) continue;
                         for (const rowStyle of matching) out.push({ ...mBase, _reportStyle: rowStyle });
                       }
@@ -3290,15 +3301,8 @@ export default function ReportsPage() {
                                     if (selectedStyles.length === 0) {
                                       rows = [mBase];
                                     } else {
-                                      const memberStyles = new Set<string>();
-                                      if (mBase.primaryStyle) memberStyles.add(mBase.primaryStyle);
-                                      if (mBase.stylesNotes) {
-                                        try {
-                                          const arr = JSON.parse(mBase.stylesNotes);
-                                          if (Array.isArray(arr)) for (const s of arr) if (s?.name) memberStyles.add(s.name);
-                                        } catch { /* ignore */ }
-                                      }
-                                      const matching = selectedStyles.filter((s) => memberStyles.has(s));
+                                      const activeNames = getMemberActiveStyleNames(mBase);
+                                      const matching = selectedStyles.filter((s) => activeNames.has(s.toLowerCase()));
                                       if (matching.length === 0) return [];
                                       rows = matching.map((rowStyle) => ({ ...mBase, _reportStyle: rowStyle }));
                                     }
