@@ -11,6 +11,7 @@ type Member = {
   memberNumber: number | null;
   primaryStyle: string | null;
   status: string;
+  photoUrl: string | null;
 };
 
 export default function GlobalSearch() {
@@ -224,13 +225,24 @@ export default function GlobalSearch() {
                 key={member.id}
                 onClick={() => handleSelectMember(member)}
                 onMouseEnter={() => setHighlightedIndex(idx)}
-                className={`w-full text-left px-4 py-3 flex items-center gap-3 border-b border-gray-100 last:border-b-0 transition-colors ${isKeyboardActive ? "bg-primary/10" : isImplicitDefault ? "bg-gray-50" : "hover:bg-gray-50"}`}
+                className={`w-full text-left px-3 sm:px-4 py-2.5 flex items-center gap-2.5 sm:gap-3 border-b border-gray-100 last:border-b-0 transition-colors ${isKeyboardActive ? "bg-primary/10" : isImplicitDefault ? "bg-gray-50" : "hover:bg-gray-50"}`}
               >
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm flex-shrink-0">
-                  {member.firstName[0]}{member.lastName[0]}
-                </div>
+                {/* Avatar: real photo if uploaded, initials otherwise.
+                    shrink-0 so a long name / wide status pill can never
+                    squeeze the circle into an oval. */}
+                {member.photoUrl ? (
+                  <img
+                    src={member.photoUrl}
+                    alt=""
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover shrink-0"
+                  />
+                ) : (
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm shrink-0">
+                    {member.firstName[0]}{member.lastName[0]}
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-gray-900 truncate">
+                  <div className="font-medium text-gray-900 text-sm truncate">
                     {member.firstName} {member.lastName}
                   </div>
                   <div className="text-xs text-gray-500 truncate">
@@ -239,7 +251,10 @@ export default function GlobalSearch() {
                     {member.primaryStyle}
                   </div>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getStatusColor(member.status)}`}>
+                {/* Status pill: shrink-0 + nowrap so it stays whole
+                    beside the avatar+name on the narrowest phones
+                    (whereas the name truncates on overflow). */}
+                <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full font-medium shrink-0 whitespace-nowrap ${getStatusColor(member.status)}`}>
                   {formatStatus(member.status)}
                 </span>
               </button>
