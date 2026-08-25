@@ -87,6 +87,32 @@ export async function POST(req: Request) {
           return new NextResponse("Service package not found", { status: 400 });
         }
       }
+      // Bundle lines carry a bundleId + a snapshot of the products
+      // inside (bundleContents). Confirm the bundle belongs to this
+      // tenant and each contained productId does too, before we let
+      // inventory decrements run against them below.
+      if (item.type === "bundle") {
+        if (item.bundleId) {
+          const bundle = await prisma.bundle.findUnique({
+            where: { id: item.bundleId },
+            select: { clientId: true },
+          });
+          if (!bundle || bundle.clientId !== clientId) {
+            return new NextResponse("Bundle not found", { status: 400 });
+          }
+        }
+        const contents = Array.isArray(item.bundleContents) ? item.bundleContents : [];
+        for (const c of contents) {
+          if (!c?.productId) continue;
+          const posItem = await prisma.pOSItem.findUnique({
+            where: { id: c.productId },
+            select: { clientId: true },
+          });
+          if (!posItem || posItem.clientId !== clientId) {
+            return new NextResponse("Bundle contains a product not available at this gym", { status: 400 });
+          }
+        }
+      }
     }
 
     // Validate split payment totals if JSON array
@@ -238,6 +264,11 @@ export async function POST(req: Request) {
     });
 
     // Update inventory for product items (variant-level + base quantity)
+    // AND for the products contained in bundle lines -- each bundle
+    // carries a bundleContents[] snapshot the client built at
+    // add-to-cart time; iterate that list the same way we do for a
+    // regular product line so a bundle's inclusions still count
+    // against stock.
     for (const item of lineItems) {
       if (item.type === "product" && item.itemId) {
         // Decrement variant stock if size/color are specified
@@ -267,6 +298,34 @@ export async function POST(req: Request) {
             updatedAt: new Date(),
           },
         });
+      }
+      if (item.type === "bundle" && Array.isArray(item.bundleContents)) {
+        for (const c of item.bundleContents) {
+          if (!c?.productId) continue;
+          const qty = Math.max(1, Number(c.quantity) || 1) * (item.quantity || 1);
+          if (c.selectedSize || c.selectedColor) {
+            const variant = await prisma.pOSItemVariant.findFirst({
+              where: {
+                itemId: c.productId,
+                size: c.selectedSize || null,
+                color: c.selectedColor || null,
+              },
+            });
+            if (variant) {
+              await prisma.pOSItemVariant.update({
+                where: { id: variant.id },
+                data: { quantity: { decrement: qty } },
+              });
+            }
+          }
+          await prisma.pOSItem.update({
+            where: { id: c.productId },
+            data: {
+              quantity: { decrement: qty },
+              updatedAt: new Date(),
+            },
+          });
+        }
       }
     }
 

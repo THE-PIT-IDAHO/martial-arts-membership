@@ -855,6 +855,45 @@ model POSTransaction {
   POSLineItem       POSLineItem[]
 }
 
+// A "package deal" the operator sells as a single POS line: buy the
+// bundle at one fixed price, the products inside come along. Only
+// PRODUCT items are supported in v1; the sale decrements inventory
+// for each contained product and skips tax on the bundle line.
+model Bundle {
+  id           String       @id @default(cuid())
+  clientId     String       @default("default-client")
+  name         String
+  description  String?
+  priceCents   Int
+  active       Boolean      @default(true)
+  sortOrder    Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  items        BundleItem[]
+
+  @@index([clientId])
+}
+
+model BundleItem {
+  id             String  @id @default(cuid())
+  bundleId       String
+  // Kept as a string (no enum) for parity with POSLineItem.type. v1
+  // only writes "product" here; leaving the door open for
+  // "membership" / "service" in a Phase 2 without a migration.
+  kind           String  @default("product")
+  productId      String?
+  // Denormalized name — POSItem may get renamed or deleted later,
+  // and the bundle admin card still needs a stable label.
+  nameCached     String
+  quantity       Int     @default(1)
+  selectedSize   String?
+  selectedColor  String?
+  sortOrder      Int     @default(0)
+  Bundle         Bundle  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  @@index([bundleId])
+}
+
 model Settings {
   id        String   @id @default(cuid())
   key       String

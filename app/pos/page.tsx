@@ -96,9 +96,70 @@ type ServicePackage = {
   appointment: { id: string; title: string } | null;
 };
 
+// Persisted Bundle from /api/pos/bundles. Only product-kind items are
+// supported in v1 (kind stays a string so a Phase 2 can slot in
+// "membership" / "service" without a schema change).
+type BundleItemRow = {
+  id: string;
+  kind: string;
+  productId: string | null;
+  nameCached: string;
+  quantity: number;
+  selectedSize: string | null;
+  selectedColor: string | null;
+  sortOrder: number;
+};
+
+type Bundle = {
+  id: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  active: boolean;
+  sortOrder: number;
+  items: BundleItemRow[];
+};
+
+// The admin form's live state. `id: null` means "creating a new
+// bundle"; a string id is "editing an existing bundle". `items` is
+// mutable per-row (add/remove/reorder), keyed by cid so React
+// reconciles a new row cleanly even before it's saved.
+type BundleEditorDraftItem = {
+  cid: string;
+  productId: string;
+  nameCached: string;
+  quantity: number;
+};
+type BundleEditorState = {
+  id: string | null;
+  name: string;
+  description: string;
+  priceDollars: string;
+  active: boolean;
+  items: BundleEditorDraftItem[];
+  saving: boolean;
+  error: string | null;
+};
+
+// Snapshot of a product slot inside a bundle. Rides along on the
+// bundle cart line so the server can decrement inventory per contained
+// product without hitting the DB again.
+type BundleCartContent = {
+  productId: string;
+  nameCached: string;
+  quantity: number;
+  selectedSize?: string | null;
+  selectedColor?: string | null;
+};
+
 type CartItem = {
   id: string;
-  type: "product" | "membership" | "credit" | "gift" | "service";
+  type: "product" | "membership" | "credit" | "gift" | "service" | "bundle";
+  // Bundle-only: source Bundle.id + the list of products this bundle
+  // contains. The transactions route reads bundleContents on a
+  // type:"bundle" line to decrement inventory for each product.
+  bundleId?: string;
+  bundleContents?: BundleCartContent[];
   itemId?: string;
   membershipPlanId?: string;
   servicePackageId?: string;
@@ -177,7 +238,11 @@ export default function POSPage() {
   // -1 = no arrow key pressed yet; Enter still picks the top row.
   const [memberHighlightedIdx, setMemberHighlightedIdx] = useState<number>(-1);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [catalogTab, setCatalogTab] = useState<"products" | "memberships" | "credit" | "gift" | "services">("products");
+  const [catalogTab, setCatalogTab] = useState<"products" | "memberships" | "bundles" | "credit" | "gift" | "services">("products");
+  // Bundles: fetched once with the rest of the catalog, rendered as a
+  // dedicated tile grid, and admin-editable inline from the same tab.
+  const [bundles, setBundles] = useState<Bundle[]>([]);
+  const [bundleEditor, setBundleEditor] = useState<BundleEditorState | null>(null);
 
   // Account credit / gift certificate
   const [creditAmount, setCreditAmount] = useState("");
@@ -429,13 +494,14 @@ export default function POSPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      const [itemsRes, plansRes, membersRes, settingsRes, svcRes, stylesRes] = await Promise.all([
+      const [itemsRes, plansRes, membersRes, settingsRes, svcRes, stylesRes, bundlesRes] = await Promise.all([
         fetch("/api/pos/items"),
         fetch("/api/membership-plans"),
         fetch("/api/members"),
         fetch("/api/settings"),
         fetch("/api/service-packages"),
         fetch("/api/styles"),
+        fetch("/api/pos/bundles"),
       ]);
 
       if (itemsRes.ok) {
@@ -453,6 +519,10 @@ export default function POSPage() {
       if (svcRes.ok) {
         const data = await svcRes.json();
         setServicePackages((data.servicePackages || []).filter((p: ServicePackage) => p.isActive));
+      }
+      if (bundlesRes.ok) {
+        const data = await bundlesRes.json();
+        setBundles(data.bundles || []);
       }
       if (stylesRes.ok) {
         const data = await stylesRes.json();
@@ -559,6 +629,21 @@ export default function POSPage() {
     return true;
   });
 
+  // Filter bundles by search + only active ones show in the POS tile
+  // grid (admin still sees all of them in the manage view).
+  const filteredBundles = bundles.filter((b) => {
+    if (!b.active) return false;
+    if (itemSearch) {
+      const q = itemSearch.toLowerCase();
+      return (
+        b.name.toLowerCase().includes(q) ||
+        (b.description || "").toLowerCase().includes(q) ||
+        b.items.some((it) => it.nameCached.toLowerCase().includes(q))
+      );
+    }
+    return true;
+  });
+
   // Filter service packages
   const filteredServicePackages = servicePackages.filter(pkg => {
     if (itemSearch) {
@@ -643,6 +728,147 @@ export default function POSPage() {
           selectedColor,
         },
       ]);
+    }
+  }
+
+  // Add a Bundle to the cart as a single line at the bundle's fixed
+  // price. The bundle line carries a snapshot of every contained
+  // product (bundleContents) so the transactions route can decrement
+  // inventory for each without re-fetching the bundle definition --
+  // which also means an admin editing a bundle after the cart is
+  // built doesn't retroactively change what's in this sale.
+  function addBundleToCart(bundle: Bundle) {
+    const contents: BundleCartContent[] = bundle.items
+      .filter((it) => it.kind === "product" && it.productId)
+      .map((it) => ({
+        productId: it.productId as string,
+        nameCached: it.nameCached,
+        quantity: it.quantity,
+        selectedSize: it.selectedSize,
+        selectedColor: it.selectedColor,
+      }));
+    setCart((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        type: "bundle",
+        bundleId: bundle.id,
+        itemName: bundle.name,
+        unitPriceCents: bundle.priceCents,
+        quantity: 1,
+        bundleContents: contents,
+      },
+    ]);
+  }
+
+  // Bundle admin (create + edit). The editor state is a live draft;
+  // Save commits to the API and re-fetches the bundle list. Cancel
+  // discards without touching anything on the server.
+  function openNewBundleEditor() {
+    setBundleEditor({
+      id: null,
+      name: "",
+      description: "",
+      priceDollars: "",
+      active: true,
+      items: [],
+      saving: false,
+      error: null,
+    });
+  }
+  function openEditBundleEditor(b: Bundle) {
+    setBundleEditor({
+      id: b.id,
+      name: b.name,
+      description: b.description || "",
+      priceDollars: (b.priceCents / 100).toFixed(2),
+      active: b.active,
+      items: b.items
+        .filter((it) => it.kind === "product" && it.productId)
+        .map((it) => ({
+          cid: crypto.randomUUID(),
+          productId: it.productId as string,
+          nameCached: it.nameCached,
+          quantity: it.quantity,
+        })),
+      saving: false,
+      error: null,
+    });
+  }
+  function closeBundleEditor() { setBundleEditor(null); }
+
+  async function refetchBundles() {
+    try {
+      const res = await fetch("/api/pos/bundles");
+      if (res.ok) {
+        const data = await res.json();
+        setBundles(data.bundles || []);
+      }
+    } catch { /* leave the stale list; user can retry */ }
+  }
+
+  async function saveBundleEditor() {
+    if (!bundleEditor) return;
+    if (!bundleEditor.name.trim()) {
+      setBundleEditor({ ...bundleEditor, error: "Give the bundle a name." });
+      return;
+    }
+    const priceCents = parseCents(bundleEditor.priceDollars);
+    if (priceCents < 0) {
+      setBundleEditor({ ...bundleEditor, error: "Bundle price must be zero or more." });
+      return;
+    }
+    const validItems = bundleEditor.items.filter((it) => it.productId);
+    if (validItems.length === 0) {
+      setBundleEditor({ ...bundleEditor, error: "Add at least one product to the bundle." });
+      return;
+    }
+    setBundleEditor({ ...bundleEditor, saving: true, error: null });
+    try {
+      const payload = {
+        name: bundleEditor.name.trim(),
+        description: bundleEditor.description.trim() || null,
+        priceCents,
+        active: bundleEditor.active,
+        items: validItems.map((it) => ({
+          kind: "product",
+          productId: it.productId,
+          nameCached: it.nameCached,
+          quantity: Math.max(1, Math.floor(it.quantity)),
+        })),
+      };
+      const res = await fetch(
+        bundleEditor.id ? `/api/pos/bundles/${bundleEditor.id}` : "/api/pos/bundles",
+        {
+          method: bundleEditor.id ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setBundleEditor((prev) => prev ? { ...prev, saving: false, error: data.error || "Failed to save bundle" } : prev);
+        return;
+      }
+      await refetchBundles();
+      closeBundleEditor();
+    } catch (err) {
+      console.error("Failed to save bundle:", err);
+      setBundleEditor((prev) => prev ? { ...prev, saving: false, error: "Failed to save bundle" } : prev);
+    }
+  }
+
+  async function handleDeleteBundle(b: Bundle) {
+    if (!window.confirm(`Delete bundle "${b.name}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/pos/bundles/${b.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        alert("Failed to delete bundle.");
+        return;
+      }
+      await refetchBundles();
+    } catch {
+      alert("Failed to delete bundle.");
     }
   }
 
@@ -886,6 +1112,10 @@ export default function POSPage() {
   // Split cart into sections
   const serviceItems = cart.filter(item => item.type === "membership" || item.type === "credit" || item.type === "gift" || item.type === "service");
   const productItems = cart.filter(item => item.type === "product");
+  // Bundles get their own bucket. Excluded from the product-section
+  // discount (bundles are pre-priced) and from the sales-tax base
+  // (Cruz's rule: buy the bundle, items are free with it, no tax).
+  const bundleItems = cart.filter(item => item.type === "bundle");
 
   // Calculate per-section totals
   function calcSection(items: CartItem[], discType: "percent" | "amount", discVal: string) {
@@ -909,6 +1139,10 @@ export default function POSPage() {
 
   const serviceCalc = calcSection(serviceItems, "percent", "");
   const productCalc = calcSection(productItems, productDiscountType, productDiscountValue);
+  // Bundles are pre-priced -- no per-item or per-section discount
+  // controls -- so calcSection with no discount is really just a
+  // subtotal helper here.
+  const bundleCalc = calcSection(bundleItems, "percent", "");
 
   // Member-profile discounts. Rules match the server (
   // app/api/pos/transactions/route.ts):
@@ -978,7 +1212,7 @@ export default function POSPage() {
     return parts.join(" + ");
   })();
 
-  const subtotalCents = serviceCalc.subtotal + productCalc.subtotal;
+  const subtotalCents = serviceCalc.subtotal + productCalc.subtotal + bundleCalc.subtotal;
   // Manual discounts (per-item + per-section). Sent to the server as
   // `discountCents`; member-profile discounts are OMITTED here because
   // /api/pos/transactions re-computes them from the DB independently
@@ -997,7 +1231,8 @@ export default function POSPage() {
   const taxCents = taxRate > 0 ? Math.round((productTotalAfterMemberDisc * taxRate) / 100) : 0;
   const totalCents =
     serviceCalc.total +
-    productCalc.total -
+    productCalc.total +
+    bundleCalc.total -
     memberDiscountCents +
     taxCents;
 
@@ -1550,6 +1785,11 @@ export default function POSPage() {
         discountType: item.discountType || null,
         discountValue: item.discountValue || null,
         discountCents: getItemDiscountCents(item),
+        // Bundle carrier line: bundleId identifies the source bundle
+        // and bundleContents lets the server decrement inventory for
+        // each contained product without re-fetching the bundle.
+        bundleId: item.bundleId || null,
+        bundleContents: item.bundleContents || null,
       }));
 
       // Saved card — charge directly, no card entry needed
@@ -1737,12 +1977,6 @@ export default function POSPage() {
               Checkout
             </button>
             <Link
-              href="/pos/items"
-              className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-            >
-              Manage Items
-            </Link>
-            <Link
               href="/pos/history"
               className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
             >
@@ -1796,10 +2030,11 @@ export default function POSPage() {
                     ))}
                   </select>
                 </div>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap items-center">
                   {([
                     { key: "products" as const, label: `Products (${filteredItems.length})` },
                     { key: "memberships" as const, label: `Memberships (${filteredPlans.length})` },
+                    { key: "bundles" as const, label: `Bundles (${filteredBundles.length})` },
                     { key: "services" as const, label: `Services (${filteredServicePackages.length})` },
                     { key: "credit" as const, label: "Account Credit" },
                     { key: "gift" as const, label: "Gift Certificate" },
@@ -1816,6 +2051,27 @@ export default function POSPage() {
                       {tab.label}
                     </button>
                   ))}
+                  {/* Contextual admin action: manage the CATALOG for the
+                      current tab. Products -> full item CRUD page.
+                      Bundles -> inline modal in this tab so a coach can
+                      spin up a package deal without navigating away. */}
+                  {catalogTab === "products" && (
+                    <Link
+                      href="/pos/items"
+                      className="ml-auto rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                    >
+                      Manage Items
+                    </Link>
+                  )}
+                  {catalogTab === "bundles" && (
+                    <button
+                      type="button"
+                      onClick={() => openNewBundleEditor()}
+                      className="ml-auto rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                    >
+                      + New Bundle
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1922,6 +2178,60 @@ export default function POSPage() {
                         </button>
                       );
                     })}
+                  </div>
+                )
+              )}
+
+              {catalogTab === "bundles" && (
+                filteredBundles.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">
+                    No bundles yet. Use <button type="button" onClick={() => openNewBundleEditor()} className="text-primary hover:underline">+ New Bundle</button> to package products together at one price.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {filteredBundles.map((b) => (
+                      <div
+                        key={b.id}
+                        className="p-3 border border-gray-200 rounded-lg hover:border-primary hover:bg-primary/5 transition-colors flex flex-col gap-1"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => addBundleToCart(b)}
+                          className="text-left"
+                        >
+                          <p className="font-medium text-sm truncate">{b.name}</p>
+                          {b.description && (
+                            <p className="text-xs text-gray-500 truncate">{b.description}</p>
+                          )}
+                          <p className="text-sm font-semibold text-primary mt-1">
+                            {formatCents(b.priceCents)}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Includes:{" "}
+                            {b.items
+                              .map((it) => (it.quantity > 1 ? `${it.quantity}× ${it.nameCached}` : it.nameCached))
+                              .join(", ")}
+                          </p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">Tax-free</p>
+                        </button>
+                        <div className="flex justify-end gap-1 pt-1 border-t border-gray-100">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openEditBundleEditor(b); }}
+                            className="text-[10px] font-semibold text-gray-500 hover:text-primary"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteBundle(b); }}
+                            className="text-[10px] font-semibold text-gray-500 hover:text-red-600"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )
               )}
@@ -2202,6 +2512,55 @@ export default function POSPage() {
                         <div className="flex justify-between text-xs text-gray-600 pt-1">
                           <span>Services subtotal</span>
                           <span>{formatCents(serviceCalc.total)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bundles Section -- shown BEFORE regular products so
+                      the "package deal" is the most prominent line in
+                      the cart. One row per bundle: name, fixed price,
+                      remove. No discount / no quantity control (bundles
+                      are single-transaction promos). No tax. */}
+                  {bundleItems.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Bundles</span>
+                        <span className="text-xs text-gray-400">({bundleItems.length})</span>
+                      </div>
+                      <div className="space-y-3 pl-2 border-l-2 border-purple-200">
+                        {bundleItems.map((item) => (
+                          <div key={item.id} className="pb-3 border-b border-gray-100 last:border-b-0 last:pb-0">
+                            <div className="flex items-start gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm truncate">{item.itemName}</p>
+                                {item.bundleContents && item.bundleContents.length > 0 && (
+                                  <p className="text-xs text-gray-500 truncate">
+                                    Includes:{" "}
+                                    {item.bundleContents
+                                      .map((c) => (c.quantity > 1 ? `${c.quantity}× ${c.nameCached}` : c.nameCached))
+                                      .join(", ")}
+                                  </p>
+                                )}
+                                <p className="text-sm text-primary">{formatCents(item.unitPriceCents)}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500 font-semibold">x1</span>
+                                <button
+                                  onClick={() => removeFromCart(item.id)}
+                                  className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark ml-1"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="flex justify-between text-xs text-gray-600 pt-1">
+                          <span>Bundles subtotal</span>
+                          <span>{formatCents(bundleCalc.total)}</span>
                         </div>
                       </div>
                     </div>
@@ -3568,6 +3927,188 @@ export default function POSPage() {
           }}
         />
       )}
+
+      {/* BUNDLE EDITOR MODAL */}
+      {bundleEditor && (() => {
+        const draft = bundleEditor;
+        const productPickerOptions = items.filter((it) => it.isActive !== false);
+        // Sum of the individual product prices in this draft -- shown
+        // to the operator as a reference next to the bundle price so
+        // they can see the "savings" the bundle represents.
+        const componentSum = draft.items.reduce((sum, it) => {
+          const prod = productPickerOptions.find((p) => p.id === it.productId);
+          return sum + (prod ? prod.priceCents * Math.max(1, it.quantity) : 0);
+        }, 0);
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 className="text-lg font-bold">{draft.id ? "Edit Bundle" : "New Bundle"}</h2>
+                <button
+                  type="button"
+                  onClick={closeBundleEditor}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-4 space-y-4">
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-700">Bundle Name</label>
+                  <input
+                    type="text"
+                    value={draft.name}
+                    onChange={(e) => setBundleEditor({ ...draft, name: e.target.value })}
+                    placeholder="e.g. New Student Special"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-700">Description (optional)</label>
+                  <input
+                    type="text"
+                    value={draft.description}
+                    onChange={(e) => setBundleEditor({ ...draft, description: e.target.value })}
+                    placeholder="Short blurb shown on the POS tile"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-700">Bundle Price</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={draft.priceDollars}
+                        onChange={(e) => setBundleEditor({ ...draft, priceDollars: e.target.value })}
+                        placeholder="0.00"
+                        className="w-full rounded-md border border-gray-300 pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                    </div>
+                    {componentSum > 0 && (
+                      <p className="text-[10px] text-gray-500">
+                        Items add up to {formatCents(componentSum)} at retail
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium text-gray-700">Active</label>
+                    <label className="flex items-center gap-2 mt-2">
+                      <input
+                        type="checkbox"
+                        checked={draft.active}
+                        onChange={(e) => setBundleEditor({ ...draft, active: e.target.checked })}
+                        className="rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <span className="text-sm text-gray-700">Show in POS</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-gray-700">Included Products</label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setBundleEditor({
+                          ...draft,
+                          items: [
+                            ...draft.items,
+                            { cid: crypto.randomUUID(), productId: "", nameCached: "", quantity: 1 },
+                          ],
+                        })
+                      }
+                      className="text-xs font-semibold text-primary hover:underline"
+                    >
+                      + Add product
+                    </button>
+                  </div>
+                  {draft.items.length === 0 && (
+                    <p className="text-xs text-gray-400 italic">
+                      No products yet. Add at least one before saving.
+                    </p>
+                  )}
+                  {draft.items.map((row, idx) => (
+                    <div key={row.cid} className="flex items-center gap-2">
+                      <select
+                        value={row.productId}
+                        onChange={(e) => {
+                          const pid = e.target.value;
+                          const prod = productPickerOptions.find((p) => p.id === pid);
+                          const nextItems = [...draft.items];
+                          nextItems[idx] = {
+                            ...row,
+                            productId: pid,
+                            nameCached: prod ? prod.name : "",
+                          };
+                          setBundleEditor({ ...draft, items: nextItems });
+                        }}
+                        className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">— pick a product —</option>
+                        {productPickerOptions.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({formatCents(p.priceCents)})
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        value={row.quantity}
+                        onChange={(e) => {
+                          const q = parseInt(e.target.value, 10);
+                          const nextItems = [...draft.items];
+                          nextItems[idx] = { ...row, quantity: isNaN(q) || q < 1 ? 1 : q };
+                          setBundleEditor({ ...draft, items: nextItems });
+                        }}
+                        className="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setBundleEditor({
+                            ...draft,
+                            items: draft.items.filter((r) => r.cid !== row.cid),
+                          })
+                        }
+                        className="text-gray-400 hover:text-red-600"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {draft.error && (
+                  <p className="text-xs text-red-600">{draft.error}</p>
+                )}
+              </div>
+              <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeBundleEditor}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveBundleEditor}
+                  disabled={draft.saving}
+                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                >
+                  {draft.saving ? "Saving..." : draft.id ? "Save Changes" : "Create Bundle"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </AppLayout>
   );
 }
