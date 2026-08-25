@@ -138,7 +138,11 @@ export default function KioskSettingsPage() {
                 Exit Pin Code
               </label>
               <input
-                type="text"
+                // type="tel" (not "text") locks the OS soft keyboard
+                // to numeric on every Android version -- the plain
+                // text + inputMode="numeric" combo was flickering
+                // between text and number layouts on some tablets.
+                type="tel"
                 inputMode="numeric"
                 pattern="[0-9]*"
                 maxLength={6}
@@ -147,23 +151,13 @@ export default function KioskSettingsPage() {
                   const val = e.target.value.replace(/\D/g, "");
                   setSettings((prev) => ({ ...prev, exitPin: val }));
                 }}
+                onClick={() => setShowPinKeypad((v) => !v)}
                 placeholder="Leave empty for no pin"
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               />
               <p className="mt-1 text-xs text-gray-500">
-                4-6 digit pin required to exit kiosk mode. Leave blank to disable.
+                4-6 digit pin required to exit kiosk mode. Leave blank to disable. Tap the field to show / hide the on-screen keypad.
               </p>
-              {/* On-screen keypad -- Android tablets with a Bluetooth
-                  barcode scanner paired hide the OS keyboard system-
-                  wide, so this button reveals a tap-to-type keypad
-                  that always works regardless of paired hardware. */}
-              <button
-                type="button"
-                onClick={() => setShowPinKeypad((v) => !v)}
-                className="mt-2 text-xs text-primary hover:underline"
-              >
-                {showPinKeypad ? "Hide on-screen keypad" : "Show on-screen keypad"}
-              </button>
               {showPinKeypad && (
                 <div className="mt-2 max-w-xs">
                   <OnScreenKeyboard

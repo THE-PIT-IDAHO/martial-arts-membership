@@ -2810,7 +2810,7 @@ function TwoFactorSection() {
                 className="w-full text-sm border border-gray-300 rounded px-3 py-2"
               />
               <input
-                type="text"
+                type="tel"
                 inputMode="numeric"
                 maxLength={6}
                 placeholder="6-digit code"
@@ -2863,7 +2863,7 @@ function TwoFactorSection() {
                 <strong>2.</strong> Enter the 6-digit code from your app:
               </p>
               <input
-                type="text"
+                type="tel"
                 inputMode="numeric"
                 maxLength={6}
                 value={verifyCode}

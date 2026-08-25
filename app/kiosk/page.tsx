@@ -1034,6 +1034,7 @@ export default function KioskPage() {
                       type="text"
                       value={searchQuery}
                       onChange={(e) => handleSearch(e.target.value)}
+                      onClick={() => setShowSearchKeyboard((v) => !v)}
                       onKeyDown={(e) => {
                         if (e.key === "ArrowDown" && searchResults.length > 0) {
                           e.preventDefault();
@@ -1081,19 +1082,10 @@ export default function KioskPage() {
                       </button>
                     )}
                   </div>
-                  {/* Keyboard toggle -- when a Bluetooth barcode scanner
-                      is paired, the tablet OS hides its on-screen
-                      keyboard. Tap here to reveal an on-page QWERTY
-                      that works regardless of paired hardware. */}
-                  <div className="flex justify-end mb-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowSearchKeyboard((v) => !v)}
-                      className="text-sm font-medium text-primary hover:underline"
-                    >
-                      {showSearchKeyboard ? "Hide keyboard" : "Show keyboard"}
-                    </button>
-                  </div>
+                  {/* On-page QWERTY: shown when the operator taps the
+                      input. Tapping the input again hides it. Bypasses
+                      the Android OS hiding its native keyboard when a
+                      Bluetooth barcode scanner is paired. */}
                   {showSearchKeyboard && (
                     <div className="mb-4 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                       <OnScreenKeyboard
