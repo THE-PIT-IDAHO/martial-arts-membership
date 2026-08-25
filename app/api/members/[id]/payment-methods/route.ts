@@ -86,12 +86,18 @@ export async function GET(_req: NextRequest, { params }: Params) {
   }
 }
 
-// POST /api/members/[id]/payment-methods — create Stripe SetupIntent for embedded card form
+// POST /api/members/[id]/payment-methods — create Stripe SetupIntent for embedded card form.
+//
+// PAYS_FOR pivot: if this member has a payer on file (mother pays for
+// child, spouse pays for spouse), the SetupIntent is created on the
+// PAYER's Stripe customer -- otherwise the card would land on the
+// payee's customer while auto-billing keeps charging the payer's
+// customer, and recurring renewals would fail to find a card.
 export async function POST(_req: NextRequest, { params }: Params) {
   const { id: memberId } = await params;
   const clientId = await getClientId(_req);
 
-  const member = await prisma.member.findUnique({
+  const payee = await prisma.member.findUnique({
     where: { id: memberId },
     select: {
       id: true,
@@ -103,7 +109,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
     },
   });
 
-  if (!member || member.clientId !== clientId) {
+  if (!payee || payee.clientId !== clientId) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
 
@@ -126,34 +132,58 @@ export async function POST(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Stripe publishable key not configured" }, { status: 400 });
   }
 
+  // Resolve the card owner (payer if one exists, otherwise this member).
+  const payerRow = await prisma.memberRelationship.findFirst({
+    where: { relationship: "PAYS_FOR", toMemberId: memberId },
+    select: { fromMemberId: true },
+  });
+  let owner = payee;
+  if (payerRow) {
+    const payer = await prisma.member.findFirst({
+      where: { id: payerRow.fromMemberId, clientId },
+      select: {
+        id: true,
+        clientId: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        stripeCustomerId: true,
+      },
+    });
+    if (payer) owner = payer;
+  }
+
   try {
-    // Get or create Stripe customer
-    let stripeCustomerId = member.stripeCustomerId;
+    // Get or create Stripe customer on the OWNER (payer if pivoted).
+    let stripeCustomerId = owner.stripeCustomerId;
     if (!stripeCustomerId) {
       const customer = await stripeClient.customers.create({
-        email: member.email || undefined,
-        name: `${member.firstName} ${member.lastName}`,
-        metadata: { memberId: member.id },
+        email: owner.email || undefined,
+        name: `${owner.firstName} ${owner.lastName}`,
+        metadata: { memberId: owner.id },
       });
       stripeCustomerId = customer.id;
       await prisma.member.update({
-        where: { id: member.id },
+        where: { id: owner.id },
         data: { stripeCustomerId },
       });
     }
 
-    // Create SetupIntent for embedded card form
     const setupIntent = await stripeClient.setupIntents.create({
       customer: stripeCustomerId,
       payment_method_types: ["card"],
-      metadata: { memberId: member.id },
+      metadata: { memberId: owner.id, onBehalfOfMemberId: memberId },
     });
 
     return NextResponse.json({
       clientSecret: setupIntent.client_secret,
       publishableKey,
-      memberName: `${member.firstName} ${member.lastName}`,
-      memberEmail: member.email || "",
+      // memberName / memberEmail is the PAYEE (whose profile the
+      // admin is on) -- the modal uses this as a placeholder; the
+      // operator can type the actual cardholder name into the now-
+      // editable "Name on Card" field.
+      memberName: `${payee.firstName} ${payee.lastName}`,
+      memberEmail: payee.email || "",
     });
   } catch (error) {
     console.error("Error creating setup intent:", error);

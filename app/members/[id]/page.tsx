@@ -7758,6 +7758,14 @@ function StripeCardModal({ clientSecret, publishableKey, memberName, memberEmail
   const [elements, setElements] = useState<import("@stripe/stripe-js").StripeElements | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Editable cardholder name. Starts blank -- previously was locked
+  // to the member's name via `readOnly`, which broke every case where
+  // a parent / spouse / third-party's card was on the account (their
+  // name didn't match the issuing bank's, so charges tripped name-
+  // mismatch checks). Placeholder still nudges toward the member name
+  // for the common case; leaving it blank falls back to memberName at
+  // submit time.
+  const [cardholderName, setCardholderName] = useState("");
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -7791,7 +7799,7 @@ function StripeCardModal({ clientSecret, publishableKey, memberName, memberEmail
       payment_method: {
         card: elements.getElement("card")!,
         billing_details: {
-          name: memberName,
+          name: cardholderName.trim() || memberName,
           email: memberEmail,
         },
       },
@@ -7825,7 +7833,19 @@ function StripeCardModal({ clientSecret, publishableKey, memberName, memberEmail
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Name on Card</label>
-            <input type="text" defaultValue={memberName} readOnly className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-gray-50 text-gray-600" />
+            <input
+              type="text"
+              value={cardholderName}
+              onChange={(e) => setCardholderName(e.target.value)}
+              placeholder={memberName || "Cardholder name"}
+              autoComplete="cc-name"
+              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            {memberName && cardholderName.trim() && cardholderName.trim().toLowerCase() !== memberName.trim().toLowerCase() && (
+              <p className="mt-1 text-[11px] text-gray-500">
+                Saving on behalf of <span className="font-medium">{memberName}</span>
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
