@@ -263,13 +263,70 @@ export async function POST(req: Request) {
       },
     });
 
-    // Update inventory for product items (variant-level + base quantity)
-    // AND for the products contained in bundle lines -- each bundle
-    // carries a bundleContents[] snapshot the client built at
-    // add-to-cart time; iterate that list the same way we do for a
-    // regular product line so a bundle's inclusions still count
-    // against stock.
-    for (const item of lineItems) {
+    // Expand bundles for downstream side effects. Each bundle carries
+    // a bundleContents[] snapshot the client built at add-to-cart
+    // time; each entry becomes a virtual line item so the inventory /
+    // membership / service loops below process bundle contents with
+    // the same code paths as bare line items. Contained items ring
+    // in at $0 (the bundle line already carries the money), which
+    // keeps firstPaymentCents accurate for bundle-included
+    // memberships -- the bundle absorbed the payment, not the
+    // membership itself.
+    type SideEffectItem = {
+      type: string;
+      itemId?: string | null;
+      membershipPlanId?: string | null;
+      servicePackageId?: string | null;
+      selectedSize?: string | null;
+      selectedColor?: string | null;
+      unitPriceCents: number;
+      customPriceCents?: number;
+      quantity: number;
+      firstMonthDiscountOnly?: boolean;
+      membershipStartDate?: string;
+      membershipEndDate?: string;
+      itemName?: string;
+      recipientName?: string;
+    };
+    const bundleVirtualItems: SideEffectItem[] = (lineItems as SideEffectItem[])
+      .filter((li) => li.type === "bundle" && Array.isArray((li as unknown as { bundleContents?: unknown[] }).bundleContents))
+      .flatMap((bundle) => {
+        const contents = (bundle as unknown as { bundleContents: Array<{
+          kind?: string;
+          productId?: string;
+          membershipPlanId?: string;
+          servicePackageId?: string;
+          quantity?: number;
+          selectedSize?: string | null;
+          selectedColor?: string | null;
+          nameCached?: string;
+        }> }).bundleContents;
+        const bundleQty = bundle.quantity || 1;
+        return contents.map((c) => {
+          const contentQty = Math.max(1, Number(c.quantity) || 1);
+          return {
+            type: c.kind || "product",
+            itemId: c.kind === "product" ? c.productId || null : null,
+            membershipPlanId: c.kind === "membership" ? c.membershipPlanId || null : null,
+            servicePackageId: c.kind === "service" ? c.servicePackageId || null : null,
+            selectedSize: c.selectedSize || null,
+            selectedColor: c.selectedColor || null,
+            unitPriceCents: 0,
+            customPriceCents: 0,
+            quantity: contentQty * bundleQty,
+            firstMonthDiscountOnly: false,
+            itemName: c.nameCached || "",
+          } satisfies SideEffectItem;
+        });
+      });
+    const sideEffectItems: SideEffectItem[] = [
+      ...(lineItems as SideEffectItem[]).filter((li) => li.type !== "bundle"),
+      ...bundleVirtualItems,
+    ];
+
+    // Update inventory for product items (variant-level + base quantity).
+    // Bundle-contained products are already in `sideEffectItems` above.
+    for (const item of sideEffectItems) {
       if (item.type === "product" && item.itemId) {
         // Decrement variant stock if size/color are specified
         if (item.selectedSize || item.selectedColor) {
@@ -299,39 +356,16 @@ export async function POST(req: Request) {
           },
         });
       }
-      if (item.type === "bundle" && Array.isArray(item.bundleContents)) {
-        for (const c of item.bundleContents) {
-          if (!c?.productId) continue;
-          const qty = Math.max(1, Number(c.quantity) || 1) * (item.quantity || 1);
-          if (c.selectedSize || c.selectedColor) {
-            const variant = await prisma.pOSItemVariant.findFirst({
-              where: {
-                itemId: c.productId,
-                size: c.selectedSize || null,
-                color: c.selectedColor || null,
-              },
-            });
-            if (variant) {
-              await prisma.pOSItemVariant.update({
-                where: { id: variant.id },
-                data: { quantity: { decrement: qty } },
-              });
-            }
-          }
-          await prisma.pOSItem.update({
-            where: { id: c.productId },
-            data: {
-              quantity: { decrement: qty },
-              updatedAt: new Date(),
-            },
-          });
-        }
-      }
     }
 
-    // Create Membership records for membership sales
+    // Create Membership records for membership sales (direct + bundle-
+    // contained). A bundle-contained membership arrives here as a
+    // virtual line item with unitPriceCents=0 (bundle absorbed the
+    // payment) -- firstPaymentCents on the Membership record ends up
+    // as 0, and customPriceCents stays null (plan default), so
+    // recurring cycles keep charging the plan's normal price.
     if (memberId) {
-      for (const item of lineItems) {
+      for (const item of sideEffectItems) {
         if (item.type === "membership" && item.membershipPlanId) {
           // Get the membership plan -- scoped to this tenant so a
           // hand-crafted POST can't smuggle another gym's planId
@@ -603,8 +637,9 @@ export async function POST(req: Request) {
     }
 
     // Handle appointment items - create MemberServiceCredit records
+    // (direct sales + bundle-contained services).
     if (memberId) {
-      for (const item of lineItems) {
+      for (const item of sideEffectItems) {
         if (item.type === "service" && item.servicePackageId) {
           const pkg = await prisma.servicePackage.findUnique({
             where: { id: item.servicePackageId },

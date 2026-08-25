@@ -101,8 +101,11 @@ type ServicePackage = {
 // "membership" / "service" without a schema change).
 type BundleItemRow = {
   id: string;
+  // "product" | "membership" | "service"
   kind: string;
   productId: string | null;
+  membershipPlanId: string | null;
+  servicePackageId: string | null;
   nameCached: string;
   quantity: number;
   selectedSize: string | null;
@@ -126,7 +129,11 @@ type Bundle = {
 // reconciles a new row cleanly even before it's saved.
 type BundleEditorDraftItem = {
   cid: string;
+  kind: "product" | "membership" | "service";
+  // Exactly one of these is set, matching `kind`.
   productId: string;
+  membershipPlanId: string;
+  servicePackageId: string;
   nameCached: string;
   quantity: number;
 };
@@ -141,11 +148,17 @@ type BundleEditorState = {
   error: string | null;
 };
 
-// Snapshot of a product slot inside a bundle. Rides along on the
-// bundle cart line so the server can decrement inventory per contained
-// product without hitting the DB again.
+// Snapshot of one slot inside a bundle. Rides along on the bundle
+// cart line so the server can process side effects per contained
+// item (inventory decrement for products, Membership create for
+// memberships, MemberServiceCredit create for services) without
+// hitting the DB again to re-read the bundle.
 type BundleCartContent = {
-  productId: string;
+  kind: "product" | "membership" | "service";
+  // Exactly one of these is set, matching `kind`.
+  productId?: string;
+  membershipPlanId?: string;
+  servicePackageId?: string;
   nameCached: string;
   quantity: number;
   selectedSize?: string | null;
@@ -738,10 +751,25 @@ export default function POSPage() {
   // which also means an admin editing a bundle after the cart is
   // built doesn't retroactively change what's in this sale.
   function addBundleToCart(bundle: Bundle) {
+    // Bundles that contain a membership require a selected member --
+    // same rule as a bare membership sale. Same for services.
+    const needsMember = bundle.items.some((it) => it.kind === "membership" || it.kind === "service");
+    if (needsMember && !selectedMember) {
+      alert("Please select a member first -- this bundle includes a membership or appointment.");
+      return;
+    }
     const contents: BundleCartContent[] = bundle.items
-      .filter((it) => it.kind === "product" && it.productId)
+      .filter((it) => {
+        if (it.kind === "product") return !!it.productId;
+        if (it.kind === "membership") return !!it.membershipPlanId;
+        if (it.kind === "service") return !!it.servicePackageId;
+        return false;
+      })
       .map((it) => ({
-        productId: it.productId as string,
+        kind: it.kind as "product" | "membership" | "service",
+        productId: it.productId || undefined,
+        membershipPlanId: it.membershipPlanId || undefined,
+        servicePackageId: it.servicePackageId || undefined,
         nameCached: it.nameCached,
         quantity: it.quantity,
         selectedSize: it.selectedSize,
@@ -783,14 +811,16 @@ export default function POSPage() {
       description: b.description || "",
       priceDollars: (b.priceCents / 100).toFixed(2),
       active: b.active,
-      items: b.items
-        .filter((it) => it.kind === "product" && it.productId)
-        .map((it) => ({
-          cid: crypto.randomUUID(),
-          productId: it.productId as string,
-          nameCached: it.nameCached,
-          quantity: it.quantity,
-        })),
+      items: b.items.map((it) => ({
+        cid: crypto.randomUUID(),
+        kind: (it.kind === "membership" || it.kind === "service" ? it.kind : "product") as
+          "product" | "membership" | "service",
+        productId: it.productId || "",
+        membershipPlanId: it.membershipPlanId || "",
+        servicePackageId: it.servicePackageId || "",
+        nameCached: it.nameCached,
+        quantity: it.quantity,
+      })),
       saving: false,
       error: null,
     });
@@ -818,9 +848,15 @@ export default function POSPage() {
       setBundleEditor({ ...bundleEditor, error: "Bundle price must be zero or more." });
       return;
     }
-    const validItems = bundleEditor.items.filter((it) => it.productId);
+    // A row is valid iff its ref-id for its kind is filled in.
+    const validItems = bundleEditor.items.filter((it) => {
+      if (it.kind === "product") return !!it.productId;
+      if (it.kind === "membership") return !!it.membershipPlanId;
+      if (it.kind === "service") return !!it.servicePackageId;
+      return false;
+    });
     if (validItems.length === 0) {
-      setBundleEditor({ ...bundleEditor, error: "Add at least one product to the bundle." });
+      setBundleEditor({ ...bundleEditor, error: "Add at least one item to the bundle." });
       return;
     }
     setBundleEditor({ ...bundleEditor, saving: true, error: null });
@@ -831,8 +867,10 @@ export default function POSPage() {
         priceCents,
         active: bundleEditor.active,
         items: validItems.map((it) => ({
-          kind: "product",
-          productId: it.productId,
+          kind: it.kind,
+          productId: it.kind === "product" ? it.productId : null,
+          membershipPlanId: it.kind === "membership" ? it.membershipPlanId : null,
+          servicePackageId: it.kind === "service" ? it.servicePackageId : null,
           nameCached: it.nameCached,
           quantity: Math.max(1, Math.floor(it.quantity)),
         })),
@@ -1243,12 +1281,18 @@ export default function POSPage() {
       return;
     }
 
-    // Check if membership, credit, or service items require a member
-    const hasMembership = cart.some(c => c.type === "membership");
-    const hasCredit = cart.some(c => c.type === "credit");
-    const hasService = cart.some(c => c.type === "service");
-    const hasAccountPayment = paymentSplits.some(s => s.method === "ACCOUNT");
-    if ((hasMembership || hasCredit || hasService || hasAccountPayment) && !selectedMember) {
+    // Check if membership, credit, or service items require a member.
+    // Bundle lines count too when they contain a membership or a
+    // service -- both need a member to attach the Membership /
+    // MemberServiceCredit records to on the server.
+    const hasMembership = cart.some((c) => c.type === "membership");
+    const hasCredit = cart.some((c) => c.type === "credit");
+    const hasService = cart.some((c) => c.type === "service");
+    const hasBundleNeedingMember = cart.some(
+      (c) => c.type === "bundle" && (c.bundleContents || []).some((bc) => bc.kind === "membership" || bc.kind === "service"),
+    );
+    const hasAccountPayment = paymentSplits.some((s) => s.method === "ACCOUNT");
+    if ((hasMembership || hasCredit || hasService || hasBundleNeedingMember || hasAccountPayment) && !selectedMember) {
       alert("Please select a member to assign the membership, account credit, appointment, or account payment to.");
       return;
     }
@@ -3932,12 +3976,28 @@ export default function POSPage() {
       {bundleEditor && (() => {
         const draft = bundleEditor;
         const productPickerOptions = items.filter((it) => it.isActive !== false);
-        // Sum of the individual product prices in this draft -- shown
-        // to the operator as a reference next to the bundle price so
-        // they can see the "savings" the bundle represents.
+        const membershipPickerOptions = membershipPlans.filter((p) => p.isActive);
+        const servicePickerOptions = servicePackages;
+        // Sum of the retail prices of every item currently in the
+        // draft, across all three kinds, shown as a reference next to
+        // the bundle price so the operator sees the promo's savings.
+        // For memberships we use first-payment (price + setup fee) so
+        // the number matches what a normal signup would charge today.
         const componentSum = draft.items.reduce((sum, it) => {
-          const prod = productPickerOptions.find((p) => p.id === it.productId);
-          return sum + (prod ? prod.priceCents * Math.max(1, it.quantity) : 0);
+          const qty = Math.max(1, it.quantity);
+          if (it.kind === "product") {
+            const prod = productPickerOptions.find((p) => p.id === it.productId);
+            return sum + (prod ? prod.priceCents * qty : 0);
+          }
+          if (it.kind === "membership") {
+            const plan = membershipPickerOptions.find((p) => p.id === it.membershipPlanId);
+            return sum + (plan ? ((plan.priceCents || 0) + (plan.setupFeeCents || 0)) * qty : 0);
+          }
+          if (it.kind === "service") {
+            const svc = servicePickerOptions.find((s) => s.id === it.servicePackageId);
+            return sum + (svc ? (svc.priceCents || 0) * qty : 0);
+          }
+          return sum;
         }, 0);
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -4009,52 +4069,129 @@ export default function POSPage() {
 
                 <div className="space-y-2 pt-2 border-t border-gray-100">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-gray-700">Included Products</label>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setBundleEditor({
-                          ...draft,
-                          items: [
-                            ...draft.items,
-                            { cid: crypto.randomUUID(), productId: "", nameCached: "", quantity: 1 },
-                          ],
-                        })
-                      }
-                      className="text-xs font-semibold text-primary hover:underline"
-                    >
-                      + Add product
-                    </button>
+                    <label className="text-xs font-medium text-gray-700">Included Items</label>
+                    <div className="flex gap-1">
+                      {(["product", "membership", "service"] as const).map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() =>
+                            setBundleEditor({
+                              ...draft,
+                              items: [
+                                ...draft.items,
+                                {
+                                  cid: crypto.randomUUID(),
+                                  kind: k,
+                                  productId: "",
+                                  membershipPlanId: "",
+                                  servicePackageId: "",
+                                  nameCached: "",
+                                  quantity: 1,
+                                },
+                              ],
+                            })
+                          }
+                          className="text-[11px] font-semibold text-primary hover:underline"
+                        >
+                          + {k.charAt(0).toUpperCase() + k.slice(1)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                  <p className="text-[10px] text-gray-500">
+                    Buying this bundle covers the first payment for included memberships (recurring
+                    ones continue at their normal cycle afterward). Services get added as prepaid
+                    credits; products drop from inventory. No sales tax on any of it.
+                  </p>
                   {draft.items.length === 0 && (
                     <p className="text-xs text-gray-400 italic">
-                      No products yet. Add at least one before saving.
+                      No items yet. Add at least one before saving.
                     </p>
                   )}
                   {draft.items.map((row, idx) => (
                     <div key={row.cid} className="flex items-center gap-2">
-                      <select
-                        value={row.productId}
-                        onChange={(e) => {
-                          const pid = e.target.value;
-                          const prod = productPickerOptions.find((p) => p.id === pid);
-                          const nextItems = [...draft.items];
-                          nextItems[idx] = {
-                            ...row,
-                            productId: pid,
-                            nameCached: prod ? prod.name : "",
-                          };
-                          setBundleEditor({ ...draft, items: nextItems });
-                        }}
-                        className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="">— pick a product —</option>
-                        {productPickerOptions.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} ({formatCents(p.priceCents)})
-                          </option>
-                        ))}
-                      </select>
+                      {row.kind === "product" && (
+                        <select
+                          value={row.productId}
+                          onChange={(e) => {
+                            const pid = e.target.value;
+                            const prod = productPickerOptions.find((p) => p.id === pid);
+                            const nextItems = [...draft.items];
+                            nextItems[idx] = {
+                              ...row,
+                              productId: pid,
+                              nameCached: prod ? prod.name : "",
+                            };
+                            setBundleEditor({ ...draft, items: nextItems });
+                          }}
+                          className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="">— pick a product —</option>
+                          {productPickerOptions.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({formatCents(p.priceCents)})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {row.kind === "membership" && (
+                        <select
+                          value={row.membershipPlanId}
+                          onChange={(e) => {
+                            const mid = e.target.value;
+                            const plan = membershipPickerOptions.find((p) => p.id === mid);
+                            const nextItems = [...draft.items];
+                            nextItems[idx] = {
+                              ...row,
+                              membershipPlanId: mid,
+                              nameCached: plan ? plan.name : "",
+                            };
+                            setBundleEditor({ ...draft, items: nextItems });
+                          }}
+                          className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="">— pick a membership plan —</option>
+                          {membershipPickerOptions.map((p) => {
+                            const totalCents = (p.priceCents || 0) + (p.setupFeeCents || 0);
+                            const cycle = (p.billingCycle || "").toUpperCase() === "ONE_TIME"
+                              ? "one-time"
+                              : `${p.billingCycle || "monthly"}`.toLowerCase();
+                            return (
+                              <option key={p.id} value={p.id}>
+                                {p.name} ({formatCents(totalCents)} {cycle})
+                              </option>
+                            );
+                          })}
+                        </select>
+                      )}
+                      {row.kind === "service" && (
+                        <select
+                          value={row.servicePackageId}
+                          onChange={(e) => {
+                            const sid = e.target.value;
+                            const svc = servicePickerOptions.find((s) => s.id === sid);
+                            const nextItems = [...draft.items];
+                            nextItems[idx] = {
+                              ...row,
+                              servicePackageId: sid,
+                              nameCached: svc ? svc.name : "",
+                            };
+                            setBundleEditor({ ...draft, items: nextItems });
+                          }}
+                          className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="">— pick an appointment —</option>
+                          {servicePickerOptions.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({formatCents(s.priceCents)})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <span className="text-[10px] font-semibold uppercase text-gray-400 w-14 text-center">
+                        {row.kind}
+                      </span>
                       <input
                         type="number"
                         min={1}

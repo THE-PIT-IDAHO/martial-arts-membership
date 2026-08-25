@@ -5,11 +5,52 @@ import { getClientId } from "@/lib/tenant";
 type IncomingBundleItem = {
   kind?: string;
   productId?: string | null;
+  membershipPlanId?: string | null;
+  servicePackageId?: string | null;
   nameCached?: string;
   quantity?: number;
   selectedSize?: string | null;
   selectedColor?: string | null;
 };
+
+// Kept in sync with the copy in ../route.ts: cross-checks every ref
+// id against its own table under this tenant. Duplicated on purpose
+// so the API endpoints don't grow a shared internal module for a
+// helper this small.
+async function validateBundleItemsForTenant(
+  items: IncomingBundleItem[],
+  clientId: string,
+): Promise<string | null> {
+  const productIds = items.filter((it) => it.kind === "product" && it.productId).map((it) => it.productId!) as string[];
+  const planIds = items.filter((it) => it.kind === "membership" && it.membershipPlanId).map((it) => it.membershipPlanId!) as string[];
+  const svcIds = items.filter((it) => it.kind === "service" && it.servicePackageId).map((it) => it.servicePackageId!) as string[];
+
+  if (productIds.length > 0) {
+    const rows = await prisma.pOSItem.findMany({ where: { id: { in: productIds } }, select: { id: true, clientId: true } });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const id of productIds) {
+      const row = byId.get(id);
+      if (!row || row.clientId !== clientId) return "One or more products are not available";
+    }
+  }
+  if (planIds.length > 0) {
+    const rows = await prisma.membershipPlan.findMany({ where: { id: { in: planIds } }, select: { id: true, clientId: true } });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const id of planIds) {
+      const row = byId.get(id);
+      if (!row || row.clientId !== clientId) return "One or more membership plans are not available";
+    }
+  }
+  if (svcIds.length > 0) {
+    const rows = await prisma.servicePackage.findMany({ where: { id: { in: svcIds } }, select: { id: true, clientId: true } });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const id of svcIds) {
+      const row = byId.get(id);
+      if (!row || row.clientId !== clientId) return "One or more services are not available";
+    }
+  }
+  return null;
+}
 
 // GET /api/pos/bundles/[id]
 export async function GET(
@@ -80,22 +121,8 @@ export async function PUT(
       return NextResponse.json({ error: "A bundle needs at least one item" }, { status: 400 });
     }
 
-    const productIds = cleanItems
-      .filter((it) => (it.kind || "product") === "product" && it.productId)
-      .map((it) => it.productId!) as string[];
-    if (productIds.length > 0) {
-      const rows = await prisma.pOSItem.findMany({
-        where: { id: { in: productIds } },
-        select: { id: true, clientId: true },
-      });
-      const byId = new Map(rows.map((r) => [r.id, r]));
-      for (const pid of productIds) {
-        const row = byId.get(pid);
-        if (!row || row.clientId !== clientId) {
-          return NextResponse.json({ error: "One or more products are not available" }, { status: 400 });
-        }
-      }
-    }
+    const validationError = await validateBundleItemsForTenant(cleanItems, clientId);
+    if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
     // Wipe + recreate items (cheaper mentally than diffing quantities /
     // kinds and matching cids across a full form re-submit).
@@ -112,7 +139,9 @@ export async function PUT(
           items: {
             create: cleanItems.map((it, idx) => ({
               kind: it.kind || "product",
-              productId: it.productId || null,
+              productId: it.kind === "product" ? (it.productId || null) : null,
+              membershipPlanId: it.kind === "membership" ? (it.membershipPlanId || null) : null,
+              servicePackageId: it.kind === "service" ? (it.servicePackageId || null) : null,
               nameCached: (it.nameCached || "").trim() || "Unnamed item",
               quantity: typeof it.quantity === "number" && it.quantity > 0 ? it.quantity : 1,
               selectedSize: it.selectedSize || null,
