@@ -173,6 +173,9 @@ export default function POSPage() {
   // Search and filters
   const [itemSearch, setItemSearch] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
+  // Keyboard-nav highlight for the member search results dropdown.
+  // -1 = no arrow key pressed yet; Enter still picks the top row.
+  const [memberHighlightedIdx, setMemberHighlightedIdx] = useState<number>(-1);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [catalogTab, setCatalogTab] = useState<"products" | "memberships" | "credit" | "gift" | "services">("products");
 
@@ -2093,26 +2096,45 @@ export default function POSPage() {
                     type="text"
                     placeholder="Search members..."
                     value={memberSearch}
-                    onChange={(e) => setMemberSearch(e.target.value)}
+                    onChange={(e) => {
+                      setMemberSearch(e.target.value);
+                      setMemberHighlightedIdx(-1);
+                    }}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && memberSearch && filteredMembers.length > 0) {
+                      if (!memberSearch || filteredMembers.length === 0) return;
+                      if (e.key === "ArrowDown") {
                         e.preventDefault();
-                        setSelectedMember(filteredMembers[0]);
+                        setMemberHighlightedIdx((prev) => (prev + 1) % filteredMembers.length);
+                      } else if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setMemberHighlightedIdx((prev) =>
+                          prev <= 0 ? filteredMembers.length - 1 : prev - 1,
+                        );
+                      } else if (e.key === "Enter") {
+                        e.preventDefault();
+                        const idx = memberHighlightedIdx >= 0 ? memberHighlightedIdx : 0;
+                        setSelectedMember(filteredMembers[idx]);
                         setMemberSearch("");
+                        setMemberHighlightedIdx(-1);
                       }
                     }}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
                   {memberSearch && filteredMembers.length > 0 && (
                     <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
-                      {filteredMembers.map((member, idx) => (
+                      {filteredMembers.map((member, idx) => {
+                        const isKeyboardActive = memberHighlightedIdx === idx;
+                        const isImplicitDefault = memberHighlightedIdx === -1 && idx === 0;
+                        return (
                         <button
                           key={member.id}
                           onClick={() => {
                             setSelectedMember(member);
                             setMemberSearch("");
+                            setMemberHighlightedIdx(-1);
                           }}
-                          className={`w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${idx === 0 ? "bg-gray-50" : ""}`}
+                          onMouseEnter={() => setMemberHighlightedIdx(idx)}
+                          className={`w-full text-left px-3 py-2 border-b border-gray-100 last:border-b-0 ${isKeyboardActive ? "bg-primary/10" : isImplicitDefault ? "bg-gray-50" : "hover:bg-gray-50"}`}
                         >
                           <p className="font-medium text-sm">
                             {member.firstName} {member.lastName}
@@ -2121,7 +2143,8 @@ export default function POSPage() {
                             {member.memberNumber ? `#${member.memberNumber}` : member.email || member.phone || "No contact"}
                           </p>
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                   <p className="text-xs text-gray-500 py-1">

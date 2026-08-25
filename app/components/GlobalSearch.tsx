@@ -18,8 +18,12 @@ export default function GlobalSearch() {
   const [results, setResults] = useState<Member[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  // -1 = nothing highlighted yet; first ArrowDown moves to 0. Keeps
+  // Enter's "no keyboard nav → pick top result" behavior working.
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   // Close dropdown when clicking outside
@@ -64,6 +68,7 @@ export default function GlobalSearch() {
         if (res.ok) {
           const data = await res.json();
           setResults(data.members || []);
+          setHighlightedIndex(-1);
           setIsOpen(true);
         }
       } catch (err) {
@@ -76,6 +81,16 @@ export default function GlobalSearch() {
     const debounce = setTimeout(searchMembers, 200);
     return () => clearTimeout(debounce);
   }, [query]);
+
+  // Keep the highlighted row in view when the operator arrows past
+  // the dropdown's max-h scroll window.
+  useEffect(() => {
+    if (highlightedIndex < 0 || !resultsRef.current) return;
+    const row = resultsRef.current.children[highlightedIndex] as HTMLElement | undefined;
+    if (row && typeof row.scrollIntoView === "function") {
+      row.scrollIntoView({ block: "nearest" });
+    }
+  }, [highlightedIndex]);
 
   const handleSelectMember = (member: Member) => {
     setQuery("");
@@ -148,9 +163,23 @@ export default function GlobalSearch() {
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.length >= 2 && results.length > 0 && setIsOpen(true)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && isOpen && results.length > 0) {
+            if (!isOpen || results.length === 0) {
+              if (e.key === "Enter" && results.length > 0) {
+                e.preventDefault();
+                handleSelectMember(results[0]);
+              }
+              return;
+            }
+            if (e.key === "ArrowDown") {
               e.preventDefault();
-              handleSelectMember(results[0]);
+              setHighlightedIndex((prev) => (prev + 1) % results.length);
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setHighlightedIndex((prev) => (prev <= 0 ? results.length - 1 : prev - 1));
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              const idx = highlightedIndex >= 0 ? highlightedIndex : 0;
+              handleSelectMember(results[idx]);
             }
           }}
           placeholder="Search members... (Ctrl+K)"
@@ -183,12 +212,19 @@ export default function GlobalSearch() {
           filling the input's own width. */}
       {isOpen && results.length > 0 && (
         <div className="absolute top-full mt-2 right-0 w-[calc(100vw-1rem)] max-w-md sm:left-0 sm:right-0 sm:w-auto sm:max-w-none bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden z-[100]">
-          <div className="max-h-80 overflow-y-auto">
-            {results.map((member, idx) => (
+          <div ref={resultsRef} className="max-h-80 overflow-y-auto">
+            {results.map((member, idx) => {
+              // Keyboard-highlighted row wins; before any arrow key is
+              // pressed the top row still reads as the implicit-default
+              // (Enter takes it) to preserve pre-existing muscle memory.
+              const isKeyboardActive = highlightedIndex === idx;
+              const isImplicitDefault = highlightedIndex === -1 && idx === 0;
+              return (
               <button
                 key={member.id}
                 onClick={() => handleSelectMember(member)}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-3 border-b border-gray-100 last:border-b-0 transition-colors ${idx === 0 ? "bg-gray-50" : ""}`}
+                onMouseEnter={() => setHighlightedIndex(idx)}
+                className={`w-full text-left px-4 py-3 flex items-center gap-3 border-b border-gray-100 last:border-b-0 transition-colors ${isKeyboardActive ? "bg-primary/10" : isImplicitDefault ? "bg-gray-50" : "hover:bg-gray-50"}`}
               >
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm flex-shrink-0">
                   {member.firstName[0]}{member.lastName[0]}
@@ -207,7 +243,8 @@ export default function GlobalSearch() {
                   {formatStatus(member.status)}
                 </span>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

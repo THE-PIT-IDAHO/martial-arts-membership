@@ -118,6 +118,9 @@ export default function KioskPage() {
   // its prep window.
   const [manualSelectionExpiresAt, setManualSelectionExpiresAt] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState("");
+  // Keyboard-nav highlight in the results list; -1 = nothing picked
+  // yet, Enter still takes the top row.
+  const [searchHighlightedIdx, setSearchHighlightedIdx] = useState<number>(-1);
   const [searchResults, setSearchResults] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [checkInState, setCheckInState] = useState<CheckInState>("idle");
@@ -798,6 +801,7 @@ export default function KioskPage() {
     const results = filterAndRankMembers(members, query).slice(0, 8);
 
     setSearchResults(results);
+    setSearchHighlightedIdx(-1);
   }, [members, selectedClass, canMemberCheckInToClass, handleQrScan]);
 
   // Handle class selection - clear any pending search/selection state
@@ -1031,6 +1035,18 @@ export default function KioskPage() {
                       value={searchQuery}
                       onChange={(e) => handleSearch(e.target.value)}
                       onKeyDown={(e) => {
+                        if (e.key === "ArrowDown" && searchResults.length > 0) {
+                          e.preventDefault();
+                          setSearchHighlightedIdx((prev) => (prev + 1) % searchResults.length);
+                          return;
+                        }
+                        if (e.key === "ArrowUp" && searchResults.length > 0) {
+                          e.preventDefault();
+                          setSearchHighlightedIdx((prev) =>
+                            prev <= 0 ? searchResults.length - 1 : prev - 1,
+                          );
+                          return;
+                        }
                         if (e.key === "Enter") {
                           e.preventDefault();
                           const val = searchQuery.trim();
@@ -1040,9 +1056,9 @@ export default function KioskPage() {
                             setSearchQuery("");
                             return;
                           }
-                          // Otherwise select first search result
                           if (searchResults.length > 0) {
-                            handleSelectMember(searchResults[0]);
+                            const idx = searchHighlightedIdx >= 0 ? searchHighlightedIdx : 0;
+                            handleSelectMember(searchResults[idx]);
                           }
                         }
                       }}
@@ -1101,11 +1117,19 @@ export default function KioskPage() {
                     <div className="space-y-2 mb-6 max-h-[300px] overflow-y-auto">
                       {searchResults.map((member, idx) => {
                         const classRankInfo = getMemberRankForClass(member, selectedClass);
+                        const isKeyboardActive = searchHighlightedIdx === idx;
+                        const isImplicitDefault = searchHighlightedIdx === -1 && idx === 0;
+                        const activeClasses = isKeyboardActive
+                          ? "bg-primary text-white border-primary"
+                          : isImplicitDefault
+                            ? "bg-primary/10 border-primary"
+                            : "bg-gray-50 border-gray-200";
                         return (
                           <button
                             key={member.id}
                             onClick={() => handleSelectMember(member)}
-                            className={`w-full text-left p-4 rounded-xl hover:bg-primary hover:text-white transition-colors flex items-center gap-4 border hover:border-primary ${idx === 0 ? "bg-primary/10 border-primary" : "bg-gray-50 border-gray-200"}`}
+                            onMouseEnter={() => setSearchHighlightedIdx(idx)}
+                            className={`w-full text-left p-4 rounded-xl hover:bg-primary hover:text-white transition-colors flex items-center gap-4 border hover:border-primary ${activeClasses}`}
                           >
                             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">
                               {member.firstName[0]}{member.lastName[0]}

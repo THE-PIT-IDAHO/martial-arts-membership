@@ -5892,36 +5892,75 @@ export default function MemberProfilePage() {
                               via the shared filterAndRankMembers helper so
                               first/last (any order), email, phone, and
                               member-number searches all work and prefix
-                              matches sort above mid-word matches. */}
-                          <input
-                            type="text"
-                            value={billingPickerQuery}
-                            onChange={(e) => setBillingPickerQuery(e.target.value)}
-                            placeholder="Search by name, email, phone, or member #..."
-                            className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
-                            autoFocus
-                          />
-                          {billingPickerQuery.trim().length >= 2 && (() => {
-                            const matches = filterAndRankMembers(relatedMembersForBilling, billingPickerQuery).slice(0, 8);
-                            if (matches.length === 0) {
-                              return <p className="text-[10px] text-gray-500 italic">No matches.</p>;
-                            }
+                              matches sort above mid-word matches. Arrow
+                              keys move the picked row; Enter commits Save. */}
+                          {(() => {
+                            const matches = billingPickerQuery.trim().length >= 2
+                              ? filterAndRankMembers(relatedMembersForBilling, billingPickerQuery).slice(0, 8)
+                              : [];
+                            const currentIdx = matches.findIndex((m) => m.id === billingPickerMemberId);
                             return (
-                              <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200 bg-white divide-y divide-gray-100">
-                                {matches.map((m) => {
-                                  const selected = billingPickerMemberId === m.id;
-                                  return (
-                                    <button
-                                      key={m.id}
-                                      type="button"
-                                      onClick={() => setBillingPickerMemberId(m.id)}
-                                      className={`w-full text-left px-2 py-1.5 text-xs transition-colors ${selected ? "bg-primary/10 text-primary font-semibold" : "hover:bg-gray-50 text-gray-700"}`}
-                                    >
-                                      {m.firstName} {m.lastName}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                              <>
+                                <input
+                                  type="text"
+                                  value={billingPickerQuery}
+                                  onChange={(e) => {
+                                    setBillingPickerQuery(e.target.value);
+                                    // Clear the picked row when the query
+                                    // changes so a stale pick from a prior
+                                    // list can't survive a new search.
+                                    if (billingPickerMemberId) setBillingPickerMemberId("");
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (matches.length === 0) return;
+                                    if (e.key === "ArrowDown") {
+                                      e.preventDefault();
+                                      const next = currentIdx < 0 ? 0 : (currentIdx + 1) % matches.length;
+                                      setBillingPickerMemberId(matches[next].id);
+                                    } else if (e.key === "ArrowUp") {
+                                      e.preventDefault();
+                                      const next = currentIdx <= 0 ? matches.length - 1 : currentIdx - 1;
+                                      setBillingPickerMemberId(matches[next].id);
+                                    } else if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      // If nothing is picked yet, Enter falls
+                                      // back to the top row (same as a
+                                      // dropdown default).
+                                      if (!billingPickerMemberId) setBillingPickerMemberId(matches[0].id);
+                                      handleAddBillingRelationship();
+                                    }
+                                  }}
+                                  placeholder="Search by name, email, phone, or member #..."
+                                  className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                  autoFocus
+                                />
+                                {billingPickerQuery.trim().length >= 2 && matches.length === 0 && (
+                                  <p className="text-[10px] text-gray-500 italic">No matches.</p>
+                                )}
+                                {matches.length > 0 && (
+                                  <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200 bg-white divide-y divide-gray-100">
+                                    {matches.map((m, idx) => {
+                                      const selected = billingPickerMemberId === m.id;
+                                      const isImplicitTop = !billingPickerMemberId && idx === 0;
+                                      const cls = selected
+                                        ? "bg-primary/10 text-primary font-semibold"
+                                        : isImplicitTop
+                                          ? "bg-gray-50 text-gray-700"
+                                          : "hover:bg-gray-50 text-gray-700";
+                                      return (
+                                        <button
+                                          key={m.id}
+                                          type="button"
+                                          onClick={() => setBillingPickerMemberId(m.id)}
+                                          className={`w-full text-left px-2 py-1.5 text-xs transition-colors ${cls}`}
+                                        >
+                                          {m.firstName} {m.lastName}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </>
                             );
                           })()}
                           {billingPickerError && (
