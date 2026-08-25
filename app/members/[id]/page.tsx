@@ -9,7 +9,7 @@ import { getTodayString, parseLocalDate } from "@/lib/dates";
 import { getStyleProgress, type AttendanceRow } from "@/lib/rank-progress";
 import { getEffectivePriceAfterDiscountCents } from "@/lib/member-discount-math";
 import { getMemberStatusPillClasses } from "@/lib/member-status-colors";
-import { matchesMemberSearch } from "@/lib/member-search";
+import { matchesMemberSearch, filterAndRankMembers } from "@/lib/member-search";
 
 // Belt rendering helpers (mirrored from portal/styles)
 function TintedLayer({ src, color }: { src: string; color: string }) {
@@ -2254,6 +2254,7 @@ export default function MemberProfilePage() {
 
   const [billingPickerMode, setBillingPickerMode] = useState<"none" | "paid_for_by" | "pays_for">("none");
   const [billingPickerMemberId, setBillingPickerMemberId] = useState("");
+  const [billingPickerQuery, setBillingPickerQuery] = useState("");
   const [billingPickerError, setBillingPickerError] = useState<string | null>(null);
 
   async function handleAddBillingRelationship() {
@@ -2277,6 +2278,7 @@ export default function MemberProfilePage() {
       await fetchRelationships();
       setBillingPickerMode("none");
       setBillingPickerMemberId("");
+      setBillingPickerQuery("");
       addActivityFromUpdate("Billing relationship updated");
     } catch (err: any) {
       setBillingPickerError(err.message || "Failed to update billing");
@@ -5628,19 +5630,6 @@ export default function MemberProfilePage() {
                           Billing Relationships
                         </h3>
                         <div className="flex gap-1">
-                          {!paidForByRel && billingPickerMode === "none" && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setBillingPickerMode("paid_for_by");
-                                setBillingPickerError(null);
-                              }}
-                              className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white hover:bg-primaryDark"
-                              title="Mark another member as paying for this member (their card gets charged for POS + recurring billing)"
-                            >
-                              Set Paid For By
-                            </button>
-                          )}
                           {billingPickerMode === "none" && (
                             <button
                               type="button"
@@ -5648,10 +5637,23 @@ export default function MemberProfilePage() {
                                 setBillingPickerMode("pays_for");
                                 setBillingPickerError(null);
                               }}
-                              className="rounded-md border border-primary px-2 py-1 text-[10px] font-semibold text-primary hover:bg-primary/10"
+                              className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white hover:bg-primaryDark"
                               title="Mark this member as paying for someone else (this member's card handles their POS + recurring billing)"
                             >
-                              Add Pays For
+                              Pays For
+                            </button>
+                          )}
+                          {!paidForByRel && billingPickerMode === "none" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBillingPickerMode("paid_for_by");
+                                setBillingPickerError(null);
+                              }}
+                              className="rounded-md border border-primary px-2 py-1 text-[10px] font-semibold text-primary hover:bg-primary/10"
+                              title="Mark another member as paying for this member (their card gets charged for POS + recurring billing)"
+                            >
+                              Paid For By
                             </button>
                           )}
                         </div>
@@ -5717,18 +5719,43 @@ export default function MemberProfilePage() {
                               ? "Who pays for this member?"
                               : "Who does this member pay for?"}
                           </p>
-                          <select
-                            value={billingPickerMemberId}
-                            onChange={(e) => setBillingPickerMemberId(e.target.value)}
-                            className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs"
-                          >
-                            <option value="">Select…</option>
-                            {relatedMembersForBilling.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.firstName} {m.lastName}
-                              </option>
-                            ))}
-                          </select>
+                          {/* Search-based picker -- matches the behavior of
+                              Global Search, POS member picker, kiosk, etc.
+                              via the shared filterAndRankMembers helper so
+                              first/last (any order), email, phone, and
+                              member-number searches all work and prefix
+                              matches sort above mid-word matches. */}
+                          <input
+                            type="text"
+                            value={billingPickerQuery}
+                            onChange={(e) => setBillingPickerQuery(e.target.value)}
+                            placeholder="Search by name, email, phone, or member #..."
+                            className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            autoFocus
+                          />
+                          {billingPickerQuery.trim().length >= 2 && (() => {
+                            const matches = filterAndRankMembers(relatedMembersForBilling, billingPickerQuery).slice(0, 8);
+                            if (matches.length === 0) {
+                              return <p className="text-[10px] text-gray-500 italic">No matches.</p>;
+                            }
+                            return (
+                              <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200 bg-white divide-y divide-gray-100">
+                                {matches.map((m) => {
+                                  const selected = billingPickerMemberId === m.id;
+                                  return (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => setBillingPickerMemberId(m.id)}
+                                      className={`w-full text-left px-2 py-1.5 text-xs transition-colors ${selected ? "bg-primary/10 text-primary font-semibold" : "hover:bg-gray-50 text-gray-700"}`}
+                                    >
+                                      {m.firstName} {m.lastName}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                           {billingPickerError && (
                             <p className="text-[10px] text-red-600">{billingPickerError}</p>
                           )}
@@ -5736,7 +5763,8 @@ export default function MemberProfilePage() {
                             <button
                               type="button"
                               onClick={handleAddBillingRelationship}
-                              className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white hover:bg-primaryDark"
+                              disabled={!billingPickerMemberId}
+                              className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                             >
                               Save
                             </button>
@@ -5745,6 +5773,7 @@ export default function MemberProfilePage() {
                               onClick={() => {
                                 setBillingPickerMode("none");
                                 setBillingPickerMemberId("");
+                                setBillingPickerQuery("");
                                 setBillingPickerError(null);
                               }}
                               className="rounded-md border border-gray-300 px-2 py-1 text-[10px] font-semibold text-gray-700 hover:bg-gray-100"
