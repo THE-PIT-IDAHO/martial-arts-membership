@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
 import { generateReportPdf } from "@/lib/report-pdf";
+import { formatDateDisplay } from "@/lib/dates";
 import {
   countAttendanceByType,
   attendanceCountsForStyle,
@@ -657,8 +658,24 @@ function latestPromotionTime(m: { stylesNotes?: string | null }): number {
   }
 }
 function computeLatestPromotion(m: { stylesNotes?: string | null }): string {
-  const t = latestPromotionTime(m);
-  return t > 0 ? new Date(t).toLocaleDateString() : "";
+  // Pull the raw YMD string out of stylesNotes (not the UTC-shifted
+  // number `latestPromotionTime` returns) so the display is stable
+  // across timezones -- otherwise "2026-08-01" would render as
+  // "7/31/2026" for viewers west of UTC.
+  if (!m.stylesNotes) return "";
+  try {
+    const arr = JSON.parse(m.stylesNotes);
+    if (!Array.isArray(arr)) return "";
+    let latestYmd = "";
+    for (const s of arr as Array<{ lastPromotionDate?: string | null }>) {
+      if (!s?.lastPromotionDate) continue;
+      const ymd = String(s.lastPromotionDate).split("T")[0];
+      if (ymd > latestYmd) latestYmd = ymd;
+    }
+    return latestYmd ? formatDateDisplay(latestYmd) : "";
+  } catch {
+    return "";
+  }
 }
 
 // Coach recorded on the member's PRIMARY style entry (matches how
@@ -1735,7 +1752,7 @@ export default function ReportsPage() {
           .filter((m: any) => m.membershipEndDate && new Date(m.membershipEndDate) <= thirtyDaysFromNow && new Date(m.membershipEndDate) >= now)
           .map((m: any) => ({
             memberName: `${m.firstName} ${m.lastName}`,
-            expiryDate: new Date(m.membershipEndDate).toLocaleDateString(),
+            expiryDate: formatDateDisplay(m.membershipEndDate),
             plan: m.membershipPlanName || "Unknown",
           }));
 
@@ -1814,7 +1831,7 @@ export default function ReportsPage() {
         return "Last 12 Months";
       case "custom":
         if (customStart && customEnd) {
-          return `${new Date(customStart).toLocaleDateString()} - ${new Date(customEnd).toLocaleDateString()}`;
+          return `${formatDateDisplay(customStart)} - ${formatDateDisplay(customEnd)}`;
         }
         return "Custom Range";
       default:
@@ -2902,16 +2919,16 @@ export default function ReportsPage() {
                         case "latestPromotion": return computeLatestPromotion(m);
                         case "coach": return computeCoachFromPrimary(m);
                         case "promotionEligible": return eligibleByMember.get(m.id) || "";
-                        case "joinDate": return m.startDate ? new Date(m.startDate).toLocaleDateString() : "";
+                        case "joinDate": return formatDateDisplay(m.startDate);
                         case "waiver": return m.waiverSigned ? "Signed" : "Not Signed";
                         case "membershipType": return m.membershipTypeName || "";
                         case "membershipPlan": return m.membershipPlanName || "";
                         case "monthlyPayment": return `$${((m.monthlyPaymentCents || 0) / 100).toFixed(2)}`;
                         case "outstandingBalance": return `$${((m.outstandingBalanceCents || 0) / 100).toFixed(2)}`;
-                        case "nextPaymentDate": return m.nextPaymentDate ? new Date(m.nextPaymentDate).toLocaleDateString() : "";
-                        case "lastPaymentDate": return m.lastPaymentDate ? new Date(m.lastPaymentDate).toLocaleDateString() : "";
+                        case "nextPaymentDate": return formatDateDisplay(m.nextPaymentDate);
+                        case "lastPaymentDate": return formatDateDisplay(m.lastPaymentDate);
                         case "autoRenew": return m.autoRenew ? "Yes" : "No";
-                        case "expirationDate": return m.membershipEndDate ? new Date(m.membershipEndDate).toLocaleDateString() : "";
+                        case "expirationDate": return formatDateDisplay(m.membershipEndDate);
                         case "totalClasses": return String(m.attendanceCounts?.total || 0);
                         default: return "";
                       }
@@ -3499,7 +3516,7 @@ export default function ReportsPage() {
                                           );
                                         }
                                         case "joinDate":
-                                          return m.startDate ? new Date(m.startDate).toLocaleDateString() : "—";
+                                          return formatDateDisplay(m.startDate) || "—";
                                         case "waiver":
                                           return m.waiverSigned ? "Signed" : "Not Signed";
                                         case "membershipType":
@@ -3519,13 +3536,13 @@ export default function ReportsPage() {
                                           return <span className="text-red-600 font-semibold">${(cents / 100).toFixed(2)}</span>;
                                         }
                                         case "nextPaymentDate":
-                                          return m.nextPaymentDate ? new Date(m.nextPaymentDate).toLocaleDateString() : "—";
+                                          return formatDateDisplay(m.nextPaymentDate) || "—";
                                         case "lastPaymentDate":
-                                          return m.lastPaymentDate ? new Date(m.lastPaymentDate).toLocaleDateString() : "—";
+                                          return formatDateDisplay(m.lastPaymentDate) || "—";
                                         case "autoRenew":
                                           return m.autoRenew === true ? "Yes" : m.autoRenew === false ? "No" : "—";
                                         case "expirationDate":
-                                          return m.membershipEndDate ? new Date(m.membershipEndDate).toLocaleDateString() : "—";
+                                          return formatDateDisplay(m.membershipEndDate) || "—";
                                         case "totalClasses":
                                           return m.attendanceCounts?.total || 0;
                                         default:

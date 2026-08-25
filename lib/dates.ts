@@ -77,6 +77,44 @@ export function parseDateWithTimezone(dateString: string, timezoneOffset?: numbe
 }
 
 /**
+ * Format an arbitrary stored date value ("YYYY-MM-DD", full ISO string
+ * "2026-08-01T00:00:00.000Z", Date object, or null/undefined) as a
+ * calendar-date display string (m/d/yyyy) in the browser's locale.
+ *
+ * Why this exists: user-picked dates (last promotion, join date,
+ * membership end, payment dates) are calendar dates, not UTC instants.
+ * A stored value of "2026-08-01" — or a Prisma DateTime saved as
+ * "2026-08-01T00:00:00.000Z" — is meant to read as "Aug 1" everywhere,
+ * not "Jul 31" in Mountain Time. Plain `new Date(x).toLocaleDateString()`
+ * gets this wrong for both shapes; this helper strips any time portion
+ * and rebuilds the date at local noon so the display stays stable
+ * regardless of viewer timezone.
+ *
+ * Pass null/undefined/empty to get "" back — safe to sprinkle into JSX.
+ */
+export function formatDateDisplay(
+  input: string | Date | null | undefined,
+  options?: Intl.DateTimeFormatOptions,
+): string {
+  if (!input) return "";
+  let ymd: string;
+  if (input instanceof Date) {
+    if (Number.isNaN(input.getTime())) return "";
+    ymd = formatLocalDate(input);
+  } else {
+    // Strip anything after (and including) "T". Handles both bare
+    // "YYYY-MM-DD" and ISO datetime strings the same way.
+    ymd = input.split("T")[0];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return "";
+  }
+  const [y, m, d] = ymd.split("-").map(Number);
+  const local = new Date(y, m - 1, d, 12, 0, 0);
+  return options
+    ? local.toLocaleDateString(undefined, options)
+    : local.toLocaleDateString();
+}
+
+/**
  * Format a Date to YYYY-MM-DD string in local timezone
  */
 export function formatLocalDate(date: Date): string {
