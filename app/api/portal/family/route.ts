@@ -49,7 +49,23 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  const children = relationships.map((rel) => ({
+  // Dedupe by child id -- with the guardian-waiver auto-attach that
+  // now spawns BOTH a kinship row (PARENT / "Parent of" / etc.) AND
+  // a PAYS_FOR row per parent-child pair, the raw list has two rows
+  // per child and the portal was rendering duplicates. When both
+  // exist, prefer the kinship label over "PAYS_FOR" for display --
+  // PAYS_FOR is billing metadata, not what the parent thinks of as
+  // their relationship to the kid.
+  const byChildId = new Map<string, typeof relationships[number]>();
+  for (const rel of relationships) {
+    const existing = byChildId.get(rel.toMember.id);
+    if (!existing) {
+      byChildId.set(rel.toMember.id, rel);
+    } else if (existing.relationship === "PAYS_FOR" && rel.relationship !== "PAYS_FOR") {
+      byChildId.set(rel.toMember.id, rel);
+    }
+  }
+  const children = Array.from(byChildId.values()).map((rel) => ({
     id: rel.toMember.id,
     firstName: rel.toMember.firstName,
     lastName: rel.toMember.lastName,
