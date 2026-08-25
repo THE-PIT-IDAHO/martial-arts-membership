@@ -1315,9 +1315,19 @@ export default function POSPage() {
   );
   const memberDiscountCents = memberDiscountPosCents + memberDiscountMembershipCents;
 
-  // Human-readable label for the summary line (e.g. "10% off").
+  // Human-readable label for the summary line. Prefers the actual
+  // NAMES of the applied discounts (from MemberDiscount.label -- for
+  // template-spawned rows this is the template name like "Family
+  // Discount"). If no rows carry a label at all, falls back to the
+  // math summary ("10% + -$5.00") so the line is never bare.
   const memberDiscountLabel = (() => {
     if (memberDiscountCents <= 0) return "";
+    const names = memberDiscountRows
+      .map((r) => (r.label || "").trim())
+      .filter(Boolean);
+    if (names.length > 0) {
+      return Array.from(new Set(names)).join(", ");
+    }
     const totalPct = memberDiscountRows.reduce((s, r) => s + (r.percentOff ?? 0), 0);
     const totalFlat = memberDiscountRows.reduce((s, r) => s + (r.flatCents ?? 0), 0);
     const parts: string[] = [];
@@ -3113,8 +3123,7 @@ export default function POSPage() {
                 {memberDiscountCents > 0 && (
                   <div className="flex justify-between text-green-600 pl-3 text-xs">
                     <span>
-                      &nbsp;• Member discount
-                      {memberDiscountLabel ? ` (${memberDiscountLabel})` : ""}
+                      &nbsp;• {memberDiscountLabel || "Member discount"}
                     </span>
                     <span>-{formatCents(memberDiscountCents)}</span>
                   </div>
