@@ -2058,7 +2058,7 @@ export default function POSPage() {
                   {catalogTab === "products" && (
                     <Link
                       href="/pos/items"
-                      className="ml-auto rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                      className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                     >
                       Manage Items
                     </Link>
@@ -2067,7 +2067,7 @@ export default function POSPage() {
                     <button
                       type="button"
                       onClick={() => openNewBundleEditor()}
-                      className="ml-auto rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
                       + New Bundle
                     </button>
