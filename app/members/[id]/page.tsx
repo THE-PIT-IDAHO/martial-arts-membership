@@ -687,6 +687,13 @@ export default function MemberProfilePage() {
   const [editingPhoto, setEditingPhoto] = useState(false);
   const [editingPersonal, setEditingPersonal] = useState(false);
   const [editingStyleIndex, setEditingStyleIndex] = useState<number | null>(null);
+  // Live-editable copy of the style row currently in the Edit Style modal.
+  // The modal writes only to this draft so the placard behind it (and the
+  // shared attendance/progress computations that key off rank +
+  // lastPromotionDate) stay frozen until the user clicks Save. On Save
+  // the draft is merged back into `styles`; on cancel it's discarded.
+  const [editingStyleDraft, setEditingStyleDraft] = useState<StyleEntry | null>(null);
+  const [savingStyleDraft, setSavingStyleDraft] = useState(false);
   const [editingPayments, setEditingPayments] = useState(false);
 
   // saved cards (Stripe)
@@ -1521,7 +1528,7 @@ export default function MemberProfilePage() {
     hydrateFormFromMember(member);
 
     if (section === "personal") setEditingPersonal(false);
-    if (section === "style") setEditingStyleIndex(null);
+    if (section === "style") { setEditingStyleIndex(null); setEditingStyleDraft(null); }
     if (section === "membership") setEditingMembershipId(null);
     if (section === "payments") setEditingPayments(false);
     if (section === "photo") setEditingPhoto(false);
@@ -1745,7 +1752,7 @@ export default function MemberProfilePage() {
       // Rank PDFs are now displayed directly from Rank.pdfDocument — no sync needed
 
       if (section === "personal") setEditingPersonal(false);
-      if (section === "style") setEditingStyleIndex(null);
+      if (section === "style") { setEditingStyleIndex(null); setEditingStyleDraft(null); }
       if (section === "membership") setEditingMembershipId(null);
       if (section === "payments") setEditingPayments(false);
       if (section === "photo") setEditingPhoto(false);
@@ -2058,34 +2065,126 @@ export default function MemberProfilePage() {
     ]);
   }
 
-  function updateStyle(
-    index: number,
-    field: keyof StyleEntry,
-    value: string | boolean
-  ) {
-    setStyles((prev) => {
-      const copy = [...prev];
-      const current =
-        copy[index] ?? {
-          name: "",
-          rank: "",
-          beltSize: "",
-          beltText: "",
-          coach: "",
-          uniformSize: "",
-          startDate: "",
-          lastPromotionDate: ""
-        };
+  // Open the Edit Style modal on an existing row, or (when `index ===
+  // styles.length`) on a brand-new blank draft that only lands in the
+  // roster if the coach hits Save. Seeding a *copy* here is what keeps
+  // the placard behind the modal from mutating live.
+  function openStyleEditor(index: number) {
+    const seed: StyleEntry =
+      styles[index]
+        ? { ...styles[index] }
+        : { name: "", rank: "", beltSize: "", beltText: "", coach: "", uniformSize: "", startDate: "" };
+    setEditingStyleDraft(seed);
+    setEditingStyleIndex(index);
+  }
 
-      // If rank is changing to a different value, update lastPromotionDate
-      if (field === "rank" && value !== current.rank && value !== "") {
-        const today = getTodayString();
-        copy[index] = { ...current, [field]: value, lastPromotionDate: today } as StyleEntry;
-      } else {
-        copy[index] = { ...current, [field]: value } as StyleEntry;
-      }
-      return copy;
+  function closeStyleEditor() {
+    setEditingStyleIndex(null);
+    setEditingStyleDraft(null);
+  }
+
+  // Field-level updater bound to the modal-local draft ONLY. Notably no
+  // auto-`lastPromotionDate` side-effect on rank change: the previous
+  // implementation stamped today() on rank change, which silently reset
+  // every attendance-toward-next-rank count. Only the "Reset Classes"
+  // button and the promotion flow should wipe class progress -- editing
+  // metadata in this modal must not.
+  function updateStyleDraft(field: keyof StyleEntry, value: string | boolean) {
+    setEditingStyleDraft((prev) => {
+      if (!prev) return prev;
+      return { ...prev, [field]: value } as StyleEntry;
     });
+  }
+
+  // Commit the modal draft into `styles`, PATCH the member, close the
+  // modal. Mirrors saveSection("style") -- same normalization + activity
+  // log entries -- but operates on the freshly-merged array instead of
+  // reading stale `styles` state (setState is async).
+  async function commitStyleDraft() {
+    if (!memberId || editingStyleIndex === null || !editingStyleDraft) return;
+    const draft = editingStyleDraft;
+    if (!draft.name.trim()) {
+      alert("Pick a style before saving.");
+      return;
+    }
+    const idx = editingStyleIndex;
+    const mergedStyles =
+      idx < styles.length
+        ? styles.map((s, i) => (i === idx ? draft : s))
+        : [...styles, draft];
+
+    const oldStyles = member ? parseStylesFromMember(member) : [];
+    const normalizedStyles = mergedStyles
+      .map((s) => ({
+        name: s.name.trim(),
+        rank: s.rank?.trim() || undefined,
+        beltSize: s.beltSize?.trim() || undefined,
+        beltText: s.beltText?.trim() || undefined,
+        coach: s.coach?.trim() || undefined,
+        uniformSize: s.uniformSize?.trim() || undefined,
+        startDate: s.startDate || undefined,
+        lastPromotionDate: s.lastPromotionDate || undefined,
+        active: s.active,
+        attendanceResetDate: s.attendanceResetDate || undefined,
+        showProgressInPortal:
+          typeof s.showProgressInPortal === "boolean" ? s.showProgressInPortal : undefined,
+      }))
+      .filter((s) => s.name !== "");
+    const primary = normalizedStyles[0];
+
+    try {
+      setSavingStyleDraft(true);
+      const res = await fetch(`/api/members/${memberId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          primaryStyle: primary ? primary.name : null,
+          stylesNotes: normalizedStyles.length > 0 ? JSON.stringify(normalizedStyles) : null,
+          rank: primary && primary.rank ? primary.rank : null,
+          startDate: primary && primary.startDate ? primary.startDate : null,
+          uniformSize: primary && primary.uniformSize ? primary.uniformSize : null,
+        }),
+      });
+      if (!res.ok) {
+        alert("Failed to save style.");
+        return;
+      }
+      const data = await res.json();
+      setMember(data.member);
+      setStyles(mergedStyles);
+
+      // Activity log — same rules as saveSection("style"): promotion,
+      // initial rank, new style; otherwise a generic "Styles updated".
+      const changes: string[] = [];
+      normalizedStyles.forEach((newStyle) => {
+        const oldStyle = oldStyles.find((os) => os.name === newStyle.name);
+        if (oldStyle) {
+          if (newStyle.rank && newStyle.rank !== oldStyle.rank) {
+            if (!oldStyle.rank) {
+              changes.push(`Rank set to ${newStyle.rank} in ${newStyle.name}`);
+            } else {
+              changes.push(`Promoted to ${newStyle.rank} in ${newStyle.name}`);
+            }
+          }
+        } else if (newStyle.name) {
+          changes.push(
+            `Added style: ${newStyle.name}${newStyle.rank ? ` (${newStyle.rank})` : ""}`,
+          );
+        }
+      });
+      if (changes.length > 0) {
+        changes.forEach((c) => addActivity(c, "STYLE"));
+      } else {
+        addActivity("Styles updated", "STYLE");
+      }
+
+      closeStyleEditor();
+    } catch (err) {
+      console.error("Failed to save style draft:", err);
+      alert("Failed to save style.");
+    } finally {
+      setSavingStyleDraft(false);
+    }
   }
 
   async function removeStyle(index: number) {
@@ -4339,8 +4438,7 @@ export default function MemberProfilePage() {
                   <button
                     type="button"
                     onClick={() => {
-                      addStyle();
-                      setEditingStyleIndex(styles.length);
+                      openStyleEditor(styles.length);
                       setStylesTab("active");
                     }}
                     className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
@@ -4604,7 +4702,7 @@ export default function MemberProfilePage() {
                             <div className="flex flex-wrap gap-1 pt-1 border-t border-gray-100">
                               <button
                                 type="button"
-                                onClick={() => setEditingStyleIndex(i)}
+                                onClick={() => openStyleEditor(i)}
                                 className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                               >
                                 Edit
@@ -4649,18 +4747,22 @@ export default function MemberProfilePage() {
                 })()}
               </section>
 
-              {/* STYLE EDIT MODAL */}
-              {editingStyleIndex !== null && editingStyleIndex < styles.length && (() => {
+              {/* STYLE EDIT MODAL. All inputs bind to editingStyleDraft --
+                  the source styles[] and every derived progress bar behind
+                  the modal stay frozen until commitStyleDraft(). Close X /
+                  Cancel just discard the draft. */}
+              {editingStyleIndex !== null && editingStyleDraft !== null && (() => {
                 const i = editingStyleIndex;
-                const s = styles[i];
+                const s = editingStyleDraft;
+                const isNewStyle = i >= styles.length;
                 return (
                   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
                     <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold">Edit Style</h3>
+                        <h3 className="text-lg font-semibold">{isNewStyle ? "Add Style" : "Edit Style"}</h3>
                         <button
                           type="button"
-                          onClick={() => setEditingStyleIndex(null)}
+                          onClick={closeStyleEditor}
                           className="text-gray-400 hover:text-gray-600"
                         >
                           ✕
@@ -4671,7 +4773,7 @@ export default function MemberProfilePage() {
                           <label className="block text-xs font-medium text-gray-700">Style</label>
                           <select
                             value={s.name}
-                            onChange={(e) => updateStyle(i, "name", e.target.value)}
+                            onChange={(e) => updateStyleDraft("name", e.target.value)}
                             className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                           >
                             <option value="">Select Style</option>
@@ -4684,7 +4786,7 @@ export default function MemberProfilePage() {
                           <label className="block text-xs font-medium text-gray-700">Rank Level</label>
                           <select
                             value={s.rank || ""}
-                            onChange={(e) => updateStyle(i, "rank", e.target.value)}
+                            onChange={(e) => updateStyleDraft("rank", e.target.value)}
                             className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                           >
                             <option value="">Select Rank</option>
@@ -4696,13 +4798,16 @@ export default function MemberProfilePage() {
                               ));
                             })()}
                           </select>
+                          <p className="text-[10px] text-gray-500">
+                            Editing rank here doesn't reset class progress. Use "Reset Classes" or promote through the promotions flow for that.
+                          </p>
                         </div>
                         <div className="space-y-1">
                           <label className="block text-xs font-medium text-gray-700">Training Start Date</label>
                           <input
                             type="date"
                             value={s.startDate || ""}
-                            onChange={(e) => updateStyle(i, "startDate", e.target.value)}
+                            onChange={(e) => updateStyleDraft("startDate", e.target.value)}
                             className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                           />
                         </div>
@@ -4711,7 +4816,7 @@ export default function MemberProfilePage() {
                           <input
                             type="date"
                             value={s.lastPromotionDate || ""}
-                            onChange={(e) => updateStyle(i, "lastPromotionDate", e.target.value)}
+                            onChange={(e) => updateStyleDraft("lastPromotionDate", e.target.value)}
                             className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                           />
                         </div>
@@ -4725,13 +4830,13 @@ export default function MemberProfilePage() {
                           <input
                             type="date"
                             value={s.attendanceResetDate || ""}
-                            onChange={(e) => updateStyle(i, "attendanceResetDate", e.target.value)}
+                            onChange={(e) => updateStyleDraft("attendanceResetDate", e.target.value)}
                             className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                           />
                           {s.attendanceResetDate && (
                             <button
                               type="button"
-                              onClick={() => updateStyle(i, "attendanceResetDate", "")}
+                              onClick={() => updateStyleDraft("attendanceResetDate", "")}
                               className="text-[10px] text-gray-500 hover:text-primary underline"
                             >
                               Clear (count all attendance)
@@ -4742,7 +4847,7 @@ export default function MemberProfilePage() {
                           <label className="block text-xs font-medium text-gray-700">Belt Size</label>
                           <input
                             value={s.beltSize || ""}
-                            onChange={(e) => updateStyle(i, "beltSize", e.target.value)}
+                            onChange={(e) => updateStyleDraft("beltSize", e.target.value)}
                             className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                             placeholder="e.g. A2"
                           />
@@ -4751,7 +4856,7 @@ export default function MemberProfilePage() {
                           <label className="block text-xs font-medium text-gray-700">Belt Text</label>
                           <input
                             value={s.beltText || ""}
-                            onChange={(e) => updateStyle(i, "beltText", e.target.value)}
+                            onChange={(e) => updateStyleDraft("beltText", e.target.value)}
                             className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                             placeholder="e.g. embroidery text"
                           />
@@ -4759,30 +4864,18 @@ export default function MemberProfilePage() {
                         <div className="space-y-1">
                           <label className="block text-xs font-medium text-gray-700">Coach</label>
                           {(() => {
-                            // Dropdown of members whose status contains
-                            // COACH. Saves plain text (coach's display
-                            // name) so a coach removal later doesn't wipe
-                            // the historical attribution. A "-- none --"
-                            // option clears the field. A datalist-style
-                            // free-type is intentionally NOT used here --
-                            // typos across reports would fragment the
-                            // "Filter by coach" list on the report page.
                             const coachOptions = allMembers
                               .filter((mem) => (mem.status || "").toUpperCase().includes("COACH"))
                               .map((mem) => `${mem.firstName || ""} ${mem.lastName || ""}`.trim())
                               .filter((n) => n.length > 0)
                               .sort((a, b) => a.localeCompare(b));
                             const current = s.coach || "";
-                            // If the saved value refers to a name that
-                            // isn't in the current coach roster (e.g. that
-                            // member lost COACH status), keep showing it
-                            // as an extra option so the record survives.
                             const optionSet = new Set(coachOptions);
                             const preservedLegacy = current && !optionSet.has(current) ? [current] : [];
                             return (
                               <select
                                 value={current}
-                                onChange={(e) => updateStyle(i, "coach", e.target.value)}
+                                onChange={(e) => updateStyleDraft("coach", e.target.value)}
                                 className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary bg-white"
                               >
                                 <option value="">— none —</option>
@@ -4800,7 +4893,7 @@ export default function MemberProfilePage() {
                           <label className="block text-xs font-medium text-gray-700">Uniform Size</label>
                           <input
                             value={s.uniformSize || ""}
-                            onChange={(e) => updateStyle(i, "uniformSize", e.target.value)}
+                            onChange={(e) => updateStyleDraft("uniformSize", e.target.value)}
                             className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                             placeholder="e.g. Medium"
                           />
@@ -4810,7 +4903,7 @@ export default function MemberProfilePage() {
                             type="checkbox"
                             id={`style-active-${i}`}
                             checked={s.active !== false}
-                            onChange={(e) => updateStyle(i, "active", e.target.checked)}
+                            onChange={(e) => updateStyleDraft("active", e.target.checked)}
                             className="rounded border-gray-300 text-primary focus:ring-primary"
                           />
                           <label htmlFor={`style-active-${i}`} className="text-xs font-medium text-gray-700">
@@ -4833,11 +4926,8 @@ export default function MemberProfilePage() {
                             onChange={(e) => {
                               const v = e.target.value;
                               const bool = v === "show" ? true : v === "hide" ? false : undefined;
-                              updateStyle(
-                                i,
+                              updateStyleDraft(
                                 "showProgressInPortal",
-                                // updateStyle accepts string | boolean; pass boolean
-                                // when we have one, empty string to clear override.
                                 bool === undefined ? ("" as string) : bool,
                               );
                             }}
@@ -4851,22 +4941,31 @@ export default function MemberProfilePage() {
                         <div className="flex gap-2 pt-3 border-t">
                           <button
                             type="button"
-                            onClick={() => saveSection("style")}
-                            disabled={savingSection === "style"}
+                            onClick={commitStyleDraft}
+                            disabled={savingStyleDraft || !s.name.trim()}
                             className="flex-1 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                           >
-                            {savingSection === "style" ? "Saving..." : "Save"}
+                            {savingStyleDraft ? "Saving..." : "Save"}
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              removeStyle(i);
-                              setEditingStyleIndex(null);
-                            }}
+                            onClick={closeStyleEditor}
                             className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                           >
-                            Remove Style
+                            Cancel
                           </button>
+                          {!isNewStyle && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                removeStyle(i);
+                                closeStyleEditor();
+                              }}
+                              className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              Remove
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
