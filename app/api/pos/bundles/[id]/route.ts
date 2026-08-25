@@ -14,12 +14,13 @@ type IncomingBundleItem = {
 // GET /api/pos/bundles/[id]
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const clientId = await getClientId(req);
+    const { id } = await params;
     const bundle = await prisma.bundle.findFirst({
-      where: { id: params.id, clientId },
+      where: { id, clientId },
       include: { items: { orderBy: { sortOrder: "asc" } } },
     });
     if (!bundle) return NextResponse.json({ error: "Bundle not found" }, { status: 404 });
@@ -35,14 +36,15 @@ export async function GET(
 // posts back the full item list on each save.
 export async function PUT(
   req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const clientId = await getClientId(req);
+    const { id } = await params;
     // Tenant guard: block writes to a bundle that belongs to another
     // gym, and give a proper 404 for a bogus id.
     const existing = await prisma.bundle.findUnique({
-      where: { id: params.id },
+      where: { id },
       select: { clientId: true },
     });
     if (!existing) return NextResponse.json({ error: "Bundle not found" }, { status: 404 });
@@ -98,9 +100,9 @@ export async function PUT(
     // Wipe + recreate items (cheaper mentally than diffing quantities /
     // kinds and matching cids across a full form re-submit).
     const [, bundle] = await prisma.$transaction([
-      prisma.bundleItem.deleteMany({ where: { bundleId: params.id } }),
+      prisma.bundleItem.deleteMany({ where: { bundleId: id } }),
       prisma.bundle.update({
-        where: { id: params.id },
+        where: { id },
         data: {
           name: name.trim(),
           description: description?.trim() || null,
@@ -133,12 +135,13 @@ export async function PUT(
 // DELETE /api/pos/bundles/[id]
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const clientId = await getClientId(req);
+    const { id } = await params;
     const existing = await prisma.bundle.findUnique({
-      where: { id: params.id },
+      where: { id },
       select: { clientId: true },
     });
     if (!existing) return NextResponse.json({ error: "Bundle not found" }, { status: 404 });
@@ -146,7 +149,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     // BundleItem rows cascade-delete via the FK.
-    await prisma.bundle.delete({ where: { id: params.id } });
+    await prisma.bundle.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("DELETE /api/pos/bundles/[id] error:", err);
