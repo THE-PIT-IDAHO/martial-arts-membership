@@ -148,6 +148,26 @@ type BundleEditorState = {
   error: string | null;
 };
 
+// One row per variant-required product inside a bundle being added to
+// the cart. `picks` holds the operator's per-row size / color choices.
+// bundleItemId is the BundleItem.id so different rows referencing the
+// same product still get independent slots.
+type BundleAddPickerVariantRow = {
+  bundleItemId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  sizes: string[];
+  colors: string[];
+  variantLabel1: string;
+  variantLabel2: string;
+};
+type BundleAddPickerState = {
+  bundle: Bundle;
+  variantRows: BundleAddPickerVariantRow[];
+  picks: Record<string, { size: string | null; color: string | null }>;
+};
+
 // Snapshot of one slot inside a bundle. Rides along on the bundle
 // cart line so the server can process side effects per contained
 // item (inventory decrement for products, Membership create for
@@ -256,6 +276,11 @@ export default function POSPage() {
   // dedicated tile grid, and admin-editable inline from the same tab.
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [bundleEditor, setBundleEditor] = useState<BundleEditorState | null>(null);
+  // Variant picker for a bundle being added to the cart: if any
+  // included product has size/color variants, the operator picks them
+  // HERE (not in the bundle definition), so inventory decrements land
+  // on the right variant row for this specific sale.
+  const [bundleAddPicker, setBundleAddPicker] = useState<BundleAddPickerState | null>(null);
 
   // Account credit / gift certificate
   const [creditAmount, setCreditAmount] = useState("");
@@ -758,6 +783,53 @@ export default function POSPage() {
       alert("Please select a member first -- this bundle includes a membership or appointment.");
       return;
     }
+
+    // Any variant-required products inside the bundle prompt the
+    // operator for size / color at add-to-cart time. Picking variants
+    // in the bundle definition would be wrong -- an operator might
+    // want the same "New Student Special" bundle to include a
+    // "Medium White Gi" for one sale and "Large Blue Gi" for the
+    // next.
+    const variantRows: BundleAddPickerVariantRow[] = [];
+    for (const it of bundle.items) {
+      if (it.kind !== "product" || !it.productId) continue;
+      const prod = items.find((p) => p.id === it.productId);
+      if (!prod || !hasVariants(prod)) continue;
+      const sizes: string[] = prod.sizes ? (typeof prod.sizes === "string" ? JSON.parse(prod.sizes) : prod.sizes) : [];
+      const colors: string[] = prod.colors ? (typeof prod.colors === "string" ? JSON.parse(prod.colors) : prod.colors) : [];
+      variantRows.push({
+        bundleItemId: it.id,
+        productId: prod.id,
+        productName: prod.name,
+        quantity: it.quantity,
+        sizes,
+        colors,
+        variantLabel1: prod.variantLabel1 || "Size",
+        variantLabel2: prod.variantLabel2 || "Color",
+      });
+    }
+
+    if (variantRows.length > 0) {
+      const picks: Record<string, { size: string | null; color: string | null }> = {};
+      for (const row of variantRows) {
+        picks[row.bundleItemId] = {
+          size: row.sizes[0] || null,
+          color: row.colors[0] || null,
+        };
+      }
+      setBundleAddPicker({ bundle, variantRows, picks });
+      return;
+    }
+
+    finalizeBundleToCart(bundle, {});
+  }
+
+  // Actually push the bundle line into the cart, applying per-row
+  // variant picks from the picker (if any).
+  function finalizeBundleToCart(
+    bundle: Bundle,
+    picksByBundleItemId: Record<string, { size: string | null; color: string | null }>,
+  ) {
     const contents: BundleCartContent[] = bundle.items
       .filter((it) => {
         if (it.kind === "product") return !!it.productId;
@@ -765,16 +837,19 @@ export default function POSPage() {
         if (it.kind === "service") return !!it.servicePackageId;
         return false;
       })
-      .map((it) => ({
-        kind: it.kind as "product" | "membership" | "service",
-        productId: it.productId || undefined,
-        membershipPlanId: it.membershipPlanId || undefined,
-        servicePackageId: it.servicePackageId || undefined,
-        nameCached: it.nameCached,
-        quantity: it.quantity,
-        selectedSize: it.selectedSize,
-        selectedColor: it.selectedColor,
-      }));
+      .map((it) => {
+        const pick = picksByBundleItemId[it.id];
+        return {
+          kind: it.kind as "product" | "membership" | "service",
+          productId: it.productId || undefined,
+          membershipPlanId: it.membershipPlanId || undefined,
+          servicePackageId: it.servicePackageId || undefined,
+          nameCached: it.nameCached,
+          quantity: it.quantity,
+          selectedSize: pick ? pick.size : it.selectedSize,
+          selectedColor: pick ? pick.color : it.selectedColor,
+        };
+      });
     setCart((prev) => [
       ...prev,
       {
@@ -787,6 +862,7 @@ export default function POSPage() {
         bundleContents: contents,
       },
     ]);
+    setBundleAddPicker(null);
   }
 
   // Bundle admin (create + edit). The editor state is a live draft;
@@ -2102,9 +2178,9 @@ export default function POSPage() {
                   {catalogTab === "products" && (
                     <Link
                       href="/pos/items"
-                      className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
-                      Manage Items
+                      Add Item
                     </Link>
                   )}
                   {catalogTab === "bundles" && (
@@ -2113,7 +2189,7 @@ export default function POSPage() {
                       onClick={() => openNewBundleEditor()}
                       className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
-                      + New Bundle
+                      Add Bundle
                     </button>
                   )}
                 </div>
@@ -2229,7 +2305,7 @@ export default function POSPage() {
               {catalogTab === "bundles" && (
                 filteredBundles.length === 0 ? (
                   <p className="text-gray-500 text-center py-8">
-                    No bundles yet. Use <button type="button" onClick={() => openNewBundleEditor()} className="text-primary hover:underline">+ New Bundle</button> to package products together at one price.
+                    No bundles yet. Use <button type="button" onClick={() => openNewBundleEditor()} className="text-primary hover:underline">Add Bundle</button> to package products together at one price.
                   </p>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -3971,6 +4047,115 @@ export default function POSPage() {
           }}
         />
       )}
+
+      {/* BUNDLE ADD-TO-CART VARIANT PICKER. Opens when any of the
+          products inside the bundle being added has size / color
+          variants. Operator picks per-row; on confirm we push the
+          bundle line with those picks so inventory decrements land on
+          the right variant. Same size/color grid style as the
+          single-product variant picker. */}
+      {bundleAddPicker && (() => {
+        const state = bundleAddPicker;
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 className="text-lg font-bold">Pick variants — {state.bundle.name}</h2>
+                <button
+                  type="button"
+                  onClick={() => setBundleAddPicker(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-4 space-y-5">
+                {state.variantRows.map((row) => {
+                  const pick = state.picks[row.bundleItemId] || { size: null, color: null };
+                  return (
+                    <div key={row.bundleItemId} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-gray-900">{row.productName}</p>
+                        {row.quantity > 1 && (
+                          <span className="text-[11px] font-medium text-gray-500">×{row.quantity}</span>
+                        )}
+                      </div>
+                      {row.sizes.length > 0 && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">{row.variantLabel1}</label>
+                          <div className="flex flex-wrap gap-2">
+                            {row.sizes.map((size) => (
+                              <button
+                                key={size}
+                                type="button"
+                                onClick={() =>
+                                  setBundleAddPicker({
+                                    ...state,
+                                    picks: { ...state.picks, [row.bundleItemId]: { ...pick, size } },
+                                  })
+                                }
+                                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                                  pick.size === size
+                                    ? "border-primary bg-primary text-white font-semibold"
+                                    : "border-gray-300 hover:border-primary text-gray-700"
+                                }`}
+                              >
+                                {size}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {row.colors.length > 0 && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">{row.variantLabel2}</label>
+                          <div className="flex flex-wrap gap-2">
+                            {row.colors.map((color) => (
+                              <button
+                                key={color}
+                                type="button"
+                                onClick={() =>
+                                  setBundleAddPicker({
+                                    ...state,
+                                    picks: { ...state.picks, [row.bundleItemId]: { ...pick, color } },
+                                  })
+                                }
+                                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                                  pick.color === color
+                                    ? "border-primary bg-primary text-white font-semibold"
+                                    : "border-gray-300 hover:border-primary text-gray-700"
+                                }`}
+                              >
+                                {color}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBundleAddPicker(null)}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => finalizeBundleToCart(state.bundle, state.picks)}
+                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark"
+                >
+                  Add to Cart
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* BUNDLE EDITOR MODAL */}
       {bundleEditor && (() => {
