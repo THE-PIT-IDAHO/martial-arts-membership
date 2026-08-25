@@ -119,6 +119,23 @@ export async function POST(req: Request) {
         relationship: relName,
       },
     });
+    // Auto-attach PAYS_FOR unless the child already has a payer set
+    // up (e.g. grandparent is already the billing contact). The
+    // signing parent is usually who gets billed, and skipping when
+    // one already exists prevents the waiver from overriding a
+    // deliberate existing setup.
+    const existingPayer = await prisma.memberRelationship.findFirst({
+      where: { relationship: "PAYS_FOR", toMemberId: child.id },
+    });
+    if (!existingPayer) {
+      await prisma.memberRelationship.create({
+        data: {
+          fromMemberId: parent.id,
+          toMemberId: child.id,
+          relationship: "PAYS_FOR",
+        },
+      });
+    }
 
     const finalTemplateName = templateName || "Liability Waiver (Guardian)";
     const finalContent = waiverContent || "Standard liability waiver";

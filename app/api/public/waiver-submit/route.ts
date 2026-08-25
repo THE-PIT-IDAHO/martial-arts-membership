@@ -511,6 +511,22 @@ async function handleGuardianSubmit(body: Record<string, unknown>, clientId: str
           },
         });
       }
+      // Auto-attach PAYS_FOR unless this child already has a payer
+      // (grandparent already set up as payer, etc.) -- the signer is
+      // usually who ends up billed for the child's charges, and we
+      // don't want the waiver to yank a deliberate existing setup.
+      const existingPayer = await prisma.memberRelationship.findFirst({
+        where: { relationship: "PAYS_FOR", toMemberId: dependentId },
+      });
+      if (!existingPayer) {
+        await prisma.memberRelationship.create({
+          data: {
+            fromMemberId: guardian.id,
+            toMemberId: dependentId,
+            relationship: "PAYS_FOR",
+          },
+        });
+      }
     }
     dependentIds.push(dependentId);
   }
