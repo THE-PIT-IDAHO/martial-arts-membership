@@ -531,15 +531,32 @@ export default function MemberProfilePage() {
     oneTime: boolean;
     active: boolean;
     usedAt: string | null;
+    templateId: string | null;
     createdAt: string;
   };
+  type DiscountTemplate = {
+    id: string;
+    name: string;
+    description: string | null;
+    appliesTo: "POS" | "MEMBERSHIP" | "PROMOTION" | "ALL";
+    percentOff: number | null;
+    flatCents: number | null;
+    oneTime: boolean;
+    active: boolean;
+  };
   const [memberDiscounts, setMemberDiscounts] = useState<MemberDiscount[]>([]);
+  const [discountTemplates, setDiscountTemplates] = useState<DiscountTemplate[]>([]);
   const [showAddDiscount, setShowAddDiscount] = useState(false);
   const [newDiscountAppliesTo, setNewDiscountAppliesTo] = useState<"POS" | "MEMBERSHIP" | "PROMOTION" | "ALL">("ALL");
   const [newDiscountPercent, setNewDiscountPercent] = useState("");
   const [newDiscountFlat, setNewDiscountFlat] = useState("");
   const [newDiscountLabel, setNewDiscountLabel] = useState("");
   const [newDiscountOneTime, setNewDiscountOneTime] = useState(false);
+  // ID of the template currently pre-filling the Add Discount form.
+  // Preserved through save so the new MemberDiscount row keeps a back-
+  // reference to the template it was spawned from. "" = "Custom" (no
+  // template).
+  const [newDiscountTemplateId, setNewDiscountTemplateId] = useState("");
   const [savingDiscount, setSavingDiscount] = useState(false);
   const [serviceCredits, setServiceCredits] = useState<Array<{
     id: string;
@@ -876,10 +893,20 @@ export default function MemberProfilePage() {
         .then(d => { if (d?.contracts) setMemberContracts(d.contracts); })
         .catch(() => {});
 
-      // Fetch per-member discounts
-      fetch(`/api/members/${memberId}/discounts`)
+      // Fetch per-member discounts. includeInactive=1 so the profile
+      // toggle can render disabled rows too (POS + billing paths use
+      // the default active-only response).
+      fetch(`/api/members/${memberId}/discounts?includeInactive=1`)
         .then(r => r.ok ? r.json() : null)
         .then(d => { if (d?.discounts) setMemberDiscounts(d.discounts); })
+        .catch(() => {});
+
+      // Fetch discount templates for the Add Discount picker. Fine to
+      // hit this every profile load -- the response is tiny and
+      // cached client-side by the fetch.
+      fetch(`/api/discount-templates`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.templates) setDiscountTemplates(d.templates); })
         .catch(() => {});
     } catch (err: any) {
       console.error(err);
@@ -6379,11 +6406,17 @@ export default function MemberProfilePage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {memberDiscounts.map((d) => {
-                        const amount = d.percentOff
-                          ? `${d.percentOff}%`
-                          : d.flatCents != null
-                            ? `$${(d.flatCents / 100).toFixed(2)}`
-                            : "—";
+                        const amount = d.percentOff && d.flatCents
+                          ? `${d.percentOff}% + $${(d.flatCents / 100).toFixed(2)}`
+                          : d.percentOff
+                            ? `${d.percentOff}%`
+                            : d.flatCents != null
+                              ? `$${(d.flatCents / 100).toFixed(2)}`
+                              : "—";
+                        // Used-and-consumed one-times are visually
+                        // frozen; toggle stays disabled since flipping
+                        // active back on won't undo the usedAt stamp.
+                        const consumed = !!d.usedAt;
                         return (
                           <tr key={d.id} className={d.active ? "" : "opacity-60"}>
                             <td className="py-2 pr-3 font-mono text-gray-700">{d.appliesTo}</td>
@@ -6391,13 +6424,48 @@ export default function MemberProfilePage() {
                             <td className="py-2 pr-3 text-gray-600">{d.oneTime ? "One-time" : "Lasting"}</td>
                             <td className="py-2 pr-3 text-gray-600">{d.label || "—"}</td>
                             <td className="py-2 pr-3">
-                              {d.active ? (
-                                <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">Active</span>
-                              ) : (
-                                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
-                                  Used {d.usedAt ? new Date(d.usedAt).toLocaleDateString() : ""}
-                                </span>
-                              )}
+                              <button
+                                type="button"
+                                disabled={consumed}
+                                onClick={async () => {
+                                  try {
+                                    const res = await fetch(
+                                      `/api/members/${memberId}/discounts?discountId=${d.id}`,
+                                      {
+                                        method: "PATCH",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ active: !d.active }),
+                                      },
+                                    );
+                                    if (res.ok) {
+                                      const data = await res.json();
+                                      setMemberDiscounts((prev) =>
+                                        prev.map((x) => (x.id === d.id ? data.discount : x)),
+                                      );
+                                    }
+                                  } catch { /* ignore */ }
+                                }}
+                                title={
+                                  consumed
+                                    ? `Already used ${d.usedAt ? new Date(d.usedAt).toLocaleDateString() : ""}`
+                                    : d.active
+                                      ? "Pause this discount"
+                                      : "Resume this discount"
+                                }
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                  consumed
+                                    ? "bg-gray-100 text-gray-500 cursor-not-allowed"
+                                    : d.active
+                                      ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                      : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                                }`}
+                              >
+                                {consumed
+                                  ? `Used ${d.usedAt ? new Date(d.usedAt).toLocaleDateString() : ""}`
+                                  : d.active
+                                    ? "On"
+                                    : "Off"}
+                              </button>
                             </td>
                             <td className="py-2">
                               <button
@@ -7573,6 +7641,7 @@ export default function MemberProfilePage() {
                       percentOff: newDiscountPercent ? Number(newDiscountPercent) : null,
                       flatCents: newDiscountFlat ? Math.round(Number(newDiscountFlat) * 100) : null,
                       oneTime: newDiscountOneTime,
+                      templateId: newDiscountTemplateId || null,
                     }),
                   });
                   if (res.ok) {
@@ -7584,6 +7653,7 @@ export default function MemberProfilePage() {
                     setNewDiscountLabel("");
                     setNewDiscountOneTime(false);
                     setNewDiscountAppliesTo("ALL");
+                    setNewDiscountTemplateId("");
                   } else {
                     const err = await res.json().catch(() => ({}));
                     alert(err.error || "Failed to add discount");
@@ -7596,6 +7666,49 @@ export default function MemberProfilePage() {
               }}
               className="p-5 space-y-3"
             >
+              {/* Template picker. Picking one PRE-FILLS every field
+                  below, but the operator can still tweak before Save
+                  (e.g. Grandma pays a flat $25 off instead of the
+                  template's 10%). Custom = clear everything back to
+                  defaults. */}
+              {discountTemplates.length > 0 && (
+                <div>
+                  <label className="text-[10px] font-semibold uppercase text-gray-500">From Template</label>
+                  <select
+                    value={newDiscountTemplateId}
+                    onChange={(e) => {
+                      const tid = e.target.value;
+                      setNewDiscountTemplateId(tid);
+                      if (!tid) return;
+                      const t = discountTemplates.find((x) => x.id === tid);
+                      if (!t) return;
+                      setNewDiscountLabel(t.name);
+                      setNewDiscountAppliesTo(t.appliesTo);
+                      setNewDiscountPercent(t.percentOff != null ? String(t.percentOff) : "");
+                      setNewDiscountFlat(t.flatCents != null ? (t.flatCents / 100).toFixed(2) : "");
+                      setNewDiscountOneTime(t.oneTime);
+                    }}
+                    className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs bg-white"
+                  >
+                    <option value="">— Custom (no template) —</option>
+                    {discountTemplates.filter((t) => t.active).map((t) => {
+                      const amt = t.percentOff && t.flatCents
+                        ? `${t.percentOff}% + $${(t.flatCents / 100).toFixed(2)}`
+                        : t.percentOff
+                          ? `${t.percentOff}%`
+                          : t.flatCents != null
+                            ? `$${(t.flatCents / 100).toFixed(2)}`
+                            : "—";
+                      return (
+                        <option key={t.id} value={t.id}>{t.name} ({amt})</option>
+                      );
+                    })}
+                  </select>
+                  <p className="mt-1 text-[10px] text-gray-500">
+                    Prefills the fields below. Edit any of them before saving; the change won&apos;t affect the template.
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="text-[10px] font-semibold uppercase text-gray-500">Applies To</label>
                 <select

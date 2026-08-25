@@ -21,6 +21,7 @@ const navItems: NavItem[] = [
   { label: "Curriculum", href: "/curriculum", permissionKey: "curriculum" },
   { label: "Promotions", href: "/promotions", permissionKey: "promotions" },
   { label: "POS (Point of Sale)", href: "/pos", permissionKey: "pos" },
+  { label: "Discounts", href: "/discounts", permissionKey: "pos" },
   { label: "Billing", href: "/invoices", permissionKey: "billing" },
   { label: "Contracts", href: "/contracts", permissionKey: "contracts" },
   { label: "Waivers", href: "/waivers", permissionKey: "waivers" },

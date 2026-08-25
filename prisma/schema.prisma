@@ -329,6 +329,12 @@ model MemberDiscount {
   oneTime    Boolean   @default(false)
   active     Boolean   @default(true)
   usedAt     DateTime?
+  // Nullable pointer to the template this row was spawned from (via
+  // "Add Discount -> pick from templates" on the member profile).
+  // Kept for a lightweight "how many members are using Family
+  // Discount" lookup later; not enforced -- editing the template
+  // does NOT retroactively rewrite attached rows.
+  templateId String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   member     Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -336,6 +342,29 @@ model MemberDiscount {
 
   @@index([memberId, active])
   @@index([clientId])
+}
+
+// Reusable discount definitions ("Family Discount", "Coach Comp",
+// "Sept 2026 Promo"). The admin creates them once at /discounts;
+// attaching to a member spawns a MemberDiscount row prefilled with
+// these values. Templates and attached rows are decoupled --
+// deactivating / deleting a template does not touch already-attached
+// rows.
+model DiscountTemplate {
+  id          String   @id @default(cuid())
+  clientId   String   @default("default-client")
+  name        String
+  description String?
+  appliesTo   String   @default("ALL") // POS | MEMBERSHIP | PROMOTION | ALL
+  percentOff  Float?
+  flatCents   Int?
+  oneTime     Boolean  @default(false)
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([clientId, active])
 }
 
 model MemberRelationship {
