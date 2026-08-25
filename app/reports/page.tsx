@@ -1187,11 +1187,20 @@ export default function ReportsPage() {
     return () => { cancelled = true; };
 
     function hydrateConfigs(configs: ReportConfig[]) {
-      // Merge in any DEFAULT_REPORTS that the tenant doesn't have yet
-      // (e.g. new built-in reports added in later versions).
-      const existingIds = new Set(configs.map((r) => r.id));
-      const missingDefaults = DEFAULT_REPORTS.filter((r) => !existingIds.has(r.id));
-      setReportConfigs([...missingDefaults, ...configs]);
+      // Force the tab order to: (1) built-in defaults in the order
+      // they appear in DEFAULT_REPORTS, (2) then any tenant-created
+      // custom reports in creation order (the API sorts by createdAt).
+      // Previously the server list came in as one bucket sorted by
+      // updatedAt, so opening a default report shuffled it past the
+      // custom ones -- the tab order changed every visit.
+      const defaultIds = new Set(DEFAULT_REPORTS.map((r) => r.id));
+      const byId = new Map(configs.map((r) => [r.id, r]));
+      // Prefer the server-side saved copy of a default report (it holds
+      // per-tenant tweaks -- filters, column order); fall back to the
+      // bundled default if the tenant hasn't saved it yet.
+      const defaultsInOrder = DEFAULT_REPORTS.map((d) => byId.get(d.id) ?? d);
+      const customInOrder = configs.filter((r) => !defaultIds.has(r.id));
+      setReportConfigs([...defaultsInOrder, ...customInOrder]);
     }
   }, []);
 

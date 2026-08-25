@@ -10,9 +10,13 @@ import { getClientId } from "@/lib/tenant";
 export async function GET(req: Request) {
   try {
     const clientId = await getClientId(req);
+    // Order by createdAt so the tab order is stable. Was updatedAt,
+    // which reshuffled the list every time the operator opened a
+    // report (opening a report auto-writes column-order state,
+    // bumping updatedAt).
     const rows = await prisma.savedReportConfig.findMany({
       where: { clientId },
-      orderBy: { updatedAt: "asc" },
+      orderBy: { createdAt: "asc" },
       select: { id: true, name: true, configJson: true, updatedAt: true, createdAt: true },
     });
     // Parse the JSON blob so the client doesn't have to. Falls back to
