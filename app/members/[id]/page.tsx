@@ -2168,6 +2168,59 @@ export default function MemberProfilePage() {
     }
   }
 
+  // Flip a style's active flag on the member without touching memberships.
+  // Cancelling a membership auto-deactivates a style; adding one auto-
+  // activates it. This is the manual override for the case where a coach
+  // wants to keep a legacy style visible / hidden on the roster without
+  // creating or cancelling billing.
+  async function toggleStyleActive(index: number) {
+    if (!memberId) return;
+    const target = styles[index];
+    if (!target) return;
+    const nextActive = target.active === false;
+    const updatedStyles = styles.map((s, i) =>
+      i === index ? { ...s, active: nextActive } : s,
+    );
+    setStyles(updatedStyles);
+    try {
+      const normalizedStyles = updatedStyles
+        .map((s) => ({
+          name: s.name.trim(),
+          rank: s.rank?.trim() || undefined,
+          beltSize: s.beltSize?.trim() || undefined,
+          uniformSize: s.uniformSize?.trim() || undefined,
+          startDate: s.startDate || undefined,
+          lastPromotionDate: s.lastPromotionDate || undefined,
+          active: s.active,
+          attendanceResetDate: s.attendanceResetDate || undefined,
+          showProgressInPortal:
+            typeof s.showProgressInPortal === "boolean" ? s.showProgressInPortal : undefined,
+        }))
+        .filter((s) => s.name !== "");
+      const primary = normalizedStyles[0];
+      const res = await fetch(`/api/members/${memberId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          primaryStyle: primary ? primary.name : null,
+          stylesNotes: normalizedStyles.length > 0 ? JSON.stringify(normalizedStyles) : null,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMember(data.member);
+        addActivityFromUpdate(
+          `Style ${target.name} marked ${nextActive ? "active" : "inactive"}`,
+        );
+      } else {
+        alert("Failed to update style status.");
+      }
+    } catch (err) {
+      console.error("Failed to toggle style active state:", err);
+      alert("Failed to update style status.");
+    }
+  }
+
   // Reset class requirements for one style without touching the rank.
   // Sets attendanceResetDate to today on that style entry, which causes
   // the dashboard / promotions-eligible / profile progress bars to ignore
@@ -4555,6 +4608,22 @@ export default function MemberProfilePage() {
                                 className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                               >
                                 Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleStyleActive(i)}
+                                title={
+                                  s.active !== false
+                                    ? "Mark this style inactive without cancelling a membership"
+                                    : "Mark this style active without adding a membership"
+                                }
+                                className={
+                                  s.active !== false
+                                    ? "rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                                    : "rounded-md border border-green-500 px-2 py-1 text-xs font-semibold text-green-700 hover:bg-green-50"
+                                }
+                              >
+                                {s.active !== false ? "Mark Inactive" : "Mark Active"}
                               </button>
                               <button
                                 type="button"
