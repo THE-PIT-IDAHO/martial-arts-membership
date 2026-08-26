@@ -226,7 +226,7 @@ export default function WaiverTemplatesPage() {
                     {t.slug && (
                       <button
                         onClick={() => copyShare(t.slug)}
-                        className="text-primary hover:underline"
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                       >
                         {copiedSlug === t.slug ? "Copied!" : "Copy"}
                       </button>

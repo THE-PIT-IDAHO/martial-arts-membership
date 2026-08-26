@@ -2284,7 +2284,7 @@ export default function ClassesPage() {
                             )}
                           </td>
                           <td className="px-3 py-2 text-right">
-                            <button onClick={() => openEditEvent(event)} className="text-primary hover:underline text-xs">Edit</button>
+                            <button onClick={() => openEditEvent(event)} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Edit</button>
                           </td>
                         </tr>
                       );

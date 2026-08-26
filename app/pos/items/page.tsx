@@ -507,9 +507,9 @@ export default function POSItemsPage() {
                   <p>No items yet.</p>
                   <button
                     onClick={openCreateModal}
-                    className="mt-2 text-primary hover:underline"
+                    className="mt-2 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                   >
-                    Add your first item
+                    Add Item
                   </button>
                 </>
               ) : (

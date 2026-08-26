@@ -160,9 +160,9 @@ export default function ServicePackagesPage() {
             <p className="text-gray-500 dark:text-gray-400">No appointments yet.</p>
             <button
               onClick={openCreate}
-              className="mt-3 text-sm font-semibold text-primary hover:underline"
+              className="mt-3 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
             >
-              Create your first appointment
+              Add Appointment
             </button>
           </div>
         ) : (
@@ -224,13 +224,13 @@ export default function ServicePackagesPage() {
                     <td className="px-4 py-3 text-right space-x-2">
                       <button
                         onClick={() => openEdit(pkg)}
-                        className="text-xs text-primary hover:underline"
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleDelete(pkg.id)}
-                        className="text-xs text-red-500 hover:underline"
+                        className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                       >
                         Delete
                       </button>
