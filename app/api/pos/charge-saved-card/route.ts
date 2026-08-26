@@ -3,6 +3,21 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { getStripeClient } from "@/lib/stripe";
 
+// Same helper as create-payment-intent -- Stripe rejects any metadata
+// value > 500 chars; the POS's serialized `cartItems` (with new
+// bundle fields packed in) exceeds that on multi-line sales.
+function sanitizeStripeMetadata(input: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  const entries = Object.entries(input).slice(0, 50);
+  for (const [k, v] of entries) {
+    if (v == null) continue;
+    const s = typeof v === "string" ? v : String(v);
+    const key = k.length > 40 ? k.slice(0, 40) : k;
+    out[key] = s.length > 500 ? s.slice(0, 490) + "…[trunc]" : s;
+  }
+  return out;
+}
+
 /**
  * POST /api/pos/charge-saved-card — Charge a member's saved default card
  * Used for POS transactions where the member already has a card on file.
@@ -86,12 +101,12 @@ export async function POST(req: Request) {
       payment_method: member.defaultPaymentMethodId,
       off_session: true,
       confirm: true,
-      metadata: {
+      metadata: sanitizeStripeMetadata({
         source: "admin_pos",
         memberId,
         ...(billedMemberId !== memberId ? { billedMemberId } : {}),
         ...(metadata || {}),
-      },
+      }),
     });
 
     if (paymentIntent.status === "succeeded") {

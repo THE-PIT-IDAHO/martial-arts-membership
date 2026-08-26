@@ -4,6 +4,32 @@ import { getClientId } from "@/lib/tenant";
 import { getStripeClient } from "@/lib/stripe";
 
 /**
+ * Stripe rejects any metadata VALUE longer than 500 chars and refuses
+ * the request with a 400, which bubbled up here as a 500 and killed
+ * the POS card modal. Recent bundle-cart fields (bundleContents in
+ * every line item) made a product + membership sale routinely exceed
+ * the limit on the serialized `cartItems` value. Nothing downstream
+ * reads that value back from Stripe, so we truncate overlong values
+ * to keep the API call intact. Preserves short values verbatim
+ * (transactionId, memberId, etc.) so anything the webhook DOES read
+ * survives.
+ */
+function sanitizeStripeMetadata(input: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  const entries = Object.entries(input).slice(0, 50); // Stripe caps keys at 50
+  for (const [k, v] of entries) {
+    if (v == null) continue;
+    const s = typeof v === "string" ? v : String(v);
+    // Keys are also capped at 40 chars.
+    const key = k.length > 40 ? k.slice(0, 40) : k;
+    // Truncate + mark so it's obvious in the dashboard when a value
+    // got clipped (rather than looking like a broken JSON blob).
+    out[key] = s.length > 500 ? s.slice(0, 490) + "…[trunc]" : s;
+  }
+  return out;
+}
+
+/**
  * POST /api/pos/create-payment-intent — Create a Stripe PaymentIntent for embedded card form
  * Returns clientSecret + publishableKey for Stripe Elements
  */
@@ -103,11 +129,11 @@ export async function POST(req: Request) {
         customer: stripeCustomerId,
         payment_method_types: ["card"],
         usage: "off_session",
-        metadata: {
+        metadata: sanitizeStripeMetadata({
           source: "admin_pos",
           clientId,
           ...(metadata || {}),
-        },
+        }),
       });
       return NextResponse.json({
         clientSecret: setupIntent.client_secret,
@@ -139,11 +165,11 @@ export async function POST(req: Request) {
       amount: amountCents,
       currency: currency.toLowerCase(),
       ...(stripeCustomerId ? { customer: stripeCustomerId } : {}),
-      metadata: {
+      metadata: sanitizeStripeMetadata({
         source: "admin_pos",
         clientId,
         ...(metadata || {}),
-      },
+      }),
     });
 
     return NextResponse.json({
