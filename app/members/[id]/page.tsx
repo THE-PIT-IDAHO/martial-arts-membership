@@ -702,6 +702,10 @@ export default function MemberProfilePage() {
 
   // edit flags
   const [editingPhoto, setEditingPhoto] = useState(false);
+  // Click-the-photo picker: tapping the photo (or the blank initials
+  // circle) opens a small "Use Camera / Upload from Device" popover
+  // instead of the old Edit -> pick -> Save flow.
+  const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const [editingPersonal, setEditingPersonal] = useState(false);
   const [editingStyleIndex, setEditingStyleIndex] = useState<number | null>(null);
   // Live-editable copy of the style row currently in the Edit Style modal.
@@ -2502,6 +2506,31 @@ export default function MemberProfilePage() {
       }
       const { url } = await res.json();
       setPhotoUrl(url);
+      // Auto-save just the photo URL to the member so the coach
+      // doesn't have to hit a separate "Save" -- the whole picker
+      // flow is now one click on the photo, pick a file, done.
+      // Targeted PATCH (photoUrl only) instead of saveSection("photo")
+      // so any half-typed edits in other fields aren't silently
+      // committed alongside the photo change.
+      if (memberId) {
+        try {
+          const save = await fetch(`/api/members/${memberId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ photoUrl: url }),
+          });
+          if (save.ok) {
+            const data = await save.json();
+            if (data?.member) setMember(data.member);
+            addActivityFromUpdate("Photo updated");
+          }
+        } catch {
+          // If the save call itself failed, leave the URL in local
+          // state so a subsequent Save-section still persists it.
+        }
+      }
+      // Close the picker after a successful pick.
+      setShowPhotoPicker(false);
     } catch {
       setError("Photo upload failed");
     } finally {
@@ -2643,30 +2672,49 @@ export default function MemberProfilePage() {
         {/* Header + photo */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
-            {/* Photo column */}
-            <div className="flex flex-col items-center gap-2">
+            {/* Photo column. Click the photo (or the blank initials
+                circle if there isn't one yet) to open the picker
+                popover. Selecting a file auto-uploads AND auto-saves
+                the photoUrl on the member -- no separate Edit or Save
+                step. */}
+            <div className="flex flex-col items-center gap-2 relative">
               {photoUrl ? (
                 <div className="relative group">
-                  <img
-                    src={photoUrl}
-                    alt={`${firstName} ${lastName}`}
-                    className="h-16 w-16 rounded-full object-cover border border-gray-200 cursor-pointer"
-                  />
-                  {/* Full-size photo popup on hover */}
-                  <div className="absolute left-20 top-0 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none">
-                    <div className="w-96 h-96 rounded-lg shadow-2xl border-4 border-white bg-white overflow-hidden">
-                      <img
-                        src={photoUrl}
-                        alt={`${firstName} ${lastName}`}
-                        className="w-full h-full object-cover"
-                      />
+                  <button
+                    type="button"
+                    onClick={() => setShowPhotoPicker((v) => !v)}
+                    className="block"
+                    title="Change photo"
+                  >
+                    <img
+                      src={photoUrl}
+                      alt={`${firstName} ${lastName}`}
+                      className="h-16 w-16 rounded-full object-cover border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
+                    />
+                  </button>
+                  {/* Full-size photo popup on hover -- disabled while
+                      the picker is open so it doesn't overlap. */}
+                  {!showPhotoPicker && (
+                    <div className="absolute left-20 top-0 z-40 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none">
+                      <div className="w-96 h-96 rounded-lg shadow-2xl border-4 border-white bg-white overflow-hidden">
+                        <img
+                          src={photoUrl}
+                          alt={`${firstName} ${lastName}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ) : (
-                <div className="h-16 w-16 rounded-full bg-gray-200 flex items-center justify-center text-lg font-semibold text-gray-700 border border-gray-300">
+                <button
+                  type="button"
+                  onClick={() => setShowPhotoPicker((v) => !v)}
+                  className="h-16 w-16 rounded-full bg-gray-200 flex items-center justify-center text-lg font-semibold text-gray-700 border border-gray-300 hover:bg-gray-300 transition-colors cursor-pointer"
+                  title="Add photo"
+                >
                   {initials}
-                </div>
+                </button>
               )}
 
               {/* Hidden file inputs */}
@@ -2686,24 +2734,38 @@ export default function MemberProfilePage() {
                 onChange={handlePhotoFileChange}
               />
 
-              {/* Edit/Save button under photo */}
-              {!editingPhoto ? (
-                <button
-                  type="button"
-                  onClick={() => setEditingPhoto(true)}
-                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
-                >
-                  Edit
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled={savingSection === "photo"}
-                  onClick={() => saveSection("photo")}
-                  className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark disabled:opacity-60"
-                >
-                  {savingSection === "photo" ? "Saving..." : "Save"}
-                </button>
+              {/* Click-outside overlay + picker popover. Renders next
+                  to the photo when open. */}
+              {showPhotoPicker && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowPhotoPicker(false)}
+                  />
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50 rounded-lg border border-gray-200 bg-white shadow-xl p-2 flex flex-col gap-1 min-w-[160px]">
+                    <button
+                      type="button"
+                      onClick={() => cameraInputRef.current?.click()}
+                      className="text-left text-xs rounded-md px-3 py-2 font-semibold text-gray-700 hover:bg-gray-100"
+                    >
+                      Use Camera
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => uploadInputRef.current?.click()}
+                      className="text-left text-xs rounded-md px-3 py-2 font-semibold text-gray-700 hover:bg-gray-100"
+                    >
+                      Upload from Device
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowPhotoPicker(false)}
+                      className="text-left text-xs rounded-md px-3 py-2 text-gray-500 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
               )}
             </div>
 
@@ -2743,32 +2805,10 @@ export default function MemberProfilePage() {
                 </button>
               </div>
 
-              {/* Photo edit buttons - only show when editing */}
-              {editingPhoto && (
-                <div className="flex items-center gap-2" style={{ marginTop: '18px' }}>
-                  <button
-                    type="button"
-                    onClick={() => cameraInputRef.current?.click()}
-                    className="text-xs rounded-md bg-primary px-2 py-1 font-semibold text-white hover:bg-primaryDark"
-                  >
-                    Use Camera
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => uploadInputRef.current?.click()}
-                    className="text-xs rounded-md bg-primary px-2 py-1 font-semibold text-white hover:bg-primaryDark"
-                  >
-                    Upload from Device
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => cancelSection("photo")}
-                    className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
+              {/* Legacy editingPhoto row removed -- the photo click
+                  now opens the picker popover next to the photo, and
+                  the file selection auto-saves via a targeted PATCH.
+                  No separate Save step. */}
             </div>
           </div>
 
