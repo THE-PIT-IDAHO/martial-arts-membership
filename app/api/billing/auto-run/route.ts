@@ -411,9 +411,16 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
           }
         }
 
-        // Stack any per-member discounts (MEMBERSHIP or ALL scope) on top.
-        const { discountCents: memberDiscCents, applied: appliedMemberDiscs } =
-          await applyMemberDiscounts(ms.member.id, "MEMBERSHIP", amountCents);
+        // Stack any per-member discounts (MEMBERSHIP or ALL scope) on
+        // top -- BUT skip entirely when the plan opted out
+        // (eligibleForDiscounts = false), so promo-priced plans don't
+        // double-discount. Pass ms.id so per-membership discounts (rows
+        // with membershipId matching) apply here and only here; legacy
+        // member-scoped rows (membershipId null) still apply too.
+        const planEligible = (ms.membershipPlan as { eligibleForDiscounts?: boolean }).eligibleForDiscounts !== false;
+        const { discountCents: memberDiscCents, applied: appliedMemberDiscs } = planEligible
+          ? await applyMemberDiscounts(ms.member.id, "MEMBERSHIP", amountCents, ms.id)
+          : { discountCents: 0, applied: [] as never[] };
         if (memberDiscCents > 0) {
           amountCents = Math.max(0, amountCents - memberDiscCents);
           discountNotes.push(

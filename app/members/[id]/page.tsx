@@ -352,6 +352,10 @@ type MembershipRecord = {
     cancellationFeeCents?: number | null;
     cancellationNoticeDays?: number | null;
     contractLengthMonths?: number | null;
+    // When false, template / per-membership discounts are ignored
+    // for charges against this plan (POS + auto-billing both skip).
+    // Undefined for old fetches -> treated as true (permissive).
+    eligibleForDiscounts?: boolean;
   };
 };
 
@@ -538,9 +542,27 @@ export default function MemberProfilePage() {
     active: boolean;
     usedAt: string | null;
     templateId: string | null;
+    // When set, the discount is scoped to one specific Membership row
+    // (attached from that membership's placard). null = legacy member-
+    // scoped row that hits any of the member's charges.
+    membershipId: string | null;
     createdAt: string;
   };
+  type DiscountTemplateOpt = {
+    id: string;
+    name: string;
+    description: string | null;
+    appliesTo: "POS" | "MEMBERSHIP" | "PROMOTION" | "ALL";
+    percentOff: number | null;
+    flatCents: number | null;
+    oneTime: boolean;
+    active: boolean;
+  };
   const [memberDiscounts, setMemberDiscounts] = useState<MemberDiscount[]>([]);
+  const [discountTemplates, setDiscountTemplates] = useState<DiscountTemplateOpt[]>([]);
+  // Which membership placard currently has its "Add Discount" picker
+  // open. Null = no picker open.
+  const [discountPickerMembershipId, setDiscountPickerMembershipId] = useState<string | null>(null);
   const [serviceCredits, setServiceCredits] = useState<Array<{
     id: string;
     creditsTotal: number;
@@ -888,10 +910,13 @@ export default function MemberProfilePage() {
         .then(d => { if (d?.discounts) setMemberDiscounts(d.discounts); })
         .catch(() => {});
 
-      // (Discount templates fetch retired here -- the picker moved
-      // to POS. Any existing MemberDiscount rows still show up via
-      // the /discounts fetch above so recurring math previews match
-      // what the billing job will charge.)
+      // Discount templates for the per-membership placard picker.
+      // Populates the "pick a template" dropdown attached to each
+      // membership card. Tiny payload, cached client-side by fetch.
+      fetch(`/api/discount-templates`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.templates) setDiscountTemplates(d.templates); })
+        .catch(() => {});
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Failed to load member profile");
@@ -4292,6 +4317,156 @@ export default function MemberProfilePage() {
                                     </div>
                                   )}
                                 </div>
+
+                                {/* Per-membership discounts. Each row =
+                                    one MemberDiscount scoped to THIS
+                                    membership (membershipId matches).
+                                    Legacy member-scoped rows (membershipId
+                                    null) are NOT shown here -- they
+                                    belong to the whole member, not to a
+                                    specific membership. */}
+                                {(() => {
+                                  const placardDiscounts = memberDiscounts.filter((d) => d.membershipId === membership.id);
+                                  const planEligible = membership.membershipPlan.eligibleForDiscounts !== false;
+                                  const pickerOpen = discountPickerMembershipId === membership.id;
+                                  const activeTemplates = discountTemplates.filter((t) => t.active);
+                                  return (
+                                    <div className="pt-2 border-t border-gray-100 space-y-1.5">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Discounts</span>
+                                        {planEligible ? (
+                                          <div className="relative">
+                                            <button
+                                              type="button"
+                                              onClick={() => setDiscountPickerMembershipId(pickerOpen ? null : membership.id)}
+                                              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                                            >
+                                              Add Discount
+                                            </button>
+                                            {pickerOpen && (
+                                              <>
+                                                <div className="fixed inset-0 z-40" onClick={() => setDiscountPickerMembershipId(null)} />
+                                                <div className="absolute right-0 top-full mt-1 z-50 w-56 max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl">
+                                                  {activeTemplates.length === 0 ? (
+                                                    <p className="p-3 text-xs text-gray-500 italic">No templates yet.</p>
+                                                  ) : (
+                                                    activeTemplates.map((t) => {
+                                                      const amt = t.percentOff && t.flatCents
+                                                        ? `${t.percentOff}% + $${(t.flatCents / 100).toFixed(2)}`
+                                                        : t.percentOff
+                                                          ? `${t.percentOff}%`
+                                                          : t.flatCents != null
+                                                            ? `$${(t.flatCents / 100).toFixed(2)}`
+                                                            : "";
+                                                      return (
+                                                        <button
+                                                          key={t.id}
+                                                          type="button"
+                                                          onClick={async () => {
+                                                            setDiscountPickerMembershipId(null);
+                                                            try {
+                                                              const res = await fetch(`/api/members/${memberId}/discounts`, {
+                                                                method: "POST",
+                                                                headers: { "Content-Type": "application/json" },
+                                                                body: JSON.stringify({
+                                                                  label: t.name,
+                                                                  appliesTo: "MEMBERSHIP",
+                                                                  percentOff: t.percentOff,
+                                                                  flatCents: t.flatCents,
+                                                                  oneTime: t.oneTime,
+                                                                  templateId: t.id,
+                                                                  membershipId: membership.id,
+                                                                }),
+                                                              });
+                                                              if (res.ok) {
+                                                                const data = await res.json();
+                                                                setMemberDiscounts((prev) => [...prev, data.discount]);
+                                                              }
+                                                            } catch { /* ignore */ }
+                                                          }}
+                                                          className="block w-full text-left px-3 py-2 text-xs hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                                        >
+                                                          <div className="font-semibold text-gray-900">{t.name}</div>
+                                                          <div className="text-gray-500">{amt}</div>
+                                                        </button>
+                                                      );
+                                                    })
+                                                  )}
+                                                </div>
+                                              </>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <span className="text-[10px] text-gray-400 italic">Plan opted out</span>
+                                        )}
+                                      </div>
+                                      {placardDiscounts.length === 0 ? (
+                                        <p className="text-[10px] text-gray-400 italic">No discounts attached.</p>
+                                      ) : (
+                                        placardDiscounts.map((d) => {
+                                          const amt = d.percentOff && d.flatCents
+                                            ? `${d.percentOff}% + $${(d.flatCents / 100).toFixed(2)}`
+                                            : d.percentOff
+                                              ? `${d.percentOff}%`
+                                              : d.flatCents != null
+                                                ? `$${(d.flatCents / 100).toFixed(2)}`
+                                                : "—";
+                                          const consumed = !!d.usedAt;
+                                          return (
+                                            <div key={d.id} className="flex items-center gap-2 text-xs">
+                                              <div className="flex-1 min-w-0">
+                                                <div className="font-semibold text-gray-900 truncate">{d.label || "Discount"}</div>
+                                                <div className="text-[10px] text-gray-500">{amt} · {d.oneTime ? "One-time" : "Lasting"}</div>
+                                              </div>
+                                              <button
+                                                type="button"
+                                                disabled={consumed}
+                                                onClick={async () => {
+                                                  try {
+                                                    const res = await fetch(`/api/members/${memberId}/discounts?discountId=${d.id}`, {
+                                                      method: "PATCH",
+                                                      headers: { "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ active: !d.active }),
+                                                    });
+                                                    if (res.ok) {
+                                                      const data = await res.json();
+                                                      setMemberDiscounts((prev) => prev.map((x) => x.id === d.id ? data.discount : x));
+                                                    }
+                                                  } catch { /* ignore */ }
+                                                }}
+                                                title={consumed ? `Used ${d.usedAt ? new Date(d.usedAt).toLocaleDateString() : ""}` : d.active ? "Pause" : "Resume"}
+                                                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                                  consumed
+                                                    ? "bg-gray-100 text-gray-500 cursor-not-allowed"
+                                                    : d.active
+                                                      ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                                      : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                                                }`}
+                                              >
+                                                {consumed ? "Used" : d.active ? "On" : "Off"}
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  if (!confirm("Remove this discount from this membership?")) return;
+                                                  try {
+                                                    const res = await fetch(`/api/members/${memberId}/discounts?discountId=${d.id}`, { method: "DELETE" });
+                                                    if (res.ok) {
+                                                      setMemberDiscounts((prev) => prev.filter((x) => x.id !== d.id));
+                                                    }
+                                                  } catch { /* ignore */ }
+                                                }}
+                                                className="rounded-md border border-red-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-red-600 hover:bg-red-50"
+                                              >
+                                                Remove
+                                              </button>
+                                            </div>
+                                          );
+                                        })
+                                      )}
+                                    </div>
+                                  );
+                                })()}
 
                                 {/* Action Buttons - Row 1: Change, Edit, Pause/Activate */}
                                 <div className="flex items-center justify-start gap-1 pt-2 border-t border-gray-100">

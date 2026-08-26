@@ -50,6 +50,7 @@ export async function GET(req: Request, { params }: Params) {
         active: true,
         usedAt: true,
         templateId: true,
+        membershipId: true,
         createdAt: true,
       },
       orderBy: { createdAt: "asc" },
@@ -100,6 +101,22 @@ export async function POST(req: Request, { params }: Params) {
       if (t) templateId = t.id;
     }
 
+    // Optional per-membership scope: the discount ONLY applies when
+    // that specific membership is being billed. Verify the membership
+    // belongs to THIS member + tenant so a hand-crafted POST can't
+    // scope a discount to another gym's membership.
+    let membershipId: string | null = null;
+    if (typeof body?.membershipId === "string" && body.membershipId) {
+      const ms = await prisma.membership.findFirst({
+        where: { id: body.membershipId, memberId, member: { clientId } },
+        select: { id: true },
+      });
+      if (!ms) {
+        return NextResponse.json({ error: "Membership not found on this member" }, { status: 400 });
+      }
+      membershipId = ms.id;
+    }
+
     const discount = await prisma.memberDiscount.create({
       data: {
         memberId,
@@ -111,6 +128,7 @@ export async function POST(req: Request, { params }: Params) {
         oneTime: !!body?.oneTime,
         active: body?.active !== false,
         templateId,
+        membershipId,
       },
       select: {
         id: true,
@@ -122,6 +140,7 @@ export async function POST(req: Request, { params }: Params) {
         active: true,
         usedAt: true,
         templateId: true,
+        membershipId: true,
         createdAt: true,
       },
     });
@@ -175,6 +194,7 @@ export async function PATCH(req: Request, { params }: Params) {
         active: true,
         usedAt: true,
         templateId: true,
+        membershipId: true,
         createdAt: true,
       },
     });

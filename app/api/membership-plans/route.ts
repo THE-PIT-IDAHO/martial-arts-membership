@@ -75,6 +75,7 @@ export async function POST(req: Request) {
       color,
       isActive,
       availableOnline,
+      eligibleForDiscounts,
     } = body;
 
     if (!name || typeof name !== "string") {
@@ -114,6 +115,7 @@ export async function POST(req: Request) {
         color: color || null,
         isActive: isActive ?? true,
         availableOnline: availableOnline ?? false,
+        eligibleForDiscounts: eligibleForDiscounts !== false,
         clientId,
       },
     });

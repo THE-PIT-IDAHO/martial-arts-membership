@@ -84,6 +84,7 @@ export async function GET(_req: Request, { params }: Params) {
                 cancellationFeeCents: true,
                 cancellationNoticeDays: true,
                 contractLengthMonths: true,
+                eligibleForDiscounts: true,
               },
             },
           },

@@ -92,6 +92,7 @@ export async function PATCH(
       color,
       isActive,
       availableOnline,
+      eligibleForDiscounts,
       applyToCurrentMembers,
       updatePlanTemplate = true, // Default to true for backwards compatibility
     } = body;
@@ -131,6 +132,7 @@ export async function PATCH(
           ...(isActive !== undefined && { isActive }),
           ...(contractClauses !== undefined && { contractClauses: contractClauses || null }),
           ...(availableOnline !== undefined && { availableOnline }),
+          ...(eligibleForDiscounts !== undefined && { eligibleForDiscounts: !!eligibleForDiscounts }),
         },
       });
     } else {

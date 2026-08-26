@@ -97,6 +97,9 @@ export default function MembershipsPage() {
   const [planContractLength, setPlanContractLength] = useState("");
   const [planContractUnit, setPlanContractUnit] = useState<"days" | "weeks" | "months" | "years">("months");
   const [planAutoRenew, setPlanAutoRenew] = useState(true);
+  // When false, template / per-membership discounts skip this plan
+  // (POS + auto-billing both respect the flag). Default true.
+  const [planEligibleForDiscounts, setPlanEligibleForDiscounts] = useState(true);
   const [planClassesPerDay, setPlanClassesPerDay] = useState("");
   const [planClassesPerWeek, setPlanClassesPerWeek] = useState("");
   const [planClassesPerMonth, setPlanClassesPerMonth] = useState("");
@@ -320,6 +323,7 @@ export default function MembershipsPage() {
     setPlanContractLength("");
     setPlanContractUnit("months");
     setPlanAutoRenew(true);
+    setPlanEligibleForDiscounts(true);
     setPlanClassesPerDay("");
     setPlanClassesPerWeek("");
     setPlanClassesPerMonth("");
@@ -533,6 +537,7 @@ export default function MembershipsPage() {
       setPlanContractUnit("months");
     }
     setPlanAutoRenew(plan.autoRenew);
+    setPlanEligibleForDiscounts((plan as { eligibleForDiscounts?: boolean }).eligibleForDiscounts !== false);
     setPlanClassesPerDay(plan.classesPerDay ? String(plan.classesPerDay) : "");
     setPlanClassesPerWeek(plan.classesPerWeek ? String(plan.classesPerWeek) : "");
     setPlanClassesPerMonth(plan.classesPerMonth ? String(plan.classesPerMonth) : "");
@@ -593,6 +598,7 @@ export default function MembershipsPage() {
       billingCycle: planBillingCycle,
       contractLengthMonths: contractLengthDays,
       autoRenew: planAutoRenew,
+      eligibleForDiscounts: planEligibleForDiscounts,
       classesPerDay: planClassesPerDay ? Number(planClassesPerDay) : null,
       classesPerWeek: planClassesPerWeek ? Number(planClassesPerWeek) : null,
       classesPerMonth: planClassesPerMonth ? Number(planClassesPerMonth) : null,
@@ -1451,6 +1457,17 @@ export default function MembershipsPage() {
                         className="h-4 w-4 rounded border-gray-300"
                       />
                       Available for online purchase
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <label className="flex items-center gap-2 text-xs text-gray-700" title="Uncheck for plans already priced as a promo (New Student Special, etc.) that shouldn't stack another discount">
+                      <input
+                        type="checkbox"
+                        checked={planEligibleForDiscounts}
+                        onChange={(e) => setPlanEligibleForDiscounts(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      Eligible for template / per-member discounts
                     </label>
                   </div>
                 </div>

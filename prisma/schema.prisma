@@ -329,6 +329,13 @@ model MemberDiscount {
   oneTime    Boolean   @default(false)
   active     Boolean   @default(true)
   usedAt     DateTime?
+  // When set, this discount is SCOPED to a single Membership row
+  // (attached from the membership placard). Auto-billing only picks
+  // it up when it's billing that same membership; other memberships
+  // on the same member don't see it. NULL = legacy member-scoped
+  // row (applies to any of the member's charges, matching the
+  // original behavior).
+  membershipId String?
   // Nullable pointer to the template this row was spawned from (via
   // "Add Discount -> pick from templates" on the member profile).
   // Kept for a lightweight "how many members are using Family
@@ -342,6 +349,7 @@ model MemberDiscount {
 
   @@index([memberId, active])
   @@index([clientId])
+  @@index([membershipId])
 }
 
 // Reusable discount definitions ("Family Discount", "Coach Comp",
@@ -443,6 +451,12 @@ model MembershipPlan {
   rankPromotionDiscountFlatCents Int?
   otherDiscountPercent           Int?
   contractClauses                String?
+  // Per-plan opt-out for template / per-member discounts. Default
+  // true (discounts DO apply). Flip false for plans that are
+  // already at a promo price and shouldn't stack another discount
+  // on top -- POS + auto-billing both skip discount computation
+  // for lines / memberships on this plan.
+  eligibleForDiscounts           Boolean         @default(true)
   memberships                    Membership[]
   client                         Client          @relation(fields: [clientId], references: [id])
   membershipType                 MembershipType? @relation(fields: [membershipTypeId], references: [id])

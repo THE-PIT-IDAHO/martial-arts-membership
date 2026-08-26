@@ -220,11 +220,32 @@ export async function POST(req: Request) {
     let memberDiscountCents = 0;
     let appliedMemberDiscounts: AppliedRow[] = [];
     if (memberId) {
+      // Pick up MEMBER-scoped rows (membershipId null) always, PLUS
+      // membership-scoped rows whose membershipId appears on a
+      // membership line in this sale. Prevents Membership A's
+      // attached discount from silently applying to a product-only
+      // sale for this member.
+      const cartMembershipIds = Array.from(
+        new Set(
+          (lineItems as Array<{ type: string; membershipPlanId?: string | null }>)
+            .filter((i) => i.type === "membership")
+            .map(() => null)
+            // NB: we don't actually know the destination membership ROW
+            // ids at POST time (they get created after checkout), so
+            // for the cart-preview lookup we ONLY pull member-scoped
+            // rows. Membership-scoped rows apply on the next auto-
+            // billing cycle via billing/auto-run instead.
+            .filter((v) => v !== null) as string[],
+        ),
+      );
       const rawRows = await prisma.memberDiscount.findMany({
         where: {
           memberId,
           active: true,
           appliesTo: { in: ["POS", "MEMBERSHIP", "ALL"] },
+          OR: cartMembershipIds.length > 0
+            ? [{ membershipId: null }, { membershipId: { in: cartMembershipIds } }]
+            : [{ membershipId: null }],
         },
         select: {
           id: true,
@@ -246,10 +267,33 @@ export async function POST(req: Request) {
       const membershipRows = rawRows.filter((r) => r.appliesTo === "MEMBERSHIP").map(norm);
       const allRows = rawRows.filter((r) => r.appliesTo === "ALL").map(norm);
 
-      const membershipSubtotal = lineItems
-        .filter((i: any) => i.type === "membership")
-        .reduce((sum: number, i: any) => sum + i.unitPriceCents * i.quantity, 0);
-      const nonMembershipSubtotal = subtotalCents - membershipSubtotal;
+      // Only DISCOUNT-ELIGIBLE membership lines contribute to the
+      // membership-scope discount base. Plans with
+      // eligibleForDiscounts = false are pre-priced promos and
+      // shouldn't stack another discount on top. Do a one-shot lookup
+      // for every distinct planId in the cart to figure out which
+      // ones are eligible.
+      const cartPlanIds = Array.from(
+        new Set(
+          (lineItems as Array<{ type: string; membershipPlanId?: string | null }>)
+            .filter((i) => i.type === "membership" && i.membershipPlanId)
+            .map((i) => i.membershipPlanId as string),
+        ),
+      );
+      const eligiblePlanIds = new Set<string>();
+      if (cartPlanIds.length > 0) {
+        const eligibilityRows = await prisma.membershipPlan.findMany({
+          where: { id: { in: cartPlanIds }, clientId, eligibleForDiscounts: true },
+          select: { id: true },
+        });
+        for (const r of eligibilityRows) eligiblePlanIds.add(r.id);
+      }
+      const membershipSubtotal = (lineItems as Array<{ type: string; membershipPlanId?: string | null; unitPriceCents: number; quantity: number }>)
+        .filter((i) => i.type === "membership" && i.membershipPlanId && eligiblePlanIds.has(i.membershipPlanId))
+        .reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
+      const nonMembershipSubtotal = subtotalCents - lineItems
+        .filter((i: { type: string; unitPriceCents: number; quantity: number }) => i.type === "membership")
+        .reduce((sum: number, i: { unitPriceCents: number; quantity: number }) => sum + i.unitPriceCents * i.quantity, 0);
 
       const posBucket = nonMembershipSubtotal > 0 ? [...posRows, ...allRows] : posRows;
       const membershipBucket =

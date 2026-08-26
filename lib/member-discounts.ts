@@ -11,17 +11,34 @@ export interface AppliedMemberDiscount {
 }
 
 // Pull all active MemberDiscount rows that apply to the given scope (or "ALL").
+// Optionally scoped to a specific membership: when `membershipId` is given,
+// includes rows attached to THAT membership PLUS legacy member-scoped rows
+// (membershipId = null). Rows attached to a DIFFERENT membership are
+// excluded so per-membership discounts stay isolated.
 // Caller is responsible for actually subtracting from a charge and calling
 // markUsed() once the charge is committed.
 export async function getActiveMemberDiscounts(
   memberId: string,
   scope: DiscountScope,
+  membershipId?: string,
 ): Promise<AppliedMemberDiscount[]> {
   const rows = await prisma.memberDiscount.findMany({
     where: {
       memberId,
       active: true,
-      OR: [{ appliesTo: scope }, { appliesTo: "ALL" }],
+      // Scope match: caller passed POS/MEMBERSHIP/PROMOTION -- also
+      // pick up "ALL"-scope rows.
+      AND: [
+        { OR: [{ appliesTo: scope }, { appliesTo: "ALL" }] },
+        // Membership match: when a membershipId is provided, include
+        // rows attached to THAT membership PLUS legacy member-scoped
+        // (null) rows. Otherwise only null rows (POS-side calls that
+        // don't have a membership context shouldn't pick up rows
+        // attached to some other membership).
+        membershipId
+          ? { OR: [{ membershipId }, { membershipId: null }] }
+          : { membershipId: null },
+      ],
     },
   });
   return rows.map((r) => ({
@@ -40,8 +57,9 @@ export async function applyMemberDiscounts(
   memberId: string,
   scope: DiscountScope,
   baseCents: number,
+  membershipId?: string,
 ): Promise<{ discountCents: number; applied: AppliedMemberDiscount[] }> {
-  const applied = await getActiveMemberDiscounts(memberId, scope);
+  const applied = await getActiveMemberDiscounts(memberId, scope, membershipId);
   if (applied.length === 0) return { discountCents: 0, applied: [] };
 
   let totalPercent = 0;
