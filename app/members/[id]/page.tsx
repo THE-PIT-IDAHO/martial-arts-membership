@@ -3772,7 +3772,7 @@ export default function MemberProfilePage() {
                         <button
                           type="button"
                           onClick={() => handleRemoveRelationship(rel.id)}
-                          className="text-[10px] text-red-600 hover:underline"
+                          className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                         >
                           Remove
                         </button>
@@ -5893,7 +5893,7 @@ export default function MemberProfilePage() {
                             <button
                               type="button"
                               onClick={() => handleRemoveBillingRelationship(paidForByRel.id)}
-                              className="text-[10px] text-red-600 hover:underline"
+                              className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                             >
                               Remove
                             </button>
@@ -5921,7 +5921,7 @@ export default function MemberProfilePage() {
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveBillingRelationship(r.id)}
-                                  className="text-[10px] text-red-600 hover:underline"
+                                  className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                                 >
                                   Remove
                                 </button>

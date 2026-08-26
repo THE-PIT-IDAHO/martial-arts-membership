@@ -3148,7 +3148,7 @@ export default function POSPage() {
                       </button>
                       <button
                         onClick={() => { setShowRedeemGift(false); setRedeemCode(""); }}
-                        className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                        className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                       >
                         Cancel
                       </button>
@@ -3718,7 +3718,7 @@ export default function POSPage() {
                     setShowVariantPicker(false);
                     setVariantPickerItem(null);
                   }}
-                  className="rounded-md border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
                 >
                   Cancel
                 </button>
@@ -4160,12 +4160,6 @@ export default function POSPage() {
                 {unlockError && <p className="text-xs text-red-600 mt-2">{unlockError}</p>}
                 <div className="flex items-center justify-end gap-2 mt-4">
                   <button
-                    onClick={() => { setShowUnlockPrompt(false); setUnlockAttempt(""); setUnlockError(""); }}
-                    className="text-xs text-gray-500 px-3 py-1 hover:text-gray-700"
-                  >
-                    Cancel
-                  </button>
-                  <button
                     onClick={() => {
                       if (unlockAttempt === kioskUnlockPin) {
                         setKioskLocked(false);
@@ -4187,6 +4181,12 @@ export default function POSPage() {
                     className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                   >
                     Unlock
+                  </button>
+                  <button
+                    onClick={() => { setShowUnlockPrompt(false); setUnlockAttempt(""); setUnlockError(""); }}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                  >
+                    Cancel
                   </button>
                 </div>
               </div>
@@ -4334,17 +4334,17 @@ export default function POSPage() {
               <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setBundleAddPicker(null)}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                  onClick={() => finalizeBundleToCart(state.bundle, state.picks)}
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                 >
-                  Cancel
+                  Add to Cart
                 </button>
                 <button
                   type="button"
-                  onClick={() => finalizeBundleToCart(state.bundle, state.picks)}
-                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark"
+                  onClick={() => setBundleAddPicker(null)}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                 >
-                  Add to Cart
+                  Cancel
                 </button>
               </div>
             </div>
@@ -4608,18 +4608,18 @@ export default function POSPage() {
               <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={closeBundleEditor}
-                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                  onClick={saveBundleEditor}
+                  disabled={draft.saving}
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                 >
-                  Cancel
+                  {draft.saving ? "Saving..." : draft.id ? "Save Changes" : "Create Bundle"}
                 </button>
                 <button
                   type="button"
-                  onClick={saveBundleEditor}
-                  disabled={draft.saving}
-                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                  onClick={closeBundleEditor}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                 >
-                  {draft.saving ? "Saving..." : draft.id ? "Save Changes" : "Create Bundle"}
+                  Cancel
                 </button>
               </div>
             </div>
