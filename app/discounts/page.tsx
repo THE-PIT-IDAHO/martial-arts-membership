@@ -200,7 +200,7 @@ export default function DiscountsPage() {
           <button
             type="button"
             onClick={openNew}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-white hover:bg-primaryDark"
+            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
           >
             Add Discount
           </button>
@@ -211,7 +211,7 @@ export default function DiscountsPage() {
             <div className="p-8 text-center text-sm text-gray-500">Loading...</div>
           ) : templates.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-500">
-              No discount templates yet. Use <button type="button" onClick={openNew} className="text-primary hover:underline">Add Discount</button> to create your first one.
+              No discount templates yet. Use <button type="button" onClick={openNew} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Add Discount</button> to create your first one.
             </div>
           ) : (
             <table className="w-full text-sm">
@@ -251,18 +251,18 @@ export default function DiscountsPage() {
                         {t.active ? "On" : "Off"}
                       </button>
                     </td>
-                    <td className="px-4 py-3 align-top text-right">
+                    <td className="px-4 py-3 align-top text-right space-x-2">
                       <button
                         type="button"
                         onClick={() => openEdit(t)}
-                        className="text-xs font-semibold text-primary hover:underline mr-3"
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                       >
                         Edit
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDelete(t)}
-                        className="text-xs font-semibold text-red-600 hover:underline"
+                        className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                       >
                         Delete
                       </button>
@@ -371,18 +371,18 @@ export default function DiscountsPage() {
             <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={closeEditor}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                onClick={saveEditor}
+                disabled={editor.saving}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
               >
-                Cancel
+                {editor.saving ? "Saving..." : editor.id ? "Save Changes" : "Create"}
               </button>
               <button
                 type="button"
-                onClick={saveEditor}
-                disabled={editor.saving}
-                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
+                onClick={closeEditor}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
               >
-                {editor.saving ? "Saving..." : editor.id ? "Save Changes" : "Create"}
+                Cancel
               </button>
             </div>
           </div>

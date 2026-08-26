@@ -2284,7 +2284,7 @@ export default function POSPage() {
               {catalogTab === "products" && (
                 filteredItems.length === 0 ? (
                   <p className="text-gray-500 text-center py-8">
-                    No products found. <Link href="/pos/items" className="text-primary hover:underline">Add some items</Link>
+                    No products found. <Link href="/pos/items" className="inline-block rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Add Item</Link>
                   </p>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -2323,7 +2323,7 @@ export default function POSPage() {
               {catalogTab === "memberships" && (
                 filteredPlans.length === 0 ? (
                   <p className="text-gray-500 text-center py-8">
-                    No membership plans found. <Link href="/memberships" className="text-primary hover:underline">Create some plans</Link>
+                    No membership plans found. <Link href="/memberships" className="inline-block rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Add Membership</Link>
                   </p>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -2388,7 +2388,7 @@ export default function POSPage() {
               {catalogTab === "bundles" && (
                 filteredBundles.length === 0 ? (
                   <p className="text-gray-500 text-center py-8">
-                    No bundles yet. Use <button type="button" onClick={() => openNewBundleEditor()} className="text-primary hover:underline">Add Bundle</button> to package products together at one price.
+                    No bundles yet. Use <button type="button" onClick={() => openNewBundleEditor()} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Add Bundle</button> to package products together at one price.
                   </p>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -2442,7 +2442,7 @@ export default function POSPage() {
               {catalogTab === "services" && (
                 filteredServicePackages.length === 0 ? (
                   <p className="text-gray-500 text-center py-8">
-                    No appointments found. <Link href="/settings/service-packages" className="text-primary hover:underline">Create some appointments</Link>
+                    No appointments found. <Link href="/settings/service-packages" className="inline-block rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Add Appointment</Link>
                   </p>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -3204,9 +3204,9 @@ export default function POSPage() {
                             }
                             setShowDiscountPicker((v) => !v);
                           }}
-                          className="text-[10px] font-semibold text-primary hover:underline"
+                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                         >
-                          + Add Discount
+                          Add Discount
                         </button>
                         {showDiscountPicker && (
                           <>
@@ -4061,7 +4061,7 @@ export default function POSPage() {
                   <button
                     type="button"
                     onClick={clearSignature}
-                    className="mt-1 text-xs text-primary hover:underline"
+                    className="mt-1 rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                   >
                     Clear Signature
                   </button>
@@ -4472,9 +4472,9 @@ export default function POSPage() {
                               ],
                             })
                           }
-                          className="text-[11px] font-semibold text-primary hover:underline"
+                          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                         >
-                          + {k.charAt(0).toUpperCase() + k.slice(1)}
+                          Add {k.charAt(0).toUpperCase() + k.slice(1)}
                         </button>
                       ))}
                     </div>
@@ -4888,14 +4888,14 @@ function PosCardPaymentModal({ data, memberId, onClose, onSuccess }: {
           )}
           {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onClose} className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-            <button type="submit" disabled={saving || !stripe} className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
+            <button type="submit" disabled={saving || !stripe} className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50">
               {saving
                 ? "Processing..."
                 : isSetupIntent
                   ? "Save Card"
                   : `Pay $${(data.amountCents / 100).toFixed(2)}`}
             </button>
+            <button type="button" onClick={onClose} className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100">Cancel</button>
           </div>
         </form>
       </div>
