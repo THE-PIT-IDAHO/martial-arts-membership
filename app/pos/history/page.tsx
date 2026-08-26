@@ -281,7 +281,7 @@ export default function POSHistoryPage() {
               {transactions.length === 0 ? (
                 <>
                   <p>No transactions yet.</p>
-                  <Link href="/pos" className="mt-2 text-primary hover:underline">
+                  <Link href="/pos" className="mt-2 inline-block rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">
                     Make your first sale
                   </Link>
                 </>

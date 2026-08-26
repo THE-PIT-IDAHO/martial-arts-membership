@@ -257,7 +257,7 @@ export default function WaiverTemplatesPage() {
                   </button>
                   <button
                     onClick={() => handleDelete(t.id, t.name)}
-                    className="rounded-md bg-white border border-primary px-3 py-1 text-xs font-semibold text-primary hover:bg-red-50 transition-colors"
+                    className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                   >
                     Delete
                   </button>

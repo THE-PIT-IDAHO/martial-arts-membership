@@ -1881,7 +1881,7 @@ function PromoteModal(props: {
                   </span>
                 </div>
                 {drafts.length > 1 && (
-                  <button type="button" onClick={() => removeDraft(idx)} className="text-xs text-red-600 hover:text-red-700">
+                  <button type="button" onClick={() => removeDraft(idx)} className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">
                     Remove
                   </button>
                 )}

@@ -5074,14 +5074,14 @@ export default function ReportsPage() {
                     <button
                       type="button"
                       onClick={() => { setShowManageModal(false); openEditModal(config.id); }}
-                      className="text-xs text-primary hover:text-primaryDark font-medium"
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
                       Edit
                     </button>
                     <button
                       type="button"
                       onClick={() => { if (confirm(`Delete "${config.name}"?`)) deleteReport(config.id); }}
-                      className="text-xs text-primary hover:text-primaryDark font-medium"
+                      className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                     >
                       Delete
                     </button>

@@ -2507,9 +2507,9 @@ export default function ClassesPage() {
                         const nextDay = DAYS_OF_WEEK.find(d => !usedDays.includes(d)) || "Monday";
                         setSchedApptDaySchedules([...schedApptDaySchedules, { day: nextDay, times: [{ startTime: "09:00", endTime: "10:00" }] }]);
                       }}
-                      className="text-xs text-primary hover:text-primaryDark font-medium"
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
-                      + Add Day
+                      Add Day
                     </button>
                   </div>
 
@@ -2779,7 +2779,7 @@ export default function ClassesPage() {
                             type="button"
                             onClick={handleRenameClassType}
                             disabled={savingClassType}
-                            className="text-xs text-primary hover:text-primaryDark disabled:opacity-50"
+                            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50"
                           >
                             Save
                           </button>
@@ -2789,7 +2789,7 @@ export default function ClassesPage() {
                               setEditingClassType(null);
                               setEditedClassTypeName("");
                             }}
-                            className="text-xs text-gray-500 hover:text-gray-700"
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                           >
                             Cancel
                           </button>
@@ -2813,7 +2813,7 @@ export default function ClassesPage() {
                                 setEditingClassType(type);
                                 setEditedClassTypeName(type);
                               }}
-                              className="text-xs text-primary hover:text-primaryDark"
+                              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                             >
                               Rename
                             </button>
@@ -2821,7 +2821,7 @@ export default function ClassesPage() {
                               type="button"
                               onClick={() => handleDeleteClassType(type)}
                               disabled={savingClassType}
-                              className="text-xs text-primary hover:text-primaryDark disabled:opacity-50"
+                              className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
                             >
                               Delete
                             </button>

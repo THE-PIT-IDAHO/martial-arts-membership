@@ -244,7 +244,7 @@ export default function PortalDashboard() {
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-gray-900">Upcoming Classes</h2>
-            <Link href="/portal/bookings" className="text-sm text-primary font-medium">
+            <Link href="/portal/bookings" className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">
               View All
             </Link>
           </div>

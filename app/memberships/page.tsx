@@ -2647,7 +2647,7 @@ export default function MembershipsPage() {
                           </div>
                           <div className="col-span-2 flex justify-end">
                             <button type="button" onClick={() => removePricingTier(i)}
-                              className="text-xs text-red-500 hover:underline">Remove</button>
+                              className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">Remove</button>
                           </div>
                         </div>
                       ))}

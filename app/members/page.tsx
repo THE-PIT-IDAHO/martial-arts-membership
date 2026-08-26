@@ -1492,7 +1492,7 @@ export default function MembersPage() {
                         <div className="flex items-center justify-center gap-2">
                           <Link
                             href={`/members/${m.id}`}
-                            className="text-xs text-primary hover:text-primaryDark font-medium"
+                            className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                           >
                             View
                           </Link>
@@ -1504,7 +1504,7 @@ export default function MembersPage() {
                                 `${m.firstName} ${m.lastName}`
                               )
                             }
-                            className="text-xs text-primary hover:text-primaryDark font-medium"
+                            className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                           >
                             Delete
                           </button>
@@ -1705,11 +1705,8 @@ export default function MembersPage() {
                   <button
                     type="button"
                     onClick={addSpreadsheetRow}
-                    className="mt-2 text-xs text-primary hover:text-primaryDark font-medium flex items-center gap-1"
+                    className="mt-2 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
                     Add Row
                   </button>
 

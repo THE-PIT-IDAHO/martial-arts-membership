@@ -2704,9 +2704,9 @@ export default function TestingPage() {
                 <h3 className="text-lg font-medium">Members Eligible for Testing</h3>
                 <Link
                   href="/promotions"
-                  className="text-sm text-primary hover:text-primaryDark"
+                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                 >
-                  View in Promotions →
+                  View in Promotions
                 </Link>
               </div>
               <p className="text-sm text-gray-500">
@@ -2781,9 +2781,9 @@ export default function TestingPage() {
               <div className="space-y-4">
                 <button
                   onClick={() => setSelectedEvent(null)}
-                  className="text-sm text-primary hover:text-primaryDark flex items-center gap-1"
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
                 >
-                  ← Back to Results
+                  Back to Results
                 </button>
 
                 <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -3332,7 +3332,7 @@ export default function TestingPage() {
                     </span>
                     <button
                       onClick={() => setSelectedMembersForTest([])}
-                      className="text-xs text-primary hover:text-primaryDark"
+                      className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                     >
                       Clear all
                     </button>
@@ -3558,13 +3558,13 @@ export default function TestingPage() {
                         href={participantPdfUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-sm text-primary hover:underline flex-1 truncate"
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                       >
                         View Test Results
                       </a>
                       <button
                         onClick={() => setParticipantPdfUrl("")}
-                        className="text-primary hover:text-primaryDark text-xs"
+                        className="rounded-md border border-red-300 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
                       >
                         Remove
                       </button>
@@ -3688,9 +3688,9 @@ export default function TestingPage() {
                     })()}
                     <Link
                       href="/curriculum"
-                      className="mt-4 inline-block text-sm text-primary hover:text-primaryDark"
+                      className="mt-4 inline-block rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
-                      Create curriculum in Curriculum Builder →
+                      Create curriculum in Curriculum Builder
                     </Link>
                   </div>
                 ) : (
@@ -4085,9 +4085,9 @@ export default function TestingPage() {
                     </p>
                     <Link
                       href="/curriculum"
-                      className="mt-4 inline-block text-sm text-primary hover:text-primaryDark"
+                      className="mt-4 inline-block rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
-                      Create curriculum in Curriculum Builder →
+                      Create curriculum in Curriculum Builder
                     </Link>
                   </div>
                 ) : (

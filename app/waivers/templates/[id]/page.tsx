@@ -201,7 +201,7 @@ export default function WaiverTemplateEditorPage() {
       <AppLayout>
         <div className="px-4 py-6 max-w-4xl mx-auto">
           <div className="text-sm text-red-700">Template not found.</div>
-          <Link href="/waivers/templates" className="text-sm text-primary hover:underline">
+          <Link href="/waivers/templates" className="mt-2 inline-block rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100">
             Back to templates
           </Link>
         </div>
