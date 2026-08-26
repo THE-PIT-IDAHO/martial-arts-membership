@@ -1,4 +1,4 @@
-import { sendEmail, resolveRecipientEmails, getSettings } from "@/lib/email";
+import { sendEmail, resolveRecipientEmails, resolvePaymentRecipientEmails, getSettings } from "@/lib/email";
 import { resolveTemplate as _resolveTemplate } from "@/lib/email-template-resolver";
 import { prisma } from "@/lib/prisma";
 import { generateMagicLinkToken } from "@/lib/portal-auth";
@@ -220,7 +220,9 @@ export async function sendInvoiceCreatedEmail(params: {
   if (!(await isEnabled("notify_invoice_created", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
-  const emails = await resolveRecipientEmails(params.memberId);
+  // Pivot to PAYS_FOR payer so the actual cardholder gets the
+  // invoice notice, not the payee (who often has no email on file).
+  const emails = await resolvePaymentRecipientEmails(params.memberId);
   if (emails.length === 0) return;
   const brand = await getGymBranding(clientId);
   const resolved = await resolveTemplate("invoice_created", {
@@ -249,7 +251,9 @@ export async function sendPaymentReceivedEmail(params: {
   if (!(await isEnabled("notify_payment_received", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
-  const emails = await resolveRecipientEmails(params.memberId);
+  // Pivot to PAYS_FOR payer -- receipt goes to whoever actually got
+  // charged (parent), not to the payee (child).
+  const emails = await resolvePaymentRecipientEmails(params.memberId);
   if (emails.length === 0) return;
   const brand = await getGymBranding(clientId);
   const resolved = await resolveTemplate("payment_received", {
@@ -277,7 +281,9 @@ export async function sendPastDueAlertEmail(params: {
   if (!(await isEnabled("notify_past_due", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
-  const emails = await resolveRecipientEmails(params.memberId);
+  // Pivot to PAYS_FOR payer -- past-due notice needs to reach the
+  // cardholder who can update payment info, not the payee.
+  const emails = await resolvePaymentRecipientEmails(params.memberId);
   if (emails.length === 0) return;
   const brand = await getGymBranding(clientId);
   const resolved = await resolveTemplate("past_due", {
@@ -662,7 +668,9 @@ export async function sendDunningEmail(params: {
   if (!(await isEnabled("notify_dunning", params as { memberId?: string; clientId?: string }))) return;
   const clientId = await resolveClientId({ memberId: params.memberId });
   if (!clientId) return;
-  const emails = await resolveRecipientEmails(params.memberId);
+  // Pivot to PAYS_FOR payer -- dunning escalations need to hit the
+  // person who can actually settle the balance.
+  const emails = await resolvePaymentRecipientEmails(params.memberId);
   if (emails.length === 0) return;
   const brand = await getGymBranding(clientId);
   const resolved = await resolveTemplate(`dunning_${params.level}`, {
@@ -857,7 +865,10 @@ export async function sendPurchaseCompleteEmail(params: {
     console.warn(`${tag} SKIPPED: no clientId resolvable from memberId`);
     return;
   }
-  const emails = await resolveRecipientEmails(params.memberId);
+  // Purchase-complete is a receipt; the PAYS_FOR payer (parent /
+  // spouse / whoever's card got charged) is who needs it, not the
+  // payee.
+  const emails = await resolvePaymentRecipientEmails(params.memberId);
   if (emails.length === 0) {
     console.warn(`${tag} SKIPPED: no recipient emails (member has no email on file)`);
     return;

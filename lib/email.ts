@@ -151,6 +151,35 @@ export async function resolveRecipientEmails(memberId: string): Promise<string[]
   return [...new Set(emails)]; // deduplicate
 }
 
+// Payment-specific recipient resolution. If this member has a
+// PAYS_FOR payer on file (parent pays for child, spouse pays for
+// spouse), payment / billing / receipt emails go to the PAYER's
+// email address instead of the payee's. Falls back to the standard
+// resolveRecipientEmails routing (member + parents based on
+// minorCommsMode) when no payer relationship exists.
+//
+// Rationale: for a child's membership auto-charge, the parent is the
+// one holding the card and the one who needs the receipt / decline
+// notice / past-due warning. Sending it to the child's email (often
+// blank or a school address they never check) leaves the payer in
+// the dark about their own charge.
+export async function resolvePaymentRecipientEmails(memberId: string): Promise<string[]> {
+  const payerRow = await prisma.memberRelationship.findFirst({
+    where: { relationship: "PAYS_FOR", toMemberId: memberId },
+    select: {
+      fromMember: {
+        select: { id: true, email: true, emailOptIn: true },
+      },
+    },
+  });
+  if (payerRow?.fromMember?.email && payerRow.fromMember.emailOptIn !== false) {
+    return [payerRow.fromMember.email];
+  }
+  // No payer, or the payer has no email / opted out -- fall through
+  // to standard routing (member + parents).
+  return resolveRecipientEmails(memberId);
+}
+
 // Platform sender address — all emails send FROM this verified domain.
 // Client gym email is used as reply-to so member replies go to the gym.
 const PLATFORM_SENDER = "notifications@dojostormsoftware.com";
