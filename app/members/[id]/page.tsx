@@ -2739,10 +2739,15 @@ export default function MemberProfilePage() {
               {showPhotoPicker && (
                 <>
                   <div
-                    className="fixed inset-0 z-40"
+                    className="fixed inset-0 z-[90]"
                     onClick={() => setShowPhotoPicker(false)}
                   />
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50 rounded-lg border border-gray-200 bg-white shadow-xl p-2 flex flex-col gap-1 min-w-[160px]">
+                  {/* Anchor to the LEFT edge of the photo (was center-
+                      under, which extended left past the photo column
+                      and got clipped behind the sidebar on narrow
+                      layouts). z-[100] sits above the sidebar's own
+                      stacking context. */}
+                  <div className="absolute top-full left-0 mt-2 z-[100] rounded-lg border border-gray-200 bg-white shadow-xl p-2 flex flex-col gap-1 min-w-[160px]">
                     <button
                       type="button"
                       onClick={() => cameraInputRef.current?.click()}
