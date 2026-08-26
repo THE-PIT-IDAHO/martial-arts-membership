@@ -333,6 +333,39 @@ export default function POSPage() {
   };
   const [memberDiscountRows, setMemberDiscountRows] = useState<MemberDiscountRow[]>([]);
 
+  // Discount templates loaded once on mount; picker in the cart lets
+  // the operator apply one or more to this sale. Applied discounts
+  // are STAGED on the client; when checkout runs the server creates
+  // matching MemberDiscount rows so the existing discount pipeline
+  // (POS + auto-billing) treats them as first-class per-member
+  // discounts. The `applyToRecurring` flag controls whether the row
+  // is one-time (sale only, gets consumed) or lasting (recurring
+  // cycles inherit it).
+  type DiscountTemplateOption = {
+    id: string;
+    name: string;
+    description: string | null;
+    appliesTo: "POS" | "MEMBERSHIP" | "PROMOTION" | "ALL";
+    percentOff: number | null;
+    flatCents: number | null;
+    oneTime: boolean;
+    active: boolean;
+  };
+  type AppliedDiscount = {
+    // Local id so React keys are stable across renders (template can
+    // be applied twice if the operator really wants it).
+    localId: string;
+    templateId: string;
+    name: string;
+    appliesTo: "POS" | "MEMBERSHIP" | "PROMOTION" | "ALL";
+    percentOff: number | null;
+    flatCents: number | null;
+    applyToRecurring: boolean;
+  };
+  const [discountTemplates, setDiscountTemplates] = useState<DiscountTemplateOption[]>([]);
+  const [appliedDiscounts, setAppliedDiscounts] = useState<AppliedDiscount[]>([]);
+  const [showDiscountPicker, setShowDiscountPicker] = useState(false);
+
   // Section discount visibility
   const [showProductDiscount, setShowProductDiscount] = useState(false);
 
@@ -562,6 +595,16 @@ export default function POSPage() {
         const data = await bundlesRes.json();
         setBundles(data.bundles || []);
       }
+      // Discount templates for the cart-side picker. Fired alongside
+      // the rest of the catalog so the picker doesn't have to wait
+      // on a member selection.
+      try {
+        const tRes = await fetch("/api/discount-templates");
+        if (tRes.ok) {
+          const tData = await tRes.json();
+          setDiscountTemplates(Array.isArray(tData?.templates) ? tData.templates : []);
+        }
+      } catch { /* keep list empty on failure */ }
       if (stylesRes.ok) {
         const data = await stylesRes.json();
         const map: Record<string, string> = {};
@@ -1292,9 +1335,23 @@ export default function POSPage() {
     .reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
   const nonMembershipCartTotal = serviceCalc.total + productCalc.total - membershipCartTotal;
 
-  const posDiscountRows = memberDiscountRows.filter((r) => r.appliesTo === "POS");
-  const membershipDiscountRows = memberDiscountRows.filter((r) => r.appliesTo === "MEMBERSHIP");
-  const allScopeRows = memberDiscountRows.filter((r) => r.appliesTo === "ALL");
+  // Fold cart-side APPLIED templates into the effective discount rows
+  // so the preview matches what the server will charge after it
+  // creates matching MemberDiscount rows during checkout. Local id
+  // slotted into `id` for React key stability -- consumers here only
+  // read id/label/appliesTo/percentOff/flatCents/oneTime.
+  const appliedDiscountRows: MemberDiscountRow[] = appliedDiscounts.map((d) => ({
+    id: d.localId,
+    label: d.name,
+    appliesTo: d.appliesTo,
+    percentOff: d.percentOff,
+    flatCents: d.flatCents,
+    oneTime: !d.applyToRecurring,
+  }));
+  const effectiveDiscountRows = [...memberDiscountRows, ...appliedDiscountRows];
+  const posDiscountRows = effectiveDiscountRows.filter((r) => r.appliesTo === "POS");
+  const membershipDiscountRows = effectiveDiscountRows.filter((r) => r.appliesTo === "MEMBERSHIP");
+  const allScopeRows = effectiveDiscountRows.filter((r) => r.appliesTo === "ALL");
 
   // ALL-scope goes to whichever bucket has room. Prefer non-membership
   // when there is any, so a "10% off everything" discount visibly
@@ -1322,14 +1379,14 @@ export default function POSPage() {
   // math summary ("10% + -$5.00") so the line is never bare.
   const memberDiscountLabel = (() => {
     if (memberDiscountCents <= 0) return "";
-    const names = memberDiscountRows
+    const names = effectiveDiscountRows
       .map((r) => (r.label || "").trim())
       .filter(Boolean);
     if (names.length > 0) {
       return Array.from(new Set(names)).join(", ");
     }
-    const totalPct = memberDiscountRows.reduce((s, r) => s + (r.percentOff ?? 0), 0);
-    const totalFlat = memberDiscountRows.reduce((s, r) => s + (r.flatCents ?? 0), 0);
+    const totalPct = effectiveDiscountRows.reduce((s, r) => s + (r.percentOff ?? 0), 0);
+    const totalFlat = effectiveDiscountRows.reduce((s, r) => s + (r.flatCents ?? 0), 0);
     const parts: string[] = [];
     if (totalPct > 0) parts.push(`${Math.min(totalPct, 100)}%`);
     if (totalFlat > 0) parts.push(`-$${(totalFlat / 100).toFixed(2)}`);
@@ -1896,6 +1953,19 @@ export default function POSPage() {
   async function executeCheckout() {
     setProcessing(true);
     try {
+      // Applied discount templates -- server creates a MemberDiscount
+      // row for each before running the transaction's own discount
+      // math. oneTime is inverted from applyToRecurring so a "sale-
+      // only" discount gets consumed after first use, while an
+      // "apply to recurring" one persists for auto-billing.
+      const appliedDiscountsPayload = appliedDiscounts.map((d) => ({
+        templateId: d.templateId,
+        name: d.name,
+        appliesTo: d.appliesTo,
+        percentOff: d.percentOff,
+        flatCents: d.flatCents,
+        applyToRecurring: d.applyToRecurring,
+      }));
       const lineItems = cart.map(item => ({
         type: item.type,
         itemId: item.itemId,
@@ -1953,6 +2023,7 @@ export default function POSPage() {
             taxCents,
             serviceDiscountCents: serviceCalc.itemDisc + serviceCalc.sectionDisc,
             productDiscountCents: productCalc.itemDisc + productCalc.sectionDisc,
+            appliedDiscounts: appliedDiscountsPayload,
             paymentIntentId: chargeData.paymentIntentId,
             paymentProcessor: "stripe",
             redeemedGiftCode: redeemedGift?.code || null,
@@ -2077,6 +2148,8 @@ export default function POSPage() {
     setCreditAmount("");
     setGiftAmount("");
     setGiftRecipient("");
+    setAppliedDiscounts([]);
+    setShowDiscountPicker(false);
   }
 
   if (loading) {
@@ -3108,6 +3181,119 @@ export default function POSPage() {
                       <span>{formatCents(productCalc.total)}</span>
                     </div>
                   </>
+                )}
+
+                {/* Discount picker. Pick from templates built at
+                    /discounts; each pick is a per-sale discount.
+                    Check "Apply to recurring too" to also lock it in
+                    for this member's recurring bills (creates a
+                    lasting MemberDiscount row instead of a one-time
+                    one). Requires a selected member -- the discount
+                    attaches to their row. */}
+                {(appliedDiscounts.length > 0 || discountTemplates.some((t) => t.active)) && (
+                  <div className="pt-1 pb-1 border-t border-gray-100 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Discounts</span>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!selectedMember) {
+                              alert("Select a member first -- discounts attach to their account.");
+                              return;
+                            }
+                            setShowDiscountPicker((v) => !v);
+                          }}
+                          className="text-[10px] font-semibold text-primary hover:underline"
+                        >
+                          + Add Discount
+                        </button>
+                        {showDiscountPicker && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowDiscountPicker(false)} />
+                            <div className="absolute right-0 top-full mt-1 z-50 w-64 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl">
+                              {discountTemplates.filter((t) => t.active).length === 0 ? (
+                                <p className="p-3 text-xs text-gray-500 italic">
+                                  No discount templates yet.
+                                </p>
+                              ) : (
+                                discountTemplates
+                                  .filter((t) => t.active)
+                                  .map((t) => {
+                                    const amt = t.percentOff && t.flatCents
+                                      ? `${t.percentOff}% + $${(t.flatCents / 100).toFixed(2)}`
+                                      : t.percentOff
+                                        ? `${t.percentOff}%`
+                                        : t.flatCents != null
+                                          ? `$${(t.flatCents / 100).toFixed(2)}`
+                                          : "";
+                                    return (
+                                      <button
+                                        key={t.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setAppliedDiscounts((prev) => [
+                                            ...prev,
+                                            {
+                                              localId: crypto.randomUUID(),
+                                              templateId: t.id,
+                                              name: t.name,
+                                              appliesTo: t.appliesTo,
+                                              percentOff: t.percentOff,
+                                              flatCents: t.flatCents,
+                                              // Default OFF -- Cruz's per-sale-first
+                                              // rule; operator opts into recurring per
+                                              // discount from the applied-row checkbox.
+                                              applyToRecurring: false,
+                                            },
+                                          ]);
+                                          setShowDiscountPicker(false);
+                                        }}
+                                        className="block w-full text-left px-3 py-2 text-xs hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                      >
+                                        <div className="font-semibold text-gray-900">{t.name}</div>
+                                        <div className="text-gray-500">{amt}</div>
+                                        {t.description && (
+                                          <div className="text-[10px] text-gray-400 mt-0.5">{t.description}</div>
+                                        )}
+                                      </button>
+                                    );
+                                  })
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {appliedDiscounts.map((d) => (
+                      <div key={d.localId} className="rounded-md bg-primary/5 border border-primary/20 p-2 space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-gray-900 truncate mr-2">{d.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => setAppliedDiscounts((prev) => prev.filter((x) => x.localId !== d.localId))}
+                            className="text-gray-400 hover:text-red-600"
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <label className="flex items-center gap-2 text-[10px] text-gray-600">
+                          <input
+                            type="checkbox"
+                            checked={d.applyToRecurring}
+                            onChange={(e) =>
+                              setAppliedDiscounts((prev) =>
+                                prev.map((x) => x.localId === d.localId ? { ...x, applyToRecurring: e.target.checked } : x),
+                              )
+                            }
+                            className="rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          Apply to recurring too
+                        </label>
+                      </div>
+                    ))}
+                  </div>
                 )}
 
                 <div className="flex justify-between">

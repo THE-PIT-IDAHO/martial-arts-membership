@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   try {
     const clientId = await getClientId(req);
     const body = await req.json();
-    const { memberId, memberName, lineItems, paymentMethod, notes, discountCents = 0, taxCents = 0, paymentIntentId, paymentProcessor } = body;
+    const { memberId, memberName, lineItems, paymentMethod, notes, discountCents = 0, taxCents = 0, paymentIntentId, paymentProcessor, appliedDiscounts } = body;
 
     if (!lineItems || lineItems.length === 0) {
       return new NextResponse("At least one line item is required", { status: 400 });
@@ -172,6 +172,49 @@ export async function POST(req: Request) {
       }
       const fromPct = Math.round((base * Math.min(percent, 100)) / 100);
       return Math.min(base, fromPct + flat);
+    }
+
+    // Applied discount templates from the POS cart-side picker. Create
+    // MemberDiscount rows here BEFORE the discount-computation query
+    // below, so the same query picks them up and the sale's discount
+    // preview + actual charge stay in lockstep. `applyToRecurring`
+    // inverts to `oneTime`: false-recurring -> oneTime:true (row gets
+    // consumed after markDiscountsUsed at the end of this txn); true-
+    // recurring -> oneTime:false (row persists so auto-billing picks
+    // it up on every future cycle for this member).
+    if (memberId && Array.isArray(appliedDiscounts) && appliedDiscounts.length > 0) {
+      for (const ad of appliedDiscounts) {
+        const scope = typeof ad?.appliesTo === "string" ? ad.appliesTo : "ALL";
+        if (!["POS", "MEMBERSHIP", "PROMOTION", "ALL"].includes(scope)) continue;
+        const percentOff = ad?.percentOff != null && Number(ad.percentOff) !== 0
+          ? Number(ad.percentOff) : null;
+        const flatCents = ad?.flatCents != null && Number(ad.flatCents) !== 0
+          ? Math.round(Number(ad.flatCents)) : null;
+        if (percentOff == null && flatCents == null) continue;
+        // Optional template link: verify the templateId belongs to
+        // this tenant before recording it. Bogus ids silently drop.
+        let templateId: string | null = null;
+        if (typeof ad?.templateId === "string" && ad.templateId) {
+          const t = await prisma.discountTemplate.findFirst({
+            where: { id: ad.templateId, clientId },
+            select: { id: true },
+          });
+          if (t) templateId = t.id;
+        }
+        await prisma.memberDiscount.create({
+          data: {
+            memberId,
+            clientId,
+            label: typeof ad?.name === "string" && ad.name.trim() ? ad.name.trim() : null,
+            appliesTo: scope,
+            percentOff,
+            flatCents,
+            oneTime: !ad?.applyToRecurring,
+            active: true,
+            templateId,
+          },
+        });
+      }
     }
 
     let memberDiscountCents = 0;
