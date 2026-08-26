@@ -47,6 +47,7 @@ type ReportDataFields = {
   showMemberDOB: boolean;
   showMemberAge: boolean;
   showMemberNumber: boolean;
+  showHasPhoto: boolean;
   showJoinDate: boolean;
   showEmergencyContacts: boolean;
   showMedicalNotes: boolean;
@@ -162,6 +163,7 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showMemberDOB: false,
   showMemberAge: false,
   showMemberNumber: false,
+  showHasPhoto: false,
   showJoinDate: false,
   showEmergencyContacts: false,
   showMedicalNotes: false,
@@ -275,6 +277,7 @@ const COLUMN_FIELDS = [
       { key: "showMemberNames", label: "Member Names" },
       { key: "showMemberStatus", label: "Status" },
       { key: "showMemberNumber", label: "Member Number" },
+      { key: "showHasPhoto", label: "Has Photo" },
       { key: "showMemberEmails", label: "Email Address" },
       { key: "showMemberPhones", label: "Phone Numbers" },
       { key: "showMemberAddresses", label: "Addresses" },
@@ -461,7 +464,7 @@ type PaymentSummary = {
 };
 
 // Base column identifiers for the member list table
-type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "promotionEligible" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "outstandingBalance" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
+type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "hasPhoto" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "promotionEligible" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "outstandingBalance" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
 
 // Column ID can be a base column, a class type column, or one of the
 // per-style extras (current rank / belt size / belt text / next rank).
@@ -483,6 +486,7 @@ const MEMBER_DETAIL_COLUMNS = new Set<string>([
   "lastName",
   "status",
   "memberNumber",
+  "hasPhoto",
   "email",
   "phone",
   "joinDate",
@@ -496,6 +500,7 @@ const DEFAULT_COLUMN_ORDER: BaseColumnId[] = [
   "lastName",
   "status",
   "memberNumber",
+  "hasPhoto",
   "email",
   "phone",
   "style",
@@ -523,6 +528,7 @@ const COLUMN_LABELS: Record<BaseColumnId, string> = {
   lastName: "Last Name",
   status: "Status",
   memberNumber: "Member #",
+  hasPhoto: "Has Photo",
   email: "Email",
   phone: "Phone",
   style: "Style",
@@ -2788,6 +2794,7 @@ export default function ReportsPage() {
                         case "memberNumber": return activeReport.fields.showMemberNumber;
                         case "email": return activeReport.fields.showMemberEmails;
                         case "phone": return activeReport.fields.showMemberPhones;
+                        case "hasPhoto": return activeReport.fields.showHasPhoto;
                         // Legacy "primary" columns retired -- fall through
                         // to default: return false.
                         case "latestPromotion": return activeReport.fields.showLatestPromotion;
@@ -2922,6 +2929,7 @@ export default function ReportsPage() {
                         case "lastName": return m.lastName || "";
                         case "status": return m.status || "";
                         case "memberNumber": return m.memberNumber ? String(m.memberNumber) : "";
+                        case "hasPhoto": return m.photoUrl ? "Yes" : "No";
                         case "email": return m.email || "";
                         case "phone": return m.phone || "";
                         case "style": return m.primaryStyle || "";
@@ -3142,6 +3150,8 @@ export default function ReportsPage() {
                                   return activeReport.fields.showMemberStatus;
                                 case "memberNumber":
                                   return activeReport.fields.showMemberNumber;
+                                case "hasPhoto":
+                                  return activeReport.fields.showHasPhoto;
                                 case "email":
                                   return activeReport.fields.showMemberEmails;
                                 case "phone":
@@ -3489,6 +3499,12 @@ export default function ReportsPage() {
                                           return displayStatus;
                                         case "memberNumber":
                                           return m.memberNumber || "—";
+                                        case "hasPhoto":
+                                          return m.photoUrl ? (
+                                            <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">Yes</span>
+                                          ) : (
+                                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">No</span>
+                                          );
                                         case "email":
                                           return m.email || "—";
                                         case "phone":
