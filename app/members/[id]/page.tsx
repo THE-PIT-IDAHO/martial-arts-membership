@@ -6032,7 +6032,7 @@ export default function MemberProfilePage() {
                                 setBillingPickerMode("pays_for");
                                 setBillingPickerError(null);
                               }}
-                              className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white hover:bg-primaryDark"
+                              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                               title="Mark this member as paying for someone else (this member's card handles their POS + recurring billing)"
                             >
                               Pays For
@@ -6045,7 +6045,7 @@ export default function MemberProfilePage() {
                                 setBillingPickerMode("paid_for_by");
                                 setBillingPickerError(null);
                               }}
-                              className="rounded-md border border-primary px-2 py-1 text-[10px] font-semibold text-primary hover:bg-primary/10"
+                              className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                               title="Mark another member as paying for this member (their card gets charged for POS + recurring billing)"
                             >
                               Paid For By

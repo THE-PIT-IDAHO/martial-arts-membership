@@ -763,7 +763,7 @@ export default function DashboardPage() {
                     <h2 className="text-sm font-semibold text-gray-900">Today&apos;s Schedule</h2>
                     <button
                       onClick={() => router.push("/calendar")}
-                      className="text-xs text-primary hover:text-primaryDark font-medium"
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
                       View Calendar
                     </button>
@@ -1124,7 +1124,7 @@ export default function DashboardPage() {
                   <h2 className="text-sm font-semibold text-gray-900">Tasks</h2>
                   <button
                     onClick={() => router.push("/tasks")}
-                    className="text-xs text-primary hover:text-primaryDark font-medium"
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                   >
                     View All
                   </button>
@@ -1499,7 +1499,7 @@ export default function DashboardPage() {
                       <h2 className="text-sm font-semibold text-yellow-700">Low Stock</h2>
                       <button
                         onClick={() => router.push("/pos/items")}
-                        className="text-xs text-primary hover:text-primaryDark font-medium"
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                       >
                         View Inventory
                       </button>
@@ -1542,7 +1542,7 @@ export default function DashboardPage() {
                     <h2 className="text-sm font-semibold text-gray-900">New This Week</h2>
                     <button
                       onClick={() => router.push("/members")}
-                      className="text-xs text-primary hover:text-primaryDark font-medium"
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
                     >
                       All Members
                     </button>
