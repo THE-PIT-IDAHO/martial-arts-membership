@@ -235,16 +235,35 @@ export async function middleware(request: NextRequest) {
     const rawSlug = (!subdomain || subdomain === "app") ? DEFAULT_SLUG : subdomain;
     tenantSlug = SLUG_ALIASES[rawSlug] || rawSlug;
 
+    // Stale admin session cleanup: any ADMIN_COOKIE that arrives on
+    // the bare gym subdomain was set on this host BEFORE the URL
+    // split (admin used to live here). Cookies without a Domain
+    // attribute stay bound to the exact host they were set on, so
+    // that old cookie still ships with every bare-subdomain request
+    // -- causing the admin identity to bleed into the portal (Cruz
+    // saw the admin nav "Cruz Gomez / Owner" rendering on a member's
+    // portal home). We proactively expire it here so it stops
+    // shipping on future requests. New admin logins mint their
+    // cookie on admin.<gym>. and won't ever appear here.
+    const staleAdminCookie = request.cookies.get(ADMIN_COOKIE);
+
     if (isAdminAppPath(pathname)) {
       const url = request.nextUrl.clone();
       url.host = `admin.${host}`;
-      return NextResponse.redirect(url);
+      const redirect = NextResponse.redirect(url);
+      if (staleAdminCookie) {
+        redirect.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
+      }
+      return redirect;
     }
     if (BARE_PORTAL_PATHS.has(pathname)) {
       const url = request.nextUrl.clone();
       url.pathname = pathname === "/" ? "/portal" : `/portal${pathname}`;
       const response = NextResponse.rewrite(url);
       response.headers.set(TENANT_SLUG_HEADER, tenantSlug);
+      if (staleAdminCookie) {
+        response.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
+      }
       return response;
     }
     // Bare /forgot-password: portal has no dedicated forgot page --
@@ -253,13 +272,21 @@ export async function middleware(request: NextRequest) {
     // the member-facing host (which would generate an admin reset
     // token that can't be redeemed on the portal reset page).
     if (pathname === "/forgot-password") {
-      return NextResponse.redirect(new URL("/login", request.url));
+      const redirect = NextResponse.redirect(new URL("/login", request.url));
+      if (staleAdminCookie) {
+        redirect.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
+      }
+      return redirect;
     }
-    // The bare /login admin route is now taken by the portal rewrite
-    // above; someone posting to /api/auth/* on the bare subdomain is
-    // probably a legacy admin login attempt -- let it fall through
-    // (kept working) and log so we can tell how many stragglers hit
-    // the old URL.
+    // Any other bare-subdomain path (including /api/*): if a stale
+    // admin cookie is riding along, strip it via a fresh
+    // NextResponse.next() with the deletion header. That way the
+    // downstream API / page can't decide the caller is admin.
+    if (staleAdminCookie) {
+      const response = NextResponse.next();
+      response.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
+      return response;
+    }
   }
 
   // --- Cron-authenticated paths ---
