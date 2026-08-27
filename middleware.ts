@@ -71,6 +71,7 @@ function isPublicAdminPath(pathname: string): boolean {
  * Extract subdomain from host.
  * "thepitidaho.dojostormsoftware.com" → "thepitidaho"
  * "app.dojostormsoftware.com" → "app"
+ * "admin.thepitidaho.dojostormsoftware.com" → "admin"
  * "localhost:3000" → null (use default)
  */
 function extractSubdomain(host: string): string | null {
@@ -85,6 +86,81 @@ function extractSubdomain(host: string): string | null {
   return null;
 }
 
+/**
+ * Split host into logical parts so we can distinguish
+ * `admin.<gym>.dojostormsoftware.com` (per-gym admin subdomain)
+ * from `admin.dojostormsoftware.com` (platform-admin subdomain).
+ *
+ * Returns:
+ *   { adminPrefix: true, tenant: "thepitidaho" }  ← per-gym admin
+ *   { adminPrefix: false, tenant: "thepitidaho" } ← bare gym subdomain
+ *   { adminPrefix: false, tenant: "admin" }       ← 3-part admin.dojo... platform admin
+ *   { adminPrefix: false, tenant: null }          ← marketing / localhost
+ */
+function parseHost(host: string): { adminPrefix: boolean; tenant: string | null } {
+  const hostname = host.split(":")[0];
+  if (hostname === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    return { adminPrefix: false, tenant: null };
+  }
+  const parts = hostname.split(".");
+  // 4+ parts AND first is "admin" ⇒ per-gym admin subdomain.
+  // The gym slug is the SECOND segment. Middle segments beyond that
+  // (unlikely in practice) are ignored.
+  if (parts.length >= 4 && parts[0] === "admin") {
+    return { adminPrefix: true, tenant: parts[1] };
+  }
+  if (parts.length >= 3) {
+    return { adminPrefix: false, tenant: parts[0] };
+  }
+  return { adminPrefix: false, tenant: null };
+}
+
+// Path prefixes that are legitimately ADMIN-app paths (need to redirect
+// from bare gym subdomain to admin subdomain). Anything not in this
+// set on the bare subdomain is either portal, public (waivers etc.),
+// or already-portal (/portal/*).
+const ADMIN_APP_PATH_PREFIXES = [
+  "/dashboard",
+  "/members",
+  "/memberships",
+  "/styles",
+  "/classes",
+  "/calendar",
+  "/testing",
+  "/curriculum",
+  "/promotions",
+  "/pos",
+  "/discounts",
+  "/invoices",
+  "/contracts",
+  "/reports",
+  "/tasks",
+  "/communication",
+  "/communications",
+  "/kiosk/settings",
+  "/setup",
+  "/audit-log",
+  "/settings",
+  "/account",
+  "/notifications",
+];
+
+function isAdminAppPath(pathname: string): boolean {
+  return ADMIN_APP_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
+
+// Bare-subdomain paths that map to the PORTAL app. Middleware rewrites
+// these to /portal/<path> internally so the URL bar stays clean.
+// Everything else on the bare subdomain either serves as-is (public
+// waiver flows, /portal/*) or redirects to admin.<gym> (admin paths).
+const BARE_PORTAL_PATHS = new Set([
+  "/",
+  "/login",
+  "/verify",
+  "/enroll",
+  "/reset-password",
+]);
+
 /** Create a NextResponse.next() with the tenant slug header injected */
 function nextWithTenant(request: NextRequest, slug: string): NextResponse {
   const requestHeaders = new Headers(request.headers);
@@ -95,51 +171,88 @@ function nextWithTenant(request: NextRequest, slug: string): NextResponse {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // --- Resolve tenant slug from subdomain ---
+  // --- Resolve tenant slug + admin-subdomain flag from host ---
   const host = request.headers.get("host") || "localhost:3000";
   const subdomain = extractSubdomain(host);
+  const { adminPrefix: isGymAdminSubdomain, tenant: parsedTenant } = parseHost(host);
 
   // --- Marketing site host: www.dojostormsoftware.com and bare
   // dojostormsoftware.com serve the public marketing site (not the
   // app). Rewrite the request into /marketing/* so route files under
   // that folder render, and bypass every auth / tenant / permission
-  // check. The public API routes under /api/marketing/* also live
-  // here (contact form). Everything else falls through to the
-  // tenant-app flow below. The /marketing prefix is an
-  // implementation detail; the visitor sees "www.dojostormsoftware
-  // .com/" as the URL because Next handles the rewrite transparently.
+  // check.
   const isBareOrWww = subdomain === null || subdomain === "www";
   if (isBareOrWww && !host.startsWith("localhost")) {
-    // Serve marketing tree + its API. Anything else on this host is
-    // a legacy link -- redirect it to the app subdomain so it still
-    // works instead of 404ing the visitor.
     if (pathname === "/" || pathname === "/marketing") {
       return NextResponse.rewrite(new URL("/marketing", request.url));
     }
     if (pathname.startsWith("/marketing") || pathname.startsWith("/api/marketing")) {
       return NextResponse.next();
     }
-    // Not a marketing path but arrived on the marketing host --
-    // send them to the same path on the app subdomain. Keeps a
-    // stray /portal/login share link on www working.
+    // Not a marketing path on the marketing host -- send to app
+    // subdomain equivalent so legacy links (/portal/login shared on
+    // www) keep working.
     const url = request.nextUrl.clone();
     url.host = host.replace(/^(www\.)?/, "app.");
     return NextResponse.redirect(url);
   }
 
-  // --- Admin subdomain: admin.dojostormsoftware.com ---
-  if (subdomain === "admin") {
-    // Only allow /admin/* paths and /login on the admin subdomain
+  // --- Platform-admin subdomain: admin.dojostormsoftware.com ---
+  // 3-part hostname whose first segment is "admin" -- NOT a per-gym
+  // admin subdomain (those are 4+ parts, handled below).
+  if (subdomain === "admin" && !isGymAdminSubdomain) {
     if (!pathname.startsWith("/admin") && pathname !== "/login" && !pathname.startsWith("/api/auth") && !pathname.startsWith("/api/admin")) {
       return NextResponse.redirect(new URL("/admin/dashboard", request.url));
     }
-    // Route to platform owner's client
     return nextWithTenant(request, "thepitidaho");
   }
 
-  // Treat "app" subdomain as default, and resolve aliases for branded subdomains
-  const rawSlug = (!subdomain || subdomain === "app") ? DEFAULT_SLUG : subdomain;
-  const tenantSlug = SLUG_ALIASES[rawSlug] || rawSlug;
+  // --- Per-gym admin subdomain: admin.<gym>.dojostormsoftware.com ---
+  // Reroute /portal/* back to the bare subdomain (members using the
+  // wrong URL) and block any /admin/* (platform-admin dashboard) --
+  // otherwise fall through to the shared admin-gating flow below with
+  // the tenant slug set from the SECOND host segment.
+  let tenantSlug: string;
+  if (isGymAdminSubdomain && parsedTenant) {
+    if (pathname.startsWith("/portal")) {
+      const url = request.nextUrl.clone();
+      url.host = host.replace(/^admin\./, "");
+      url.pathname = pathname.replace(/^\/portal/, "") || "/";
+      return NextResponse.redirect(url);
+    }
+    if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+      // Platform admin only lives on admin.dojostormsoftware.com; a
+      // stray hit here would render the platform dashboard on a per-
+      // gym admin subdomain if the caller happens to have a valid
+      // platform-admin session cookie.
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    tenantSlug = SLUG_ALIASES[parsedTenant] || parsedTenant;
+  } else {
+    // Bare gym subdomain: <gym>.dojostormsoftware.com is now the
+    // MEMBER PORTAL. Bare admin paths get redirected to the admin
+    // subdomain so old bookmarks still resolve.
+    const rawSlug = (!subdomain || subdomain === "app") ? DEFAULT_SLUG : subdomain;
+    tenantSlug = SLUG_ALIASES[rawSlug] || rawSlug;
+
+    if (isAdminAppPath(pathname)) {
+      const url = request.nextUrl.clone();
+      url.host = `admin.${host}`;
+      return NextResponse.redirect(url);
+    }
+    if (BARE_PORTAL_PATHS.has(pathname)) {
+      const url = request.nextUrl.clone();
+      url.pathname = pathname === "/" ? "/portal" : `/portal${pathname}`;
+      const response = NextResponse.rewrite(url);
+      response.headers.set(TENANT_SLUG_HEADER, tenantSlug);
+      return response;
+    }
+    // The bare /login admin route is now taken by the portal rewrite
+    // above; someone posting to /api/auth/* on the bare subdomain is
+    // probably a legacy admin login attempt -- let it fall through
+    // (kept working) and log so we can tell how many stragglers hit
+    // the old URL.
+  }
 
   // --- Cron-authenticated paths ---
   // If the request carries a matching CRON_SECRET, let it through with

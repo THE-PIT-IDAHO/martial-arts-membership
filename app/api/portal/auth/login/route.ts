@@ -107,9 +107,14 @@ export async function POST(req: NextRequest) {
     // --- Magic link path (unchanged) ---
     if (member && member.email) {
       const token = await generateMagicLinkToken(member.id, member.email);
-      const baseUrl = req.headers.get("origin") || req.headers.get("host") || "";
-      const protocol = baseUrl.startsWith("http") ? "" : "http://";
-      const loginUrl = `${protocol}${baseUrl}/portal/verify?token=${token}`;
+      // Force the magic-link URL onto the BARE subdomain (portal host).
+      // If the request came in on admin.<gym>, strip the admin. prefix
+      // so the emailed link doesn't send members to the admin app.
+      const rawBase = req.headers.get("origin") || req.headers.get("host") || "";
+      const protocol = rawBase.startsWith("http") ? "" : "http://";
+      const hostOnly = rawBase.replace(/^https?:\/\//, "");
+      const portalHost = hostOnly.startsWith("admin.") ? hostOnly.slice("admin.".length) : hostOnly;
+      const loginUrl = `${protocol}${portalHost}/portal/verify?token=${token}`;
 
       // In dev mode, return the login URL directly (no email needed)
       if (process.env.NODE_ENV !== "production") {

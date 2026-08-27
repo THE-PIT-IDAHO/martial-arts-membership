@@ -1278,7 +1278,16 @@ export default function MembersPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        window.open("/portal/login", "_blank");
+                        // Force onto the bare gym subdomain (portal
+                        // host); strip "admin." if the admin is on
+                        // admin.<gym> and drop the /portal path
+                        // prefix so the URL is the clean member-facing
+                        // <gym>.dojostormsoftware.com/login.
+                        const bareHost = window.location.hostname.startsWith("admin.")
+                          ? window.location.hostname.slice("admin.".length)
+                          : window.location.hostname;
+                        const portalUrl = `${window.location.protocol}//${bareHost}${window.location.port ? ":" + window.location.port : ""}/login`;
+                        window.open(portalUrl, "_blank");
                         setShowPortalMenu(false);
                       }}
                       className="w-full px-4 py-2 text-left text-xs text-gray-700 hover:bg-gray-100"
@@ -1288,7 +1297,10 @@ export default function MembersPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        const url = `${window.location.origin}/portal/login`;
+                        const bareHost = window.location.hostname.startsWith("admin.")
+                          ? window.location.hostname.slice("admin.".length)
+                          : window.location.hostname;
+                        const url = `${window.location.protocol}//${bareHost}${window.location.port ? ":" + window.location.port : ""}/login`;
                         navigator.clipboard.writeText(url);
                         setPortalLinkCopied(true);
                         setTimeout(() => setPortalLinkCopied(false), 2000);

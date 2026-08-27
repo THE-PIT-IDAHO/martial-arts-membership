@@ -47,9 +47,16 @@ export async function POST(req: Request) {
       },
     });
 
-    // Build reset URL
-    const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000";
+    // Build reset URL. Always target the ADMIN subdomain so the reset
+    // page is served by the admin app (bare subdomain now runs the
+    // member portal, and would try to validate this token against the
+    // portal's separate reset-token table). Prepend "admin." if the
+    // caller submitted the form from the bare subdomain.
+    const rawHost = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000";
     const protocol = req.headers.get("x-forwarded-proto") || "http";
+    const host = rawHost.startsWith("admin.") || rawHost.startsWith("localhost")
+      ? rawHost
+      : `admin.${rawHost}`;
     const resetUrl = `${protocol}://${host}/reset-password?token=${plainToken}`;
 
     // Send email

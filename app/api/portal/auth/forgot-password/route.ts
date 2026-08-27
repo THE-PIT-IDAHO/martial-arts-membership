@@ -66,12 +66,19 @@ export async function POST(request: NextRequest) {
 
     const token = await generatePasswordResetToken(member.id, member.email);
 
-    const origin =
+    // Reset link ALWAYS points at the bare gym subdomain (member
+    // portal). Strip a leading "admin." if the request came in on
+    // the admin subdomain -- otherwise the reset link would land on
+    // admin.<gym> which now runs the admin app, not the portal.
+    // Path is "/reset-password" (portal-side URL, rewritten by
+    // middleware to /portal/reset-password internally).
+    const rawHost =
       request.headers.get("x-forwarded-host") ||
       request.headers.get("host") ||
       "localhost:3000";
     const protocol = request.headers.get("x-forwarded-proto") || "http";
-    const resetUrl = `${protocol}://${origin}/portal/reset-password?token=${token}`;
+    const host = rawHost.startsWith("admin.") ? rawHost.slice("admin.".length) : rawHost;
+    const resetUrl = `${protocol}://${host}/reset-password?token=${token}`;
 
     // Pass clientId explicitly so the template resolver and email log
     // hit the correct tenant — the admin-triggered path does this and
