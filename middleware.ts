@@ -176,6 +176,20 @@ export async function middleware(request: NextRequest) {
   const subdomain = extractSubdomain(host);
   const { adminPrefix: isGymAdminSubdomain, tenant: parsedTenant } = parseHost(host);
 
+  // Whether the incoming request is carrying an admin_session cookie
+  // that lingered on the BARE gym subdomain from before the URL split.
+  // Set inside the bare-subdomain branch, consumed at every response-
+  // point below so the cookie is told to expire without ever short-
+  // circuiting the tenant / portal-auth resolution below. Do NOT set
+  // this on admin subdomains where admin_session is legitimate.
+  let shouldClearStaleAdminCookie = false;
+  const attachCleanup = <T extends NextResponse>(response: T): T => {
+    if (shouldClearStaleAdminCookie) {
+      response.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
+    }
+    return response;
+  };
+
   // --- Marketing site host: www.dojostormsoftware.com and bare
   // dojostormsoftware.com serve the public marketing site (not the
   // app). Rewrite the request into /marketing/* so route files under
@@ -242,29 +256,30 @@ export async function middleware(request: NextRequest) {
     // that old cookie still ships with every bare-subdomain request
     // -- causing the admin identity to bleed into the portal (Cruz
     // saw the admin nav "Cruz Gomez / Owner" rendering on a member's
-    // portal home). We proactively expire it here so it stops
-    // shipping on future requests. New admin logins mint their
-    // cookie on admin.<gym>. and won't ever appear here.
-    const staleAdminCookie = request.cookies.get(ADMIN_COOKIE);
+    // portal home). We proactively expire it via attachCleanup on
+    // every response below. Do NOT short-circuit portal / API paths
+    // here -- doing so previously skipped tenant-slug injection AND
+    // portal-cookie validation, which caused signed-in members to
+    // land on the login page when the browser had both cookies.
+    shouldClearStaleAdminCookie = !!request.cookies.get(ADMIN_COOKIE);
 
     if (isAdminAppPath(pathname)) {
       const url = request.nextUrl.clone();
       url.host = `admin.${host}`;
-      const redirect = NextResponse.redirect(url);
-      if (staleAdminCookie) {
-        redirect.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
-      }
-      return redirect;
+      return attachCleanup(NextResponse.redirect(url));
     }
     if (BARE_PORTAL_PATHS.has(pathname)) {
       const url = request.nextUrl.clone();
       url.pathname = pathname === "/" ? "/portal" : `/portal${pathname}`;
-      const response = NextResponse.rewrite(url);
-      response.headers.set(TENANT_SLUG_HEADER, tenantSlug);
-      if (staleAdminCookie) {
-        response.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
-      }
-      return response;
+      // Inject the tenant slug into the REQUEST headers forwarded to
+      // the rewritten route so downstream getClientId() works. Setting
+      // it on response.headers alone (previous behaviour) didn't make
+      // it visible to the rewritten page's server code.
+      const requestHeaders = new Headers(request.headers);
+      requestHeaders.set(TENANT_SLUG_HEADER, tenantSlug);
+      return attachCleanup(
+        NextResponse.rewrite(url, { request: { headers: requestHeaders } })
+      );
     }
     // Bare /forgot-password: portal has no dedicated forgot page --
     // the forgot form is inline on /portal/login -- so send members
@@ -272,21 +287,11 @@ export async function middleware(request: NextRequest) {
     // the member-facing host (which would generate an admin reset
     // token that can't be redeemed on the portal reset page).
     if (pathname === "/forgot-password") {
-      const redirect = NextResponse.redirect(new URL("/login", request.url));
-      if (staleAdminCookie) {
-        redirect.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
-      }
-      return redirect;
+      return attachCleanup(NextResponse.redirect(new URL("/login", request.url)));
     }
-    // Any other bare-subdomain path (including /api/*): if a stale
-    // admin cookie is riding along, strip it via a fresh
-    // NextResponse.next() with the deletion header. That way the
-    // downstream API / page can't decide the caller is admin.
-    if (staleAdminCookie) {
-      const response = NextResponse.next();
-      response.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
-      return response;
-    }
+    // Fall through to the shared portal/admin auth checks below.
+    // attachCleanup will expire the stale admin cookie on whichever
+    // response those branches produce.
   }
 
   // --- Cron-authenticated paths ---
@@ -316,25 +321,25 @@ export async function middleware(request: NextRequest) {
 
   if (isPortalPage || isPortalApi) {
     if (isPublicPortalPath(pathname)) {
-      return nextWithTenant(request, tenantSlug);
+      return attachCleanup(nextWithTenant(request, tenantSlug));
     }
     const cookie = request.cookies.get(PORTAL_COOKIE);
     if (!cookie?.value) {
       if (isPortalApi) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return attachCleanup(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
       }
       // "/login" (not "/portal/login") -- on the bare gym subdomain
       // middleware rewrites /login -> /portal/login internally, so
       // the URL bar stays clean when a portal page kicks an
       // unauthenticated visitor back to sign in.
-      return NextResponse.redirect(new URL("/login", request.url));
+      return attachCleanup(NextResponse.redirect(new URL("/login", request.url)));
     }
-    return nextWithTenant(request, tenantSlug);
+    return attachCleanup(nextWithTenant(request, tenantSlug));
   }
 
   // --- Public admin routes (no auth required) ---
   if (isPublicAdminPath(pathname)) {
-    return nextWithTenant(request, tenantSlug);
+    return attachCleanup(nextWithTenant(request, tenantSlug));
   }
 
   // --- Admin routes ---
@@ -344,9 +349,9 @@ export async function middleware(request: NextRequest) {
   if (!adminCookie?.value) {
     const isApi = pathname.startsWith("/api/");
     if (isApi) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return attachCleanup(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
     }
-    return NextResponse.redirect(new URL("/login", request.url));
+    return attachCleanup(NextResponse.redirect(new URL("/login", request.url)));
   }
 
   // Validate session token and check permissions
@@ -354,9 +359,9 @@ export async function middleware(request: NextRequest) {
   if (!session) {
     const isApi = pathname.startsWith("/api/");
     if (isApi) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return attachCleanup(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
     }
-    return NextResponse.redirect(new URL("/login", request.url));
+    return attachCleanup(NextResponse.redirect(new URL("/login", request.url)));
   }
 
   // Check route-level permission. OWNER always passes -- they have
@@ -374,12 +379,12 @@ export async function middleware(request: NextRequest) {
   ) {
     const isApi = pathname.startsWith("/api/");
     if (isApi) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return attachCleanup(NextResponse.json({ error: "Forbidden" }, { status: 403 }));
     }
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return attachCleanup(NextResponse.redirect(new URL("/dashboard", request.url)));
   }
 
-  return nextWithTenant(request, tenantSlug);
+  return attachCleanup(nextWithTenant(request, tenantSlug));
 }
 
 export const config = {
