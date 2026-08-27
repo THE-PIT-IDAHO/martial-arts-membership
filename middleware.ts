@@ -247,6 +247,14 @@ export async function middleware(request: NextRequest) {
       response.headers.set(TENANT_SLUG_HEADER, tenantSlug);
       return response;
     }
+    // Bare /forgot-password: portal has no dedicated forgot page --
+    // the forgot form is inline on /portal/login -- so send members
+    // there. Prevents the admin forgot-password page from serving on
+    // the member-facing host (which would generate an admin reset
+    // token that can't be redeemed on the portal reset page).
+    if (pathname === "/forgot-password") {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
     // The bare /login admin route is now taken by the portal rewrite
     // above; someone posting to /api/auth/* on the bare subdomain is
     // probably a legacy admin login attempt -- let it fall through
@@ -348,11 +356,18 @@ export const config = {
     // Portal routes
     "/portal/:path*",
     "/api/portal/:path*",
-    // Admin routes — everything except static assets, uploads, and public
-    // pages. NOTE: do NOT exclude .pdf here. Rank curriculum PDF URLs now
-    // end in a friendly filename like ".../Yellow Belt.pdf" so the middleware
-    // needs to run on them to set the x-tenant-slug header — otherwise
-    // getClientId() throws and the route 500s with "Failed to load PDF".
-    "/((?!_next|favicon|icons|belts|manifest|uploads|sw\\.js|signup|forgot-password|reset-password|.*\\.png|.*\\.svg|.*\\.ico).*)",
+    // Admin routes — everything except static assets. NOTE: do NOT
+    // exclude .pdf. Rank curriculum PDF URLs now end in a friendly
+    // filename like ".../Yellow Belt.pdf" so the middleware needs to
+    // run on them to set the x-tenant-slug header — otherwise
+    // getClientId() throws and the route 500s with "Failed to load
+    // PDF". Also NOT excluding forgot-password / reset-password /
+    // signup: middleware needs to run on them so the bare-gym-
+    // subdomain rewrite (`/reset-password` -> `/portal/reset-
+    // password`) fires. Without middleware, the admin file at
+    // /reset-password would render on a bare-subdomain visit and
+    // validate a portal token against the wrong table -> "Invalid
+    // Link".
+    "/((?!_next|favicon|icons|belts|manifest|uploads|sw\\.js|.*\\.png|.*\\.svg|.*\\.ico).*)",
   ],
 };
