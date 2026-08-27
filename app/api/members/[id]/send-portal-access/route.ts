@@ -36,12 +36,16 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     }
 
     const token = await generateMagicLinkToken(member.id, member.email, EXPIRY_MINUTES);
-    const origin =
+    // Force onto the bare gym subdomain (portal host). Admin lives at
+    // admin.<gym>. now, but the emailed link needs to land on the
+    // portal, so strip "admin." if present.
+    const rawHost =
       request.headers.get("x-forwarded-host") ||
       request.headers.get("host") ||
       "localhost:3000";
     const protocol = request.headers.get("x-forwarded-proto") || "http";
-    const loginUrl = `${protocol}://${origin}/portal/verify?token=${token}`;
+    const portalHost = rawHost.startsWith("admin.") ? rawHost.slice("admin.".length) : rawHost;
+    const loginUrl = `${protocol}://${portalHost}/portal/verify?token=${token}`;
 
     const result = await sendMagicLinkEmail({
       email: member.email,

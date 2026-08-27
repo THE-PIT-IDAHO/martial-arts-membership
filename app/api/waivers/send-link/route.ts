@@ -32,8 +32,12 @@ export async function POST(req: NextRequest) {
     // choose adult or guardian/parent themselves. The picker page passes
     // memberId through to the adult flow (for an adult re-sign) or to
     // parentMemberId on the guardian flow (for an add-child sign).
-    const origin = req.headers.get("origin") || `https://${req.headers.get("host")}`;
-    const link = `${origin}/waivers/new?memberId=${encodeURIComponent(member.id)}`;
+    // Force the emailed link onto the BARE gym subdomain (member-
+    // facing); strip "admin." if the admin sent this from
+    // admin.<gym>.
+    const rawOrigin = req.headers.get("origin") || `https://${req.headers.get("host")}`;
+    const stripped = rawOrigin.replace(/^(https?:\/\/)admin\./, "$1");
+    const link = `${stripped}/waivers/new?memberId=${encodeURIComponent(member.id)}`;
     const memberName = `${member.firstName} ${member.lastName}`.trim();
 
     const html = `

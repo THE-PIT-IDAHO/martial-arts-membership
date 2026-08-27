@@ -33,8 +33,14 @@ export async function POST(req: NextRequest) {
     // so the recipient lands directly on the guardian sign page with the
     // parent pre-filled. The legacy /waiver/add-child route still exists
     // as a fallback for already-sent emails.
-    const origin = req.headers.get("origin") || `https://${req.headers.get("host")}`;
-    const link = `${origin}/waivers/new/guardian?parentMemberId=${encodeURIComponent(member.id)}`;
+    // Force the emailed link onto the BARE gym subdomain (member-
+    // facing). Admin is now at admin.<gym>., so if the caller (admin
+    // clicking "Send add-child link") is on the admin subdomain, we
+    // strip "admin." off the host before building the URL a member
+    // will click.
+    const rawOrigin = req.headers.get("origin") || `https://${req.headers.get("host")}`;
+    const stripped = rawOrigin.replace(/^(https?:\/\/)admin\./, "$1");
+    const link = `${stripped}/waivers/new/guardian?parentMemberId=${encodeURIComponent(member.id)}`;
     const memberName = `${member.firstName} ${member.lastName}`.trim();
 
     const html = `

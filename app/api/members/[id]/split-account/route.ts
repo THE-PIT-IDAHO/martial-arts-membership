@@ -72,12 +72,17 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 
     // 4. Email the new adult waiver link (if member has an email).
     if (member.email) {
-      const origin =
+      // Force onto the BARE gym subdomain (member-facing). Admin
+      // now lives at admin.<gym>., so strip "admin." if the admin
+      // triggered this from there -- the waiver link goes to the
+      // member.
+      const rawHost =
         request.headers.get("x-forwarded-host") ||
         request.headers.get("host") ||
         "app.dojostormsoftware.com";
       const protocol = request.headers.get("x-forwarded-proto") || "https";
-      const waiverUrl = `${protocol}://${origin}/waiver/sign/${member.id}`;
+      const memberHost = rawHost.startsWith("admin.") ? rawHost.slice("admin.".length) : rawHost;
+      const waiverUrl = `${protocol}://${memberHost}/waiver/sign/${member.id}`;
       const gymName = (await getSetting("gymName", clientId)) || "the gym";
 
       await sendEmail({

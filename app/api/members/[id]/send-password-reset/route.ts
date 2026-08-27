@@ -26,13 +26,16 @@ export async function POST(_request: NextRequest, props: { params: Promise<{ id:
 
     const token = await generatePasswordResetToken(member.id, member.email);
 
-    // Build reset URL using the request origin
-    const origin =
+    // Force reset URL onto the BARE gym subdomain (portal host).
+    // Admin lives at admin.<gym>. now; strip "admin." so the link
+    // lands on the portal reset page.
+    const rawHost =
       _request.headers.get("x-forwarded-host") ||
       _request.headers.get("host") ||
       "localhost:3000";
     const protocol = _request.headers.get("x-forwarded-proto") || "http";
-    const resetUrl = `${protocol}://${origin}/portal/reset-password?token=${token}`;
+    const portalHost = rawHost.startsWith("admin.") ? rawHost.slice("admin.".length) : rawHost;
+    const resetUrl = `${protocol}://${portalHost}/portal/reset-password?token=${token}`;
 
     const result = await sendPasswordResetEmail({
       email: member.email,
