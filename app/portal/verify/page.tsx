@@ -29,7 +29,10 @@ export default function PortalVerifyPage() {
           if (!data.hasPassword) {
             setTimeout(() => router.replace("/portal/set-password"), 1000);
           } else {
-            setTimeout(() => router.replace("/portal"), 1000);
+            // Redirect to bare portal root ("/"), not "/portal" --
+            // middleware rewrites "/" on the bare gym subdomain to
+            // the portal home, keeping the URL bar clean.
+            setTimeout(() => router.replace("/"), 1000);
           }
         } else {
           const data = await res.json().catch(() => ({}));
@@ -76,7 +79,7 @@ export default function PortalVerifyPage() {
             <h1 className="text-xl font-semibold text-gray-900">Link Expired</h1>
             <p className="text-gray-500 mt-2">{errorMsg}</p>
             <a
-              href="/portal/login"
+              href="/login"
               className="inline-block mt-6 bg-primary text-white px-6 py-3 rounded-xl font-semibold hover:bg-primaryDark active:scale-[0.98] transition-all"
             >
               Request New Link

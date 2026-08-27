@@ -114,7 +114,9 @@ export async function POST(req: NextRequest) {
       const protocol = rawBase.startsWith("http") ? "" : "http://";
       const hostOnly = rawBase.replace(/^https?:\/\//, "");
       const portalHost = hostOnly.startsWith("admin.") ? hostOnly.slice("admin.".length) : hostOnly;
-      const loginUrl = `${protocol}${portalHost}/portal/verify?token=${token}`;
+      // /verify -- middleware rewrites to /portal/verify on the bare
+      // gym subdomain, so URL bar stays clean.
+      const loginUrl = `${protocol}${portalHost}/verify?token=${token}`;
 
       // In dev mode, return the login URL directly (no email needed)
       if (process.env.NODE_ENV !== "production") {

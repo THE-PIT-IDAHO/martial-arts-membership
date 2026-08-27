@@ -68,7 +68,7 @@ export default function ResetPasswordPage() {
               This password reset link is invalid. Please request a new one from your gym.
             </p>
             <Link
-              href="/portal/login"
+              href="/login"
               className="text-sm font-semibold text-primary hover:text-primaryDark"
             >
               Back to Login
@@ -92,7 +92,7 @@ export default function ResetPasswordPage() {
               Your password has been updated. You can now log in with your email and password.
             </p>
             <Link
-              href="/portal/login"
+              href="/login"
               className="inline-block rounded-lg bg-primary px-6 py-2 text-sm font-semibold text-white hover:bg-primaryDark"
             >
               Go to Login
@@ -178,7 +178,7 @@ export default function ResetPasswordPage() {
 
           <div className="mt-4 text-center">
             <Link
-              href="/portal/login"
+              href="/login"
               className="text-xs text-gray-500 hover:text-gray-700"
             >
               Back to Login

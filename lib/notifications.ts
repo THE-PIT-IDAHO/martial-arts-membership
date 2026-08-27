@@ -127,7 +127,10 @@ async function mintPortalUrl(
   try {
     const token = await generateMagicLinkToken(memberId, member.email, expiresInMinutes);
     return {
-      url: `${getPortalBaseUrl()}/portal/verify?token=${token}`,
+      // /verify not /portal/verify -- middleware rewrites the bare
+      // path to the portal file internally so the URL bar stays
+      // clean, matching the URL structure used everywhere else.
+      url: `${getPortalBaseUrl()}/verify?token=${token}`,
       expiryDays: Math.round(expiresInMinutes / (60 * 24)),
     };
   } catch (err) {

@@ -63,7 +63,9 @@ export default function PortalLoginPage() {
       const data = await res.json();
 
       if (res.ok && data.session) {
-        router.push("/portal");
+        // "/" not "/portal" -- middleware rewrites the bare gym
+        // root to the portal home, so the URL bar stays clean.
+        router.push("/");
       } else if (data.error) {
         setError(data.error);
       } else {

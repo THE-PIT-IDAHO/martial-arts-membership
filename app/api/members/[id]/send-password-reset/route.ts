@@ -35,7 +35,11 @@ export async function POST(_request: NextRequest, props: { params: Promise<{ id:
       "localhost:3000";
     const protocol = _request.headers.get("x-forwarded-proto") || "http";
     const portalHost = rawHost.startsWith("admin.") ? rawHost.slice("admin.".length) : rawHost;
-    const resetUrl = `${protocol}://${portalHost}/portal/reset-password?token=${token}`;
+    // Path is /reset-password (NOT /portal/reset-password) -- the
+    // middleware rewrites /reset-password on the bare gym subdomain
+    // to /portal/reset-password internally, so the URL bar stays
+    // clean instead of showing the ugly "/portal/" prefix.
+    const resetUrl = `${protocol}://${portalHost}/reset-password?token=${token}`;
 
     const result = await sendPasswordResetEmail({
       email: member.email,

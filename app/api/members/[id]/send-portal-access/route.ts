@@ -45,7 +45,9 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
       "localhost:3000";
     const protocol = request.headers.get("x-forwarded-proto") || "http";
     const portalHost = rawHost.startsWith("admin.") ? rawHost.slice("admin.".length) : rawHost;
-    const loginUrl = `${protocol}://${portalHost}/portal/verify?token=${token}`;
+    // /verify (NOT /portal/verify) -- middleware rewrites the bare
+    // path to /portal/verify internally so the URL bar stays clean.
+    const loginUrl = `${protocol}://${portalHost}/verify?token=${token}`;
 
     const result = await sendMagicLinkEmail({
       email: member.email,
