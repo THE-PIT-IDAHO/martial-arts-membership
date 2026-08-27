@@ -326,7 +326,10 @@ export default function PortalDashboard() {
       <button
         onClick={async () => {
           await fetch("/api/portal/auth/logout", { method: "POST" });
-          router.replace("/portal/login");
+          // "/login" not "/portal/login" -- middleware rewrites the
+          // bare gym subdomain root path to the portal file, so URL
+          // bar stays clean.
+          router.replace("/login");
         }}
         className="w-full bg-white text-gray-700 border border-gray-300 py-3 rounded-2xl font-semibold active:scale-[0.98] transition-all"
       >

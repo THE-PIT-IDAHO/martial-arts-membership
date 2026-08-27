@@ -323,7 +323,11 @@ export async function middleware(request: NextRequest) {
       if (isPortalApi) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
-      return NextResponse.redirect(new URL("/portal/login", request.url));
+      // "/login" (not "/portal/login") -- on the bare gym subdomain
+      // middleware rewrites /login -> /portal/login internally, so
+      // the URL bar stays clean when a portal page kicks an
+      // unauthenticated visitor back to sign in.
+      return NextResponse.redirect(new URL("/login", request.url));
     }
     return nextWithTenant(request, tenantSlug);
   }
