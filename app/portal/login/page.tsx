@@ -231,9 +231,9 @@ export default function PortalLoginPage() {
               ) : (
                 <button
                   type="button"
-                  disabled={forgotLoading || !email.trim()}
+                  disabled={forgotLoading}
                   onClick={async () => {
-                    if (!email.trim()) { setError("Enter your email first"); return; }
+                    if (!email.trim()) { setError("Enter your email above first, then click 'Forgot your password?'"); return; }
                     setForgotLoading(true);
                     try {
                       await fetch("/api/portal/auth/forgot-password", {

@@ -6,7 +6,18 @@ import { usePathname, useRouter } from "next/navigation";
 import BottomNav from "@/components/portal/BottomNav";
 import AccountSwitcher from "@/components/portal/AccountSwitcher";
 
-const PUBLIC_PATHS = ["/portal/login", "/portal/verify", "/portal/enroll", "/portal/set-password"];
+// Includes both the internal /portal/* paths AND the bare-subdomain
+// URLs that middleware rewrites INTO those paths. usePathname()
+// returns the pre-rewrite URL, so a member visiting
+// <gym>.dojostormsoftware.com/login sees pathname === "/login" even
+// though Next renders /portal/login. Without the bare paths listed
+// here, the layout treats the login page as a "private" sub-page and
+// starts hitting /api/portal/auth/me + rendering the Back-to-Home
+// button around the login form.
+const PUBLIC_PATHS = [
+  "/portal/login", "/portal/verify", "/portal/enroll", "/portal/set-password", "/portal/reset-password",
+  "/login", "/verify", "/enroll", "/set-password", "/reset-password", "/forgot-password",
+];
 
 // Pages that have their own menu-bar tab. Anything ELSE the member
 // lands on (bookings, attendance, family, styles, testing, …) is a
@@ -114,12 +125,15 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       <BottomNav />
       <AccountSwitcher />
       {/* Back-to-Home button appears on any sub-page (any route not
-          reachable directly from the top menu). Keeps the member from
-          getting stranded on a detail page with no obvious way back. */}
-      {pathname && !TOP_NAV_ROUTES.includes(pathname) && (
+          reachable directly from the top menu). Kept off PUBLIC pages
+          (login / verify / enroll / reset-password / set-password) --
+          a "Back to Home" on the login screen was misleading: it
+          navigated into /portal, which without a session bounced the
+          member right back to login. */}
+      {pathname && !TOP_NAV_ROUTES.includes(pathname) && !isPublic && (
         <div className="max-w-lg mx-auto px-4 pt-3">
           <Link
-            href="/portal"
+            href="/"
             className="inline-flex items-center rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
           >
             Back to Home
