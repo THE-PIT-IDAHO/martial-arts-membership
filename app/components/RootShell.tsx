@@ -28,13 +28,45 @@ function useIsMarketingHost(): boolean {
     // Anything with an extra subdomain (app, admin, <slug>) is app.
     const isBare = host === "dojostormsoftware.com" || host === "www.dojostormsoftware.com";
     setIsMarketing(isBare);
+    return;
   }, []);
   return isMarketing;
+}
+
+/** true when this page is served on a BARE gym subdomain
+ *  (`<gym>.dojostormsoftware.com`, no `admin.` prefix) -- that host
+ *  is the member portal. Middleware rewrites `/`, `/login`, etc. to
+ *  the portal file tree internally, but usePathname() on the client
+ *  still returns the pre-rewrite URL, so the pathname-based
+ *  passthrough check misses these pages and wraps them in the admin
+ *  Header. This hook lets the shell strip that chrome purely from
+ *  the hostname. */
+function useIsPortalHost(): boolean {
+  const [isPortal, setIsPortal] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const host = window.location.hostname;
+    // Skip localhost / IPs -- dev environments run the admin app.
+    if (host === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return;
+    if (!host.endsWith(".dojostormsoftware.com")) return;
+    const parts = host.split(".");
+    // Bare gym subdomain: exactly 3 parts (<gym>.dojostormsoftware.com)
+    // and NOT the platform-admin subdomain (admin.dojostormsoftware.com,
+    // which the marketing check above already handled but be defensive)
+    // and NOT the marketing host.
+    if (parts.length !== 3) return;
+    if (parts[0] === "admin") return;
+    if (parts[0] === "www") return;
+    setIsPortal(true);
+    return;
+  }, []);
+  return isPortal;
 }
 
 export default function RootShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isMarketingHost = useIsMarketingHost();
+  const isPortalHost = useIsPortalHost();
 
   // Register the PWA service worker globally so Chrome's Install App
   // prompt fires on any page across the site (admin, kiosk, portal),
@@ -53,7 +85,10 @@ export default function RootShell({ children }: { children: React.ReactNode }) {
   const isPathPassthrough = !isException && PASSTHROUGH_PREFIXES.some(
     (p) => pathname === p || pathname?.startsWith(p + "/")
   );
-  const isPassthrough = isPathPassthrough || isMarketingHost;
+  // Bare gym subdomain = member portal (middleware rewrites root paths
+  // to /portal/* internally). Bypass admin chrome so the header nav
+  // + shell don't render around portal content.
+  const isPassthrough = isPathPassthrough || isMarketingHost || isPortalHost;
 
   // Portal and kiosk pages manage their own layout — render children directly
   if (isPassthrough) {
