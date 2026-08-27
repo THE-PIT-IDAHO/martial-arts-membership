@@ -2,7 +2,7 @@
   "name": "Dojo Storm",
   "short_name": "DojoStorm",
   "description": "Martial arts gym management software",
-  "start_url": "/portal",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#c41111",

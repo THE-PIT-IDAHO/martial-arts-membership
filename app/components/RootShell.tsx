@@ -35,6 +35,18 @@ function useIsMarketingHost(): boolean {
 export default function RootShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isMarketingHost = useIsMarketingHost();
+
+  // Register the PWA service worker globally so Chrome's Install App
+  // prompt fires on any page across the site (admin, kiosk, portal),
+  // not just inside /portal like before. Combined with the manifest
+  // linked in root layout metadata, this is what turns the vanilla
+  // "Add to Home Screen" bookmark into a full "Install" prompt with
+  // the DojoStorm icon.
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => { /* ignore -- SW is nice-to-have */ });
+    }
+  }, []);
   const isException = PASSTHROUGH_EXCEPTIONS.some(
     (p) => pathname === p || pathname?.startsWith(p + "/")
   );
