@@ -209,12 +209,28 @@ export async function GET(req: NextRequest) {
     where: { memberId: member.id, confirmed: false },
   });
 
+  // mustSetPassword must reflect the SIGNED-IN member's password, not
+  // the currently-viewed one. When a parent switches to a child via
+  // the account switcher, auth.memberId is the child (who never has a
+  // portal password of their own -- kids don't sign in separately) but
+  // auth.sessionMemberId stays on the parent. Checking the effective
+  // member here forced the layout to redirect to /portal/set-password
+  // every time the parent tapped into the child's profile.
+  let sessionPortalPasswordHash: string | null | undefined = member.portalPasswordHash;
+  if (auth.sessionMemberId !== auth.memberId) {
+    const sessionMember = await prisma.member.findUnique({
+      where: { id: auth.sessionMemberId },
+      select: { portalPasswordHash: true },
+    });
+    sessionPortalPasswordHash = sessionMember?.portalPasswordHash ?? null;
+  }
+
   // Don't send raw attendances/stylesNotes/passwordHash to the client
-  const { attendances: _a, stylesNotes: _s, portalPasswordHash, ...memberData } = member;
+  const { attendances: _a, stylesNotes: _s, portalPasswordHash: _p, ...memberData } = member;
 
   return NextResponse.json({
     ...memberData,
-    mustSetPassword: !portalPasswordHash,
+    mustSetPassword: !sessionPortalPasswordHash,
     hasPendingWaiver: pendingWaiverCount > 0,
     rankInfo,
   });
