@@ -34,10 +34,20 @@ export async function POST(req: NextRequest) {
       // Fall back to unscoped lookup
     }
 
+    // Look the member up by email + tenant. Notably NOT filtering by
+    // status any more -- the previous `status: { not: "INACTIVE" }`
+    // clause locked out any member whose status was literally
+    // "INACTIVE" (canceled memberships flip them there). Result: they
+    // could successfully request a password reset AND set a new
+    // password, but the login endpoint refused to find them -- the
+    // exact "invalid email or password" trap Cruz hit. Portal access
+    // now stays open regardless of membership status; any gating for
+    // billing / booking still runs inside the portal on top of a
+    // valid session.
+    const cleanEmail = email.toLowerCase().trim();
     const member = await prisma.member.findFirst({
       where: {
-        email: email.toLowerCase().trim(),
-        status: { not: "INACTIVE" },
+        email: cleanEmail,
         ...(clientId ? { clientId } : {}),
       },
       select: {
@@ -48,6 +58,27 @@ export async function POST(req: NextRequest) {
         portalPasswordHash: true,
       },
     });
+    // Diagnostics: log every no-member outcome with a clear reason.
+    // Match forgot-password's cross-tenant hint so an admin can tell
+    // the member "you're on the wrong gym subdomain."
+    if (!member) {
+      if (clientId) {
+        const elsewhere = await prisma.member.findFirst({
+          where: { email: cleanEmail },
+          select: { client: { select: { slug: true } } },
+        });
+        if (elsewhere?.client?.slug) {
+          console.warn(
+            `[portal-login] email=${cleanEmail} not found in tenant=${clientId} ` +
+            `but IS in tenant=${elsewhere.client.slug} -- member on wrong subdomain`,
+          );
+        } else {
+          console.warn(`[portal-login] email=${cleanEmail} not found in tenant=${clientId}`);
+        }
+      } else {
+        console.warn(`[portal-login] email=${cleanEmail} not found (no tenant scoped)`);
+      }
+    }
 
     // --- Password login path ---
     if (password && typeof password === "string") {
