@@ -4,6 +4,7 @@ import { getClientId } from "@/lib/tenant";
 import { getGymTimezone, getDayOfWeekInTimezone, localMidnightUtc, formatDateInTimezone, getLocalParts } from "@/lib/dates";
 import { getStyleProgress, attendanceCountsForStyle, type AttendanceRow } from "@/lib/rank-progress";
 import { getEffectivePriceAfterDiscountCents } from "@/lib/billing";
+import { computeMembershipMonthlyRecurringCents } from "@/lib/member-discount-math";
 
 // GET /api/dashboard
 export async function GET(req: Request) {
@@ -341,16 +342,23 @@ export async function GET(req: Request) {
     // Active memberships with recurring revenue. memberId included so
     // we can look up per-member MEMBERSHIP/ALL scope discounts and
     // apply them before summing -- otherwise a 100%-discounted member
-    // still contributes their pre-discount price to MRR.
+    // still contributes their pre-discount price to MRR. endDate /
+    // contractEndDate / autoRenew are fed into
+    // computeMembershipMonthlyRecurringCents so this matches the same
+    // "actively billable" filter the reports page uses.
     const activeMemberships = await prisma.membership.findMany({
       where: { status: "ACTIVE", member: { clientId } },
       select: {
+        status: true,
         memberId: true,
         customPriceCents: true,
+        endDate: true,
+        contractEndDate: true,
         membershipPlan: {
           select: {
             priceCents: true,
             billingCycle: true,
+            autoRenew: true,
           },
         },
       },
@@ -381,23 +389,17 @@ export async function GET(req: Request) {
       membershipDiscountsByMember.set(row.memberId, bucket);
     }
 
-    // Calculate monthly recurring revenue (MRR). Effective per-cycle
-    // price is the raw recurring amount minus any MEMBERSHIP/ALL scope
-    // discount; a 0-effective membership contributes nothing to MRR.
+    // Calculate monthly recurring revenue (MRR). All the filter + math
+    // is centralized in computeMembershipMonthlyRecurringCents so the
+    // dashboard number matches the "Monthly Payments" number on the
+    // reports page -- previously each endpoint rolled its own version
+    // and they drifted (dashboard normalized by billing cycle but
+    // counted every ACTIVE row; reports skipped normalization but
+    // filtered out non-renewing, out-of-contract rows).
     let monthlyRecurringRevenue = 0;
     for (const ms of activeMemberships) {
-      const raw = ms.customPriceCents ?? ms.membershipPlan.priceCents ?? 0;
       const discounts = membershipDiscountsByMember.get(ms.memberId) ?? [];
-      const price = getEffectivePriceAfterDiscountCents(raw, discounts);
-      if (price <= 0) continue;
-      switch (ms.membershipPlan.billingCycle) {
-        case "WEEKLY": monthlyRecurringRevenue += price * 4; break;
-        case "MONTHLY": monthlyRecurringRevenue += price; break;
-        case "QUARTERLY": monthlyRecurringRevenue += Math.round(price / 3); break;
-        case "SEMI_ANNUALLY": monthlyRecurringRevenue += Math.round(price / 6); break;
-        case "YEARLY": monthlyRecurringRevenue += Math.round(price / 12); break;
-        default: monthlyRecurringRevenue += price; break;
-      }
+      monthlyRecurringRevenue += computeMembershipMonthlyRecurringCents(ms, discounts, now);
     }
 
     // --- Expired non-recurring memberships ---

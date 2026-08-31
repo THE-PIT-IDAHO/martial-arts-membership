@@ -8,7 +8,7 @@ import { getClientId } from "@/lib/tenant";
 import { canAddMember } from "@/lib/trial";
 import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
 import { getNextMemberNumber } from "@/lib/sequence";
-import { getEffectivePriceAfterDiscountCents } from "@/lib/billing";
+import { computeMembershipMonthlyRecurringCents } from "@/lib/member-discount-math";
 import { buildMemberSearchWhere, scoreMemberSearchMatch } from "@/lib/member-search";
 
 function toDateOrNull(value: any): Date | null {
@@ -275,31 +275,17 @@ export async function GET(req: Request) {
       // Get info from memberships (prioritizing active, but using canceled as fallback)
       const now = new Date();
       for (const membership of sortedMemberships) {
-        // Count toward monthly payments when more revenue is expected from
-        // this membership. Includes two cases:
-        //   (a) Auto-renewing plans (charges continue indefinitely)
-        //   (b) Contract plans that haven't reached the end of their term yet
-        //       (more contracted payments are still due even if autoRenew=false)
-        // Excludes canceled, expired, and one-shot (no autoRenew, no contract).
-        const isActive = membership.status === "ACTIVE";
-        const notExpired = !membership.endDate || new Date(membership.endDate) > now;
-        const willRenew = membership.membershipPlan.autoRenew === true;
-        const stillInContract = !!membership.contractEndDate
-          && new Date(membership.contractEndDate) > now;
-        if (isActive && notExpired && (willRenew || stillInContract)) {
-          // customPriceCents IS the recurring price (set by the POS Price
-          // input). Plan price is the fallback when the admin didn't
-          // override it for this signup.
-          const recurringPriceCents = membership.customPriceCents
-            ?? membership.membershipPlan.priceCents
-            ?? 0;
-          // Apply the member's MEMBERSHIP + ALL scope discounts BEFORE
-          // summing into monthlyPaymentCents so a 100%-discounted member
-          // contributes $0 and disappears from any list gated on
-          // monthlyPaymentCents > 0 (e.g. the Recurring Payments report).
-          const effective = getEffectivePriceAfterDiscountCents(recurringPriceCents, memberDiscounts);
-          monthlyPaymentCents += effective;
-        }
+        // Count toward monthly payments via the SHARED MRR helper so
+        // this number matches the dashboard's "Monthly Recurring
+        // Revenue" tile. Helper filters out non-billable rows (canceled,
+        // expired, one-shot with no contract left), applies discounts,
+        // and normalizes by billing cycle (a yearly $1200 plan
+        // contributes $100/mo, not $1200/mo).
+        monthlyPaymentCents += computeMembershipMonthlyRecurringCents(
+          membership,
+          memberDiscounts,
+          now,
+        );
 
         // Use first membership (active preferred) for type/plan/autoRenew info
         if (!membershipPlanName) {
