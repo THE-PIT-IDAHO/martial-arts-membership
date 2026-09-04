@@ -93,6 +93,10 @@ export async function PATCH(
       isActive,
       availableOnline,
       eligibleForDiscounts,
+      passDurationDays,
+      classCredits,
+      creditsRecurring,
+      creditExpiryDays,
       applyToCurrentMembers,
       updatePlanTemplate = true, // Default to true for backwards compatibility
     } = body;
@@ -133,6 +137,10 @@ export async function PATCH(
           ...(contractClauses !== undefined && { contractClauses: contractClauses || null }),
           ...(availableOnline !== undefined && { availableOnline }),
           ...(eligibleForDiscounts !== undefined && { eligibleForDiscounts: !!eligibleForDiscounts }),
+          ...(passDurationDays !== undefined && { passDurationDays: passDurationDays ? Number(passDurationDays) : null }),
+          ...(classCredits !== undefined && { classCredits: classCredits ? Number(classCredits) : null }),
+          ...(creditsRecurring !== undefined && { creditsRecurring: !!creditsRecurring }),
+          ...(creditExpiryDays !== undefined && { creditExpiryDays: creditExpiryDays ? Number(creditExpiryDays) : null }),
         },
       });
     } else {

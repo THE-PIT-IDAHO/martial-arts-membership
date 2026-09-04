@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
+import { buildMembershipSignupExtras } from "@/lib/membership-signup-extras";
 
 export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -30,13 +31,22 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
     if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
 
     // Create membership
+    const startDate = new Date();
+    const signupExtras = buildMembershipSignupExtras(plan, startDate);
     const membership = await prisma.membership.create({
       data: {
         memberId: trial.memberId,
         membershipPlanId,
-        startDate: new Date(),
+        startDate,
         status: "ACTIVE",
         nextPaymentDate: new Date(),
+        ...(signupExtras.endDate !== undefined && { endDate: signupExtras.endDate }),
+        ...(signupExtras.remainingClassCredits !== undefined && {
+          remainingClassCredits: signupExtras.remainingClassCredits,
+        }),
+        ...(signupExtras.creditsExpireAt !== undefined && {
+          creditsExpireAt: signupExtras.creditsExpireAt,
+        }),
       },
     });
 

@@ -5,6 +5,7 @@ import { calculateNextPaymentDate } from "@/lib/billing";
 import { calculateContractEndDate } from "@/lib/contracts";
 import { getClientId } from "@/lib/tenant";
 import { getFirstRankFromBeltConfig, addRankPdfsToDocuments, type StyleDocument } from "@/lib/belt-config";
+import { buildMembershipSignupExtras } from "@/lib/membership-signup-extras";
 
 // Calculate next payment date based on billing cycle
 // calculateNextPaymentDate imported from @/lib/billing
@@ -102,7 +103,15 @@ export async function POST(req: Request) {
     // Get the membership plan to check for included styles, billing cycle, and contract
     const plan = await prisma.membershipPlan.findUnique({
       where: { id: membershipPlanId },
-      select: { allowedStyles: true, billingCycle: true, contractLengthMonths: true },
+      select: {
+        allowedStyles: true,
+        billingCycle: true,
+        contractLengthMonths: true,
+        passDurationDays: true,
+        classCredits: true,
+        creditsRecurring: true,
+        creditExpiryDays: true,
+      },
     });
 
     // Get the member's current styles, documents, and status
@@ -125,17 +134,32 @@ export async function POST(req: Request) {
       ? calculateContractEndDate(membershipStartDate, plan.contractLengthMonths)
       : null;
 
+    // Day-pass / class-pack extras derived from the plan. endDate here
+    // overrides any endDate passed in the request body when the plan
+    // is a day pass -- request-body endDate wins only for old-style
+    // time-based plans that don't opt into either mode.
+    const signupExtras = plan
+      ? buildMembershipSignupExtras(plan, membershipStartDate)
+      : {};
+    const resolvedEndDate = signupExtras.endDate ?? membershipEndDate;
+
     // Create the membership
     const membership = await prisma.membership.create({
       data: {
         memberId,
         membershipPlanId,
         startDate: membershipStartDate,
-        endDate: membershipEndDate,
+        endDate: resolvedEndDate,
         status: status || "ACTIVE",
         lastPaymentDate: membershipStartDate,
         nextPaymentDate,
         contractEndDate,
+        ...(signupExtras.remainingClassCredits !== undefined && {
+          remainingClassCredits: signupExtras.remainingClassCredits,
+        }),
+        ...(signupExtras.creditsExpireAt !== undefined && {
+          creditsExpireAt: signupExtras.creditsExpireAt,
+        }),
       },
       include: {
         member: {

@@ -7,6 +7,7 @@ import { getAccountPaymentAmount } from "@/lib/payment-utils";
 import { markDiscountsUsed } from "@/lib/member-discounts";
 
 import { getFirstRankFromBeltConfig, addRankPdfsToDocuments, type StyleDocument } from "@/lib/belt-config";
+import { buildMembershipSignupExtras } from "@/lib/membership-signup-extras";
 
 // Calculate next payment date based on billing cycle
 // calculateNextPaymentDate imported from @/lib/billing
@@ -460,7 +461,16 @@ export async function POST(req: Request) {
           // at that plan's price next cycle).
           const plan = await prisma.membershipPlan.findFirst({
             where: { id: item.membershipPlanId, clientId },
-            select: { priceCents: true, setupFeeCents: true, allowedStyles: true, billingCycle: true },
+            select: {
+              priceCents: true,
+              setupFeeCents: true,
+              allowedStyles: true,
+              billingCycle: true,
+              passDurationDays: true,
+              classCredits: true,
+              creditsRecurring: true,
+              creditExpiryDays: true,
+            },
           });
           if (!plan) continue;
 
@@ -482,6 +492,8 @@ export async function POST(req: Request) {
           const nextPaymentDate = !endDate && plan?.billingCycle
             ? calculateNextPaymentDate(startDate, plan.billingCycle)
             : null;
+          const signupExtras = buildMembershipSignupExtras(plan, startDate);
+          const resolvedEndDate = signupExtras.endDate ?? endDate;
 
           // Create a new Membership record linking member to the plan.
           // firstPaymentCents is what the member actually paid at signup
@@ -494,13 +506,19 @@ export async function POST(req: Request) {
               memberId: memberId,
               membershipPlanId: item.membershipPlanId,
               startDate,
-              endDate,
+              endDate: resolvedEndDate,
               status: "ACTIVE",
               customPriceCents: customPrice,
               firstPaymentCents: item.unitPriceCents,
               firstMonthDiscountOnly: item.firstMonthDiscountOnly || false,
               lastPaymentDate: startDate,
               nextPaymentDate,
+              ...(signupExtras.remainingClassCredits !== undefined && {
+                remainingClassCredits: signupExtras.remainingClassCredits,
+              }),
+              ...(signupExtras.creditsExpireAt !== undefined && {
+                creditsExpireAt: signupExtras.creditsExpireAt,
+              }),
             },
           });
 

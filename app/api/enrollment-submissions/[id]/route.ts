@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { sendWelcomeEmail } from "@/lib/notifications";
 import { getClientId } from "@/lib/tenant";
 import { checkEmailAvailable, normalizeEmail } from "@/lib/member-email";
+import { buildMembershipSignupExtras } from "@/lib/membership-signup-extras";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -65,13 +66,22 @@ export async function PATCH(req: Request, { params }: Params) {
         });
 
         if (plan) {
+          const startDate = new Date();
+          const signupExtras = buildMembershipSignupExtras(plan, startDate);
           await prisma.membership.create({
             data: {
               memberId: member.id,
               membershipPlanId: plan.id,
-              startDate: new Date(),
+              startDate,
               status: "ACTIVE",
               nextPaymentDate: new Date(),
+              ...(signupExtras.endDate !== undefined && { endDate: signupExtras.endDate }),
+              ...(signupExtras.remainingClassCredits !== undefined && {
+                remainingClassCredits: signupExtras.remainingClassCredits,
+              }),
+              ...(signupExtras.creditsExpireAt !== undefined && {
+                creditsExpireAt: signupExtras.creditsExpireAt,
+              }),
             },
           });
         }

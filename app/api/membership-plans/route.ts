@@ -76,6 +76,10 @@ export async function POST(req: Request) {
       isActive,
       availableOnline,
       eligibleForDiscounts,
+      passDurationDays,
+      classCredits,
+      creditsRecurring,
+      creditExpiryDays,
     } = body;
 
     if (!name || typeof name !== "string") {
@@ -116,6 +120,10 @@ export async function POST(req: Request) {
         isActive: isActive ?? true,
         availableOnline: availableOnline ?? false,
         eligibleForDiscounts: eligibleForDiscounts !== false,
+        passDurationDays: passDurationDays ? Number(passDurationDays) : null,
+        classCredits: classCredits ? Number(classCredits) : null,
+        creditsRecurring: creditsRecurring === true,
+        creditExpiryDays: creditExpiryDays ? Number(creditExpiryDays) : null,
         clientId,
       },
     });
