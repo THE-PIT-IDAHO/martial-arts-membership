@@ -10,42 +10,30 @@ import { syncMemberStatusFromMemberships } from "@/lib/member-status-sync";
  * zero or when creditsExpireAt passes.
  *
  * When the credit burns depends on plan.expireOnSignIn:
- *   false (default) = burn on CONFIRM (only when admin confirms
- *                     attendance -- "did they actually attend?")
- *   true            = burn on SIGN_IN (as soon as an attendance row
- *                     exists, whether confirmed or not -- "did they
- *                     walk in the door?")
+ *   false (default) = burn on CONFIRM (admin confirms attendance)
+ *   true            = burn on SIGN_IN (row created, whether confirmed
+ *                     or not)
  *
  * Every attendance-write endpoint calls the helpers with the trigger
  * that just occurred; the helper only touches packs whose mode
- * matches, so cross-mode calls are safe no-ops.
+ * matches. The membershipId that had a credit burned is returned so
+ * the caller can persist it on Attendance.creditDeductedFromMembershipId
+ * -- the refund flow reads that field back so the credit returns to
+ * the SAME pack, even if the member has since bought a new pack and
+ * the original one is now EXPIRED.
  *
- * Time-based memberships (no classCredits) are untouched by this file
- * regardless of any trigger.
+ * Time-based memberships (no classCredits) are untouched by this file.
  */
 
 export type CreditTrigger = "SIGN_IN" | "CONFIRM";
 
 export type CreditDeductionResult = {
-  /** true when this call actually decremented a credit. */
   deducted: boolean;
-  /** true when the decrement drove balance to zero and the membership
-   *  was flipped to EXPIRED in the same update. */
   membershipExpired: boolean;
-  /** id of the membership decremented, or null. */
   membershipId: string | null;
-  /** balance AFTER the deduction, or null when nothing was deducted. */
   remainingAfter: number | null;
 };
 
-/**
- * Deduct one class credit if the member has an ACTIVE class-pack
- * membership whose plan's mode matches `trigger`. Multi-pack members
- * (unusual) burn the soonest-expiring credit first.
- *
- * No-ops when the member has no matching pack, or when the balance
- * is already zero (candidates filter both out).
- */
 export async function deductClassCreditForMember(
   memberId: string,
   trigger: CreditTrigger,
@@ -67,10 +55,8 @@ export async function deductClassCreditForMember(
     await syncMemberStatusFromMemberships(memberId);
   }
 
-  // Diagnostic: dump every ACTIVE class-pack membership for this
-  // member so we can see EXACTLY what the deduction is looking at
-  // before applying the mode filter. Left in temporarily to debug
-  // "member shows 1 class left after check-in" (Cruz, 2026-09-05).
+  // Fetch all active class-pack memberships so we can decide in JS
+  // (avoids nested-Prisma-filter quirks).
   const allActive = await prisma.membership.findMany({
     where: {
       memberId,
@@ -81,27 +67,16 @@ export async function deductClassCreditForMember(
       id: true,
       remainingClassCredits: true,
       creditsExpireAt: true,
-      membershipPlanId: true,
-      membershipPlan: { select: { name: true, expireOnSignIn: true, classCredits: true } },
+      membershipPlan: { select: { expireOnSignIn: true } },
     },
   });
-  console.log(
-    `[class-credits] deduct memberId=${memberId} trigger=${trigger} ` +
-    `active-packs=${JSON.stringify(allActive)}`,
-  );
 
-  // Candidates: ACTIVE credit-based packs with credits left,
-  // unexpired, AND whose plan's mode matches this trigger.
   const wantSignIn = trigger === "SIGN_IN";
   const candidates = allActive.filter((m) => {
     if ((m.remainingClassCredits ?? 0) <= 0) return false;
     if (m.creditsExpireAt && m.creditsExpireAt <= now) return false;
     return m.membershipPlan.expireOnSignIn === wantSignIn;
   });
-  console.log(
-    `[class-credits] deduct memberId=${memberId} trigger=${trigger} ` +
-    `matched-candidates=${candidates.length}`,
-  );
 
   if (candidates.length === 0) {
     return { deducted: false, membershipExpired: false, membershipId: null, remainingAfter: null };
@@ -126,16 +101,7 @@ export async function deductClassCreditForMember(
       ...(shouldExpire && { status: "EXPIRED" }),
     },
   });
-  console.log(
-    `[class-credits] deduct memberId=${memberId} membershipId=${target.id} ` +
-    `balance ${target.remainingClassCredits} -> ${nextBalance} ` +
-    `expired=${shouldExpire}`,
-  );
 
-  // Re-sync Member.status on the ACTIVE/INACTIVE axis when a pack
-  // expired. Without this, the members list keeps rendering
-  // "Active" for a member whose only membership just got auto-
-  // expired at zero balance.
   if (shouldExpire) {
     await syncMemberStatusFromMemberships(memberId);
   }
@@ -149,27 +115,89 @@ export async function deductClassCreditForMember(
 }
 
 /**
- * Refund one class credit -- the reverse of deductClassCreditForMember.
- * Used when the attendance action that consumed the credit is undone
- * (unconfirm for CONFIRM-mode packs, delete-row for either mode).
+ * Refund one class credit. Preferred flow is to pass
+ * `specificMembershipId` -- the value stored on
+ * Attendance.creditDeductedFromMembershipId when the deduction
+ * originally fired -- so the credit returns to the exact pack that
+ * paid, even if that pack is now EXPIRED and the member has bought
+ * a new pack since.
  *
- * Prefers to refund an ACTIVE pack matching the trigger. Falls back to
- * an EXPIRED pack that had been auto-expired at zero balance -- re-
- * activates it and gives the credit back so the undo is a real undo.
+ * When specificMembershipId is null (legacy Attendance rows written
+ * before the field existed, or the deduction never fired), falls
+ * back to a mode-matched heuristic: any auto-expired pack first,
+ * then any active pack.
  *
- * Silently no-ops when the member has no matching class-pack.
+ * When re-activating an EXPIRED pack, sets balance to 1 rather than
+ * incrementing -- an EXPIRED pack was drained to 0, so 1 is the
+ * correct refunded balance.
  */
 export async function refundClassCreditForMember(
   memberId: string,
   trigger: CreditTrigger,
+  specificMembershipId: string | null = null,
 ): Promise<void> {
   const now = new Date();
 
-  const modeFilter =
-    trigger === "SIGN_IN"
-      ? { expireOnSignIn: true }
-      : { expireOnSignIn: false };
+  if (specificMembershipId) {
+    const target = await prisma.membership.findUnique({
+      where: { id: specificMembershipId },
+      select: {
+        id: true,
+        memberId: true,
+        status: true,
+        remainingClassCredits: true,
+      },
+    });
+    // Guard: the row must actually belong to this member.
+    if (!target || target.memberId !== memberId) return;
+    // Increment balance; if the pack was auto-expired at zero, also
+    // flip status back to ACTIVE. Non-class-pack rows (remaining-
+    // ClassCredits null) are silently skipped so a mis-persisted
+    // reference doesn't corrupt a time-based membership.
+    if (target.remainingClassCredits === null) return;
+    const nextBalance = target.remainingClassCredits + 1;
+    const wasExpired = target.status === "EXPIRED";
+    await prisma.membership.update({
+      where: { id: target.id },
+      data: {
+        remainingClassCredits: nextBalance,
+        ...(wasExpired && { status: "ACTIVE" }),
+      },
+    });
+    if (wasExpired) {
+      await syncMemberStatusFromMemberships(memberId);
+    }
+    return;
+  }
 
+  // --- Fallback for attendance rows without a stored membership id. ---
+  const wantSignIn = trigger === "SIGN_IN";
+
+  // Prefer an EXPIRED pack drained to 0 whose plan matches -- most
+  // likely the one just consumed. Re-activates + balance -> 1.
+  const drained = await prisma.membership.findFirst({
+    where: {
+      memberId,
+      status: "EXPIRED",
+      remainingClassCredits: 0,
+      OR: [
+        { creditsExpireAt: null },
+        { creditsExpireAt: { gt: now } },
+      ],
+    },
+    orderBy: { startDate: "desc" },
+    select: { id: true, membershipPlan: { select: { expireOnSignIn: true } } },
+  });
+  if (drained && drained.membershipPlan.expireOnSignIn === wantSignIn) {
+    await prisma.membership.update({
+      where: { id: drained.id },
+      data: { status: "ACTIVE", remainingClassCredits: 1 },
+    });
+    await syncMemberStatusFromMemberships(memberId);
+    return;
+  }
+
+  // Otherwise increment an active matching pack.
   const active = await prisma.membership.findFirst({
     where: {
       memberId,
@@ -179,42 +207,15 @@ export async function refundClassCreditForMember(
         { creditsExpireAt: null },
         { creditsExpireAt: { gt: now } },
       ],
-      membershipPlan: modeFilter,
     },
     orderBy: [{ creditsExpireAt: "desc" }, { startDate: "desc" }],
-    select: { id: true, remainingClassCredits: true },
+    select: { id: true, remainingClassCredits: true, membershipPlan: { select: { expireOnSignIn: true } } },
   });
-  if (active) {
+  if (active && active.membershipPlan.expireOnSignIn === wantSignIn) {
     await prisma.membership.update({
       where: { id: active.id },
       data: { remainingClassCredits: (active.remainingClassCredits ?? 0) + 1 },
     });
-    return;
-  }
-
-  const expired = await prisma.membership.findFirst({
-    where: {
-      memberId,
-      status: "EXPIRED",
-      remainingClassCredits: 0,
-      OR: [
-        { creditsExpireAt: null },
-        { creditsExpireAt: { gt: now } },
-      ],
-      membershipPlan: modeFilter,
-    },
-    orderBy: { startDate: "desc" },
-    select: { id: true },
-  });
-  if (expired) {
-    await prisma.membership.update({
-      where: { id: expired.id },
-      data: { status: "ACTIVE", remainingClassCredits: 1 },
-    });
-    // Re-activating the pack likely flips the member back onto the
-    // ACTIVE side of the status axis -- resync so the members list
-    // reflects it.
-    await syncMemberStatusFromMemberships(memberId);
   }
 }
 
@@ -227,11 +228,6 @@ export async function expireLapsedCreditMemberships(
   clientId: string,
   now: Date = new Date(),
 ): Promise<number> {
-  // Find the affected memberships FIRST so we know which members to
-  // resync after the bulk expire. updateMany doesn't return the rows
-  // it touched, and we need memberIds to keep Member.status in
-  // agreement (else the members list keeps rendering "Active" while
-  // the profile shows an EXPIRED pack).
   const targets = await prisma.membership.findMany({
     where: {
       status: "ACTIVE",
@@ -253,8 +249,6 @@ export async function expireLapsedCreditMemberships(
     data: { status: "EXPIRED" },
   });
 
-  // Dedup memberIds so a member with multiple expiring packs only
-  // gets synced once.
   const memberIds = Array.from(new Set(targets.map((t) => t.memberId)));
   for (const memberId of memberIds) {
     await syncMemberStatusFromMemberships(memberId).catch((err) => {

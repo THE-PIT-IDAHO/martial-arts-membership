@@ -566,6 +566,15 @@ model Attendance {
   source              String        @default("MANUAL")
   requirementOverride Boolean       @default(false)
   confirmed           Boolean       @default(false)
+  // Which class-pack Membership had a credit burned to cover this
+  // attendance row. Written when deductClassCreditForMember succeeds;
+  // null when the row consumed no credit (member has no class pack,
+  // or the plan mode didn't trigger a burn at this row's event).
+  // Refund flow reads this to give the credit back to the SAME
+  // membership that paid -- without it, refunds went to whichever
+  // pack was currently active, which could be a NEW membership the
+  // member bought AFTER the original one was drained + expired.
+  creditDeductedFromMembershipId String?
   classSession        ClassSession? @relation(fields: [classSessionId], references: [id], onDelete: Cascade)
   member              Member        @relation(fields: [memberId], references: [id])
 

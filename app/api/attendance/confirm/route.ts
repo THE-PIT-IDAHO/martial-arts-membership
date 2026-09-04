@@ -32,10 +32,9 @@ export async function POST(req: Request) {
     const startOfDay = new Date(dayStartMs);
     const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
-    // Fetch the rows FIRST so we know which members are actually
-    // being FLIPPED unconfirmed->confirmed (vs already confirmed).
-    // Only newly-confirmed rows burn a class-pack credit -- re-
-    // confirming an already-confirmed row must not double-decrement.
+    // Fetch the rows FIRST (with their ids) so we know which are
+    // actually FLIPPING unconfirmed->confirmed AND can tag the
+    // specific attendance row with whichever membership pays.
     const targets = await prisma.attendance.findMany({
       where: {
         memberId: { in: memberIds },
@@ -46,7 +45,7 @@ export async function POST(req: Request) {
         },
         member: { clientId },
       },
-      select: { memberId: true, confirmed: true },
+      select: { id: true, memberId: true, confirmed: true },
     });
 
     const result = await prisma.attendance.updateMany({
@@ -65,16 +64,24 @@ export async function POST(req: Request) {
     });
 
     // Decrement CONFIRM-mode class-pack credit for each member whose
-    // row actually flipped false -> true. SIGN_IN-mode packs were
-    // already deducted at row-CREATE, so the helper's mode filter
-    // makes those calls silent no-ops.
-    const newlyConfirmedMemberIds = targets
-      .filter((t) => !t.confirmed)
-      .map((t) => t.memberId);
-    for (const mId of newlyConfirmedMemberIds) {
-      await deductClassCreditForMember(mId, "CONFIRM").catch((err) => {
-        console.error(`Class-credit deduction failed for member ${mId}:`, err);
-      });
+    // row actually flipped false -> true. SIGN_IN-mode packs already
+    // paid at row-CREATE and the helper filter makes those calls
+    // silent no-ops. When a deduction fires, write the source
+    // membershipId back to the attendance row so an eventual refund
+    // returns the credit to that exact pack.
+    const newlyConfirmed = targets.filter((t) => !t.confirmed);
+    for (const t of newlyConfirmed) {
+      try {
+        const r = await deductClassCreditForMember(t.memberId, "CONFIRM");
+        if (r.deducted && r.membershipId) {
+          await prisma.attendance.update({
+            where: { id: t.id },
+            data: { creditDeductedFromMembershipId: r.membershipId },
+          });
+        }
+      } catch (err) {
+        console.error(`Class-credit deduction failed for member ${t.memberId}:`, err);
+      }
     }
 
     return NextResponse.json({
@@ -115,10 +122,11 @@ export async function DELETE(req: Request) {
     const startOfDay = new Date(dayStartMs);
     const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
-    // Grab the rows FIRST so we know which ones are FLIPPING
-    // confirmed -> unconfirmed. Only those get their class-pack
-    // credit refunded -- re-DELETE-ing an already-unconfirmed row
-    // must not double-refund.
+    // Grab rows first with their credit-source tag so we know which
+    // membership to refund per row. Only rows flipping true -> false
+    // and holding a CONFIRM-mode tag actually refund; SIGN_IN rows
+    // keep their credit consumed (row still exists = still "signed
+    // in") -- only DELETE-row refunds SIGN_IN.
     const targets = await prisma.attendance.findMany({
       where: {
         memberId: { in: memberIds },
@@ -129,7 +137,7 @@ export async function DELETE(req: Request) {
         },
         member: { clientId },
       },
-      select: { memberId: true, confirmed: true },
+      select: { id: true, memberId: true, confirmed: true, creditDeductedFromMembershipId: true },
     });
 
     const result = await prisma.attendance.updateMany({
@@ -147,18 +155,20 @@ export async function DELETE(req: Request) {
       },
     });
 
-    // Refund the CONFIRM-mode credit per member whose row actually
-    // flipped true -> false. SIGN_IN-mode packs stay deducted because
-    // the row still exists (still "signed in") -- only the DELETE row
-    // endpoint refunds SIGN_IN credits. Helper filter handles the
-    // cross-mode no-op automatically.
-    const newlyUnconfirmedMemberIds = targets
-      .filter((t) => t.confirmed)
-      .map((t) => t.memberId);
-    for (const mId of newlyUnconfirmedMemberIds) {
-      await refundClassCreditForMember(mId, "CONFIRM").catch((err) => {
-        console.error(`Class-credit refund failed for member ${mId}:`, err);
-      });
+    // Refund + clear the credit-source tag on each row that had one
+    // AND was previously confirmed (i.e. a CONFIRM-mode deduction).
+    for (const t of targets) {
+      if (!t.confirmed) continue;
+      if (!t.creditDeductedFromMembershipId) continue;
+      try {
+        await refundClassCreditForMember(t.memberId, "CONFIRM", t.creditDeductedFromMembershipId);
+        await prisma.attendance.update({
+          where: { id: t.id },
+          data: { creditDeductedFromMembershipId: null },
+        });
+      } catch (err) {
+        console.error(`Class-credit refund failed for member ${t.memberId}:`, err);
+      }
     }
 
     return NextResponse.json({
