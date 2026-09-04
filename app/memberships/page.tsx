@@ -1379,7 +1379,7 @@ export default function MembershipsPage() {
                 <div className="mb-4 max-w-xs">
                   <label className="mb-1 block text-xs font-medium text-gray-700">
                     Number of Classes
-                    <span className="ml-1 font-normal text-gray-400">(pay per class — contract length determines expiration date)</span>
+                    <span className="block font-normal text-gray-400">(per-class · expires with contract)</span>
                   </label>
                   <input
                     type="number"
