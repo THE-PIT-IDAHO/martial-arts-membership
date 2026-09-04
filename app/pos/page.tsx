@@ -70,6 +70,10 @@ type MembershipPlan = {
   rankPromotionDiscountPercent: number | null;
   rankPromotionDiscountFlatCents: number | null;
   otherDiscountPercent: number | null;
+  // Class-pack plans: when set the plan sells N class credits; the
+  // contract PDF then labels contractLengthMonths as "Expires"
+  // instead of "Contract Length" since it doubles as credit expiry.
+  classCredits: number | null;
   isActive: boolean;
 };
 
@@ -1803,7 +1807,14 @@ export default function POSPage() {
             ...(item.firstMonthDiscountOnly || showDiscount
               ? [{ label: "First Payment", value: formatCents(firstMonthCents) }]
               : []),
-            { label: "Contract Length", value: plan?.contractLengthMonths ? formatContractDuration(plan.contractLengthMonths) : "" },
+            {
+              // Class-pack plans (plan.classCredits > 0) repurpose
+              // contract length as the credit-expiry deadline, so the
+              // contract PDF surfaces it as "Expires" instead of the
+              // misleading "Contract Length" wording.
+              label: plan?.classCredits ? "Expires" : "Contract Length",
+              value: plan?.contractLengthMonths ? formatContractDuration(plan.contractLengthMonths) : "",
+            },
             {
               label: isOneTime ? "Price" : item.firstMonthDiscountOnly ? "Recurring (after first payment)" : "Price",
               value: `${formatCents(recurringCents)}${isOneTime ? "" : suffix}`,
@@ -3942,7 +3953,11 @@ export default function POSPage() {
                                 override, or a discounted first payment. */}
                             <div><span className="font-medium">First Payment:</span> {formatCents(firstMonthCents)}</div>
                             {plan?.contractLengthMonths && (
-                              <div><span className="font-medium">Contract Length:</span> {formatDuration(plan.contractLengthMonths)}</div>
+                              <div>
+                                <span className="font-medium">
+                                  {plan?.classCredits ? "Expires:" : "Contract Length:"}
+                                </span> {formatDuration(plan.contractLengthMonths)}
+                              </div>
                             )}
                             <div>
                               <span className="font-medium">
