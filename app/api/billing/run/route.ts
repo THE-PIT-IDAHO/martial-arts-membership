@@ -39,7 +39,14 @@ export async function POST(req: Request) {
       },
       include: {
         membershipPlan: {
-          select: { priceCents: true, billingCycle: true, name: true },
+          select: {
+            priceCents: true,
+            billingCycle: true,
+            name: true,
+            classCredits: true,
+            creditsRecurring: true,
+            creditExpiryDays: true,
+          },
         },
         member: {
           select: { id: true, firstName: true, lastName: true },
@@ -128,9 +135,27 @@ export async function POST(req: Request) {
           billingPeriodStart,
           ms.membershipPlan.billingCycle
         );
+        // Refill class credits at the start of each cycle for
+        // recurring class-pack plans (e.g. "10 classes / month").
+        // Non-recurring packs (one-shot purchase) never come through
+        // this loop because autoRenew is false on their plan.
+        const shouldRefill =
+          ms.membershipPlan.creditsRecurring === true
+          && !!ms.membershipPlan.classCredits;
+        const creditsExpireAt = shouldRefill && ms.membershipPlan.creditExpiryDays
+          ? (() => {
+              const e = new Date(billingPeriodStart);
+              e.setDate(e.getDate() + ms.membershipPlan.creditExpiryDays!);
+              return e;
+            })()
+          : (shouldRefill ? null : undefined);
         await prisma.membership.update({
           where: { id: ms.id },
-          data: { nextPaymentDate: nextPayment },
+          data: {
+            nextPaymentDate: nextPayment,
+            ...(shouldRefill && { remainingClassCredits: ms.membershipPlan.classCredits! }),
+            ...(shouldRefill && { creditsExpireAt }),
+          },
         });
       } catch (err) {
         const memberName = `${ms.member.firstName} ${ms.member.lastName}`;

@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
           status: true,
           startDate: true,
           endDate: true,
+          remainingClassCredits: true,
+          creditsExpireAt: true,
           membershipPlan: {
             select: { name: true, billingCycle: true },
           },

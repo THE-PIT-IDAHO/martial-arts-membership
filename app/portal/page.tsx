@@ -26,6 +26,8 @@ interface MemberInfo {
   memberships: {
     id: string;
     status: string;
+    remainingClassCredits?: number | null;
+    creditsExpireAt?: string | null;
     membershipPlan: { name: string; billingCycle: string };
   }[];
 }
@@ -162,6 +164,18 @@ export default function PortalDashboard() {
           }`}>
             {activePlan ? "Active" : "Inactive"}
           </span>
+          {/* Class-pack members see credits left instead of a plain
+              Active pill -- the balance IS the important number for
+              them. Falls back to the pill above for time-based plans. */}
+          {activePlan && typeof activePlan.remainingClassCredits === "number" && (
+            <p className="mt-1 text-xs text-gray-600">
+              <span className="font-semibold text-gray-900">{activePlan.remainingClassCredits}</span>{" "}
+              {activePlan.remainingClassCredits === 1 ? "class" : "classes"} left
+              {activePlan.creditsExpireAt && (
+                <span className="text-gray-400"> · expires {new Date(activePlan.creditsExpireAt).toLocaleDateString()}</span>
+              )}
+            </p>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm">

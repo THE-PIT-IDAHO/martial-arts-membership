@@ -176,6 +176,16 @@ export async function middleware(request: NextRequest) {
   const subdomain = extractSubdomain(host);
   const { adminPrefix: isGymAdminSubdomain, tenant: parsedTenant } = parseHost(host);
 
+  // staging.dojostormsoftware.com is Cruz's dev/testing deployment.
+  // It maps to the same tenant as prod (SLUG_ALIASES.staging =
+  // thepitidaho) but has no admin.staging.* Vercel host set up, so
+  // the URL split (bare gym subdomain = portal) leaves the admin app
+  // unreachable there. Treat staging as a dual-role host: /portal/*
+  // serves the portal directly (no rewrite), everything else routes
+  // through admin auth. Handled inline below via isStagingHost so
+  // the bare-subdomain block never rewrites / -> /portal for staging.
+  const isStagingHost = subdomain === "staging";
+
   // Whether the incoming request is carrying an admin_session cookie
   // that lingered on the BARE gym subdomain from before the URL split.
   // Set inside the bare-subdomain branch, consumed at every response-
@@ -261,33 +271,43 @@ export async function middleware(request: NextRequest) {
     // here -- doing so previously skipped tenant-slug injection AND
     // portal-cookie validation, which caused signed-in members to
     // land on the login page when the browser had both cookies.
-    shouldClearStaleAdminCookie = !!request.cookies.get(ADMIN_COOKIE);
+    // Only flag the admin cookie as "stale" on real bare gym subdomains
+    // (production tenants where admin lives on admin.<gym>.*). On
+    // staging the admin cookie is the LEGITIMATE session for the admin
+    // app served here -- expiring it would sign Cruz out on every load.
+    shouldClearStaleAdminCookie = !isStagingHost && !!request.cookies.get(ADMIN_COOKIE);
 
-    if (isAdminAppPath(pathname)) {
-      const url = request.nextUrl.clone();
-      url.host = `admin.${host}`;
-      return attachCleanup(NextResponse.redirect(url));
-    }
-    if (BARE_PORTAL_PATHS.has(pathname)) {
-      const url = request.nextUrl.clone();
-      url.pathname = pathname === "/" ? "/portal" : `/portal${pathname}`;
-      // Inject the tenant slug into the REQUEST headers forwarded to
-      // the rewritten route so downstream getClientId() works. Setting
-      // it on response.headers alone (previous behaviour) didn't make
-      // it visible to the rewritten page's server code.
-      const requestHeaders = new Headers(request.headers);
-      requestHeaders.set(TENANT_SLUG_HEADER, tenantSlug);
-      return attachCleanup(
-        NextResponse.rewrite(url, { request: { headers: requestHeaders } })
-      );
-    }
-    // Bare /forgot-password: portal has no dedicated forgot page --
-    // the forgot form is inline on /portal/login -- so send members
-    // there. Prevents the admin forgot-password page from serving on
-    // the member-facing host (which would generate an admin reset
-    // token that can't be redeemed on the portal reset page).
-    if (pathname === "/forgot-password") {
-      return attachCleanup(NextResponse.redirect(new URL("/login", request.url)));
+    // On staging, keep admin at bare / and /login (dev-testing host --
+    // no admin.staging.* is provisioned), and let /portal/* serve as-
+    // is for exercising the portal side. The prod bare-subdomain
+    // rewrites below are skipped for staging.
+    if (!isStagingHost) {
+      if (isAdminAppPath(pathname)) {
+        const url = request.nextUrl.clone();
+        url.host = `admin.${host}`;
+        return attachCleanup(NextResponse.redirect(url));
+      }
+      if (BARE_PORTAL_PATHS.has(pathname)) {
+        const url = request.nextUrl.clone();
+        url.pathname = pathname === "/" ? "/portal" : `/portal${pathname}`;
+        // Inject the tenant slug into the REQUEST headers forwarded to
+        // the rewritten route so downstream getClientId() works. Setting
+        // it on response.headers alone (previous behaviour) didn't make
+        // it visible to the rewritten page's server code.
+        const requestHeaders = new Headers(request.headers);
+        requestHeaders.set(TENANT_SLUG_HEADER, tenantSlug);
+        return attachCleanup(
+          NextResponse.rewrite(url, { request: { headers: requestHeaders } })
+        );
+      }
+      // Bare /forgot-password: portal has no dedicated forgot page --
+      // the forgot form is inline on /portal/login -- so send members
+      // there. Prevents the admin forgot-password page from serving on
+      // the member-facing host (which would generate an admin reset
+      // token that can't be redeemed on the portal reset page).
+      if (pathname === "/forgot-password") {
+        return attachCleanup(NextResponse.redirect(new URL("/login", request.url)));
+      }
     }
     // Fall through to the shared portal/admin auth checks below.
     // attachCleanup will expire the stale admin cookie on whichever

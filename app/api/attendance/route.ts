@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { memberCanAttendClass } from "@/lib/class-eligibility";
 import { getGymTimezone, localMidnightUtc } from "@/lib/dates";
+import { deductClassCreditForMember } from "@/lib/class-credits";
 
 // GET /api/attendance?classSessionId=xxx&date=yyyy-mm-dd
 export async function GET(req: Request) {
@@ -188,6 +189,11 @@ export async function POST(req: Request) {
             },
           },
         });
+        // Class-credit deduction fires ONLY when a row moves from
+        // unconfirmed -> confirmed (the point where the attendance
+        // actually counts). Mobile pre-check-ins that never confirm
+        // don't burn a credit.
+        await deductClassCreditForMember(memberId).catch(() => { /* non-fatal */ });
         return NextResponse.json({ attendance: updated, promoted: true }, { status: 200 });
       }
       return new NextResponse("Member is already signed in to this class", { status: 409 });
@@ -206,13 +212,16 @@ export async function POST(req: Request) {
       }
     }
 
+    const willBeConfirmed = source === "KIOSK" || source === "MANUAL"
+      ? true
+      : (classSession?.mobileConfirm ? true : false);
     const attendance = await prisma.attendance.create({
       data: {
         memberId,
         classSessionId,
         attendanceDate: date,
         source: source || "MANUAL",
-        confirmed: source === "KIOSK" || source === "MANUAL" ? true : (classSession?.mobileConfirm ? true : false),
+        confirmed: willBeConfirmed,
         requirementOverride: requirementOverride || false,
       },
       include: {
@@ -228,6 +237,12 @@ export async function POST(req: Request) {
         },
       },
     });
+    // Class-credit deduction fires only when the new row lands
+    // confirmed (i.e. the attendance actually counts). Unconfirmed
+    // pre-check-ins get their credit burned later on promotion.
+    if (willBeConfirmed) {
+      await deductClassCreditForMember(memberId).catch(() => { /* non-fatal */ });
+    }
 
     // Also upsert a ClassBooking so it appears in the member portal. Have to
     // handle three states: no row at all (create), an active row (skip), or
