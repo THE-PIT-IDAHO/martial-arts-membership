@@ -44,8 +44,7 @@ export async function POST(req: Request) {
             billingCycle: true,
             name: true,
             classCredits: true,
-            creditsRecurring: true,
-            creditExpiryDays: true,
+            contractLengthMonths: true,
           },
         },
         member: {
@@ -135,17 +134,18 @@ export async function POST(req: Request) {
           billingPeriodStart,
           ms.membershipPlan.billingCycle
         );
-        // Refill class credits at the start of each cycle for
-        // recurring class-pack plans (e.g. "10 classes / month").
-        // Non-recurring packs (one-shot purchase) never come through
-        // this loop because autoRenew is false on their plan.
-        const shouldRefill =
-          ms.membershipPlan.creditsRecurring === true
-          && !!ms.membershipPlan.classCredits;
-        const creditsExpireAt = shouldRefill && ms.membershipPlan.creditExpiryDays
+        // Refill class credits at the start of each cycle for class-
+        // pack plans. Membership only lands in this loop when the
+        // plan has autoRenew=true, so recurrence is already gated --
+        // any autoRenew=true plan with classCredits set gets the
+        // refill. Non-renewing packs never reach here.
+        const shouldRefill = !!ms.membershipPlan.classCredits;
+        const creditsExpireAt = shouldRefill && ms.membershipPlan.contractLengthMonths
           ? (() => {
+              // contractLengthMonths is stored as DAYS (see plan
+              // editor) so add-days is the right operation.
               const e = new Date(billingPeriodStart);
-              e.setDate(e.getDate() + ms.membershipPlan.creditExpiryDays!);
+              e.setDate(e.getDate() + ms.membershipPlan.contractLengthMonths!);
               return e;
             })()
           : (shouldRefill ? null : undefined);

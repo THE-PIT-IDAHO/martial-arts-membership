@@ -8,6 +8,7 @@ import { markDiscountsUsed } from "@/lib/member-discounts";
 
 import { getFirstRankFromBeltConfig, addRankPdfsToDocuments, type StyleDocument } from "@/lib/belt-config";
 import { buildMembershipSignupExtras } from "@/lib/membership-signup-extras";
+import { calculateContractEndDate } from "@/lib/contracts";
 
 // Calculate next payment date based on billing cycle
 // calculateNextPaymentDate imported from @/lib/billing
@@ -466,10 +467,8 @@ export async function POST(req: Request) {
               setupFeeCents: true,
               allowedStyles: true,
               billingCycle: true,
-              passDurationDays: true,
+              contractLengthMonths: true,
               classCredits: true,
-              creditsRecurring: true,
-              creditExpiryDays: true,
             },
           });
           if (!plan) continue;
@@ -492,8 +491,14 @@ export async function POST(req: Request) {
           const nextPaymentDate = !endDate && plan?.billingCycle
             ? calculateNextPaymentDate(startDate, plan.billingCycle)
             : null;
-          const signupExtras = buildMembershipSignupExtras(plan, startDate);
-          const resolvedEndDate = signupExtras.endDate ?? endDate;
+          // Contract end date drives BOTH the contract lock-in and
+          // (for class packs) the credit expiry deadline. Previously
+          // POS wasn't computing this at all -- so a class pack sold
+          // via POS never got credit expiry until this fix.
+          const contractEndDate = plan.contractLengthMonths
+            ? calculateContractEndDate(startDate, plan.contractLengthMonths)
+            : null;
+          const signupExtras = buildMembershipSignupExtras(plan, startDate, contractEndDate);
 
           // Create a new Membership record linking member to the plan.
           // firstPaymentCents is what the member actually paid at signup
@@ -506,13 +511,14 @@ export async function POST(req: Request) {
               memberId: memberId,
               membershipPlanId: item.membershipPlanId,
               startDate,
-              endDate: resolvedEndDate,
+              endDate,
               status: "ACTIVE",
               customPriceCents: customPrice,
               firstPaymentCents: item.unitPriceCents,
               firstMonthDiscountOnly: item.firstMonthDiscountOnly || false,
               lastPaymentDate: startDate,
               nextPaymentDate,
+              contractEndDate,
               ...(signupExtras.remainingClassCredits !== undefined && {
                 remainingClassCredits: signupExtras.remainingClassCredits,
               }),

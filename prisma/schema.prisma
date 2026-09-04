@@ -457,27 +457,14 @@ model MembershipPlan {
   // on top -- POS + auto-billing both skip discount computation
   // for lines / memberships on this plan.
   eligibleForDiscounts           Boolean         @default(true)
-  // --- Alternative "sold by" modes (day pass / class pack) ---
-  // Standard plans leave both null and behave as before (time-based
-  // billing cycle). Set ONE of these to convert the plan into a
-  // day-pass or class-based product; the plan editor UI picks
-  // between the modes.
-  //
-  // passDurationDays: at signup, endDate = startDate + N days. E.g.
-  //   1 = single-day pass, 7 = week pass. autoRenew is expected to
-  //   be false on these.
-  // classCredits: sells N class credits. Membership.remainingClass-
-  //   Credits is seeded to this value; attendance decrements. When
-  //   it hits 0 the membership auto-expires.
-  // creditsRecurring: when true, remainingClassCredits resets to
-  //   classCredits at every billing cycle (member pays each month
-  //   and gets N classes that month). Default false = one-shot pack.
-  // creditExpiryDays: optional credit expiry independent of running
-  //   out (e.g. 10 classes valid for 90 days). Null = never expires.
-  passDurationDays               Int?
+  // classCredits: sells N class credits per signup. Membership.
+  //   remainingClassCredits is seeded to this value; attendance
+  //   decrements. When it hits 0 the membership auto-expires.
+  //   Existing contractLengthMonths doubles as credit-expiry when
+  //   this is set (contractEndDate -> creditsExpireAt at signup).
+  //   Existing autoRenew doubles as refill semantics: true = credits
+  //   refill each billing cycle; false = one-shot pack.
   classCredits                   Int?
-  creditsRecurring               Boolean         @default(false)
-  creditExpiryDays               Int?
   memberships                    Membership[]
   client                         Client          @relation(fields: [clientId], references: [id])
   membershipType                 MembershipType? @relation(fields: [membershipTypeId], references: [id])

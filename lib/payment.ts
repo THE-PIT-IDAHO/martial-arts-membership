@@ -18,6 +18,7 @@ import {
 } from "@/lib/square";
 import { calculateNextPaymentDate } from "@/lib/billing";
 import { buildMembershipSignupExtras } from "@/lib/membership-signup-extras";
+import { calculateContractEndDate } from "@/lib/contracts";
 
 export type ProcessorType = "stripe" | "paypal" | "square";
 
@@ -878,8 +879,10 @@ async function processAdminPOSCheckout(params: {
         const nextPaymentDate = !endDate
           ? calculateNextPaymentDate(startDate, plan.billingCycle)
           : null;
-        const signupExtras = buildMembershipSignupExtras(plan, startDate);
-        const resolvedEndDate = signupExtras.endDate ?? endDate;
+        const contractEndDate = plan.contractLengthMonths
+          ? calculateContractEndDate(startDate, plan.contractLengthMonths)
+          : null;
+        const signupExtras = buildMembershipSignupExtras(plan, startDate, contractEndDate);
 
         await prisma.membership.create({
           data: {
@@ -887,8 +890,9 @@ async function processAdminPOSCheckout(params: {
             membershipPlanId: plan.id,
             status: "ACTIVE",
             startDate,
-            endDate: resolvedEndDate,
+            endDate,
             nextPaymentDate,
+            contractEndDate,
             customPriceCents: (item.customPriceCents as number) || null,
             firstPaymentCents: (item.unitPriceCents as number) ?? null,
             firstMonthDiscountOnly: (item.firstMonthDiscountOnly as boolean) || false,
@@ -1133,14 +1137,17 @@ async function processPortalStoreCheckout(params: {
       const plan = planMap.get(ci.itemId);
       if (!plan) continue;
       const startDate = new Date();
-      const signupExtras = buildMembershipSignupExtras(plan, startDate);
+      const contractEndDate = plan.contractLengthMonths
+        ? calculateContractEndDate(startDate, plan.contractLengthMonths)
+        : null;
+      const signupExtras = buildMembershipSignupExtras(plan, startDate, contractEndDate);
       await prisma.membership.create({
         data: {
           memberId,
           membershipPlanId: plan.id,
           status: "ACTIVE",
           startDate,
-          ...(signupExtras.endDate !== undefined && { endDate: signupExtras.endDate }),
+          contractEndDate,
           ...(signupExtras.remainingClassCredits !== undefined && {
             remainingClassCredits: signupExtras.remainingClassCredits,
           }),

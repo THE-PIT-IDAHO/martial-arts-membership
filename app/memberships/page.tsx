@@ -118,16 +118,11 @@ export default function MembershipsPage() {
   const [planColor, setPlanColor] = useState("#c41111");
   const [planIsActive, setPlanIsActive] = useState(true);
   const [planAvailableOnline, setPlanAvailableOnline] = useState(false);
-  // "Sold by" mode: "TIME" (default -- billing cycle + contract),
-  // "DAYS" (day pass / N-day pass), or "CLASSES" (class pack).
-  // Persisted implicitly by whichever of passDurationDays /
-  // classCredits is non-null; this state just drives which fields
-  // the editor shows.
-  const [planSoldByMode, setPlanSoldByMode] = useState<"TIME" | "DAYS" | "CLASSES">("TIME");
-  const [planPassDurationDays, setPlanPassDurationDays] = useState("");
+  // Class-pack plans: N classes per signup. When set, the plan's
+  // Contract Length doubles as credit expiry and the plan's autoRenew
+  // flag doubles as "refill each cycle" semantics -- no separate
+  // Sold-by mode field needed.
   const [planClassCredits, setPlanClassCredits] = useState("");
-  const [planCreditsRecurring, setPlanCreditsRecurring] = useState(false);
-  const [planCreditExpiryDays, setPlanCreditExpiryDays] = useState("");
   const [savingPlan, setSavingPlan] = useState(false);
   // Per-plan contract clauses
   type ContractClause = { id: string; title: string; content: string };
@@ -334,11 +329,7 @@ export default function MembershipsPage() {
     setPlanContractUnit("months");
     setPlanAutoRenew(true);
     setPlanEligibleForDiscounts(true);
-    setPlanSoldByMode("TIME");
-    setPlanPassDurationDays("");
     setPlanClassCredits("");
-    setPlanCreditsRecurring(false);
-    setPlanCreditExpiryDays("");
     setPlanClassesPerDay("");
     setPlanClassesPerWeek("");
     setPlanClassesPerMonth("");
@@ -553,24 +544,8 @@ export default function MembershipsPage() {
     }
     setPlanAutoRenew(plan.autoRenew);
     setPlanEligibleForDiscounts((plan as { eligibleForDiscounts?: boolean }).eligibleForDiscounts !== false);
-    // Reverse-derive Sold-by mode from whichever field is populated.
-    const planAny = plan as MembershipPlan & {
-      passDurationDays?: number | null;
-      classCredits?: number | null;
-      creditsRecurring?: boolean;
-      creditExpiryDays?: number | null;
-    };
-    if (planAny.classCredits) {
-      setPlanSoldByMode("CLASSES");
-    } else if (planAny.passDurationDays) {
-      setPlanSoldByMode("DAYS");
-    } else {
-      setPlanSoldByMode("TIME");
-    }
-    setPlanPassDurationDays(planAny.passDurationDays ? String(planAny.passDurationDays) : "");
+    const planAny = plan as MembershipPlan & { classCredits?: number | null };
     setPlanClassCredits(planAny.classCredits ? String(planAny.classCredits) : "");
-    setPlanCreditsRecurring(planAny.creditsRecurring === true);
-    setPlanCreditExpiryDays(planAny.creditExpiryDays ? String(planAny.creditExpiryDays) : "");
     setPlanClassesPerDay(plan.classesPerDay ? String(plan.classesPerDay) : "");
     setPlanClassesPerWeek(plan.classesPerWeek ? String(plan.classesPerWeek) : "");
     setPlanClassesPerMonth(plan.classesPerMonth ? String(plan.classesPerMonth) : "");
@@ -632,13 +607,7 @@ export default function MembershipsPage() {
       contractLengthMonths: contractLengthDays,
       autoRenew: planAutoRenew,
       eligibleForDiscounts: planEligibleForDiscounts,
-      // Persist Sold-by fields only for the selected mode so switching
-      // modes never leaves stale values in the DB (e.g. converting a
-      // class pack back to time-based should NOT leave classCredits set).
-      passDurationDays: planSoldByMode === "DAYS" && planPassDurationDays ? Number(planPassDurationDays) : null,
-      classCredits: planSoldByMode === "CLASSES" && planClassCredits ? Number(planClassCredits) : null,
-      creditsRecurring: planSoldByMode === "CLASSES" ? planCreditsRecurring : false,
-      creditExpiryDays: planSoldByMode === "CLASSES" && planCreditExpiryDays ? Number(planCreditExpiryDays) : null,
+      classCredits: planClassCredits ? Number(planClassCredits) : null,
       classesPerDay: planClassesPerDay ? Number(planClassesPerDay) : null,
       classesPerWeek: planClassesPerWeek ? Number(planClassesPerWeek) : null,
       classesPerMonth: planClassesPerMonth ? Number(planClassesPerMonth) : null,
@@ -1399,84 +1368,25 @@ export default function MembershipsPage() {
               <div>
                 <h3 className="mb-3 text-sm font-semibold text-gray-700 border-b pb-1">Contract Terms</h3>
 
-                {/* Sold by: time / days / classes. Picks which pricing
-                    model this plan uses. Time-based (default) uses the
-                    Contract Length + billing cycle above. Days-limited
-                    turns the plan into a day / week / weekend pass.
-                    Class-based turns it into a punch card / class
-                    pack. Only the fields for the selected mode are
-                    persisted to the plan. */}
-                <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-3">
-                  <div className="mb-2 text-xs font-semibold text-gray-700">Sold By</div>
-                  <div className="flex flex-wrap gap-4">
-                    {(["TIME", "DAYS", "CLASSES"] as const).map((mode) => (
-                      <label key={mode} className="flex items-center gap-2 text-xs text-gray-700">
-                        <input
-                          type="radio"
-                          name="planSoldByMode"
-                          checked={planSoldByMode === mode}
-                          onChange={() => setPlanSoldByMode(mode)}
-                          className="h-3.5 w-3.5"
-                        />
-                        {mode === "TIME" ? "Time (billing cycle)" : mode === "DAYS" ? "Days-limited pass" : "Class credits"}
-                      </label>
-                    ))}
-                  </div>
-
-                  {planSoldByMode === "DAYS" && (
-                    <div className="mt-3 flex items-center gap-3">
-                      <label className="text-xs text-gray-700 whitespace-nowrap">Days valid:</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={planPassDurationDays}
-                        onChange={(e) => setPlanPassDurationDays(e.target.value)}
-                        placeholder="e.g., 1 for a day pass, 7 for a week"
-                        className="w-full max-w-xs rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                      />
-                    </div>
-                  )}
-
-                  {planSoldByMode === "CLASSES" && (
-                    <div className="mt-3 grid gap-3 md:grid-cols-3">
-                      <div>
-                        <label className="mb-1 block text-xs text-gray-700">Classes included</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={planClassCredits}
-                          onChange={(e) => setPlanClassCredits(e.target.value)}
-                          placeholder="e.g., 10"
-                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs text-gray-700">
-                          Expires after (days)
-                          <span className="ml-1 font-normal text-gray-400">optional</span>
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={planCreditExpiryDays}
-                          onChange={(e) => setPlanCreditExpiryDays(e.target.value)}
-                          placeholder="blank = never"
-                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                        />
-                      </div>
-                      <div className="flex items-end">
-                        <label className="flex items-center gap-2 text-xs text-gray-700" title="On = credits refill each billing cycle (recurring 10-class-per-month pack). Off = one-shot purchase.">
-                          <input
-                            type="checkbox"
-                            checked={planCreditsRecurring}
-                            onChange={(e) => setPlanCreditsRecurring(e.target.checked)}
-                            className="h-4 w-4 rounded border-gray-300"
-                          />
-                          Refill each billing cycle
-                        </label>
-                      </div>
-                    </div>
-                  )}
+                {/* Classes Included: leave blank for a normal time-
+                    based plan. Set to N to convert this plan into a
+                    class pack (member buys N credits per signup;
+                    Contract Length below acts as the credit-expiry
+                    deadline; Auto-renew controls whether credits
+                    refill each billing cycle or the pack is one-shot). */}
+                <div className="mb-4 max-w-xs">
+                  <label className="mb-1 block text-xs font-medium text-gray-700" title="Set to convert this plan into a class pack. Contract Length becomes the credit expiry; Auto-renew below toggles one-shot vs. per-cycle refill.">
+                    Classes Included
+                    <span className="ml-1 font-normal text-gray-400">(class packs)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={planClassCredits}
+                    onChange={(e) => setPlanClassCredits(e.target.value)}
+                    placeholder="blank = unlimited"
+                    className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-4">

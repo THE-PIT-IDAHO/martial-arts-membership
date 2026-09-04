@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
 import { buildMembershipSignupExtras } from "@/lib/membership-signup-extras";
+import { calculateContractEndDate } from "@/lib/contracts";
 
 export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -32,7 +33,10 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
 
     // Create membership
     const startDate = new Date();
-    const signupExtras = buildMembershipSignupExtras(plan, startDate);
+    const contractEndDate = plan.contractLengthMonths
+      ? calculateContractEndDate(startDate, plan.contractLengthMonths)
+      : null;
+    const signupExtras = buildMembershipSignupExtras(plan, startDate, contractEndDate);
     const membership = await prisma.membership.create({
       data: {
         memberId: trial.memberId,
@@ -40,7 +44,7 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
         startDate,
         status: "ACTIVE",
         nextPaymentDate: new Date(),
-        ...(signupExtras.endDate !== undefined && { endDate: signupExtras.endDate }),
+        contractEndDate,
         ...(signupExtras.remainingClassCredits !== undefined && {
           remainingClassCredits: signupExtras.remainingClassCredits,
         }),

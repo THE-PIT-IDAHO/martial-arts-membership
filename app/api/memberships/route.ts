@@ -107,10 +107,7 @@ export async function POST(req: Request) {
         allowedStyles: true,
         billingCycle: true,
         contractLengthMonths: true,
-        passDurationDays: true,
         classCredits: true,
-        creditsRecurring: true,
-        creditExpiryDays: true,
       },
     });
 
@@ -134,14 +131,14 @@ export async function POST(req: Request) {
       ? calculateContractEndDate(membershipStartDate, plan.contractLengthMonths)
       : null;
 
-    // Day-pass / class-pack extras derived from the plan. endDate here
-    // overrides any endDate passed in the request body when the plan
-    // is a day pass -- request-body endDate wins only for old-style
-    // time-based plans that don't opt into either mode.
+    // Class-pack extras: seed remainingClassCredits + creditsExpireAt
+    // from the plan. creditsExpireAt piggybacks on contractEndDate so
+    // the admin sets one "how long is this pack good for" value on
+    // the plan (Contract Length) that governs both contract lock and
+    // credit expiry.
     const signupExtras = plan
-      ? buildMembershipSignupExtras(plan, membershipStartDate)
+      ? buildMembershipSignupExtras(plan, membershipStartDate, contractEndDate)
       : {};
-    const resolvedEndDate = signupExtras.endDate ?? membershipEndDate;
 
     // Create the membership
     const membership = await prisma.membership.create({
@@ -149,7 +146,7 @@ export async function POST(req: Request) {
         memberId,
         membershipPlanId,
         startDate: membershipStartDate,
-        endDate: resolvedEndDate,
+        endDate: membershipEndDate,
         status: status || "ACTIVE",
         lastPaymentDate: membershipStartDate,
         nextPaymentDate,
