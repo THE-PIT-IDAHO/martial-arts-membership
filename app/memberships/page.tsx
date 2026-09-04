@@ -1368,23 +1368,25 @@ export default function MembershipsPage() {
               <div>
                 <h3 className="mb-3 text-sm font-semibold text-gray-700 border-b pb-1">Contract Terms</h3>
 
-                {/* Classes Included: leave blank for a normal time-
-                    based plan. Set to N to convert this plan into a
-                    class pack (member buys N credits per signup;
-                    Contract Length below acts as the credit-expiry
-                    deadline; Auto-renew controls whether credits
-                    refill each billing cycle or the pack is one-shot). */}
+                {/* Number of Classes: leave blank when the plan is a
+                    normal time-based membership (unlimited attendance
+                    within the term). Set to N to convert this plan
+                    into a pay-per-class pack -- member buys N credits
+                    per signup, Contract Length below acts as the
+                    credit-expiry deadline, Auto-renew controls whether
+                    credits refill each billing cycle or the pack is
+                    one-shot. */}
                 <div className="mb-4 max-w-xs">
-                  <label className="mb-1 block text-xs font-medium text-gray-700" title="Set to convert this plan into a class pack. Contract Length becomes the credit expiry; Auto-renew below toggles one-shot vs. per-cycle refill.">
-                    Classes Included
-                    <span className="ml-1 font-normal text-gray-400">(class packs)</span>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Number of Classes
+                    <span className="ml-1 font-normal text-gray-400">(pay per class — contract length determines expiration date)</span>
                   </label>
                   <input
                     type="number"
                     min="0"
                     value={planClassCredits}
                     onChange={(e) => setPlanClassCredits(e.target.value)}
-                    placeholder="blank = unlimited"
+                    placeholder="e.g., 10"
                     className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
