@@ -72,7 +72,16 @@ export async function POST(req: Request) {
     const newlyConfirmed = targets.filter((t) => !t.confirmed);
     for (const t of newlyConfirmed) {
       try {
-        const r = await deductClassCreditForMember(t.memberId, "CONFIRM");
+        // Try CONFIRM mode first (the natural fit for a confirm event).
+        // If nothing matched, fall back to SIGN_IN -- self-heal for a
+        // SIGN_IN pack that never got a sign-in event (e.g. admin
+        // added the row confirmed via another path that skipped the
+        // create-time trigger). Prevents "member on SIGN_IN pack got
+        // confirmed and nothing decremented."
+        let r = await deductClassCreditForMember(t.memberId, "CONFIRM");
+        if (!r.deducted) {
+          r = await deductClassCreditForMember(t.memberId, "SIGN_IN");
+        }
         if (r.deducted && r.membershipId) {
           await prisma.attendance.update({
             where: { id: t.id },

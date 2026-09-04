@@ -189,14 +189,16 @@ export async function POST(req: Request) {
             },
           },
         });
-        // Row went from unconfirmed -> confirmed. This is a CONFIRM
-        // trigger. SIGN_IN-mode packs were already deducted when the
-        // row was originally created; helper filters by plan mode so
-        // this call is a no-op for them. When it does deduct, record
-        // which membership paid so an unconfirm/delete can refund
-        // the exact pack.
+        // Row went from unconfirmed -> confirmed. Try CONFIRM first
+        // (natural fit); if nothing matches, fall back to SIGN_IN so
+        // a SIGN_IN-mode pack that never got a sign-in event still
+        // self-heals here. Records which membership paid so a later
+        // unconfirm/delete refunds the exact pack.
         try {
-          const result = await deductClassCreditForMember(memberId, "CONFIRM");
+          let result = await deductClassCreditForMember(memberId, "CONFIRM");
+          if (!result.deducted) {
+            result = await deductClassCreditForMember(memberId, "SIGN_IN");
+          }
           if (result.deducted && result.membershipId) {
             await prisma.attendance.update({
               where: { id: existing.id },
