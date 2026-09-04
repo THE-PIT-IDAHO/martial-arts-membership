@@ -89,6 +89,9 @@ function billingCycleFull(cycle: string | null): string {
     case "YEARLY": return "Yearly";
     case "WEEKLY": return "Weekly";
     case "QUARTERLY": return "Quarterly";
+    case "SEMI_ANNUALLY": return "Semi-annually";
+    case "ONE_TIME": return "One Time";
+    case "SESSION": return "Session";
     default: return cycle;
   }
 }

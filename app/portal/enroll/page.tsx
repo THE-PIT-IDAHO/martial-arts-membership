@@ -161,7 +161,13 @@ export default function PortalEnrollPage() {
                     {plan.priceCents != null && (
                       <div className="text-right">
                         <p className="text-lg font-bold text-gray-900">{formatCents(plan.priceCents)}</p>
-                        <p className="text-xs text-gray-400">/{plan.billingCycle.toLowerCase()}</p>
+                        <p className="text-xs text-gray-400">
+                          {plan.billingCycle === "ONE_TIME"
+                            ? "one time"
+                            : plan.billingCycle === "SESSION"
+                              ? "per session"
+                              : `/${plan.billingCycle.toLowerCase()}`}
+                        </p>
                       </div>
                     )}
                   </div>

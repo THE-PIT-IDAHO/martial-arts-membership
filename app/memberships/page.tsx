@@ -1299,7 +1299,7 @@ export default function MembershipsPage() {
                     >
                       {BILLING_CYCLES.map((cycle) => (
                         <option key={cycle} value={cycle}>
-                          {cycle === "ONE_TIME" ? "One-Time" : cycle.charAt(0) + cycle.slice(1).toLowerCase()}
+                          {cycle === "ONE_TIME" ? "One Time" : cycle.charAt(0) + cycle.slice(1).toLowerCase()}
                         </option>
                       ))}
                     </select>
@@ -1393,8 +1393,12 @@ export default function MembershipsPage() {
 
                 <div className="grid gap-4 md:grid-cols-4">
                   <div>
+                    {/* When Number of Classes is set the plan is a
+                        class pack; the same field now represents WHEN
+                        the credits expire, not a contract lock-in
+                        term. Relabel so the admin isn't confused. */}
                     <label className="mb-1 block text-xs font-medium text-gray-700">
-                      Contract Length
+                      {planClassCredits ? "Expires" : "Contract Length"}
                     </label>
                     <div className="flex items-center gap-3">
                       <input
@@ -1882,7 +1886,7 @@ export default function MembershipsPage() {
                                   )}
                                 </td>
                                 <td className="px-4 py-3 text-gray-700">
-                                  {plan.billingCycle === "ONE_TIME" ? "One-Time" : plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase()}
+                                  {plan.billingCycle === "ONE_TIME" ? "One Time" : plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase()}
                                 </td>
                                 <td className="px-4 py-3 text-gray-700">
                                   {formatContractLength(plan.contractLengthMonths)}
@@ -1961,7 +1965,7 @@ export default function MembershipsPage() {
                                 {formatPrice(plan.priceCents)}
                               </td>
                               <td className="px-4 py-3 text-gray-700">
-                                {plan.billingCycle === "ONE_TIME" ? "One-Time" : plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase()}
+                                {plan.billingCycle === "ONE_TIME" ? "One Time" : plan.billingCycle.charAt(0) + plan.billingCycle.slice(1).toLowerCase()}
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="flex justify-end gap-1">

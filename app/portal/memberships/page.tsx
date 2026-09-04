@@ -220,6 +220,9 @@ function MembershipsContent() {
       case "MONTHLY": return "Monthly";
       case "YEARLY": return "Annually";
       case "QUARTERLY": return "Quarterly";
+      case "SEMI_ANNUALLY": return "Semi-annually";
+      case "ONE_TIME": return "One Time";
+      case "SESSION": return "Session";
       default: return cycle.charAt(0) + cycle.slice(1).toLowerCase();
     }
   };
