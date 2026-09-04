@@ -2473,9 +2473,21 @@ export default function POSPage() {
 
               {catalogTab === "services" && (
                 filteredServicePackages.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">
-                    No appointments found. <Link href="/settings/service-packages" className="inline-block rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark">Add Appointment</Link>
-                  </p>
+                  <div className="text-center py-8 space-y-3">
+                    <p className="text-gray-500">Nothing to sell yet.</p>
+                    <p className="text-xs text-gray-500 max-w-md mx-auto">
+                      Appointment Types show up here once they have at least one Pricing Tier
+                      (Sessions + Price row with the POS box checked). Create the Appointment
+                      Type in <span className="font-medium">Memberships → Appointments</span>,
+                      then add a Pricing Tier — that&apos;s what POS sells.
+                    </p>
+                    <Link
+                      href="/memberships"
+                      className="inline-block rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark"
+                    >
+                      Go to Memberships → Appointments
+                    </Link>
+                  </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {filteredServicePackages.map(pkg => (
