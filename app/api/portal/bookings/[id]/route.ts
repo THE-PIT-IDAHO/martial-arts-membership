@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import { sendWaitlistPromotionEmail } from "@/lib/notifications";
+import { refundClassCreditForMember, deductClassCreditForMember } from "@/lib/class-credits";
 
 export async function DELETE(
   req: NextRequest,
@@ -35,6 +36,20 @@ export async function DELETE(
     data: { status: "CANCELLED" },
   });
 
+  // Snapshot the attendance rows first so we can refund any class-
+  // pack credit they consumed. Row's creditDeductedFromMembershipId
+  // tag points to the exact pack that paid (kiosk sign-in, portal
+  // sign-in, or admin confirm all tag the row when they burn a
+  // credit).
+  const toDelete = await prisma.attendance.findMany({
+    where: {
+      memberId: booking.memberId,
+      classSessionId: booking.classSessionId,
+      attendanceDate: booking.bookingDate,
+    },
+    select: { confirmed: true, creditDeductedFromMembershipId: true },
+  });
+
   // Remove the corresponding attendance record. Cancelling the booking
   // should also pull the member off the class roster regardless of which
   // path created the attendance row (PORTAL self-book, MANUAL staff
@@ -47,6 +62,18 @@ export async function DELETE(
       attendanceDate: booking.bookingDate,
     },
   });
+
+  // Refund any class-pack credits the deleted rows consumed.
+  for (const row of toDelete) {
+    if (!row.creditDeductedFromMembershipId) continue;
+    await refundClassCreditForMember(
+      booking.memberId,
+      row.confirmed ? "CONFIRM" : "SIGN_IN",
+      row.creditDeductedFromMembershipId,
+    ).catch((err) => {
+      console.error("[portal/bookings/[id]] class-credit refund failed:", err);
+    });
+  }
 
   // If was confirmed, promote first waitlisted member
   if (wasConfirmed) {
@@ -79,7 +106,7 @@ export async function DELETE(
         },
       });
       if (!existingAtt) {
-        await prisma.attendance.create({
+        const promotedAtt = await prisma.attendance.create({
           data: {
             memberId: nextWaitlisted.member.id,
             classSessionId: booking.classSessionId,
@@ -88,6 +115,19 @@ export async function DELETE(
             confirmed: false,
           },
         });
+        // Waitlist -> Confirmed is a fresh SIGN_IN for the promoted
+        // member. Burn a class-pack credit if their plan is SIGN_IN mode.
+        try {
+          const r = await deductClassCreditForMember(nextWaitlisted.member.id, "SIGN_IN");
+          if (r.deducted && r.membershipId) {
+            await prisma.attendance.update({
+              where: { id: promotedAtt.id },
+              data: { creditDeductedFromMembershipId: r.membershipId },
+            });
+          }
+        } catch (err) {
+          console.error("[portal/bookings/[id]] promoted-waitlist SIGN_IN deduct failed:", err);
+        }
       }
 
       // Notify promoted member

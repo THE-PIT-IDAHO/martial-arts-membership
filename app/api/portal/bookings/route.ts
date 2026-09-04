@@ -5,6 +5,7 @@ import { sendBookingConfirmationEmail } from "@/lib/notifications";
 import { memberCanAttendClass } from "@/lib/class-eligibility";
 import { getGymTimezone, occurrenceForDate, localMidnightUtc, formatDateInTimezone } from "@/lib/dates";
 import { classRunsOnDate } from "@/lib/class-occurrence";
+import { deductClassCreditForMember } from "@/lib/class-credits";
 
 export async function GET(req: NextRequest) {
   const auth = await getAuthenticatedMember(req);
@@ -256,7 +257,7 @@ async function handleBookingPost(req: NextRequest) {
       },
     });
     if (!existingAttendance) {
-      await prisma.attendance.create({
+      const created = await prisma.attendance.create({
         data: {
           memberId: bookingMemberId,
           classSessionId,
@@ -265,6 +266,22 @@ async function handleBookingPost(req: NextRequest) {
           confirmed: false,
         },
       });
+      // Portal booking is a SIGN_IN event for the member -- they
+      // committed a slot. Fire the SIGN_IN trigger so a class-pack
+      // configured to expire-on-sign-in burns its credit here. CONFIRM-
+      // mode packs skip this (helper's mode filter no-ops) and wait
+      // for an admin confirm.
+      try {
+        const r = await deductClassCreditForMember(bookingMemberId, "SIGN_IN");
+        if (r.deducted && r.membershipId) {
+          await prisma.attendance.update({
+            where: { id: created.id },
+            data: { creditDeductedFromMembershipId: r.membershipId },
+          });
+        }
+      } catch (err) {
+        console.error("[portal/bookings] class-credit SIGN_IN deduct failed:", err);
+      }
     }
   }
 
