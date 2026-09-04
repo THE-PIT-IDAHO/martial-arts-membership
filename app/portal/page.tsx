@@ -204,26 +204,6 @@ export default function PortalDashboard() {
         </div>
       </div>
 
-      {/* Quick Check In Link */}
-      <a
-        href="/portal/checkin"
-        className="w-full mb-4 bg-white rounded-2xl border border-gray-200 shadow-sm p-4 flex items-center gap-3 active:scale-[0.98] transition-all"
-      >
-        <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
-          <svg className="w-5 h-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 14.625v6h3v-3h3v-3h-6z" />
-          </svg>
-        </div>
-        <div className="flex-1 text-left">
-          <p className="font-semibold text-gray-900 text-sm">Check In</p>
-          <p className="text-xs text-gray-500">Scan your member barcode at the front desk</p>
-        </div>
-        <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-        </svg>
-      </a>
-
       {/* Trial Pass Card */}
       {trial && trial.status === "ACTIVE" && (
         <div className="mb-6 bg-purple-50 rounded-2xl border border-purple-200 p-4">
