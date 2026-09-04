@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { syncMemberStatusFromMemberships } from "@/lib/member-status-sync";
 
 /**
  * Class-credit bookkeeping for class-pack memberships.
@@ -56,7 +57,7 @@ export async function deductClassCreditForMember(
   // expiry deadline and the next daily cron run from getting a free
   // class -- and matches Cruz's rule "expire whichever comes first,
   // credits depleted OR expiry date reached."
-  await prisma.membership.updateMany({
+  const preSwept = await prisma.membership.updateMany({
     where: {
       memberId,
       status: "ACTIVE",
@@ -65,6 +66,12 @@ export async function deductClassCreditForMember(
     },
     data: { status: "EXPIRED" },
   });
+  // Re-sync the Member.status ACTIVE/INACTIVE axis if the sweep
+  // actually changed anything -- otherwise the members list keeps
+  // showing "Active" while the profile shows the pack as EXPIRED.
+  if (preSwept.count > 0) {
+    await syncMemberStatusFromMemberships(memberId);
+  }
 
   // Candidates: ACTIVE credit-based packs with credits left, unexpired,
   // AND whose plan's mode matches this trigger. Soonest-expiring first
@@ -106,6 +113,14 @@ export async function deductClassCreditForMember(
       ...(shouldExpire && { status: "EXPIRED" }),
     },
   });
+
+  // Re-sync Member.status on the ACTIVE/INACTIVE axis when a pack
+  // expired. Without this, the members list keeps rendering
+  // "Active" for a member whose only membership just got auto-
+  // expired at zero balance.
+  if (shouldExpire) {
+    await syncMemberStatusFromMemberships(memberId);
+  }
 
   return {
     deducted: true,
@@ -178,6 +193,10 @@ export async function refundClassCreditForMember(
       where: { id: expired.id },
       data: { status: "ACTIVE", remainingClassCredits: 1 },
     });
+    // Re-activating the pack likely flips the member back onto the
+    // ACTIVE side of the status axis -- resync so the members list
+    // reflects it.
+    await syncMemberStatusFromMemberships(memberId);
   }
 }
 
@@ -190,6 +209,22 @@ export async function expireLapsedCreditMemberships(
   clientId: string,
   now: Date = new Date(),
 ): Promise<number> {
+  // Find the affected memberships FIRST so we know which members to
+  // resync after the bulk expire. updateMany doesn't return the rows
+  // it touched, and we need memberIds to keep Member.status in
+  // agreement (else the members list keeps rendering "Active" while
+  // the profile shows an EXPIRED pack).
+  const targets = await prisma.membership.findMany({
+    where: {
+      status: "ACTIVE",
+      remainingClassCredits: { not: null },
+      creditsExpireAt: { lt: now },
+      member: { clientId },
+    },
+    select: { memberId: true },
+  });
+  if (targets.length === 0) return 0;
+
   const result = await prisma.membership.updateMany({
     where: {
       status: "ACTIVE",
@@ -199,5 +234,15 @@ export async function expireLapsedCreditMemberships(
     },
     data: { status: "EXPIRED" },
   });
+
+  // Dedup memberIds so a member with multiple expiring packs only
+  // gets synced once.
+  const memberIds = Array.from(new Set(targets.map((t) => t.memberId)));
+  for (const memberId of memberIds) {
+    await syncMemberStatusFromMemberships(memberId).catch((err) => {
+      console.error(`Member.status resync failed for member ${memberId}:`, err);
+    });
+  }
+
   return result.count;
 }

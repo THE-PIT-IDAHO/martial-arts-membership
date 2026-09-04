@@ -10,6 +10,7 @@ import { getTodayInTimezone, formatDateInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
 import { getClientId } from "@/lib/tenant";
 import { expireLapsedCreditMemberships } from "@/lib/class-credits";
+import { reconcileClientMemberStatuses } from "@/lib/member-status-sync";
 
 // Vercel cron sends GET. Dashboard sends POST. Both delegate here.
 //
@@ -35,6 +36,7 @@ type TenantResult = {
   autoFinishedEvents?: number;
   autoFinishErrors?: number;
   classPacksExpired?: number;
+  memberStatusesResynced?: number;
   error?: string;
 };
 
@@ -76,6 +78,7 @@ export async function POST(req: Request) {
         autoFinishedEvents: r.autoFinishedEvents || 0,
         autoFinishErrors: r.autoFinishErrors || 0,
         classPacksExpired: r.classPacksExpired || 0,
+        memberStatusesResynced: r.memberStatusesResynced || 0,
       });
     }
     return NextResponse.json({ tenants: results.length, results });
@@ -298,6 +301,20 @@ async function processLifecycleForTenant(clientId: string, req: Request): Promis
     console.error("Class-pack expiry sweep error:", err);
   }
 
+  // --- Reconcile Member.status against Membership.status ---
+  // Catches historical drift: any member whose Member.status says
+  // ACTIVE while every one of their memberships is EXPIRED / PAUSED
+  // (or vice versa) gets rebuilt from ground truth. Covers cases the
+  // inline resync at deduction / expiry time can't reach -- packs
+  // that expired before the resync was wired in, or membership rows
+  // that got flipped by external tooling.
+  let memberStatusesResynced = 0;
+  try {
+    memberStatusesResynced = await reconcileClientMemberStatuses(clientId);
+  } catch (err) {
+    console.error("Member.status reconcile error:", err);
+  }
+
   // Per-tenant "last run today" stamp.
   await prisma.settings.upsert({
     where: { key_clientId: { key: "lifecycle_last_auto_run", clientId } },
@@ -314,5 +331,6 @@ async function processLifecycleForTenant(clientId: string, req: Request): Promis
     autoFinishedEvents,
     autoFinishErrors,
     classPacksExpired,
+    memberStatusesResynced,
   };
 }
