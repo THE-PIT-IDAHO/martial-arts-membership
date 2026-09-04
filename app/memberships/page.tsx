@@ -506,9 +506,23 @@ export default function MembershipsPage() {
     }
   }
 
+  // Snap the admin shell + window back to top when opening the plan
+  // form so the edit fields are visible immediately -- the plans list
+  // often has the row halfway down the viewport, and without this the
+  // form materializes above the fold and the admin doesn't see it.
+  function scrollShellToTop() {
+    try {
+      document.querySelectorAll("main, main > div").forEach((el) => {
+        (el as HTMLElement).scrollTop = 0;
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch { /* non-fatal */ }
+  }
+
   function handleEditPlan(plan: MembershipPlan) {
     setEditingPlan(plan);
     populatePlanForm(plan);
+    scrollShellToTop();
   }
 
   function handleDuplicatePlan(plan: MembershipPlan) {
@@ -516,6 +530,7 @@ export default function MembershipsPage() {
     populatePlanForm(plan);
     setPlanName(plan.name + " (Copy)"); // Add "(Copy)" suffix to distinguish
     setPlanMembershipId(""); // Clear membership ID for new plan
+    scrollShellToTop();
   }
 
   function populatePlanForm(plan: MembershipPlan) {
