@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
-import { OnScreenKeyboard } from "@/components/kiosk/OnScreenKeyboard";
 
 type Style = {
   id: string;
@@ -34,7 +33,6 @@ export default function KioskSettingsPage() {
   const [styles, setStyles] = useState<Style[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showPinKeypad, setShowPinKeypad] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -151,22 +149,12 @@ export default function KioskSettingsPage() {
                   const val = e.target.value.replace(/\D/g, "");
                   setSettings((prev) => ({ ...prev, exitPin: val }));
                 }}
-                onClick={() => setShowPinKeypad((v) => !v)}
                 placeholder="Leave empty for no pin"
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               />
               <p className="mt-1 text-xs text-gray-500">
-                4-6 digit pin required to exit kiosk mode. Leave blank to disable. Tap the field to show / hide the on-screen keypad.
+                4-6 digit pin required to exit kiosk mode. Leave blank to disable. The device&apos;s native numeric keypad will pop when you tap the field.
               </p>
-              {showPinKeypad && (
-                <div className="mt-2 max-w-xs">
-                  <OnScreenKeyboard
-                    mode="numeric"
-                    onKey={(k) => setSettings((prev) => ({ ...prev, exitPin: (prev.exitPin + k).slice(0, 6) }))}
-                    onBackspace={() => setSettings((prev) => ({ ...prev, exitPin: prev.exitPin.slice(0, -1) }))}
-                  />
-                </div>
-              )}
             </div>
           </div>
 

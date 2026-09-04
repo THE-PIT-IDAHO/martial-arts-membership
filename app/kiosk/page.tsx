@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { filterAndRankMembers } from "@/lib/member-search";
-import { OnScreenKeyboard } from "@/components/kiosk/OnScreenKeyboard";
 
 type GymSettings = {
   name: string;
@@ -605,11 +604,6 @@ export default function KioskPage() {
   const selectedClassRef = useRef(selectedClass);
   selectedClassRef.current = selectedClass;
   const searchInputRef = useRef<HTMLInputElement>(null);
-  // Toggle for the on-screen QWERTY. Kiosk tablets often have a
-  // Bluetooth barcode scanner paired, which suppresses the OS
-  // keyboard system-wide. This lets the operator tap-to-type names
-  // without unpairing the scanner.
-  const [showSearchKeyboard, setShowSearchKeyboard] = useState(false);
 
   const loadAttendees = useCallback(async (classId: string) => {
     try {
@@ -1034,7 +1028,6 @@ export default function KioskPage() {
                       type="text"
                       value={searchQuery}
                       onChange={(e) => handleSearch(e.target.value)}
-                      onClick={() => setShowSearchKeyboard((v) => !v)}
                       onKeyDown={(e) => {
                         if (e.key === "ArrowDown" && searchResults.length > 0) {
                           e.preventDefault();
@@ -1082,28 +1075,6 @@ export default function KioskPage() {
                       </button>
                     )}
                   </div>
-                  {/* On-page QWERTY: shown when the operator taps the
-                      input. Tapping the input again hides it. Bypasses
-                      the Android OS hiding its native keyboard when a
-                      Bluetooth barcode scanner is paired. */}
-                  {showSearchKeyboard && (
-                    <div className="mb-4 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-                      <OnScreenKeyboard
-                        mode="qwerty"
-                        onKey={(k) => handleSearch(searchQuery + k)}
-                        onBackspace={() => handleSearch(searchQuery.slice(0, -1))}
-                        onEnter={() => {
-                          const val = searchQuery.trim();
-                          if (val.includes("member=") || val.startsWith("{") || val.startsWith("http")) {
-                            handleQrScan(val);
-                            setSearchQuery("");
-                            return;
-                          }
-                          if (searchResults.length > 0) handleSelectMember(searchResults[0]);
-                        }}
-                      />
-                    </div>
-                  )}
                   {/* Search Results */}
                   {searchResults.length > 0 && (
                     <div className="space-y-2 mb-6 max-h-[300px] overflow-y-auto">
@@ -1291,31 +1262,6 @@ export default function KioskPage() {
             {pinInput.length > 0 && pinInput !== kioskSettings.exitPin && pinInput.length >= kioskSettings.exitPin.length && (
               <p className="text-red-500 text-sm text-center mb-4">Incorrect pin</p>
             )}
-
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, "del"].map((key, i) => {
-                if (key === null) return <div key={i} />;
-                return (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      if (key === "del") {
-                        setPinInput((prev) => prev.slice(0, -1));
-                      } else {
-                        const newPin = pinInput + String(key);
-                        setPinInput(newPin);
-                        if (newPin === kioskSettings.exitPin) {
-                          window.location.href = "/kiosk/settings";
-                        }
-                      }
-                    }}
-                    className="py-4 rounded-xl bg-gray-100 hover:bg-gray-200 text-xl font-semibold text-gray-800 transition-colors active:scale-95"
-                  >
-                    {key === "del" ? "⌫" : key}
-                  </button>
-                );
-              })}
-            </div>
 
             <button
               onClick={() => {
