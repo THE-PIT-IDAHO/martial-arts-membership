@@ -3,6 +3,7 @@ import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import { sendWaitlistPromotionEmail } from "@/lib/notifications";
 import { refundClassCreditForMember, deductClassCreditForMember } from "@/lib/class-credits";
+import { getGymTimezone, occurrenceForDate, formatDateInTimezone } from "@/lib/dates";
 
 export async function DELETE(
   req: NextRequest,
@@ -16,7 +17,14 @@ export async function DELETE(
   const booking = await prisma.classBooking.findUnique({
     where: { id },
     include: {
-      classSession: { select: { name: true, startsAt: true } },
+      classSession: {
+        select: {
+          name: true,
+          startsAt: true,
+          cancellationCutoffMins: true,
+          clientId: true,
+        },
+      },
     },
   });
 
@@ -26,6 +34,28 @@ export async function DELETE(
 
   if (booking.status === "CANCELLED") {
     return NextResponse.json({ error: "Already cancelled" }, { status: 400 });
+  }
+
+  // Enforce the per-class cancellation cutoff. Anchors the class's
+  // template startsAt on the actual bookingDate (occurrenceForDate)
+  // so recurring classes get the right instance datetime rather
+  // than the template's original date. Blank cutoff = no restriction.
+  if (booking.classSession.cancellationCutoffMins) {
+    const tz = await getGymTimezone(booking.classSession.clientId);
+    const occurrence = occurrenceForDate(
+      new Date(booking.classSession.startsAt),
+      formatDateInTimezone(booking.bookingDate, tz),
+      tz,
+    );
+    const cutoff = new Date(
+      occurrence.getTime() - booking.classSession.cancellationCutoffMins * 60 * 1000,
+    );
+    if (new Date() > cutoff) {
+      return NextResponse.json(
+        { error: "Cancellation cutoff has passed" },
+        { status: 400 },
+      );
+    }
   }
 
   const wasConfirmed = booking.status === "CONFIRMED";

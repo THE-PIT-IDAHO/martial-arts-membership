@@ -137,6 +137,11 @@ async function handleBookingPost(req: NextRequest) {
       bookingEnabled: true,
       bookingCutoffMins: true,
       bookingAdvanceDays: true,
+      // mobileConfirm: when true, portal / mobile bookings create
+      // an already-confirmed attendance row (member self-checks-in
+      // by booking). When false (default), portal bookings land as
+      // unconfirmed and wait for admin confirm.
+      mobileConfirm: true,
       clientId: true,
     },
   });
@@ -257,30 +262,46 @@ async function handleBookingPost(req: NextRequest) {
       },
     });
     if (!existingAttendance) {
+      // When the class has "Mobile check-in confirms attendance"
+      // enabled, portal bookings auto-confirm on creation -- the
+      // member self-checks-in by booking. Otherwise land as
+      // unconfirmed, awaiting an admin confirm.
+      const willBeConfirmed = cls.mobileConfirm === true;
       const created = await prisma.attendance.create({
         data: {
           memberId: bookingMemberId,
           classSessionId,
           attendanceDate: parsedDate,
           source: "PORTAL",
-          confirmed: false,
+          confirmed: willBeConfirmed,
         },
       });
-      // Portal booking is a SIGN_IN event for the member -- they
-      // committed a slot. Fire the SIGN_IN trigger so a class-pack
-      // configured to expire-on-sign-in burns its credit here. CONFIRM-
-      // mode packs skip this (helper's mode filter no-ops) and wait
-      // for an admin confirm.
+      // Portal booking is a SIGN_IN event for the member. Fire
+      // SIGN_IN first (natural fit for a self-book). If the row
+      // ALSO lands confirmed (mobileConfirm=true) and the SIGN_IN
+      // trigger didn't tag it, fire CONFIRM too so CONFIRM-mode
+      // class packs burn here. Helper's mode filter makes cross-
+      // mode calls silent no-ops.
+      let creditFromMembershipId: string | null = null;
       try {
         const r = await deductClassCreditForMember(bookingMemberId, "SIGN_IN");
-        if (r.deducted && r.membershipId) {
-          await prisma.attendance.update({
-            where: { id: created.id },
-            data: { creditDeductedFromMembershipId: r.membershipId },
-          });
-        }
+        if (r.deducted && r.membershipId) creditFromMembershipId = r.membershipId;
       } catch (err) {
-        console.error("[portal/bookings] class-credit SIGN_IN deduct failed:", err);
+        console.error("[portal/bookings] SIGN_IN deduct failed:", err);
+      }
+      if (willBeConfirmed && !creditFromMembershipId) {
+        try {
+          const r = await deductClassCreditForMember(bookingMemberId, "CONFIRM");
+          if (r.deducted && r.membershipId) creditFromMembershipId = r.membershipId;
+        } catch (err) {
+          console.error("[portal/bookings] CONFIRM deduct failed:", err);
+        }
+      }
+      if (creditFromMembershipId) {
+        await prisma.attendance.update({
+          where: { id: created.id },
+          data: { creditDeductedFromMembershipId: creditFromMembershipId },
+        }).catch((err) => { console.error("[portal/bookings] tag attendance failed:", err); });
       }
     }
   }

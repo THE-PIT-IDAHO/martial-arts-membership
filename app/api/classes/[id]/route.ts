@@ -82,6 +82,7 @@ export async function PATCH(req: Request, { params }: Params) {
       maxCapacity,
       bookingEnabled,
       bookingCutoffMins,
+      cancellationCutoffMins,
       bookingAdvanceDays,
       kioskEnabled,
       mobileConfirm,
@@ -128,6 +129,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (maxCapacity !== undefined) updateData.maxCapacity = maxCapacity != null ? parseInt(maxCapacity) || null : null;
     if (bookingEnabled !== undefined) updateData.bookingEnabled = bookingEnabled;
     if (bookingCutoffMins !== undefined) updateData.bookingCutoffMins = bookingCutoffMins != null ? parseInt(bookingCutoffMins) || null : null;
+    if (cancellationCutoffMins !== undefined) updateData.cancellationCutoffMins = cancellationCutoffMins != null ? parseInt(cancellationCutoffMins) || null : null;
     if (bookingAdvanceDays !== undefined) updateData.bookingAdvanceDays = bookingAdvanceDays != null ? parseInt(bookingAdvanceDays) || null : null;
     if (locationId !== undefined) updateData.locationId = locationId || null;
     if (spaceId !== undefined) updateData.spaceId = spaceId || null;

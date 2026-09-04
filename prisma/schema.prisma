@@ -541,6 +541,12 @@ model ClassSession {
   maxCapacity           Int?
   bookingEnabled        Boolean        @default(false)
   bookingCutoffMins     Int?
+  // Minutes before class start after which members can no longer
+  // cancel their booking from the portal. Blank = no restriction
+  // (members can cancel any time, including after class ends -- the
+  // pre-migration behavior). Separate from bookingCutoffMins so
+  // admins can set different windows for booking vs cancelling.
+  cancellationCutoffMins Int?
   bookingAdvanceDays    Int?
   kioskEnabled          Boolean        @default(false)
   mobileConfirm         Boolean        @default(false)

@@ -131,6 +131,7 @@ type ClassSession = {
   maxAge?: number | null;
   bookingEnabled?: boolean;
   bookingCutoffMins?: number | null;
+  cancellationCutoffMins?: number | null;
   bookingAdvanceDays?: number | null;
   kioskEnabled?: boolean;
   coachAttendsAsStudent?: boolean;
@@ -227,6 +228,7 @@ export default function ClassesPage() {
   const [mobileConfirm, setMobileConfirm] = useState(false);
   const [maxCapacity, setMaxCapacity] = useState("");
   const [bookingCutoffMins, setBookingCutoffMins] = useState("");
+  const [cancellationCutoffMins, setCancellationCutoffMins] = useState("");
   const [minAge, setMinAge] = useState("");
   const [maxAge, setMaxAge] = useState("");
   const [bookingAdvanceDays, setBookingAdvanceDays] = useState("");
@@ -411,6 +413,7 @@ export default function ClassesPage() {
     setMinAge("");
     setMaxAge("");
     setBookingCutoffMins("");
+    setCancellationCutoffMins("");
     setBookingAdvanceDays("");
     setDaySchedules([{ day: "Monday", times: [{ startTime: "09:00", endTime: "10:00" }] }]);
     setSelectedSpaceId("");
@@ -507,6 +510,7 @@ export default function ClassesPage() {
     setMinAge(classSession.minAge != null ? String(classSession.minAge) : "");
     setMaxAge(classSession.maxAge != null ? String(classSession.maxAge) : "");
     setBookingCutoffMins(classSession.bookingCutoffMins != null ? String(classSession.bookingCutoffMins) : "");
+    setCancellationCutoffMins(classSession.cancellationCutoffMins != null ? String(classSession.cancellationCutoffMins) : "");
     setBookingAdvanceDays(classSession.bookingAdvanceDays != null ? String(classSession.bookingAdvanceDays) : "");
 
     // Location and Space — without these, the edit form would always start
@@ -685,6 +689,7 @@ export default function ClassesPage() {
                 minAge: minAge || null,
                 maxAge: maxAge || null,
                 bookingCutoffMins: bookingCutoffMins || null,
+                cancellationCutoffMins: cancellationCutoffMins || null,
                 bookingAdvanceDays: bookingAdvanceDays || null,
                 locationId: selectedLocationId || null,
                 spaceId: selectedSpaceId || null,
@@ -781,6 +786,7 @@ export default function ClassesPage() {
                 minAge: minAge || null,
                 maxAge: maxAge || null,
                 bookingCutoffMins: bookingCutoffMins || null,
+                cancellationCutoffMins: cancellationCutoffMins || null,
                 bookingAdvanceDays: bookingAdvanceDays || null,
                 locationId: selectedLocationId || null,
                 spaceId: selectedSpaceId || null,
@@ -2025,6 +2031,20 @@ export default function ClassesPage() {
                         min="0"
                         value={bookingCutoffMins}
                         onChange={(e) => setBookingCutoffMins(e.target.value)}
+                        placeholder="No cutoff"
+                        className="no-spinner w-20 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-700" title="Members can't cancel their booking within this many minutes of class start. Leave blank to allow cancel any time.">
+                        Cancel Cutoff (mins before class)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={cancellationCutoffMins}
+                        onChange={(e) => setCancellationCutoffMins(e.target.value)}
                         placeholder="No cutoff"
                         className="no-spinner w-20 rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                       />
