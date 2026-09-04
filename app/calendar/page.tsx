@@ -3314,20 +3314,31 @@ export default function CalendarPage() {
                                 {confirmedMembers.size === classAttendees.length && classAttendees.length > 0 ? "Deselect All" : "Select All"}
                               </label>
                               <div className="flex items-center gap-1">
-                                {(() => {
-                                  const selectedIds = Array.from(confirmedMembers);
-                                  const allSelectedConfirmed = selectedIds.length > 0 && selectedIds.every(id => attendanceConfirmed.has(id));
-                                  return (
-                                    <button
-                                      type="button"
-                                      onClick={() => allSelectedConfirmed ? handleBulkUnconfirm() : handleBulkConfirm()}
-                                      disabled={confirmedMembers.size === 0}
-                                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                      {allSelectedConfirmed ? "Unconfirm" : "Confirm"}
-                                    </button>
-                                  );
-                                })()}
+                                {/* Confirm + Unconfirm as two independent
+                                    buttons rather than a single toggle -- the
+                                    old toggle made "which action will fire"
+                                    depend on hidden state and hid Unconfirm
+                                    entirely when even one selected row was
+                                    still unconfirmed. Two buttons make the
+                                    reverse action obvious and Unconfirm is
+                                    always reachable to undo a confirm (which
+                                    also refunds any class-pack credit). */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleBulkConfirm()}
+                                  disabled={confirmedMembers.size === 0}
+                                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  Confirm
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleBulkUnconfirm()}
+                                  disabled={confirmedMembers.size === 0}
+                                  className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  Unconfirm
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => handleBulkMarkAbsent()}
