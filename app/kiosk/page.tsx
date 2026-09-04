@@ -604,6 +604,24 @@ export default function KioskPage() {
   const selectedClassRef = useRef(selectedClass);
   selectedClassRef.current = selectedClass;
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const pinInputRef = useRef<HTMLInputElement>(null);
+
+  // When the exit-PIN modal opens, force focus off the name search
+  // input (which is autoFocused on page mount) and onto the PIN input.
+  // Without this the browser keeps typing routed to the search field
+  // AND the OS keyboard stays in its search-input (text) layout,
+  // which is what caused the "keypad flickers to keyboard" report:
+  // the pin input briefly gained focus (numeric layout popped), then
+  // the still-focused search input reasserted itself.
+  useEffect(() => {
+    if (!showPinModal) return;
+    // Next tick so the modal is actually in the DOM.
+    const id = requestAnimationFrame(() => {
+      searchInputRef.current?.blur();
+      pinInputRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [showPinModal]);
 
   const loadAttendees = useCallback(async (classId: string) => {
     try {
@@ -1243,8 +1261,17 @@ export default function KioskPage() {
             <p className="text-gray-500 text-sm text-center mb-6">Enter the kiosk exit pin code</p>
 
             <input
-              type="password"
+              ref={pinInputRef}
+              // type="tel" (not "password") locks Chromium-based OS
+              // soft keyboards to the numeric pad. type="password"
+              // + inputMode="numeric" gave conflicting hints -- the
+              // OS popped the numeric layout for ~1s, then swapped
+              // to the alpha keyboard because password inputs
+              // default to text. type="tel" + pattern gives a clean
+              // numeric signal. Masking is restored via CSS below.
+              type="tel"
               inputMode="numeric"
+              pattern="[0-9]*"
               value={pinInput}
               onChange={(e) => {
                 const val = e.target.value.replace(/\D/g, "");
@@ -1255,7 +1282,15 @@ export default function KioskPage() {
               }}
               placeholder="••••"
               maxLength={6}
-              autoFocus
+              // CSS-based bullets keep the PIN masked without needing
+              // type="password" (which is what caused the keyboard
+              // flicker). -webkit-text-security is supported by
+              // every Chromium browser and Safari -- the kiosk
+              // tablet stack.
+              style={{
+                WebkitTextSecurity: "disc",
+                textSecurity: "disc",
+              } as React.CSSProperties}
               className="w-full text-center text-3xl tracking-[0.5em] px-6 py-4 rounded-2xl border-2 border-gray-200 focus:border-primary focus:outline-none transition-colors mb-4"
             />
 
