@@ -417,6 +417,21 @@ export default function POSPage() {
   function completeTransaction(txn: { id: string; transactionNumber: string }) {
     setLastTransaction(txn);
 
+    // Scroll the app shell back to the top so the "Transaction
+    // Complete!" banner is visible immediately after checkout --
+    // without this, a long cart / catalog list can leave the page
+    // scrolled halfway down and the confirmation is invisible until
+    // the admin scrolls up. Try the app scroll container first (the
+    // admin shell uses `main.overflow-hidden > div.overflow-hidden`);
+    // fall back to window scroll for any layout that reaches window.
+    try {
+      const shellScrollers = document.querySelectorAll("main, main > div");
+      shellScrollers.forEach((el) => {
+        (el as HTMLElement).scrollTop = 0;
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch { /* non-fatal -- confirmation still renders */ }
+
     // Email path. Two cases:
     //  A. Contract was signed in this checkout -- /api/contracts/sign
     //     will save the SignedContract AND fire ONE combined
