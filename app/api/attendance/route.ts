@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { memberCanAttendClass } from "@/lib/class-eligibility";
 import { getGymTimezone, localMidnightUtc } from "@/lib/dates";
-import { deductClassCreditForMember } from "@/lib/class-credits";
+import { deductClassCreditForMember, refundClassCreditForMember } from "@/lib/class-credits";
 
 // GET /api/attendance?classSessionId=xxx&date=yyyy-mm-dd
 export async function GET(req: Request) {
@@ -301,6 +301,7 @@ export async function DELETE(req: Request) {
           memberId: true,
           classSessionId: true,
           attendanceDate: true,
+          confirmed: true,
           member: { select: { clientId: true } },
         },
       });
@@ -311,6 +312,15 @@ export async function DELETE(req: Request) {
       await prisma.attendance.delete({
         where: { id },
       });
+
+      // Refund a class-pack credit if this row was confirmed --
+      // deleting a confirmed attendance is equivalent to unconfirming.
+      // Non-class-pack members get a silent no-op.
+      if (att.confirmed) {
+        await refundClassCreditForMember(att.memberId).catch((err) => {
+          console.error(`Class-credit refund failed for member ${att.memberId}:`, err);
+        });
+      }
 
       // Cancel matching portal booking
       if (att) {
@@ -352,6 +362,17 @@ export async function DELETE(req: Request) {
       const startOfDay = new Date(dayStartMs);
       const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
+      // Count how many confirmed rows are about to be deleted so we
+      // can refund the matching number of class-pack credits below.
+      const confirmedToDelete = await prisma.attendance.count({
+        where: {
+          memberId,
+          classSessionId,
+          attendanceDate: { gte: startOfDay, lte: endOfDay },
+          confirmed: true,
+        },
+      });
+
       await prisma.attendance.deleteMany({
         where: {
           memberId,
@@ -362,6 +383,12 @@ export async function DELETE(req: Request) {
           },
         },
       });
+
+      for (let i = 0; i < confirmedToDelete; i++) {
+        await refundClassCreditForMember(memberId).catch((err) => {
+          console.error(`Class-credit refund failed for member ${memberId}:`, err);
+        });
+      }
 
       // Cancel matching portal booking
       await prisma.classBooking.updateMany({

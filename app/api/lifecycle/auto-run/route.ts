@@ -9,6 +9,7 @@ import {
 import { getTodayInTimezone, formatDateInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
 import { getClientId } from "@/lib/tenant";
+import { expireLapsedCreditMemberships } from "@/lib/class-credits";
 
 // Vercel cron sends GET. Dashboard sends POST. Both delegate here.
 //
@@ -33,6 +34,7 @@ type TenantResult = {
   trialsSent?: number;
   autoFinishedEvents?: number;
   autoFinishErrors?: number;
+  classPacksExpired?: number;
   error?: string;
 };
 
@@ -73,6 +75,7 @@ export async function POST(req: Request) {
         trialsSent: r.trialsSent || 0,
         autoFinishedEvents: r.autoFinishedEvents || 0,
         autoFinishErrors: r.autoFinishErrors || 0,
+        classPacksExpired: r.classPacksExpired || 0,
       });
     }
     return NextResponse.json({ tenants: results.length, results });
@@ -280,6 +283,21 @@ async function processLifecycleForTenant(clientId: string, req: Request): Promis
     console.error("Auto-finish promotion events error:", err);
   }
 
+  // --- Expire lapsed class-pack memberships ---
+  // Two ways a class-pack membership expires:
+  //   (a) Balance hits 0 -- handled inline at check-in time in
+  //       lib/class-credits.ts.
+  //   (b) creditsExpireAt passes with unused credits still on the
+  //       row -- swept here so the member's status flips even if
+  //       they never come back to check in.
+  // Whichever comes first wins.
+  let classPacksExpired = 0;
+  try {
+    classPacksExpired = await expireLapsedCreditMemberships(clientId);
+  } catch (err) {
+    console.error("Class-pack expiry sweep error:", err);
+  }
+
   // Per-tenant "last run today" stamp.
   await prisma.settings.upsert({
     where: { key_clientId: { key: "lifecycle_last_auto_run", clientId } },
@@ -295,5 +313,6 @@ async function processLifecycleForTenant(clientId: string, req: Request): Promis
     trialsSent,
     autoFinishedEvents,
     autoFinishErrors,
+    classPacksExpired,
   };
 }

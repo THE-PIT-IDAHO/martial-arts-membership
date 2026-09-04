@@ -41,6 +41,24 @@ export async function deductClassCreditForMember(
 ): Promise<CreditDeductionResult> {
   const now = new Date();
 
+  // Before looking for a decrement candidate, sweep THIS member's
+  // ACTIVE class-pack memberships whose creditsExpireAt has passed.
+  // Cruz's rule: "expire whichever comes first -- credits depleted
+  // or expiry date reached." The daily lifecycle cron catches these
+  // eventually, but a check-in that happens between the expiry
+  // deadline and the next cron run would otherwise proceed without
+  // decrementing (and appear free), because the query below filters
+  // expired rows out. Inline sweep keeps the two paths in agreement.
+  await prisma.membership.updateMany({
+    where: {
+      memberId,
+      status: "ACTIVE",
+      remainingClassCredits: { not: null },
+      creditsExpireAt: { lt: now },
+    },
+    data: { status: "EXPIRED" },
+  });
+
   // Candidates: ACTIVE credit-based memberships whose credits haven't
   // yet expired (creditsExpireAt null = never expires). Sorted so
   // soonest-expiring wins, then oldest (FIFO across never-expiring).
@@ -83,6 +101,72 @@ export async function deductClassCreditForMember(
     membershipId: target.id,
     remainingAfter: nextBalance,
   };
+}
+
+/**
+ * Refund one class credit to the member -- the reverse of
+ * deductClassCreditForMember. Used when an admin unconfirms an
+ * attendance row that had previously burned a credit. Targets the
+ * best candidate to receive the credit back:
+ *   1. An ACTIVE class-pack membership whose credits haven't expired
+ *      (increment its remainingClassCredits).
+ *   2. Falling back to a membership that was auto-EXPIRED when its
+ *      credits hit 0 -- if it still exists, re-activate it and give
+ *      the credit back so the un-confirm truly undoes the check-in.
+ *
+ * Silently no-ops when the member has no class-pack memberships at
+ * all -- refunding a time-based membership doesn't apply.
+ */
+export async function refundClassCreditForMember(
+  memberId: string,
+): Promise<void> {
+  const now = new Date();
+
+  // Prefer an ACTIVE, non-expired pack -- credit goes back into
+  // circulation immediately.
+  const active = await prisma.membership.findFirst({
+    where: {
+      memberId,
+      status: "ACTIVE",
+      remainingClassCredits: { not: null },
+      OR: [
+        { creditsExpireAt: null },
+        { creditsExpireAt: { gt: now } },
+      ],
+    },
+    orderBy: [{ creditsExpireAt: "desc" }, { startDate: "desc" }],
+    select: { id: true, remainingClassCredits: true },
+  });
+  if (active) {
+    await prisma.membership.update({
+      where: { id: active.id },
+      data: { remainingClassCredits: (active.remainingClassCredits ?? 0) + 1 },
+    });
+    return;
+  }
+
+  // No active pack -- look for a class-pack membership that was
+  // auto-EXPIRED (balance hit 0). Re-activate and refund the credit
+  // so the undo is a real undo. Most-recently-expired first.
+  const expired = await prisma.membership.findFirst({
+    where: {
+      memberId,
+      status: "EXPIRED",
+      remainingClassCredits: 0,
+      OR: [
+        { creditsExpireAt: null },
+        { creditsExpireAt: { gt: now } },
+      ],
+    },
+    orderBy: { startDate: "desc" },
+    select: { id: true },
+  });
+  if (expired) {
+    await prisma.membership.update({
+      where: { id: expired.id },
+      data: { status: "ACTIVE", remainingClassCredits: 1 },
+    });
+  }
 }
 
 /**
