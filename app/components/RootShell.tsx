@@ -57,6 +57,13 @@ function useIsPortalHost(): boolean {
     if (parts.length !== 3) return;
     if (parts[0] === "admin") return;
     if (parts[0] === "www") return;
+    // staging.dojostormsoftware.com is Cruz's dev testing deployment.
+    // Matches the middleware's isStagingHost workaround (see
+    // middleware.ts) that keeps admin at bare "/" and "/login" while
+    // /portal/* still serves the portal. Without this exclusion the
+    // admin app renders without its header on staging because the
+    // shell treats every 3-part gym subdomain as portal.
+    if (parts[0] === "staging") return;
     setIsPortal(true);
     return;
   }, []);
