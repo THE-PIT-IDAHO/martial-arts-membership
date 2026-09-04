@@ -607,18 +607,21 @@ export default function KioskPage() {
   const pinInputRef = useRef<HTMLInputElement>(null);
 
   // When the exit-PIN modal opens, force focus off the name search
-  // input (which is autoFocused on page mount) and onto the PIN input.
-  // Without this the browser keeps typing routed to the search field
-  // AND the OS keyboard stays in its search-input (text) layout,
-  // which is what caused the "keypad flickers to keyboard" report:
-  // the pin input briefly gained focus (numeric layout popped), then
-  // the still-focused search input reasserted itself.
+  // input (which is autoFocused on page mount) and onto the PIN
+  // input. When it closes, return focus to the name search input so
+  // the kiosk resumes accepting scanner / name input immediately.
+  // Both transitions pop the correct OS soft keyboard (numeric pad
+  // vs QWERTY) because inputMode is set per-input.
   useEffect(() => {
-    if (!showPinModal) return;
-    // Next tick so the modal is actually in the DOM.
+    if (showPinModal) {
+      const id = requestAnimationFrame(() => {
+        searchInputRef.current?.blur();
+        pinInputRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(id);
+    }
     const id = requestAnimationFrame(() => {
-      searchInputRef.current?.blur();
-      pinInputRef.current?.focus();
+      searchInputRef.current?.focus();
     });
     return () => cancelAnimationFrame(id);
   }, [showPinModal]);
@@ -932,7 +935,15 @@ export default function KioskPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col select-none overflow-hidden" onClick={() => { if (checkInState === "idle" || checkInState === "search") refocusInput(); }}>
+    <div className="min-h-screen bg-gray-50 flex flex-col select-none overflow-hidden" onClick={() => {
+      // Skip the auto-refocus when the exit-PIN modal is open --
+      // otherwise every tap (including taps on the PIN input itself)
+      // bubbles here and yanks focus back to the name search input
+      // 100ms later, which drops the numeric keypad and pops the
+      // QWERTY keyboard because the search input is type="text".
+      if (showPinModal) return;
+      if (checkInState === "idle" || checkInState === "search") refocusInput();
+    }}>
       {/* Header */}
       <header className="bg-primary px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
