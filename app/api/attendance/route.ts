@@ -194,7 +194,7 @@ export async function POST(req: Request) {
         // row was originally created (see the CREATE branch below);
         // helper filters by plan mode so this call is a no-op for
         // them.
-        await deductClassCreditForMember(memberId, "CONFIRM").catch(() => { /* non-fatal */ });
+        await deductClassCreditForMember(memberId, "CONFIRM").catch((err) => { console.error("[class-credits] deduct failed:", err); });
         return NextResponse.json({ attendance: updated, promoted: true }, { status: 200 });
       }
       return new NextResponse("Member is already signed in to this class", { status: 409 });
@@ -243,9 +243,9 @@ export async function POST(req: Request) {
     // confirmed (kiosk/manual/mobileConfirm), fire CONFIRM too so
     // CONFIRM-mode packs deduct. Cross-mode calls are safe no-ops
     // because the helper filters by plan.expireOnSignIn.
-    await deductClassCreditForMember(memberId, "SIGN_IN").catch(() => { /* non-fatal */ });
+    await deductClassCreditForMember(memberId, "SIGN_IN").catch((err) => { console.error("[class-credits] deduct failed:", err); });
     if (willBeConfirmed) {
-      await deductClassCreditForMember(memberId, "CONFIRM").catch(() => { /* non-fatal */ });
+      await deductClassCreditForMember(memberId, "CONFIRM").catch((err) => { console.error("[class-credits] deduct failed:", err); });
     }
 
     // Also upsert a ClassBooking so it appears in the member portal. Have to

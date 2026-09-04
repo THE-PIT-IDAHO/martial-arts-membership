@@ -53,10 +53,7 @@ export async function deductClassCreditForMember(
   const now = new Date();
 
   // Sweep this member's ACTIVE class-pack memberships whose
-  // creditsExpireAt has already passed. Keeps check-ins between the
-  // expiry deadline and the next daily cron run from getting a free
-  // class -- and matches Cruz's rule "expire whichever comes first,
-  // credits depleted OR expiry date reached."
+  // creditsExpireAt has already passed.
   const preSwept = await prisma.membership.updateMany({
     where: {
       memberId,
@@ -66,41 +63,57 @@ export async function deductClassCreditForMember(
     },
     data: { status: "EXPIRED" },
   });
-  // Re-sync the Member.status ACTIVE/INACTIVE axis if the sweep
-  // actually changed anything -- otherwise the members list keeps
-  // showing "Active" while the profile shows the pack as EXPIRED.
   if (preSwept.count > 0) {
     await syncMemberStatusFromMemberships(memberId);
   }
 
-  // Candidates: ACTIVE credit-based packs with credits left, unexpired,
-  // AND whose plan's mode matches this trigger. Soonest-expiring first
-  // so members burn the most-perishable credits ahead of never-
-  // expiring ones.
-  const candidates = await prisma.membership.findMany({
+  // Diagnostic: dump every ACTIVE class-pack membership for this
+  // member so we can see EXACTLY what the deduction is looking at
+  // before applying the mode filter. Left in temporarily to debug
+  // "member shows 1 class left after check-in" (Cruz, 2026-09-05).
+  const allActive = await prisma.membership.findMany({
     where: {
       memberId,
       status: "ACTIVE",
-      remainingClassCredits: { gt: 0 },
-      OR: [
-        { creditsExpireAt: null },
-        { creditsExpireAt: { gt: now } },
-      ],
-      membershipPlan:
-        trigger === "SIGN_IN"
-          ? { expireOnSignIn: true }
-          : { expireOnSignIn: false },
+      remainingClassCredits: { not: null },
     },
-    orderBy: [
-      { creditsExpireAt: "asc" },
-      { startDate: "asc" },
-    ],
-    select: { id: true, remainingClassCredits: true },
+    select: {
+      id: true,
+      remainingClassCredits: true,
+      creditsExpireAt: true,
+      membershipPlanId: true,
+      membershipPlan: { select: { name: true, expireOnSignIn: true, classCredits: true } },
+    },
   });
+  console.log(
+    `[class-credits] deduct memberId=${memberId} trigger=${trigger} ` +
+    `active-packs=${JSON.stringify(allActive)}`,
+  );
+
+  // Candidates: ACTIVE credit-based packs with credits left,
+  // unexpired, AND whose plan's mode matches this trigger.
+  const wantSignIn = trigger === "SIGN_IN";
+  const candidates = allActive.filter((m) => {
+    if ((m.remainingClassCredits ?? 0) <= 0) return false;
+    if (m.creditsExpireAt && m.creditsExpireAt <= now) return false;
+    return m.membershipPlan.expireOnSignIn === wantSignIn;
+  });
+  console.log(
+    `[class-credits] deduct memberId=${memberId} trigger=${trigger} ` +
+    `matched-candidates=${candidates.length}`,
+  );
 
   if (candidates.length === 0) {
     return { deducted: false, membershipExpired: false, membershipId: null, remainingAfter: null };
   }
+
+  // Soonest-expiring first, then oldest for FIFO across never-
+  // expiring packs.
+  candidates.sort((a, b) => {
+    const aExp = a.creditsExpireAt ? a.creditsExpireAt.getTime() : Infinity;
+    const bExp = b.creditsExpireAt ? b.creditsExpireAt.getTime() : Infinity;
+    return aExp - bExp;
+  });
 
   const target = candidates[0];
   const nextBalance = (target.remainingClassCredits ?? 0) - 1;
@@ -113,6 +126,11 @@ export async function deductClassCreditForMember(
       ...(shouldExpire && { status: "EXPIRED" }),
     },
   });
+  console.log(
+    `[class-credits] deduct memberId=${memberId} membershipId=${target.id} ` +
+    `balance ${target.remainingClassCredits} -> ${nextBalance} ` +
+    `expired=${shouldExpire}`,
+  );
 
   // Re-sync Member.status on the ACTIVE/INACTIVE axis when a pack
   // expired. Without this, the members list keeps rendering
