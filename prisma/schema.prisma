@@ -465,6 +465,13 @@ model MembershipPlan {
   //   Existing autoRenew doubles as refill semantics: true = credits
   //   refill each billing cycle; false = one-shot pack.
   classCredits                   Int?
+  // expireOnSignIn: when a class-pack plan (classCredits set) burns
+  //   its credit. Default false = burn on CONFIRM (only when admin
+  //   confirms attendance -- gyms that want "attended" to matter).
+  //   true = burn on SIGN_IN (as soon as an attendance row exists for
+  //   the member, whether confirmed or not -- gyms that count the
+  //   walk-in itself). Ignored when classCredits is null.
+  expireOnSignIn                 Boolean         @default(false)
   memberships                    Membership[]
   client                         Client          @relation(fields: [clientId], references: [id])
   membershipType                 MembershipType? @relation(fields: [membershipTypeId], references: [id])

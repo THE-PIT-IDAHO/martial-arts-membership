@@ -189,11 +189,12 @@ export async function POST(req: Request) {
             },
           },
         });
-        // Class-credit deduction fires ONLY when a row moves from
-        // unconfirmed -> confirmed (the point where the attendance
-        // actually counts). Mobile pre-check-ins that never confirm
-        // don't burn a credit.
-        await deductClassCreditForMember(memberId).catch(() => { /* non-fatal */ });
+        // Row went from unconfirmed -> confirmed. This is a CONFIRM
+        // trigger. SIGN_IN-mode packs were already deducted when the
+        // row was originally created (see the CREATE branch below);
+        // helper filters by plan mode so this call is a no-op for
+        // them.
+        await deductClassCreditForMember(memberId, "CONFIRM").catch(() => { /* non-fatal */ });
         return NextResponse.json({ attendance: updated, promoted: true }, { status: 200 });
       }
       return new NextResponse("Member is already signed in to this class", { status: 409 });
@@ -237,11 +238,14 @@ export async function POST(req: Request) {
         },
       },
     });
-    // Class-credit deduction fires only when the new row lands
-    // confirmed (i.e. the attendance actually counts). Unconfirmed
-    // pre-check-ins get their credit burned later on promotion.
+    // A new attendance row exists -- fire SIGN_IN trigger for packs
+    // configured to burn on sign-in. If the row was ALSO created
+    // confirmed (kiosk/manual/mobileConfirm), fire CONFIRM too so
+    // CONFIRM-mode packs deduct. Cross-mode calls are safe no-ops
+    // because the helper filters by plan.expireOnSignIn.
+    await deductClassCreditForMember(memberId, "SIGN_IN").catch(() => { /* non-fatal */ });
     if (willBeConfirmed) {
-      await deductClassCreditForMember(memberId).catch(() => { /* non-fatal */ });
+      await deductClassCreditForMember(memberId, "CONFIRM").catch(() => { /* non-fatal */ });
     }
 
     // Also upsert a ClassBooking so it appears in the member portal. Have to
@@ -313,12 +317,18 @@ export async function DELETE(req: Request) {
         where: { id },
       });
 
-      // Refund a class-pack credit if this row was confirmed --
-      // deleting a confirmed attendance is equivalent to unconfirming.
-      // Non-class-pack members get a silent no-op.
+      // Refund the class-pack credit(s) that this row's existence
+      // consumed. Row is gone entirely now, so:
+      //   - SIGN_IN packs deducted at row-CREATE, refund unconditionally.
+      //   - CONFIRM packs deducted only if the row was confirmed at
+      //     delete time.
+      // Cross-mode calls are safe no-ops via the helper's mode filter.
+      await refundClassCreditForMember(att.memberId, "SIGN_IN").catch((err) => {
+        console.error(`Class-credit SIGN_IN refund failed for member ${att.memberId}:`, err);
+      });
       if (att.confirmed) {
-        await refundClassCreditForMember(att.memberId).catch((err) => {
-          console.error(`Class-credit refund failed for member ${att.memberId}:`, err);
+        await refundClassCreditForMember(att.memberId, "CONFIRM").catch((err) => {
+          console.error(`Class-credit CONFIRM refund failed for member ${att.memberId}:`, err);
         });
       }
 
@@ -362,16 +372,29 @@ export async function DELETE(req: Request) {
       const startOfDay = new Date(dayStartMs);
       const endOfDay = new Date(dayStartMs + 24 * 60 * 60 * 1000 - 1);
 
-      // Count how many confirmed rows are about to be deleted so we
-      // can refund the matching number of class-pack credits below.
-      const confirmedToDelete = await prisma.attendance.count({
-        where: {
-          memberId,
-          classSessionId,
-          attendanceDate: { gte: startOfDay, lte: endOfDay },
-          confirmed: true,
-        },
-      });
+      // Count deletions in both dimensions so class-pack refunds
+      // land whether the plan burns on SIGN_IN or on CONFIRM:
+      //   - totalToDelete: every row (SIGN_IN would have deducted).
+      //   - confirmedToDelete: subset that was confirmed (CONFIRM
+      //     mode would have deducted).
+      // Cross-mode calls are safe no-ops via the helper's mode filter.
+      const [totalToDelete, confirmedToDelete] = await Promise.all([
+        prisma.attendance.count({
+          where: {
+            memberId,
+            classSessionId,
+            attendanceDate: { gte: startOfDay, lte: endOfDay },
+          },
+        }),
+        prisma.attendance.count({
+          where: {
+            memberId,
+            classSessionId,
+            attendanceDate: { gte: startOfDay, lte: endOfDay },
+            confirmed: true,
+          },
+        }),
+      ]);
 
       await prisma.attendance.deleteMany({
         where: {
@@ -384,9 +407,14 @@ export async function DELETE(req: Request) {
         },
       });
 
+      for (let i = 0; i < totalToDelete; i++) {
+        await refundClassCreditForMember(memberId, "SIGN_IN").catch((err) => {
+          console.error(`Class-credit SIGN_IN refund failed for member ${memberId}:`, err);
+        });
+      }
       for (let i = 0; i < confirmedToDelete; i++) {
-        await refundClassCreditForMember(memberId).catch((err) => {
-          console.error(`Class-credit refund failed for member ${memberId}:`, err);
+        await refundClassCreditForMember(memberId, "CONFIRM").catch((err) => {
+          console.error(`Class-credit CONFIRM refund failed for member ${memberId}:`, err);
         });
       }
 

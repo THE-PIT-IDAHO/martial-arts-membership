@@ -94,6 +94,7 @@ export async function PATCH(
       availableOnline,
       eligibleForDiscounts,
       classCredits,
+      expireOnSignIn,
       applyToCurrentMembers,
       updatePlanTemplate = true, // Default to true for backwards compatibility
     } = body;
@@ -135,6 +136,7 @@ export async function PATCH(
           ...(availableOnline !== undefined && { availableOnline }),
           ...(eligibleForDiscounts !== undefined && { eligibleForDiscounts: !!eligibleForDiscounts }),
           ...(classCredits !== undefined && { classCredits: classCredits ? Number(classCredits) : null }),
+          ...(expireOnSignIn !== undefined && { expireOnSignIn: !!expireOnSignIn }),
         },
       });
     } else {

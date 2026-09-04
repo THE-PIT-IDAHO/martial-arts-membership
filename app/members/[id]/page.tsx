@@ -340,6 +340,11 @@ type MembershipRecord = {
   cancellationRequestDate: string | null;
   cancellationEffectiveDate: string | null;
   cancellationReason: string | null;
+  // Class-pack tracking (populated only when the plan has classCredits
+  // set at signup). remainingClassCredits decrements on attendance;
+  // creditsExpireAt is the same date as the pack's contract term.
+  remainingClassCredits?: number | null;
+  creditsExpireAt?: string | null;
   membershipPlan: {
     id: string;
     name: string;
@@ -356,6 +361,7 @@ type MembershipRecord = {
     // for charges against this plan (POS + auto-billing both skip).
     // Undefined for old fetches -> treated as true (permissive).
     eligibleForDiscounts?: boolean;
+    classCredits?: number | null;
   };
 };
 
@@ -4311,6 +4317,22 @@ export default function MemberProfilePage() {
                                       {membership.lastPaymentDate ? new Date(membership.lastPaymentDate).toLocaleDateString() : "—"}
                                     </span>
                                   </div>
+                                  {/* Classes Left row: only shown for
+                                      class-pack memberships (plan has
+                                      classCredits or the signup seeded
+                                      remainingClassCredits). Formats
+                                      as "3 / 10 Classes Left" so the
+                                      admin can see how much of the
+                                      pack has been used. */}
+                                  {typeof membership.remainingClassCredits === "number" && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Classes Left</span>
+                                      <span className="text-xs font-medium text-gray-700">
+                                        {membership.remainingClassCredits}
+                                        {membership.membershipPlan.classCredits ? ` / ${membership.membershipPlan.classCredits}` : ""}
+                                      </span>
+                                    </div>
+                                  )}
                                   {daysInfo && (
                                     <div className={`text-[10px] font-medium ${daysInfo.urgent ? 'text-red-600' : 'text-gray-500'}`}>
                                       {daysInfo.label} {daysInfo.value} day{daysInfo.value !== 1 ? 's' : ''} {daysInfo.label === "Ended" ? "ago" : ""}

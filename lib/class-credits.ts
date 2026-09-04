@@ -1,54 +1,61 @@
 import { prisma } from "@/lib/prisma";
 
 /**
- * Class-credit bookkeeping for class-pack / day-pass style memberships.
+ * Class-credit bookkeeping for class-pack memberships.
  *
  * A "credit-based" membership is any ACTIVE Membership whose plan has
  * classCredits set. Its remainingClassCredits column is authoritative;
  * attendance decrements it, and it auto-expires when the balance hits
  * zero or when creditsExpireAt passes.
  *
- * Time-based memberships are untouched by this file -- they run on
- * billing cycles, not credit counts.
+ * When the credit burns depends on plan.expireOnSignIn:
+ *   false (default) = burn on CONFIRM (only when admin confirms
+ *                     attendance -- "did they actually attend?")
+ *   true            = burn on SIGN_IN (as soon as an attendance row
+ *                     exists, whether confirmed or not -- "did they
+ *                     walk in the door?")
+ *
+ * Every attendance-write endpoint calls the helpers with the trigger
+ * that just occurred; the helper only touches packs whose mode
+ * matches, so cross-mode calls are safe no-ops.
+ *
+ * Time-based memberships (no classCredits) are untouched by this file
+ * regardless of any trigger.
  */
 
+export type CreditTrigger = "SIGN_IN" | "CONFIRM";
+
 export type CreditDeductionResult = {
-  /** true when this check-in actually decremented a credit on one of
-   *  the member's memberships. false when the member has no credit-
-   *  based membership (they're on a time-based plan, or on nothing). */
+  /** true when this call actually decremented a credit. */
   deducted: boolean;
-  /** true when the decrement drove the balance to zero and the
-   *  membership was flipped to EXPIRED in the same transaction. */
+  /** true when the decrement drove balance to zero and the membership
+   *  was flipped to EXPIRED in the same update. */
   membershipExpired: boolean;
-  /** id of the membership that was decremented, or null. */
+  /** id of the membership decremented, or null. */
   membershipId: string | null;
   /** balance AFTER the deduction, or null when nothing was deducted. */
   remainingAfter: number | null;
 };
 
 /**
- * Deduct one class credit from the member's active credit-based
- * membership. No-op when the member has none, or when the balance is
- * already zero (returns deducted: false in both cases -- callers can
- * decide whether to hard-block the check-in).
+ * Deduct one class credit if the member has an ACTIVE class-pack
+ * membership whose plan's mode matches `trigger`. Multi-pack members
+ * (unusual) burn the soonest-expiring credit first.
  *
- * If multiple credit-based memberships are active (unusual but
- * possible), the one expiring soonest is preferred so the member
- * burns the most-perishable credits first.
+ * No-ops when the member has no matching pack, or when the balance
+ * is already zero (candidates filter both out).
  */
 export async function deductClassCreditForMember(
   memberId: string,
+  trigger: CreditTrigger,
 ): Promise<CreditDeductionResult> {
   const now = new Date();
 
-  // Before looking for a decrement candidate, sweep THIS member's
-  // ACTIVE class-pack memberships whose creditsExpireAt has passed.
-  // Cruz's rule: "expire whichever comes first -- credits depleted
-  // or expiry date reached." The daily lifecycle cron catches these
-  // eventually, but a check-in that happens between the expiry
-  // deadline and the next cron run would otherwise proceed without
-  // decrementing (and appear free), because the query below filters
-  // expired rows out. Inline sweep keeps the two paths in agreement.
+  // Sweep this member's ACTIVE class-pack memberships whose
+  // creditsExpireAt has already passed. Keeps check-ins between the
+  // expiry deadline and the next daily cron run from getting a free
+  // class -- and matches Cruz's rule "expire whichever comes first,
+  // credits depleted OR expiry date reached."
   await prisma.membership.updateMany({
     where: {
       memberId,
@@ -59,9 +66,10 @@ export async function deductClassCreditForMember(
     data: { status: "EXPIRED" },
   });
 
-  // Candidates: ACTIVE credit-based memberships whose credits haven't
-  // yet expired (creditsExpireAt null = never expires). Sorted so
-  // soonest-expiring wins, then oldest (FIFO across never-expiring).
+  // Candidates: ACTIVE credit-based packs with credits left, unexpired,
+  // AND whose plan's mode matches this trigger. Soonest-expiring first
+  // so members burn the most-perishable credits ahead of never-
+  // expiring ones.
   const candidates = await prisma.membership.findMany({
     where: {
       memberId,
@@ -71,6 +79,10 @@ export async function deductClassCreditForMember(
         { creditsExpireAt: null },
         { creditsExpireAt: { gt: now } },
       ],
+      membershipPlan:
+        trigger === "SIGN_IN"
+          ? { expireOnSignIn: true }
+          : { expireOnSignIn: false },
     },
     orderBy: [
       { creditsExpireAt: "asc" },
@@ -104,26 +116,27 @@ export async function deductClassCreditForMember(
 }
 
 /**
- * Refund one class credit to the member -- the reverse of
- * deductClassCreditForMember. Used when an admin unconfirms an
- * attendance row that had previously burned a credit. Targets the
- * best candidate to receive the credit back:
- *   1. An ACTIVE class-pack membership whose credits haven't expired
- *      (increment its remainingClassCredits).
- *   2. Falling back to a membership that was auto-EXPIRED when its
- *      credits hit 0 -- if it still exists, re-activate it and give
- *      the credit back so the un-confirm truly undoes the check-in.
+ * Refund one class credit -- the reverse of deductClassCreditForMember.
+ * Used when the attendance action that consumed the credit is undone
+ * (unconfirm for CONFIRM-mode packs, delete-row for either mode).
  *
- * Silently no-ops when the member has no class-pack memberships at
- * all -- refunding a time-based membership doesn't apply.
+ * Prefers to refund an ACTIVE pack matching the trigger. Falls back to
+ * an EXPIRED pack that had been auto-expired at zero balance -- re-
+ * activates it and gives the credit back so the undo is a real undo.
+ *
+ * Silently no-ops when the member has no matching class-pack.
  */
 export async function refundClassCreditForMember(
   memberId: string,
+  trigger: CreditTrigger,
 ): Promise<void> {
   const now = new Date();
 
-  // Prefer an ACTIVE, non-expired pack -- credit goes back into
-  // circulation immediately.
+  const modeFilter =
+    trigger === "SIGN_IN"
+      ? { expireOnSignIn: true }
+      : { expireOnSignIn: false };
+
   const active = await prisma.membership.findFirst({
     where: {
       memberId,
@@ -133,6 +146,7 @@ export async function refundClassCreditForMember(
         { creditsExpireAt: null },
         { creditsExpireAt: { gt: now } },
       ],
+      membershipPlan: modeFilter,
     },
     orderBy: [{ creditsExpireAt: "desc" }, { startDate: "desc" }],
     select: { id: true, remainingClassCredits: true },
@@ -145,9 +159,6 @@ export async function refundClassCreditForMember(
     return;
   }
 
-  // No active pack -- look for a class-pack membership that was
-  // auto-EXPIRED (balance hit 0). Re-activate and refund the credit
-  // so the undo is a real undo. Most-recently-expired first.
   const expired = await prisma.membership.findFirst({
     where: {
       memberId,
@@ -157,6 +168,7 @@ export async function refundClassCreditForMember(
         { creditsExpireAt: null },
         { creditsExpireAt: { gt: now } },
       ],
+      membershipPlan: modeFilter,
     },
     orderBy: { startDate: "desc" },
     select: { id: true },
@@ -171,8 +183,8 @@ export async function refundClassCreditForMember(
 
 /**
  * Expire credit-based memberships whose creditsExpireAt has passed.
- * Called from the auto-billing / lifecycle cron so passes with unused
- * credits don't sit forever in ACTIVE.
+ * Called from the lifecycle cron so passes with unused credits don't
+ * sit forever in ACTIVE.
  */
 export async function expireLapsedCreditMemberships(
   clientId: string,

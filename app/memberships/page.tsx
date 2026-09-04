@@ -123,6 +123,10 @@ export default function MembershipsPage() {
   // flag doubles as "refill each cycle" semantics -- no separate
   // Sold-by mode field needed.
   const [planClassCredits, setPlanClassCredits] = useState("");
+  // Class-pack burn trigger: false (default) = burn on CONFIRM,
+  // true = burn on SIGN_IN. Only meaningful when planClassCredits is
+  // set. Persisted as MembershipPlan.expireOnSignIn.
+  const [planExpireOnSignIn, setPlanExpireOnSignIn] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
   // Per-plan contract clauses
   type ContractClause = { id: string; title: string; content: string };
@@ -330,6 +334,7 @@ export default function MembershipsPage() {
     setPlanAutoRenew(true);
     setPlanEligibleForDiscounts(true);
     setPlanClassCredits("");
+    setPlanExpireOnSignIn(false);
     setPlanClassesPerDay("");
     setPlanClassesPerWeek("");
     setPlanClassesPerMonth("");
@@ -544,8 +549,12 @@ export default function MembershipsPage() {
     }
     setPlanAutoRenew(plan.autoRenew);
     setPlanEligibleForDiscounts((plan as { eligibleForDiscounts?: boolean }).eligibleForDiscounts !== false);
-    const planAny = plan as MembershipPlan & { classCredits?: number | null };
+    const planAny = plan as MembershipPlan & {
+      classCredits?: number | null;
+      expireOnSignIn?: boolean;
+    };
     setPlanClassCredits(planAny.classCredits ? String(planAny.classCredits) : "");
+    setPlanExpireOnSignIn(planAny.expireOnSignIn === true);
     setPlanClassesPerDay(plan.classesPerDay ? String(plan.classesPerDay) : "");
     setPlanClassesPerWeek(plan.classesPerWeek ? String(plan.classesPerWeek) : "");
     setPlanClassesPerMonth(plan.classesPerMonth ? String(plan.classesPerMonth) : "");
@@ -608,6 +617,10 @@ export default function MembershipsPage() {
       autoRenew: planAutoRenew,
       eligibleForDiscounts: planEligibleForDiscounts,
       classCredits: planClassCredits ? Number(planClassCredits) : null,
+      // expireOnSignIn only matters when the plan is a class pack;
+      // persist verbatim regardless so the toggle sticks if the admin
+      // toggles it back and forth while iterating on the plan.
+      expireOnSignIn: planExpireOnSignIn,
       classesPerDay: planClassesPerDay ? Number(planClassesPerDay) : null,
       classesPerWeek: planClassesPerWeek ? Number(planClassesPerWeek) : null,
       classesPerMonth: planClassesPerMonth ? Number(planClassesPerMonth) : null,
@@ -1389,6 +1402,35 @@ export default function MembershipsPage() {
                     placeholder="e.g., 10"
                     className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                   />
+                  {/* Consume trigger toggle: which event burns a
+                      credit for a class-pack plan. Hidden when the
+                      plan isn't a class pack -- it has no meaning
+                      there. Radios so the pair reads as an
+                      "either / or" choice rather than a boolean flag. */}
+                  {planClassCredits && (
+                    <div className="mt-2 space-y-1">
+                      <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="planExpireOnSignIn"
+                          checked={!planExpireOnSignIn}
+                          onChange={() => setPlanExpireOnSignIn(false)}
+                          className="mt-0.5 h-3.5 w-3.5"
+                        />
+                        <span>Expire on confirm <span className="text-gray-400">(burns credit when admin marks attendance)</span></span>
+                      </label>
+                      <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="planExpireOnSignIn"
+                          checked={planExpireOnSignIn}
+                          onChange={() => setPlanExpireOnSignIn(true)}
+                          className="mt-0.5 h-3.5 w-3.5"
+                        />
+                        <span>Expire on sign in <span className="text-gray-400">(burns credit at kiosk / mobile check-in)</span></span>
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-4">

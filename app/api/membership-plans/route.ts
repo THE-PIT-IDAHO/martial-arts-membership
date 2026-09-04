@@ -77,6 +77,7 @@ export async function POST(req: Request) {
       availableOnline,
       eligibleForDiscounts,
       classCredits,
+      expireOnSignIn,
     } = body;
 
     if (!name || typeof name !== "string") {
@@ -118,6 +119,7 @@ export async function POST(req: Request) {
         availableOnline: availableOnline ?? false,
         eligibleForDiscounts: eligibleForDiscounts !== false,
         classCredits: classCredits ? Number(classCredits) : null,
+        expireOnSignIn: expireOnSignIn === true,
         clientId,
       },
     });

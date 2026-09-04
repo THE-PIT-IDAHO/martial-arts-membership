@@ -64,14 +64,15 @@ export async function POST(req: Request) {
       },
     });
 
-    // Decrement one class-pack credit for each member whose row
-    // actually flipped false -> true. Non-class-pack members
-    // (nothing to deduct) get a silent no-op from the helper.
+    // Decrement CONFIRM-mode class-pack credit for each member whose
+    // row actually flipped false -> true. SIGN_IN-mode packs were
+    // already deducted at row-CREATE, so the helper's mode filter
+    // makes those calls silent no-ops.
     const newlyConfirmedMemberIds = targets
       .filter((t) => !t.confirmed)
       .map((t) => t.memberId);
     for (const mId of newlyConfirmedMemberIds) {
-      await deductClassCreditForMember(mId).catch((err) => {
+      await deductClassCreditForMember(mId, "CONFIRM").catch((err) => {
         console.error(`Class-credit deduction failed for member ${mId}:`, err);
       });
     }
@@ -146,15 +147,16 @@ export async function DELETE(req: Request) {
       },
     });
 
-    // Refund one class-pack credit per member whose row actually
-    // flipped true -> false. If the deduction had auto-EXPIRED the
-    // pack (balance hit 0), the refund re-activates it so the undo
-    // is a real undo.
+    // Refund the CONFIRM-mode credit per member whose row actually
+    // flipped true -> false. SIGN_IN-mode packs stay deducted because
+    // the row still exists (still "signed in") -- only the DELETE row
+    // endpoint refunds SIGN_IN credits. Helper filter handles the
+    // cross-mode no-op automatically.
     const newlyUnconfirmedMemberIds = targets
       .filter((t) => t.confirmed)
       .map((t) => t.memberId);
     for (const mId of newlyUnconfirmedMemberIds) {
-      await refundClassCreditForMember(mId).catch((err) => {
+      await refundClassCreditForMember(mId, "CONFIRM").catch((err) => {
         console.error(`Class-credit refund failed for member ${mId}:`, err);
       });
     }
