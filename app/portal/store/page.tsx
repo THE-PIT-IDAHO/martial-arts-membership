@@ -118,7 +118,7 @@ export default function PortalStorePage() {
   const [loading, setLoading] = useState(true);
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState("");
-  const [selectedTab, setSelectedTab] = useState<"goods" | "services">("goods");
+  const [selectedTab, setSelectedTab] = useState<"goods" | "services">("services");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [features, setFeatures] = useState<Record<string, boolean>>({ store_goods: true, store_services: true });
@@ -144,9 +144,11 @@ export default function PortalStorePage() {
       setItems(itemsData.items || []);
       const f = featuresData.features || {};
       setFeatures(f);
-      // Auto-select the first enabled tab
-      if (f.store_goods === false && f.store_services !== false) {
-        setSelectedTab("services");
+      // Default tab is Services; fall back to Goods only if Services
+      // is disabled for this gym so an all-goods store still opens on
+      // its populated tab.
+      if (f.store_services === false && f.store_goods !== false) {
+        setSelectedTab("goods");
       }
       setLoading(false);
     });
@@ -413,19 +415,11 @@ export default function PortalStorePage() {
     <div className="px-4 pt-6 pb-40 max-w-lg mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-4">Store</h1>
 
-      {/* Goods / Services Toggle — only show if both are enabled */}
+      {/* Services / Goods Toggle — Services on the left because it's
+          the default-opened tab; only show the toggle if both are
+          enabled for this gym. */}
       {goodsEnabled && servicesEnabled && (
       <div className="flex bg-gray-100 rounded-xl p-1 mb-4">
-        <button
-          onClick={() => { setSelectedTab("goods"); setSelectedCategory(null); }}
-          className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
-            selectedTab === "goods"
-              ? "bg-white text-gray-900 shadow-sm"
-              : "text-gray-500"
-          }`}
-        >
-          Goods
-        </button>
         <button
           onClick={() => { setSelectedTab("services"); setSelectedCategory(null); }}
           className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
@@ -435,6 +429,16 @@ export default function PortalStorePage() {
           }`}
         >
           Services
+        </button>
+        <button
+          onClick={() => { setSelectedTab("goods"); setSelectedCategory(null); }}
+          className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
+            selectedTab === "goods"
+              ? "bg-white text-gray-900 shadow-sm"
+              : "text-gray-500"
+          }`}
+        >
+          Goods
         </button>
       </div>
       )}
