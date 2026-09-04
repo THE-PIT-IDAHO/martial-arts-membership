@@ -35,18 +35,15 @@ export async function GET(req: Request) {
     const andClauses: any[] = [];
 
     if (status) {
-      // Member.status is a comma-separated string ("ACTIVE,COACH").
-      // Match on whole tokens (never "INACTIVE" for "ACTIVE") by
-      // testing every position the token can occupy in the stored
-      // string: sole value, start, end, or middle.
-      const s = status.toUpperCase();
+      // Member.status is a delimited string of tokens ("ACTIVE,COACH").
+      // The stored delimiter is typically "," but real data has drifted
+      // to include "/" and " " in some rows (Sophie Gomez was showing
+      // as "COACH/OWNER" and never matched a strict `,COACH,` check).
+      // Pre-narrow with case-insensitive contains here to keep the DB
+      // query cheap; a JS word-boundary check after fetch enforces
+      // whole-token matching (so "ACTIVE" never picks up "INACTIVE").
       andClauses.push({
-        OR: [
-          { status: { equals: s } },
-          { status: { startsWith: `${s},` } },
-          { status: { endsWith: `,${s}` } },
-          { status: { contains: `,${s},` } },
-        ],
+        status: { contains: status, mode: "insensitive" },
       });
     }
 
@@ -164,6 +161,24 @@ export async function GET(req: Request) {
       index === self.findIndex((m) => m.id === member.id)
     );
 
+    // Enforce whole-token match on the status filter. The DB query
+    // above used a permissive `contains` (matches any separator
+    // between tokens); a JS regex here rejects false positives like
+    // "INACTIVE" for "ACTIVE" while still catching legitimate variants
+    // like "COACH/OWNER" or "ACTIVE COACH" where the delimiter isn't
+    // the canonical comma.
+    const statusFilteredMembers = status
+      ? uniqueMembers.filter((m) => {
+          const target = status.toUpperCase();
+          const raw = (m.status || "").toUpperCase();
+          // Tokens are runs of A-Z / underscore; anything else is a
+          // separator. Word-boundary equivalent that treats "/", " ",
+          // ";", "," identically as delimiters.
+          const tokens = raw.split(/[^A-Z_]+/).filter(Boolean);
+          return tokens.includes(target);
+        })
+      : uniqueMembers;
+
     // Filter by membership that allows the style (if styleId provided).
     //
     // Strict semantic: a plan with no allowedStyles set (null / empty)
@@ -172,7 +187,7 @@ export async function GET(req: Request) {
     // a flat-rate "Open Mat" membership) to incorrectly appear under
     // every style's "Add all from style" picker.
     const membersWithAllowedStyle = styleId
-      ? uniqueMembers.filter((member) => {
+      ? statusFilteredMembers.filter((member) => {
           return member.memberships.some((membership) => {
             const allowedStyles = membership.membershipPlan.allowedStyles;
             if (!allowedStyles) return false;
@@ -184,7 +199,7 @@ export async function GET(req: Request) {
             }
           });
         })
-      : uniqueMembers;
+      : statusFilteredMembers;
 
     // When a search query is in play, re-sort by relevance so prefix
     // matches on firstName / lastName float above mid-word matches
