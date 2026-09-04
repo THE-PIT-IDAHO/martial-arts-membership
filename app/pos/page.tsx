@@ -1815,6 +1815,12 @@ export default function POSPage() {
               label: plan?.classCredits ? "Expires" : "Contract Length",
               value: plan?.contractLengthMonths ? formatContractDuration(plan.contractLengthMonths) : "",
             },
+            ...(plan?.classCredits
+              ? [{
+                  label: "Number of Classes",
+                  value: `${plan.classCredits} ${plan.classCredits === 1 ? "Class" : "Classes"}`,
+                }]
+              : []),
             {
               label: isOneTime ? "Price" : item.firstMonthDiscountOnly ? "Recurring (after first payment)" : "Price",
               value: `${formatCents(recurringCents)}${isOneTime ? "" : suffix}`,
@@ -3959,6 +3965,12 @@ export default function POSPage() {
                                 </span> {formatDuration(plan.contractLengthMonths)}
                               </div>
                             )}
+                            {plan?.classCredits ? (
+                              <div>
+                                <span className="font-medium">Number of Classes:</span>{" "}
+                                {plan.classCredits} {plan.classCredits === 1 ? "Class" : "Classes"}
+                              </div>
+                            ) : null}
                             <div>
                               <span className="font-medium">
                                 {isOneTime ? "Price:" : item.firstMonthDiscountOnly ? "Recurring (after first payment):" : "Price:"}

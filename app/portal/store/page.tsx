@@ -13,6 +13,11 @@ interface ContractDetails {
   classesPerWeek: number | null;
   classesPerMonth: number | null;
   allowedStyles: string | null;
+  // Class-pack plans: when set the plan sells N class credits and the
+  // agreement should read "Expires" instead of "Contract Length"
+  // (contract length doubles as credit expiry), and a "Classes"
+  // row shows how many credits the member is buying.
+  classCredits: number | null;
 }
 
 interface StoreItemVariant {
@@ -717,14 +722,25 @@ export default function PortalStorePage() {
                     label="Billing Cycle"
                     value={billingCycleFull(selectedPlan.billingCycle)}
                   />
-                  {selectedPlan.contractDetails?.contractLengthMonths && (
+                  {/* Class-pack plans: show N Classes row up front, and
+                      relabel Contract Length as Expires since contract
+                      length doubles as the credit-expiry deadline. */}
+                  {selectedPlan.contractDetails?.classCredits ? (
                     <ContractRow
-                      label="Contract Length"
+                      label="Number of Classes"
+                      value={`${selectedPlan.contractDetails.classCredits} ${selectedPlan.contractDetails.classCredits === 1 ? "Class" : "Classes"}`}
+                    />
+                  ) : null}
+                  {selectedPlan.contractDetails?.contractLengthMonths ? (
+                    <ContractRow
+                      label={selectedPlan.contractDetails?.classCredits ? "Expires" : "Contract Length"}
                       value={formatContractLength(selectedPlan.contractDetails.contractLengthMonths)}
                     />
-                  )}
-                  {!selectedPlan.contractDetails?.contractLengthMonths && (
-                    <ContractRow label="Contract Length" value="No commitment — cancel anytime" />
+                  ) : (
+                    <ContractRow
+                      label={selectedPlan.contractDetails?.classCredits ? "Expires" : "Contract Length"}
+                      value={selectedPlan.contractDetails?.classCredits ? "Never" : "No commitment — cancel anytime"}
+                    />
                   )}
                   <ContractRow
                     label="Auto-Renewal"

@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
       classesPerWeek: true,
       classesPerMonth: true,
       allowedStyles: true,
+      classCredits: true,
     },
     orderBy: { sortOrder: "asc" },
   });
@@ -108,6 +109,7 @@ export async function GET(req: NextRequest) {
         classesPerWeek: plan.classesPerWeek,
         classesPerMonth: plan.classesPerMonth,
         allowedStyles: plan.allowedStyles,
+        classCredits: plan.classCredits,
       },
     })),
   ];
