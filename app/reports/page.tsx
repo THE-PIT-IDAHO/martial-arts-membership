@@ -120,6 +120,14 @@ type ReportDataFields = {
   showSalesByCategory: boolean;
   showRefunds: boolean;
   showRevenueTrend: boolean;
+  // Per-line-item Sales Log: one row per POS line item in the
+  // report's date range. Three independent columns so admins can
+  // pick any combination (name only, name + type, name + amount,
+  // all three, etc). Skips rendering the table entirely when none
+  // of the three columns are on.
+  showSalesLogItem: boolean;
+  showSalesLogType: boolean;
+  showSalesLogAmount: boolean;
 
   // Classes & Programs
   showClassSchedule: boolean;
@@ -210,6 +218,9 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showSalesByCategory: false,
   showRefunds: false,
   showRevenueTrend: false,
+  showSalesLogItem: false,
+  showSalesLogType: false,
+  showSalesLogAmount: false,
   showClassSchedule: false,
   showClassAttendance: false,
   showPopularClasses: false,
@@ -377,6 +388,9 @@ const STATISTICS_FIELDS = [
       { key: "showTransactionCount", label: "Transaction Count" },
       { key: "showTopProducts", label: "Top Products" },
       { key: "showSalesByCategory", label: "Sales by Category" },
+      { key: "showSalesLogItem", label: "Sales Log · Item Name (column)" },
+      { key: "showSalesLogType", label: "Sales Log · Type (column)" },
+      { key: "showSalesLogAmount", label: "Sales Log · Amount (column)" },
       { key: "showRefunds", label: "Refunds" },
       { key: "showRevenueTrend", label: "Revenue Trend Chart" },
     ],
@@ -458,6 +472,10 @@ type RevenueSummary = {
   // classified by SOURCE (invoice vs POS) and misled admins whose
   // membership sales flow through POS.
   revenueByType: Record<string, number>;
+  // Per-line-item sales log for the reporting period. Powers the
+  // Sales Log table; each row = one POS line item + its own dated
+  // timestamp. Amount is subtotalCents (post-quantity, pre-tax).
+  salesLog: { date: string; itemName: string; type: string; amountCents: number }[];
   avgTransactionValue: number;
   transactionCount: number;
   topProducts: { name: string; revenue: number; quantity: number }[];
@@ -1721,6 +1739,9 @@ export default function ReportsPage() {
           // "membership" below so the by-type breakdown shows the
           // FULL membership revenue -- POS-sold + recurring both.
           const categoryMap: Record<string, number> = {};
+          // Per-line-item log for the Sales Log table. One row per
+          // POS line item, timestamped with its parent transaction.
+          const salesLog: { date: string; itemName: string; type: string; amountCents: number }[] = [];
 
           filteredTransactions.forEach((t: any) => {
             (t.POSLineItem || []).forEach((item: any) => {
@@ -1733,8 +1754,17 @@ export default function ReportsPage() {
 
               const category = item.type || "product";
               categoryMap[category] = (categoryMap[category] || 0) + (item.subtotalCents || 0);
+
+              salesLog.push({
+                date: t.createdAt,
+                itemName: item.itemName || "Unknown",
+                type: item.type || "product",
+                amountCents: item.subtotalCents || 0,
+              });
             });
           });
+          // Newest first so the log reads as a running feed.
+          salesLog.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
           const topProducts = Object.values(productMap).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
           const salesByCategory = Object.entries(categoryMap).map(([category, revenue]) => ({ category, revenue })).sort((a, b) => b.revenue - a.revenue);
@@ -1785,6 +1815,7 @@ export default function ReportsPage() {
           setRevenueData({
             totalRevenue: totalRevenue + membershipRevenueCents,
             revenueByType,
+            salesLog,
             avgTransactionValue,
             transactionCount: filteredTransactions.length,
             topProducts,
@@ -1798,6 +1829,7 @@ export default function ReportsPage() {
           setRevenueData({
             totalRevenue: 0,
             revenueByType: {},
+            salesLog: [],
             avgTransactionValue: 0,
             transactionCount: 0,
             topProducts: [],
@@ -4141,6 +4173,41 @@ export default function ReportsPage() {
                         <p className="text-xl font-bold text-primary">{formatCurrency(item.revenue)}</p>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Sales Log -- per-line-item feed. Item / Type / Amount
+                  columns each toggleable independently. Only renders
+                  when at least one column is on AND there are rows
+                  in the reporting period. Date is always shown when
+                  the table renders so log entries are anchored in
+                  time. */}
+              {(activeReport.fields.showSalesLogItem || activeReport.fields.showSalesLogType || activeReport.fields.showSalesLogAmount)
+                && revenueData && revenueData.salesLog.length > 0 && (
+                <div className="mb-6">
+                  <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Sales Log</h4>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-500 uppercase">
+                          <th className="pb-2 font-medium">Date</th>
+                          {activeReport.fields.showSalesLogItem && <th className="pb-2 font-medium">Item</th>}
+                          {activeReport.fields.showSalesLogType && <th className="pb-2 font-medium">Type</th>}
+                          {activeReport.fields.showSalesLogAmount && <th className="pb-2 font-medium text-right">Amount</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {revenueData.salesLog.map((row, i) => (
+                          <tr key={i} className="border-t border-gray-100">
+                            <td className="py-2 text-gray-500 text-xs whitespace-nowrap">{formatDateDisplay(row.date)}</td>
+                            {activeReport.fields.showSalesLogItem && <td className="py-2 text-gray-700">{row.itemName}</td>}
+                            {activeReport.fields.showSalesLogType && <td className="py-2 text-gray-600 capitalize">{row.type}</td>}
+                            {activeReport.fields.showSalesLogAmount && <td className="py-2 text-right font-medium text-gray-900">{formatCurrency(row.amountCents)}</td>}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
