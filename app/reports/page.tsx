@@ -2907,7 +2907,13 @@ export default function ReportsPage() {
                     const activeRange = anyPurchaseCol
                       ? getDateRange(activeReport.dateRange || "month", activeReport.customStartDate, activeReport.customEndDate)
                       : null;
-                    const purchasesByMember: Record<string, { items: string[]; types: Set<string>; totalCents: number }> = {};
+                    // Items and types both dedup so the cell reads as a
+                    // clean list ("Hawaiian Kempo & Kore BJJ - Adult"
+                    // once, not "Hawaiian Kempo & Kore BJJ - Adult,
+                    // Hawaiian Kempo & Kore BJJ - Adult, ..."). Total
+                    // Spent still counts every non-zero line so the
+                    // dollar figure stays accurate.
+                    const purchasesByMember: Record<string, { items: Set<string>; types: Set<string>; totalCents: number }> = {};
                     if (activeRange) {
                       for (const t of allPosTransactions) {
                         if (t.status !== "COMPLETED") continue;
@@ -2921,8 +2927,8 @@ export default function ReportsPage() {
                           // as actual purchases in the sales columns.
                           const amount = item.subtotalCents || 0;
                           if (amount <= 0) continue;
-                          const bucket = purchasesByMember[t.memberId] || { items: [], types: new Set<string>(), totalCents: 0 };
-                          bucket.items.push(item.itemName || "Unknown");
+                          const bucket = purchasesByMember[t.memberId] || { items: new Set<string>(), types: new Set<string>(), totalCents: 0 };
+                          bucket.items.add(item.itemName || "Unknown");
                           bucket.types.add(item.type || "product");
                           bucket.totalCents += amount;
                           purchasesByMember[t.memberId] = bucket;
@@ -2932,7 +2938,7 @@ export default function ReportsPage() {
                     const purchasesFor = (memberId: string): { items: string[]; types: string[]; totalCents: number } | null => {
                       const b = purchasesByMember[memberId];
                       if (!b) return null;
-                      return { items: b.items, types: Array.from(b.types), totalCents: b.totalCents };
+                      return { items: Array.from(b.items), types: Array.from(b.types), totalCents: b.totalCents };
                     };
 
                     // Build enabledColIds + headerFor + cellText ONCE per render
