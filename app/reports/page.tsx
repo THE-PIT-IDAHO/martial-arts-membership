@@ -145,6 +145,7 @@ type ReportDataFields = {
   showSalesLogItem: boolean;
   showSalesLogType: boolean;
   showSalesLogAmount: boolean;
+  showSalesLogDate: boolean;
   // Include POS sales that weren't linked to a member (walk-in
   // retail). When on and at least one purchase column is enabled,
   // each walk-in line item shows as its own row at the bottom of
@@ -253,6 +254,7 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showSalesLogItem: false,
   showSalesLogType: false,
   showSalesLogAmount: false,
+  showSalesLogDate: false,
   showNonMemberSales: false,
   showClassSchedule: false,
   showClassAttendance: false,
@@ -434,6 +436,7 @@ const STATISTICS_FIELDS = [
       { key: "showSalesLogItem", label: "Member List · Purchases (column)" },
       { key: "showSalesLogType", label: "Member List · Purchase Types (column)" },
       { key: "showSalesLogAmount", label: "Member List · Total Spent (column)" },
+      { key: "showSalesLogDate", label: "Member List · Purchase Date (column)" },
       { key: "showNonMemberSales", label: "Member List · Include Walk-in Sales" },
       { key: "showRefunds", label: "Refunds" },
       { key: "showRevenueTrend", label: "Revenue Trend (chart)" },
@@ -550,7 +553,7 @@ type PaymentSummary = {
 };
 
 // Base column identifiers for the member list table
-type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "hasPhoto" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "promotionEligible" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "outstandingBalance" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses" | "salesItems" | "salesTypes" | "salesAmount";
+type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "hasPhoto" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "promotionEligible" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "outstandingBalance" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses" | "salesItems" | "salesTypes" | "salesAmount" | "salesDate";
 
 // Column ID can be a base column, a class type column, or one of the
 // per-style extras (current rank / belt size / belt text / next rank).
@@ -609,6 +612,7 @@ const DEFAULT_COLUMN_ORDER: BaseColumnId[] = [
   "salesItems",
   "salesTypes",
   "salesAmount",
+  "salesDate",
 ];
 
 // Column display names for base columns
@@ -640,6 +644,7 @@ const COLUMN_LABELS: Record<BaseColumnId, string> = {
   salesItems: "Purchase",
   salesTypes: "Purchase Type",
   salesAmount: "Purchase Price",
+  salesDate: "Purchase Date",
 };
 
 // Helper to check if a column is a class type column
@@ -2722,11 +2727,16 @@ export default function ReportsPage() {
                     const _hoistedAnyPurchaseCol =
                       activeReport.fields.showSalesLogItem
                       || activeReport.fields.showSalesLogType
-                      || activeReport.fields.showSalesLogAmount;
+                      || activeReport.fields.showSalesLogAmount
+                      || activeReport.fields.showSalesLogDate;
                     const _hoistedActiveRange = _hoistedAnyPurchaseCol
                       ? getDateRange(activeReport.dateRange || "month", activeReport.customStartDate, activeReport.customEndDate)
                       : null;
-                    type _HoistedPurchaseEntry = { itemName: string; type: string; amountCents: number };
+                    // `date` is the ISO timestamp the purchase happened
+                    // -- POS uses createdAt, invoices use paidAt (or
+                    // createdAt as fallback) -- surfaced by the
+                    // Purchase Date column and used to sort by when.
+                    type _HoistedPurchaseEntry = { itemName: string; type: string; amountCents: number; date: string };
                     const _hoistedPurchasesByMember: Record<string, _HoistedPurchaseEntry[]> = {};
                     if (_hoistedActiveRange) {
                       // 1) POS transactions (point-of-sale + portal
@@ -2746,6 +2756,7 @@ export default function ReportsPage() {
                             itemName: item.itemName || "Unknown",
                             type: item.type || "product",
                             amountCents: amount,
+                            date: t.createdAt,
                           });
                         }
                       }
@@ -2770,6 +2781,7 @@ export default function ReportsPage() {
                           itemName: planName,
                           type: "membership",
                           amountCents: amount,
+                          date: paidAt,
                         });
                       }
                     }
@@ -2811,6 +2823,7 @@ export default function ReportsPage() {
                               itemName: item.itemName || "Unknown",
                               type: item.type || "product",
                               amountCents: amount,
+                              date: t.createdAt,
                             },
                             _purchaseIdx: i,
                           });
@@ -3047,6 +3060,10 @@ export default function ReportsPage() {
                             aVal = a._purchase?.amountCents || 0;
                             bVal = b._purchase?.amountCents || 0;
                             break;
+                          case "salesDate":
+                            aVal = a._purchase?.date ? new Date(a._purchase.date).getTime() : Number.MAX_SAFE_INTEGER;
+                            bVal = b._purchase?.date ? new Date(b._purchase.date).getTime() : Number.MAX_SAFE_INTEGER;
+                            break;
                           default:
                             aVal = "";
                             bVal = "";
@@ -3173,6 +3190,7 @@ export default function ReportsPage() {
                         case "salesItems": return activeReport.fields.showSalesLogItem;
                         case "salesTypes": return activeReport.fields.showSalesLogType;
                         case "salesAmount": return activeReport.fields.showSalesLogAmount;
+                        case "salesDate": return activeReport.fields.showSalesLogDate;
                         default: return false;
                       }
                     });
@@ -3314,6 +3332,7 @@ export default function ReportsPage() {
                         case "salesItems": return m._purchase?.itemName || "";
                         case "salesTypes": return m._purchase?.type || "";
                         case "salesAmount": return m._purchase ? `$${(m._purchase.amountCents / 100).toFixed(2)}` : "";
+                        case "salesDate": return m._purchase?.date ? formatDateDisplay(m._purchase.date) : "";
                         default: return "";
                       }
                     };
@@ -3988,6 +4007,8 @@ export default function ReportsPage() {
                                           return m._purchase?.type || "—";
                                         case "salesAmount":
                                           return m._purchase ? `$${(m._purchase.amountCents / 100).toFixed(2)}` : "—";
+                                        case "salesDate":
+                                          return m._purchase?.date ? formatDateDisplay(m._purchase.date) : "—";
                                         default:
                                           return "—";
                                       }
