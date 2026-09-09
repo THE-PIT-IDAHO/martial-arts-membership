@@ -2915,10 +2915,16 @@ export default function ReportsPage() {
                         const date = new Date(t.createdAt);
                         if (date < activeRange.start || date > activeRange.end) continue;
                         for (const item of (t.POSLineItem || [])) {
+                          // Skip null / $0 line items -- comped
+                          // memberships, first-month-free line splits,
+                          // and other zero-amount rows shouldn't count
+                          // as actual purchases in the sales columns.
+                          const amount = item.subtotalCents || 0;
+                          if (amount <= 0) continue;
                           const bucket = purchasesByMember[t.memberId] || { items: [], types: new Set<string>(), totalCents: 0 };
                           bucket.items.push(item.itemName || "Unknown");
                           bucket.types.add(item.type || "product");
-                          bucket.totalCents += item.subtotalCents || 0;
+                          bucket.totalCents += amount;
                           purchasesByMember[t.memberId] = bucket;
                         }
                       }
