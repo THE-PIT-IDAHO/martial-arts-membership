@@ -3383,6 +3383,12 @@ export default function ReportsPage() {
                                   return activeReport.fields.showMembershipExpiring;
                                 case "totalClasses":
                                   return activeReport.fields.showTotalClassCount;
+                                case "salesItems":
+                                  return activeReport.fields.showSalesLogItem;
+                                case "salesTypes":
+                                  return activeReport.fields.showSalesLogType;
+                                case "salesAmount":
+                                  return activeReport.fields.showSalesLogAmount;
                                 default:
                                   return false;
                               }
@@ -3760,6 +3766,18 @@ export default function ReportsPage() {
                                           return formatDateDisplay(m.membershipEndDate) || "—";
                                         case "totalClasses":
                                           return m.attendanceCounts?.total || 0;
+                                        case "salesItems": {
+                                          const p = purchasesFor(m.id);
+                                          return p && p.items.length > 0 ? p.items.join(", ") : "—";
+                                        }
+                                        case "salesTypes": {
+                                          const p = purchasesFor(m.id);
+                                          return p && p.types.length > 0 ? p.types.join(", ") : "—";
+                                        }
+                                        case "salesAmount": {
+                                          const p = purchasesFor(m.id);
+                                          return p ? `$${(p.totalCents / 100).toFixed(2)}` : "—";
+                                        }
                                         default:
                                           return "—";
                                       }
