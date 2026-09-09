@@ -2802,6 +2802,10 @@ export default function ReportsPage() {
                             aVal = a.waiverSigned ? 1 : 0;
                             bVal = b.waiverSigned ? 1 : 0;
                             break;
+                          case "hasPhoto":
+                            aVal = a.photoUrl ? 1 : 0;
+                            bVal = b.photoUrl ? 1 : 0;
+                            break;
                           case "membershipType":
                             aVal = (a.membershipTypeName || "").toLowerCase();
                             bVal = (b.membershipTypeName || "").toLowerCase();
