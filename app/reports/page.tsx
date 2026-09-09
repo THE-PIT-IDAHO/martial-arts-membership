@@ -3215,6 +3215,26 @@ export default function ReportsPage() {
                       }
                     };
 
+                    // Snapshot the Revenue Statistics tiles that are
+                    // currently visible so PDF / CSV / print exports
+                    // include them alongside the member table. Order
+                    // mirrors the on-screen tile order.
+                    const exportSummaryTiles: { label: string; value: string }[] = [];
+                    if (revenueData) {
+                      if (activeReport.fields.showTotalRevenue) exportSummaryTiles.push({ label: "Total Revenue", value: formatCurrency(revenueData.totalRevenue) });
+                      if (activeReport.fields.showAvgTransaction) exportSummaryTiles.push({ label: "Avg Transaction", value: formatCurrency(revenueData.avgTransactionValue) });
+                      if (activeReport.fields.showTransactionCount) exportSummaryTiles.push({ label: "Transactions", value: String(revenueData.transactionCount) });
+                      if (activeReport.fields.showRevMemberships) exportSummaryTiles.push({ label: "Memberships", value: formatCurrency(revenueData.revenueByType.membership || 0) });
+                      if (activeReport.fields.showRevProducts) exportSummaryTiles.push({ label: "Products", value: formatCurrency(revenueData.revenueByType.product || 0) });
+                      if (activeReport.fields.showRevServices) exportSummaryTiles.push({ label: "Services", value: formatCurrency(revenueData.revenueByType.service || 0) });
+                      if (activeReport.fields.showRevPromotions) exportSummaryTiles.push({ label: "Promotions", value: formatCurrency(revenueData.revenueByType.promotion || 0) });
+                      if (activeReport.fields.showRevBundles) exportSummaryTiles.push({ label: "Bundles", value: formatCurrency(revenueData.revenueByType.bundle || 0) });
+                      if (activeReport.fields.showRevGiftCards) exportSummaryTiles.push({ label: "Gift Certificates", value: formatCurrency(revenueData.revenueByType.gift || 0) });
+                      if (activeReport.fields.showRevCredit) exportSummaryTiles.push({ label: "Credit Applied", value: formatCurrency(revenueData.revenueByType.credit || 0) });
+                      if (activeReport.fields.showRevPosAdmin) exportSummaryTiles.push({ label: "POS (admin)", value: formatCurrency(revenueData.revenueBySource.staff) });
+                      if (activeReport.fields.showRevMemberPortal) exportSummaryTiles.push({ label: "Member Portal", value: formatCurrency(revenueData.revenueBySource.portal) });
+                    }
+
                     return (
                       <>
                         <div className="flex flex-wrap items-center justify-between gap-2 mb-3 print:hidden">
@@ -3267,6 +3287,7 @@ export default function ReportsPage() {
                                   headers: pdfHeaders,
                                   rows: pdfRows,
                                   primaryColumns,
+                                  summaryTiles: exportSummaryTiles,
                                 });
                                 const safeName = (activeReport.name || "report").replace(/[^a-z0-9-_ ]/gi, "").trim() || "report";
                                 pdf.save(`${safeName}.pdf`);
@@ -3294,7 +3315,19 @@ export default function ReportsPage() {
                                   }
                                   return v;
                                 };
+                                // Summary tiles as key/value rows at the
+                                // top of the CSV so the same numbers the
+                                // admin sees on-screen ship with the file.
+                                // Blank row separates the summary from the
+                                // member table.
+                                const summaryLines = exportSummaryTiles.length > 0
+                                  ? [
+                                      ...exportSummaryTiles.map((tile) => `${escapeCsv(tile.label)},${escapeCsv(tile.value)}`),
+                                      "",
+                                    ]
+                                  : [];
                                 const csvLines = [
+                                  ...summaryLines,
                                   enabledColIds.map((c) => escapeCsv(exportHeaderFor(c))).join(","),
                                   ...expandForReport(sortedMembers).map((m: any) =>
                                     enabledColIds.map((c) => escapeCsv(exportCellText(m, c))).join(","),

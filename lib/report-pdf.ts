@@ -22,6 +22,11 @@ export type ReportPdfInput = {
   // Column indexes (0-based) that should render in primary red.
   // Matches the on-screen table's Link-styled first/last name cells.
   primaryColumns?: number[];
+  // Optional label/value summary rendered between the title and the
+  // members table. Populated by the reports page with whichever
+  // Revenue Statistics tiles are currently visible so the downloaded
+  // PDF matches what the admin sees on screen.
+  summaryTiles?: Array<{ label: string; value: string }>;
 };
 
 const PT_PER_IN = 72;
@@ -96,6 +101,29 @@ export function generateReportPdf(data: ReportPdfInput): jsPDF {
     pdf.text(data.title, margin, y + TITLE_FONT);
     return y + TITLE_FONT + 10;
   }
+
+  // Text-only summary block under the title. One line per tile:
+  // "LABEL: value" left-aligned, small subtitle font. No outlines --
+  // Cruz wants a plain readout, not the on-screen boxed tiles.
+  function drawSummaryBlock(y: number): number {
+    const tiles = data.summaryTiles;
+    if (!tiles || tiles.length === 0) return y;
+    const LINE_FONT = 9;
+    const LINE_GAP = 3;
+    const LINE_H_LOCAL = LINE_FONT + LINE_GAP;
+    let ty = y;
+    for (const tile of tiles) {
+      pdf.setFontSize(LINE_FONT);
+      pdf.setTextColor(80, 80, 80);
+      const labelText = `${tile.label}: `;
+      pdf.text(labelText, margin, ty + LINE_FONT);
+      const labelW = pdf.getTextWidth(labelText);
+      pdf.setTextColor(20, 20, 20);
+      pdf.text(tile.value, margin + labelW, ty + LINE_FONT);
+      ty += LINE_H_LOCAL;
+    }
+    return ty + 6;
+  }
   function drawTableHeader(y: number): number {
     pdf.setFillColor(240, 240, 240);
     pdf.rect(margin, y, totalW, headerBlockH, "F");
@@ -120,6 +148,7 @@ export function generateReportPdf(data: ReportPdfInput): jsPDF {
 
   // --- Draw content -------------------------------------------------------
   let y = drawTitleBlock();
+  y = drawSummaryBlock(y);
   y = drawTableHeader(y);
   pdf.setFontSize(BODY_FONT);
 
@@ -127,6 +156,8 @@ export function generateReportPdf(data: ReportPdfInput): jsPDF {
     if (y + rowH > bottomLimit) {
       pdf.addPage();
       y = drawTitleBlock();
+      // Summary block is a first-page-only header; subsequent pages
+      // repeat only the title + table header.
       y = drawTableHeader(y);
       pdf.setFontSize(BODY_FONT);
     }
