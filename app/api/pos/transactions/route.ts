@@ -331,6 +331,7 @@ export async function POST(req: Request) {
         notes: notes || null,
         paymentIntentId: paymentIntentId || null,
         paymentProcessor: paymentProcessor || null,
+        source: "STAFF",
         updatedAt: new Date(),
         POSLineItem: {
           create: lineItems.map((item: any) => ({

@@ -929,6 +929,14 @@ model POSTransaction {
   paymentIntentId   String?
   paymentProcessor  String?
   receiptUrl        String?
+  // Where this sale was initiated. Nullable for historical rows.
+  //   STAFF     -- admin rang it up in the POS panel
+  //   PORTAL    -- member self-checkout through the portal store
+  //   AUTO_BILL -- Stripe off-session charge from the billing cron
+  // Reports use this to split "POS Revenue" vs "Member Portal
+  // Revenue" so operators can see how much revenue is admin-initiated
+  // vs member-initiated.
+  source            String?
   clientId          String        @default("default-client")
   createdAt         DateTime      @default(now())
   updatedAt         DateTime

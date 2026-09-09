@@ -85,6 +85,7 @@ export async function PATCH(
           paymentMethod: paymentMethod || "CASH",
           status: "COMPLETED",
           notes: `Invoice ${invoice.invoiceNumber || id} — ${invoice.membership.membershipPlan.name}`,
+          source: "STAFF",
           clientId,
           updatedAt: new Date(),
           POSLineItem: {

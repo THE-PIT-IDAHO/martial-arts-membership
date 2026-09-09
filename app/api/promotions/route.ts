@@ -150,6 +150,7 @@ export async function applyOnePromotion(
         totalCents: finalCostCents,
         paymentMethod: method,
         notes: `Promotion: ${input.toRank} (${style.name})`,
+        source: "STAFF",
         updatedAt: new Date(),
         POSLineItem: {
           create: [{

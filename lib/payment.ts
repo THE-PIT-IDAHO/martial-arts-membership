@@ -801,6 +801,7 @@ async function processAdminPOSCheckout(params: {
       paymentIntentId: externalPaymentId,
       paymentProcessor: processor,
       notes,
+      source: "STAFF",
       clientId,
       updatedAt: new Date(),
       POSLineItem: {
@@ -1085,6 +1086,7 @@ async function processPortalStoreCheckout(params: {
       status: "COMPLETED",
       paymentIntentId: externalPaymentId,
       paymentProcessor: processor,
+      source: "PORTAL",
       clientId,
       updatedAt: new Date(),
       POSLineItem: {

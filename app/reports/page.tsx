@@ -120,6 +120,25 @@ type ReportDataFields = {
   showSalesByCategory: boolean;
   showRefunds: boolean;
   showRevenueTrend: boolean;
+  // Per-tile toggles for the Revenue by Type row. Each tile is
+  // independently switchable so an admin can show any combination.
+  // "Regardless of where sold" -- POS-rung sales AND recurring
+  // auto-billed invoices both fold into the memberships bucket;
+  // POS-rung product sales AND portal-store product sales both
+  // fold into products; etc.
+  showRevMemberships: boolean;
+  showRevProducts: boolean;
+  showRevServices: boolean;
+  showRevPromotions: boolean;
+  showRevBundles: boolean;
+  showRevGiftCards: boolean;
+  showRevCredit: boolean;
+  // Per-source tiles: where the sale ORIGINATED. Uses the new
+  // POSTransaction.source column.
+  //   showRevPosAdmin    -> STAFF (admin rang it up in the POS panel)
+  //   showRevMemberPortal-> PORTAL (member self-checkout in the portal)
+  showRevPosAdmin: boolean;
+  showRevMemberPortal: boolean;
   // Per-line-item Sales Log: one row per POS line item in the
   // report's date range. Three independent columns so admins can
   // pick any combination (name only, name + type, name + amount,
@@ -218,6 +237,15 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showSalesByCategory: false,
   showRefunds: false,
   showRevenueTrend: false,
+  showRevMemberships: true,
+  showRevProducts: true,
+  showRevServices: false,
+  showRevPromotions: false,
+  showRevBundles: false,
+  showRevGiftCards: false,
+  showRevCredit: false,
+  showRevPosAdmin: false,
+  showRevMemberPortal: false,
   showSalesLogItem: false,
   showSalesLogType: false,
   showSalesLogAmount: false,
@@ -354,7 +382,8 @@ const STATISTICS_FIELDS = [
     name: "Style & Rank Statistics",
     fields: [
       { key: "showStyleBreakdown", label: "Style Breakdown" },
-      { key: "showRankDistribution", label: "Rank Distribution Chart" },
+      // Renders as a table, not a chart -- old label lied.
+      { key: "showRankDistribution", label: "Rank Distribution" },
       { key: "showBeltOrderRoster", label: "Belt Order Tally" },
       { key: "showUpcomingPromotions", label: "Upcoming Promotions" },
     ],
@@ -377,22 +406,33 @@ const STATISTICS_FIELDS = [
     name: "Revenue & Sales",
     fields: [
       { key: "showTotalRevenue", label: "Total Revenue" },
-      // Legacy keys kept for backwards-compat with saved report
-      // configs. Both now toggle the new "Revenue by Type" tile row
-      // (Memberships, Products, Services, Promotions, ...). Left as
-      // two separate toggles rather than renaming/consolidating so
-      // stored configs don't wipe out.
-      { key: "showMembershipRevenue", label: "Revenue by Type (tiles)" },
-      { key: "showPosRevenue", label: "Revenue by Type (also enables)" },
       { key: "showAvgTransaction", label: "Avg Transaction Value" },
       { key: "showTransactionCount", label: "Transaction Count" },
+      // Per-item-type tiles -- each independently toggleable.
+      // "Regardless of where sold" means POS-rung + portal-sold +
+      // recurring auto-bills all fold into the same bucket.
+      { key: "showRevMemberships", label: "Memberships Revenue (all)" },
+      { key: "showRevProducts", label: "Products Revenue (all)" },
+      { key: "showRevServices", label: "Services Revenue" },
+      { key: "showRevPromotions", label: "Promotions Revenue" },
+      { key: "showRevBundles", label: "Bundles Revenue" },
+      { key: "showRevGiftCards", label: "Gift Certificates Revenue" },
+      { key: "showRevCredit", label: "Credit Applied Revenue" },
+      // Per-source tiles -- where the sale originated.
+      { key: "showRevPosAdmin", label: "POS Revenue (admin-rung)" },
+      { key: "showRevMemberPortal", label: "Member Portal Revenue" },
       { key: "showTopProducts", label: "Top Products" },
-      { key: "showSalesByCategory", label: "Sales by Category" },
+      { key: "showSalesByCategory", label: "Sales by Category (chart)" },
       { key: "showSalesLogItem", label: "Sales Log · Item Name (column)" },
       { key: "showSalesLogType", label: "Sales Log · Type (column)" },
       { key: "showSalesLogAmount", label: "Sales Log · Amount (column)" },
       { key: "showRefunds", label: "Refunds" },
-      { key: "showRevenueTrend", label: "Revenue Trend Chart" },
+      { key: "showRevenueTrend", label: "Revenue Trend (chart)" },
+      // Legacy keys kept for backwards-compat with saved report
+      // configs so existing toggles don't disappear. Deprecated in
+      // favor of the individual per-type toggles above.
+      { key: "showMembershipRevenue", label: "Membership Revenue (legacy)" },
+      { key: "showPosRevenue", label: "POS Revenue (legacy)" },
     ],
   },
   {
@@ -472,6 +512,12 @@ type RevenueSummary = {
   // classified by SOURCE (invoice vs POS) and misled admins whose
   // membership sales flow through POS.
   revenueByType: Record<string, number>;
+  // Revenue split by ORIGIN. Auto-billed invoices roll into the
+  // "auto" bucket alongside the transaction sources.
+  //   staff  = POS panel (admin rang it up)
+  //   portal = member self-checkout via the portal store
+  //   auto   = Stripe off-session auto-billing invoices
+  revenueBySource: { staff: number; portal: number; auto: number };
   // Per-line-item sales log for the reporting period. Powers the
   // Sales Log table; each row = one POS line item + its own dated
   // timestamp. Amount is subtotalCents (post-quantity, pre-tax).
@@ -1732,6 +1778,21 @@ export default function ReportsPage() {
           const totalRevenue = filteredTransactions.reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
           const avgTransactionValue = filteredTransactions.length > 0 ? totalRevenue / filteredTransactions.length : 0;
 
+          // Split transactions by origin so the report can surface
+          // "POS (admin-rung)" vs "Member Portal" as separate tiles.
+          // Historical rows have source=null; treat those as STAFF
+          // -- before this column existed, everything except invoiced
+          // auto-bills went through the admin POS panel.
+          const staffRevenue = filteredTransactions
+            .filter((t: any) => !t.source || t.source === "STAFF")
+            .reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
+          const portalRevenue = filteredTransactions
+            .filter((t: any) => t.source === "PORTAL")
+            .reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
+          const autoBillRevenue = filteredTransactions
+            .filter((t: any) => t.source === "AUTO_BILL")
+            .reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
+
           const productMap: Record<string, { name: string; revenue: number; quantity: number }> = {};
           // categoryMap accumulates revenue keyed by POS line-item type
           // (membership, product, promotion, service, bundle, credit,
@@ -1815,6 +1876,11 @@ export default function ReportsPage() {
           setRevenueData({
             totalRevenue: totalRevenue + membershipRevenueCents,
             revenueByType,
+            revenueBySource: {
+              staff: staffRevenue,
+              portal: portalRevenue,
+              auto: autoBillRevenue + membershipRevenueCents,
+            },
             salesLog,
             avgTransactionValue,
             transactionCount: filteredTransactions.length,
@@ -1829,6 +1895,7 @@ export default function ReportsPage() {
           setRevenueData({
             totalRevenue: 0,
             revenueByType: {},
+            revenueBySource: { staff: 0, portal: 0, auto: 0 },
             salesLog: [],
             avgTransactionValue: 0,
             transactionCount: 0,
@@ -3998,46 +4065,44 @@ export default function ReportsPage() {
               )}
 
               {/* Revenue Stats */}
-              {(activeReport.fields.showTotalRevenue || activeReport.fields.showMembershipRevenue || activeReport.fields.showPosRevenue ||
-                activeReport.fields.showAvgTransaction || activeReport.fields.showTransactionCount) && revenueData && (
+              {(activeReport.fields.showTotalRevenue || activeReport.fields.showAvgTransaction || activeReport.fields.showTransactionCount
+                || activeReport.fields.showRevMemberships || activeReport.fields.showRevProducts
+                || activeReport.fields.showRevServices || activeReport.fields.showRevPromotions
+                || activeReport.fields.showRevBundles || activeReport.fields.showRevGiftCards
+                || activeReport.fields.showRevCredit || activeReport.fields.showRevPosAdmin
+                || activeReport.fields.showRevMemberPortal
+                || activeReport.fields.showMembershipRevenue || activeReport.fields.showPosRevenue) && revenueData && (
                 <div className="mb-6">
                   <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Revenue Statistics</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                     {activeReport.fields.showTotalRevenue && <StatCard label="Total Revenue" value={formatCurrency(revenueData.totalRevenue)} large />}
                     {activeReport.fields.showAvgTransaction && <StatCard label="Avg Transaction" value={formatCurrency(revenueData.avgTransactionValue)} />}
                     {activeReport.fields.showTransactionCount && <StatCard label="Transactions" value={revenueData.transactionCount} />}
+                    {/* Per-item-type tiles. Each is independently
+                        toggleable. "Memberships" folds in recurring
+                        auto-bill invoices too (added to revenueByType
+                        .membership at fetch time). */}
+                    {activeReport.fields.showRevMemberships && <StatCard label="Memberships" value={formatCurrency(revenueData.revenueByType.membership || 0)} />}
+                    {activeReport.fields.showRevProducts && <StatCard label="Products" value={formatCurrency(revenueData.revenueByType.product || 0)} />}
+                    {activeReport.fields.showRevServices && <StatCard label="Services" value={formatCurrency(revenueData.revenueByType.service || 0)} />}
+                    {activeReport.fields.showRevPromotions && <StatCard label="Promotions" value={formatCurrency(revenueData.revenueByType.promotion || 0)} />}
+                    {activeReport.fields.showRevBundles && <StatCard label="Bundles" value={formatCurrency(revenueData.revenueByType.bundle || 0)} />}
+                    {activeReport.fields.showRevGiftCards && <StatCard label="Gift Certificates" value={formatCurrency(revenueData.revenueByType.gift || 0)} />}
+                    {activeReport.fields.showRevCredit && <StatCard label="Credit Applied" value={formatCurrency(revenueData.revenueByType.credit || 0)} />}
+                    {/* Per-source tiles: where the sale originated. */}
+                    {activeReport.fields.showRevPosAdmin && <StatCard label="POS (admin)" value={formatCurrency(revenueData.revenueBySource.staff)} />}
+                    {activeReport.fields.showRevMemberPortal && <StatCard label="Member Portal" value={formatCurrency(revenueData.revenueBySource.portal)} />}
+                    {/* Legacy toggles kept so existing saved report
+                        configs still render something recognizable.
+                        Map them to the total-membership and total-POS
+                        equivalents. */}
+                    {activeReport.fields.showMembershipRevenue && !activeReport.fields.showRevMemberships && (
+                      <StatCard label="Membership Revenue" value={formatCurrency(revenueData.revenueByType.membership || 0)} />
+                    )}
+                    {activeReport.fields.showPosRevenue && !activeReport.fields.showRevPosAdmin && (
+                      <StatCard label="POS Revenue" value={formatCurrency(revenueData.revenueBySource.staff)} />
+                    )}
                   </div>
-                  {/* Revenue-by-type tiles: one per non-zero item type
-                      (memberships / products / services / promotions /
-                      bundles / gift / credit). Replaces the old
-                      Membership vs POS split -- classifying by source
-                      hid POS-sold memberships in "POS Revenue" and
-                      confused the pie chart against the tiles. */}
-                  {(activeReport.fields.showMembershipRevenue || activeReport.fields.showPosRevenue) && revenueData.revenueByType && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-3">
-                      {(() => {
-                        const TYPE_LABELS: Record<string, string> = {
-                          membership: "Memberships",
-                          product: "Products",
-                          service: "Services",
-                          promotion: "Promotions",
-                          bundle: "Bundles",
-                          gift: "Gift Cards",
-                          credit: "Account Credit",
-                        };
-                        const TYPE_ORDER = ["membership", "product", "service", "promotion", "bundle", "gift", "credit"];
-                        return TYPE_ORDER
-                          .filter((t) => (revenueData.revenueByType[t] || 0) > 0)
-                          .map((t) => (
-                            <StatCard
-                              key={t}
-                              label={TYPE_LABELS[t] || t}
-                              value={formatCurrency(revenueData.revenueByType[t])}
-                            />
-                          ));
-                      })()}
-                    </div>
-                  )}
                 </div>
               )}
 

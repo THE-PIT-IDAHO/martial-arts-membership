@@ -92,6 +92,7 @@ export async function POST(
             totalCents: finalCents,
             paymentMethod,
             notes: `Promotion fee for ${event.name} - ${event.styleName}${discountPercent > 0 ? ` (${discountPercent}% membership discount)` : ""}`,
+            source: "STAFF",
             clientId,
             updatedAt: new Date(),
             POSLineItem: {
