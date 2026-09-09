@@ -139,12 +139,9 @@ type ReportDataFields = {
   //   showRevMemberPortal-> PORTAL (member self-checkout in the portal)
   showRevPosAdmin: boolean;
   showRevMemberPortal: boolean;
-  // Per-line-item Sales Log: one row per POS line item in the
-  // report's date range. Independent column toggles so admins can
-  // pick any combination (name only, name + type, name + amount,
-  // all four, etc). Skips rendering the table entirely when none
-  // of the columns are on.
-  showSalesLogMember: boolean;
+  // Purchase columns on the Member List. Each toggle adds one
+  // column showing the member's purchases in the report's date
+  // range (rolled up per member).
   showSalesLogItem: boolean;
   showSalesLogType: boolean;
   showSalesLogAmount: boolean;
@@ -247,7 +244,6 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showRevCredit: false,
   showRevPosAdmin: false,
   showRevMemberPortal: false,
-  showSalesLogMember: false,
   showSalesLogItem: false,
   showSalesLogType: false,
   showSalesLogAmount: false,
@@ -425,10 +421,12 @@ const STATISTICS_FIELDS = [
       { key: "showRevMemberPortal", label: "Member Portal Revenue" },
       { key: "showTopProducts", label: "Top Products" },
       { key: "showSalesByCategory", label: "Sales by Category (chart)" },
-      { key: "showSalesLogMember", label: "Sales Log · Member (column)" },
-      { key: "showSalesLogItem", label: "Sales Log · Item Name (column)" },
-      { key: "showSalesLogType", label: "Sales Log · Type (column)" },
-      { key: "showSalesLogAmount", label: "Sales Log · Amount (column)" },
+      // Purchase columns land on the Member List (not a separate
+      // log). Each toggles one column of the members table with the
+      // member's rolled-up purchases in the report's date range.
+      { key: "showSalesLogItem", label: "Member List · Purchases (column)" },
+      { key: "showSalesLogType", label: "Member List · Purchase Types (column)" },
+      { key: "showSalesLogAmount", label: "Member List · Total Spent (column)" },
       { key: "showRefunds", label: "Refunds" },
       { key: "showRevenueTrend", label: "Revenue Trend (chart)" },
       // Legacy keys kept for backwards-compat with saved report
@@ -521,12 +519,11 @@ type RevenueSummary = {
   //   portal = member self-checkout via the portal store
   //   auto   = Stripe off-session auto-billing invoices
   revenueBySource: { staff: number; portal: number; auto: number };
-  // Per-line-item sales log for the reporting period. Powers the
-  // Sales Log table; each row = one POS line item + its own dated
-  // timestamp + who bought it. Amount is subtotalCents (post-
-  // quantity, pre-tax). memberName is pulled off the parent
-  // transaction; empty string for walk-in / non-member sales.
-  salesLog: { date: string; memberName: string; itemName: string; type: string; amountCents: number }[];
+  // Per-line-item sales log for the reporting period. Rolled up
+  // per-member into columns on the members list -- see the
+  // salesItems / salesTypes / salesAmount columns and the render
+  // path that builds a purchasesByMember map from these rows.
+  salesLog: { date: string; memberId: string | null; memberName: string; itemName: string; type: string; amountCents: number }[];
   avgTransactionValue: number;
   transactionCount: number;
   topProducts: { name: string; revenue: number; quantity: number }[];
@@ -545,7 +542,7 @@ type PaymentSummary = {
 };
 
 // Base column identifiers for the member list table
-type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "hasPhoto" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "promotionEligible" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "outstandingBalance" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses";
+type BaseColumnId = "firstName" | "lastName" | "status" | "memberNumber" | "hasPhoto" | "email" | "phone" | "style" | "rank" | "nextRank" | "latestPromotion" | "coach" | "promotionEligible" | "joinDate" | "waiver" | "membershipType" | "membershipPlan" | "monthlyPayment" | "outstandingBalance" | "nextPaymentDate" | "lastPaymentDate" | "autoRenew" | "expirationDate" | "totalClasses" | "salesItems" | "salesTypes" | "salesAmount";
 
 // Column ID can be a base column, a class type column, or one of the
 // per-style extras (current rank / belt size / belt text / next rank).
@@ -601,6 +598,9 @@ const DEFAULT_COLUMN_ORDER: BaseColumnId[] = [
   "autoRenew",
   "expirationDate",
   "totalClasses",
+  "salesItems",
+  "salesTypes",
+  "salesAmount",
 ];
 
 // Column display names for base columns
@@ -629,6 +629,9 @@ const COLUMN_LABELS: Record<BaseColumnId, string> = {
   autoRenew: "Auto-Renew",
   expirationDate: "Expiration",
   totalClasses: "Total Classes",
+  salesItems: "Purchases",
+  salesTypes: "Purchase Types",
+  salesAmount: "Total Spent",
 };
 
 // Helper to check if a column is a class type column
@@ -1075,6 +1078,11 @@ export default function ReportsPage() {
   const [membershipData, setMembershipData] = useState<MembershipSummary | null>(null);
   const [attendanceData, setAttendanceData] = useState<AttendanceSummary | null>(null);
   const [revenueData, setRevenueData] = useState<RevenueSummary | null>(null);
+  // Full POS-transaction dump for the tenant. Kept as-is so the
+  // Member List purchase columns can filter to the ACTIVE report's
+  // date range on render (rather than being locked to whatever
+  // revenue-type report's range the initial revenue fetch used).
+  const [allPosTransactions, setAllPosTransactions] = useState<any[]>([]);
   const [paymentData, setPaymentData] = useState<PaymentSummary | null>(null);
   const [availableStyles, setAvailableStyles] = useState<{
     id: string;
@@ -1771,6 +1779,7 @@ export default function ReportsPage() {
           const posRes = await fetch("/api/pos/transactions");
           const posJson = await posRes.json();
           const transactions = posJson.transactions || [];
+          setAllPosTransactions(transactions);
 
           const revenueConfig = reportConfigs.find((r) => r.type === "revenue");
           const revDateRange = getDateRange(revenueConfig?.dateRange || "month", revenueConfig?.customStartDate, revenueConfig?.customEndDate);
@@ -1807,7 +1816,7 @@ export default function ReportsPage() {
           const categoryMap: Record<string, number> = {};
           // Per-line-item log for the Sales Log table. One row per
           // POS line item, timestamped with its parent transaction.
-          const salesLog: { date: string; memberName: string; itemName: string; type: string; amountCents: number }[] = [];
+          const salesLog: { date: string; memberId: string | null; memberName: string; itemName: string; type: string; amountCents: number }[] = [];
 
           filteredTransactions.forEach((t: any) => {
             (t.POSLineItem || []).forEach((item: any) => {
@@ -1823,6 +1832,7 @@ export default function ReportsPage() {
 
               salesLog.push({
                 date: t.createdAt,
+                memberId: t.memberId || null,
                 memberName: t.memberName || "",
                 itemName: item.itemName || "Unknown",
                 type: item.type || "product",
@@ -2879,6 +2889,42 @@ export default function ReportsPage() {
                       return out;
                     };
 
+                    // Per-member purchase rollup. Filters allPosTransactions
+                    // to the ACTIVE report's date range (not the revenue-
+                    // type report's -- so a member-type report titled
+                    // e.g. "August Transactions" sees August purchases
+                    // regardless of what any revenue report happens to
+                    // be set to). Only builds when at least one purchase
+                    // column is enabled.
+                    const anyPurchaseCol =
+                      activeReport.fields.showSalesLogItem
+                      || activeReport.fields.showSalesLogType
+                      || activeReport.fields.showSalesLogAmount;
+                    const activeRange = anyPurchaseCol
+                      ? getDateRange(activeReport.dateRange || "month", activeReport.customStartDate, activeReport.customEndDate)
+                      : null;
+                    const purchasesByMember: Record<string, { items: string[]; types: Set<string>; totalCents: number }> = {};
+                    if (activeRange) {
+                      for (const t of allPosTransactions) {
+                        if (t.status !== "COMPLETED") continue;
+                        if (!t.memberId) continue;
+                        const date = new Date(t.createdAt);
+                        if (date < activeRange.start || date > activeRange.end) continue;
+                        for (const item of (t.POSLineItem || [])) {
+                          const bucket = purchasesByMember[t.memberId] || { items: [], types: new Set<string>(), totalCents: 0 };
+                          bucket.items.push(item.itemName || "Unknown");
+                          bucket.types.add(item.type || "product");
+                          bucket.totalCents += item.subtotalCents || 0;
+                          purchasesByMember[t.memberId] = bucket;
+                        }
+                      }
+                    }
+                    const purchasesFor = (memberId: string): { items: string[]; types: string[]; totalCents: number } | null => {
+                      const b = purchasesByMember[memberId];
+                      if (!b) return null;
+                      return { items: b.items, types: Array.from(b.types), totalCents: b.totalCents };
+                    };
+
                     // Build enabledColIds + headerFor + cellText ONCE per render
                     // instead of inside every click handler. Both the CSV export
                     // and the PDF export (below) now walk the exact same column
@@ -2945,6 +2991,9 @@ export default function ReportsPage() {
                         case "autoRenew": return activeReport.fields.showAutoRenewStatus;
                         case "expirationDate": return activeReport.fields.showMembershipExpiring;
                         case "totalClasses": return activeReport.fields.showTotalClassCount;
+                        case "salesItems": return activeReport.fields.showSalesLogItem;
+                        case "salesTypes": return activeReport.fields.showSalesLogType;
+                        case "salesAmount": return activeReport.fields.showSalesLogAmount;
                         default: return false;
                       }
                     });
@@ -3083,6 +3132,18 @@ export default function ReportsPage() {
                         case "autoRenew": return m.autoRenew ? "Yes" : "No";
                         case "expirationDate": return formatDateDisplay(m.membershipEndDate);
                         case "totalClasses": return String(m.attendanceCounts?.total || 0);
+                        case "salesItems": {
+                          const p = purchasesFor(m.id);
+                          return p ? p.items.join(", ") : "";
+                        }
+                        case "salesTypes": {
+                          const p = purchasesFor(m.id);
+                          return p ? p.types.join(", ") : "";
+                        }
+                        case "salesAmount": {
+                          const p = purchasesFor(m.id);
+                          return p ? `$${(p.totalCents / 100).toFixed(2)}` : "";
+                        }
                         default: return "";
                       }
                     };
@@ -4248,43 +4309,10 @@ export default function ReportsPage() {
                 </div>
               )}
 
-              {/* Sales Log -- per-line-item feed. Member / Item /
-                  Type / Amount columns each toggleable independently.
-                  Only renders when at least one column is on AND
-                  there are rows in the reporting period. Date is
-                  always shown when the table renders so log entries
-                  are anchored in time. */}
-              {(activeReport.fields.showSalesLogMember || activeReport.fields.showSalesLogItem
-                || activeReport.fields.showSalesLogType || activeReport.fields.showSalesLogAmount)
-                && revenueData && revenueData.salesLog.length > 0 && (
-                <div className="mb-6">
-                  <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Sales Log</h4>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs text-gray-500 uppercase">
-                          <th className="pb-2 font-medium">Date</th>
-                          {activeReport.fields.showSalesLogMember && <th className="pb-2 font-medium">Member</th>}
-                          {activeReport.fields.showSalesLogItem && <th className="pb-2 font-medium">Item</th>}
-                          {activeReport.fields.showSalesLogType && <th className="pb-2 font-medium">Type</th>}
-                          {activeReport.fields.showSalesLogAmount && <th className="pb-2 font-medium text-right">Amount</th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {revenueData.salesLog.map((row, i) => (
-                          <tr key={i} className="border-t border-gray-100">
-                            <td className="py-2 text-gray-500 text-xs whitespace-nowrap">{formatDateDisplay(row.date)}</td>
-                            {activeReport.fields.showSalesLogMember && <td className="py-2 text-gray-700">{row.memberName || <span className="text-gray-400 italic">Walk-in</span>}</td>}
-                            {activeReport.fields.showSalesLogItem && <td className="py-2 text-gray-700">{row.itemName}</td>}
-                            {activeReport.fields.showSalesLogType && <td className="py-2 text-gray-600 capitalize">{row.type}</td>}
-                            {activeReport.fields.showSalesLogAmount && <td className="py-2 text-right font-medium text-gray-900">{formatCurrency(row.amountCents)}</td>}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+              {/* Sales Log table removed -- per Cruz, purchase info
+                  now lives as columns on the Member List (see the
+                  salesItems / salesTypes / salesAmount ColumnIds in
+                  the members table above). */}
 
               {/* Retention Stats */}
               {(activeReport.fields.showRetentionRate || activeReport.fields.showNetGrowth || activeReport.fields.showChurnRate) && membershipData && (
