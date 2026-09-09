@@ -2236,6 +2236,62 @@ export default function ReportsPage() {
 
   const activeReport = activeTab ? getReportConfig(activeTab) : null;
 
+  // Recompute the Revenue Statistics tiles at render time against
+  // the ACTIVE report's date range so switching between reports
+  // (each with its own range) updates the tiles immediately. The
+  // fetch-time revenueData is still used for the pie chart, top
+  // products, and monthly trend below; only the tile values are
+  // re-derived here. Numbers mirror the fetch-block semantics so
+  // there is no on-screen drift when both would agree:
+  //   - totalRevenue    = POS totals (COMPLETED) + PAID invoice amounts
+  //   - avgTransactionValue = POS-only mean (matches historical tile)
+  //   - transactionCount    = POS COMPLETED count (matches historical tile)
+  //   - revenueByType.membership folds in PAID invoices so recurring
+  //     auto-billed cycles show up under Memberships
+  //   - revenueBySource.auto folds invoices in (they represent
+  //     off-session Stripe cycles that never mint a POSTransaction)
+  const activeRevenueTiles = (() => {
+    if (!activeReport) return null;
+    const range = getDateRange(activeReport.dateRange || "month", activeReport.customStartDate, activeReport.customEndDate);
+    const posInRange = allPosTransactions.filter((t: any) => {
+      if (t.status !== "COMPLETED") return false;
+      const date = new Date(t.createdAt);
+      return date >= range.start && date <= range.end;
+    });
+    const posTotal = posInRange.reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
+    const staff = posInRange
+      .filter((t: any) => !t.source || t.source === "STAFF")
+      .reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
+    const portal = posInRange
+      .filter((t: any) => t.source === "PORTAL")
+      .reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
+    const autoPos = posInRange
+      .filter((t: any) => t.source === "AUTO_BILL")
+      .reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
+    const categoryMap: Record<string, number> = {};
+    posInRange.forEach((t: any) => {
+      (t.POSLineItem || []).forEach((item: any) => {
+        const category = item.type || "product";
+        categoryMap[category] = (categoryMap[category] || 0) + (item.subtotalCents || 0);
+      });
+    });
+    const invInRange = allPaidInvoices.filter((inv: any) => {
+      const paidAt = inv.paidAt || inv.createdAt;
+      if (!paidAt) return false;
+      const date = new Date(paidAt);
+      return date >= range.start && date <= range.end;
+    });
+    const invTotal = invInRange.reduce((sum: number, inv: any) => sum + (inv.amountCents || 0), 0);
+    categoryMap.membership = (categoryMap.membership || 0) + invTotal;
+    return {
+      totalRevenue: posTotal + invTotal,
+      avgTransactionValue: posInRange.length > 0 ? posTotal / posInRange.length : 0,
+      transactionCount: posInRange.length,
+      revenueByType: categoryMap,
+      revenueBySource: { staff, portal, auto: autoPos + invTotal },
+    };
+  })();
+
   return (
     <AppLayout>
       {/* Print scoping: when the user hits "Print" on a report, we only
@@ -3217,22 +3273,25 @@ export default function ReportsPage() {
 
                     // Snapshot the Revenue Statistics tiles that are
                     // currently visible so PDF / CSV / print exports
-                    // include them alongside the member table. Order
-                    // mirrors the on-screen tile order.
+                    // include them alongside the member table. Reads
+                    // from activeRevenueTiles (render-time, filtered
+                    // to this report's date range) so the exported
+                    // numbers always match whichever report Cruz is
+                    // viewing. Order mirrors the on-screen tiles.
                     const exportSummaryTiles: { label: string; value: string }[] = [];
-                    if (revenueData) {
-                      if (activeReport.fields.showTotalRevenue) exportSummaryTiles.push({ label: "Total Revenue", value: formatCurrency(revenueData.totalRevenue) });
-                      if (activeReport.fields.showAvgTransaction) exportSummaryTiles.push({ label: "Avg Transaction", value: formatCurrency(revenueData.avgTransactionValue) });
-                      if (activeReport.fields.showTransactionCount) exportSummaryTiles.push({ label: "Transactions", value: String(revenueData.transactionCount) });
-                      if (activeReport.fields.showRevMemberships) exportSummaryTiles.push({ label: "Memberships", value: formatCurrency(revenueData.revenueByType.membership || 0) });
-                      if (activeReport.fields.showRevProducts) exportSummaryTiles.push({ label: "Products", value: formatCurrency(revenueData.revenueByType.product || 0) });
-                      if (activeReport.fields.showRevServices) exportSummaryTiles.push({ label: "Services", value: formatCurrency(revenueData.revenueByType.service || 0) });
-                      if (activeReport.fields.showRevPromotions) exportSummaryTiles.push({ label: "Promotions", value: formatCurrency(revenueData.revenueByType.promotion || 0) });
-                      if (activeReport.fields.showRevBundles) exportSummaryTiles.push({ label: "Bundles", value: formatCurrency(revenueData.revenueByType.bundle || 0) });
-                      if (activeReport.fields.showRevGiftCards) exportSummaryTiles.push({ label: "Gift Certificates", value: formatCurrency(revenueData.revenueByType.gift || 0) });
-                      if (activeReport.fields.showRevCredit) exportSummaryTiles.push({ label: "Credit Applied", value: formatCurrency(revenueData.revenueByType.credit || 0) });
-                      if (activeReport.fields.showRevPosAdmin) exportSummaryTiles.push({ label: "POS (admin)", value: formatCurrency(revenueData.revenueBySource.staff) });
-                      if (activeReport.fields.showRevMemberPortal) exportSummaryTiles.push({ label: "Member Portal", value: formatCurrency(revenueData.revenueBySource.portal) });
+                    if (activeRevenueTiles) {
+                      if (activeReport.fields.showTotalRevenue) exportSummaryTiles.push({ label: "Total Revenue", value: formatCurrency(activeRevenueTiles.totalRevenue) });
+                      if (activeReport.fields.showAvgTransaction) exportSummaryTiles.push({ label: "Avg Transaction", value: formatCurrency(activeRevenueTiles.avgTransactionValue) });
+                      if (activeReport.fields.showTransactionCount) exportSummaryTiles.push({ label: "Transactions", value: String(activeRevenueTiles.transactionCount) });
+                      if (activeReport.fields.showRevMemberships) exportSummaryTiles.push({ label: "Memberships", value: formatCurrency(activeRevenueTiles.revenueByType.membership || 0) });
+                      if (activeReport.fields.showRevProducts) exportSummaryTiles.push({ label: "Products", value: formatCurrency(activeRevenueTiles.revenueByType.product || 0) });
+                      if (activeReport.fields.showRevServices) exportSummaryTiles.push({ label: "Services", value: formatCurrency(activeRevenueTiles.revenueByType.service || 0) });
+                      if (activeReport.fields.showRevPromotions) exportSummaryTiles.push({ label: "Promotions", value: formatCurrency(activeRevenueTiles.revenueByType.promotion || 0) });
+                      if (activeReport.fields.showRevBundles) exportSummaryTiles.push({ label: "Bundles", value: formatCurrency(activeRevenueTiles.revenueByType.bundle || 0) });
+                      if (activeReport.fields.showRevGiftCards) exportSummaryTiles.push({ label: "Gift Certificates", value: formatCurrency(activeRevenueTiles.revenueByType.gift || 0) });
+                      if (activeReport.fields.showRevCredit) exportSummaryTiles.push({ label: "Credit Applied", value: formatCurrency(activeRevenueTiles.revenueByType.credit || 0) });
+                      if (activeReport.fields.showRevPosAdmin) exportSummaryTiles.push({ label: "POS (admin)", value: formatCurrency(activeRevenueTiles.revenueBySource.staff) });
+                      if (activeReport.fields.showRevMemberPortal) exportSummaryTiles.push({ label: "Member Portal", value: formatCurrency(activeRevenueTiles.revenueBySource.portal) });
                     }
 
                     return (
@@ -4270,36 +4329,38 @@ export default function ReportsPage() {
                 || activeReport.fields.showRevBundles || activeReport.fields.showRevGiftCards
                 || activeReport.fields.showRevCredit || activeReport.fields.showRevPosAdmin
                 || activeReport.fields.showRevMemberPortal
-                || activeReport.fields.showMembershipRevenue || activeReport.fields.showPosRevenue) && revenueData && (
+                || activeReport.fields.showMembershipRevenue || activeReport.fields.showPosRevenue) && activeRevenueTiles && (
                 <div className="mb-6">
                   <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Revenue Statistics</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                    {activeReport.fields.showTotalRevenue && <StatCard label="Total Revenue" value={formatCurrency(revenueData.totalRevenue)} large />}
-                    {activeReport.fields.showAvgTransaction && <StatCard label="Avg Transaction" value={formatCurrency(revenueData.avgTransactionValue)} />}
-                    {activeReport.fields.showTransactionCount && <StatCard label="Transactions" value={revenueData.transactionCount} />}
+                    {activeReport.fields.showTotalRevenue && <StatCard label="Total Revenue" value={formatCurrency(activeRevenueTiles.totalRevenue)} large />}
+                    {activeReport.fields.showAvgTransaction && <StatCard label="Avg Transaction" value={formatCurrency(activeRevenueTiles.avgTransactionValue)} />}
+                    {activeReport.fields.showTransactionCount && <StatCard label="Transactions" value={activeRevenueTiles.transactionCount} />}
                     {/* Per-item-type tiles. Each is independently
                         toggleable. "Memberships" folds in recurring
                         auto-bill invoices too (added to revenueByType
-                        .membership at fetch time). */}
-                    {activeReport.fields.showRevMemberships && <StatCard label="Memberships" value={formatCurrency(revenueData.revenueByType.membership || 0)} />}
-                    {activeReport.fields.showRevProducts && <StatCard label="Products" value={formatCurrency(revenueData.revenueByType.product || 0)} />}
-                    {activeReport.fields.showRevServices && <StatCard label="Services" value={formatCurrency(revenueData.revenueByType.service || 0)} />}
-                    {activeReport.fields.showRevPromotions && <StatCard label="Promotions" value={formatCurrency(revenueData.revenueByType.promotion || 0)} />}
-                    {activeReport.fields.showRevBundles && <StatCard label="Bundles" value={formatCurrency(revenueData.revenueByType.bundle || 0)} />}
-                    {activeReport.fields.showRevGiftCards && <StatCard label="Gift Certificates" value={formatCurrency(revenueData.revenueByType.gift || 0)} />}
-                    {activeReport.fields.showRevCredit && <StatCard label="Credit Applied" value={formatCurrency(revenueData.revenueByType.credit || 0)} />}
+                        .membership by the render-time derivation
+                        above so switching a report's date range
+                        immediately re-splits the tiles). */}
+                    {activeReport.fields.showRevMemberships && <StatCard label="Memberships" value={formatCurrency(activeRevenueTiles.revenueByType.membership || 0)} />}
+                    {activeReport.fields.showRevProducts && <StatCard label="Products" value={formatCurrency(activeRevenueTiles.revenueByType.product || 0)} />}
+                    {activeReport.fields.showRevServices && <StatCard label="Services" value={formatCurrency(activeRevenueTiles.revenueByType.service || 0)} />}
+                    {activeReport.fields.showRevPromotions && <StatCard label="Promotions" value={formatCurrency(activeRevenueTiles.revenueByType.promotion || 0)} />}
+                    {activeReport.fields.showRevBundles && <StatCard label="Bundles" value={formatCurrency(activeRevenueTiles.revenueByType.bundle || 0)} />}
+                    {activeReport.fields.showRevGiftCards && <StatCard label="Gift Certificates" value={formatCurrency(activeRevenueTiles.revenueByType.gift || 0)} />}
+                    {activeReport.fields.showRevCredit && <StatCard label="Credit Applied" value={formatCurrency(activeRevenueTiles.revenueByType.credit || 0)} />}
                     {/* Per-source tiles: where the sale originated. */}
-                    {activeReport.fields.showRevPosAdmin && <StatCard label="POS (admin)" value={formatCurrency(revenueData.revenueBySource.staff)} />}
-                    {activeReport.fields.showRevMemberPortal && <StatCard label="Member Portal" value={formatCurrency(revenueData.revenueBySource.portal)} />}
+                    {activeReport.fields.showRevPosAdmin && <StatCard label="POS (admin)" value={formatCurrency(activeRevenueTiles.revenueBySource.staff)} />}
+                    {activeReport.fields.showRevMemberPortal && <StatCard label="Member Portal" value={formatCurrency(activeRevenueTiles.revenueBySource.portal)} />}
                     {/* Legacy toggles kept so existing saved report
                         configs still render something recognizable.
                         Map them to the total-membership and total-POS
                         equivalents. */}
                     {activeReport.fields.showMembershipRevenue && !activeReport.fields.showRevMemberships && (
-                      <StatCard label="Membership Revenue" value={formatCurrency(revenueData.revenueByType.membership || 0)} />
+                      <StatCard label="Membership Revenue" value={formatCurrency(activeRevenueTiles.revenueByType.membership || 0)} />
                     )}
                     {activeReport.fields.showPosRevenue && !activeReport.fields.showRevPosAdmin && (
-                      <StatCard label="POS Revenue" value={formatCurrency(revenueData.revenueBySource.staff)} />
+                      <StatCard label="POS Revenue" value={formatCurrency(activeRevenueTiles.revenueBySource.staff)} />
                     )}
                   </div>
                 </div>
