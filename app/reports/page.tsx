@@ -2234,61 +2234,188 @@ export default function ReportsPage() {
     return reportConfigs.find((r) => r.id === id);
   }
 
+  // Apply the same member-visibility filters that the Member List
+  // uses (styles, ranks, membership type/plan, coach, status
+  // toggles, recurring-only special case) so the Revenue
+  // Statistics tiles can sum ONLY purchases attributed to
+  // members that actually appear on this report. Kept in sync
+  // with the inline filter inside the render body -- when one
+  // changes, the other has to change too. Duplicating is safer
+  // than restructuring the render body for now.
+  function filterMembersForReport(report: ReportConfig, list: any[]): any[] {
+    const isRecurringReport = report.id === "recurring";
+    return list.filter((m: any) => {
+      if (isRecurringReport) {
+        if (!m.nextPaymentDate) return false;
+        if (!m.monthlyPaymentCents || m.monthlyPaymentCents <= 0) return false;
+      }
+      if (report.filterByStyles && report.filterByStyles.length > 0) {
+        const filterStylesLower = report.filterByStyles.map((s) => s.toLowerCase());
+        const activeNames = getMemberActiveStyleNames(m);
+        if (!filterStylesLower.some((f) => activeNames.has(f))) return false;
+      }
+      if (report.filterByRanks && report.filterByRanks.length > 0) {
+        const filterRanksLower = report.filterByRanks.map((r) => r.toLowerCase());
+        let memberHasSelectedRank = false;
+        if (m.primaryStyle && m.rank) {
+          const primaryKey = `${m.primaryStyle}:${m.rank}`.toLowerCase();
+          if (filterRanksLower.includes(primaryKey)) memberHasSelectedRank = true;
+        }
+        if (!memberHasSelectedRank && m.stylesNotes) {
+          try {
+            const stylesArray = JSON.parse(m.stylesNotes);
+            if (Array.isArray(stylesArray)) {
+              memberHasSelectedRank = stylesArray.some((s: any) => {
+                if (s.name && s.rank) {
+                  const styleRankKey = `${s.name}:${s.rank}`.toLowerCase();
+                  return filterRanksLower.includes(styleRankKey);
+                }
+                return false;
+              });
+            }
+          } catch { /* ignore */ }
+        }
+        if (!memberHasSelectedRank) return false;
+      }
+      if (report.filterByMembershipTypes && report.filterByMembershipTypes.length > 0) {
+        const memberMembershipType = m.membershipTypeName || "No Membership";
+        if (!report.filterByMembershipTypes.includes(memberMembershipType)) return false;
+      }
+      if (report.filterByMembershipPlans && report.filterByMembershipPlans.length > 0) {
+        const memberMembershipPlan = m.membershipPlanName || "No Plan";
+        if (!report.filterByMembershipPlans.includes(memberMembershipPlan)) return false;
+      }
+      if (report.filterByCoaches && report.filterByCoaches.length > 0) {
+        const coaches = new Set<string>();
+        if (m.stylesNotes) {
+          try {
+            const arr = JSON.parse(m.stylesNotes);
+            if (Array.isArray(arr)) {
+              for (const s of arr as Array<{ coach?: string | null }>) {
+                if (s?.coach && String(s.coach).trim()) coaches.add(String(s.coach).trim());
+              }
+            }
+          } catch { /* ignore */ }
+        }
+        const memberCoaches = coaches.size > 0 ? Array.from(coaches) : ["No Coach"];
+        const overlap = memberCoaches.some((c) => report.filterByCoaches!.includes(c));
+        if (!overlap) return false;
+      }
+      const status = (m.status || "").toUpperCase();
+      const anyStatusToggle =
+        report.fields.showActiveMembers || report.fields.showProspects
+        || report.fields.showInactiveMembers || report.fields.showBannedMembers
+        || report.fields.showCoaches || report.fields.showParents;
+      if (!anyStatusToggle) return true;
+      if (report.fields.showActiveMembers && status.includes("ACTIVE") && !status.includes("INACTIVE")) return true;
+      if (report.fields.showProspects && status.includes("PROSPECT")) return true;
+      if (report.fields.showInactiveMembers && status.includes("INACTIVE")) return true;
+      if (report.fields.showBannedMembers && status.includes("BANNED")) return true;
+      if (report.fields.showCoaches && status.includes("COACH")) return true;
+      if (report.fields.showParents && status.includes("PARENT")) return true;
+      if (report.fields.showActiveMembers) {
+        const hasKnownStatus = status.includes("ACTIVE") || status.includes("INACTIVE")
+          || status.includes("PROSPECT") || status.includes("BANNED")
+          || status.includes("COACH") || status.includes("PARENT")
+          || status.includes("CANCEL");
+        if (!hasKnownStatus) return true;
+      }
+      return false;
+    });
+  }
+
   const activeReport = activeTab ? getReportConfig(activeTab) : null;
 
-  // Recompute the Revenue Statistics tiles at render time against
-  // the ACTIVE report's date range so switching between reports
-  // (each with its own range) updates the tiles immediately. The
-  // fetch-time revenueData is still used for the pie chart, top
-  // products, and monthly trend below; only the tile values are
-  // re-derived here. Numbers mirror the fetch-block semantics so
-  // there is no on-screen drift when both would agree:
-  //   - totalRevenue    = POS totals (COMPLETED) + PAID invoice amounts
-  //   - avgTransactionValue = POS-only mean (matches historical tile)
-  //   - transactionCount    = POS COMPLETED count (matches historical tile)
-  //   - revenueByType.membership folds in PAID invoices so recurring
-  //     auto-billed cycles show up under Memberships
-  //   - revenueBySource.auto folds invoices in (they represent
-  //     off-session Stripe cycles that never mint a POSTransaction)
+  // Recompute the Revenue Statistics tiles at render time so the
+  // tile totals equal the SUM of the purchase rows visible in the
+  // Member List below -- same date range, same member filter,
+  // same amount > 0 / valid memberId gates. Cruz's expectation:
+  // "the total revenue for the dates set should match what the
+  // dates set" -- i.e. add up the visible Purchase Price column.
+  // The fetch-time revenueData is still used for the pie chart,
+  // top products, and monthly trend below; only the tile values
+  // are re-derived here.
+  //
+  // Semantics for each tile:
+  //   - totalRevenue        = sum of line-item + invoice amounts on
+  //                           this report
+  //   - transactionCount    = number of purchase rows shown
+  //   - avgTransactionValue = totalRevenue / transactionCount
+  //   - revenueByType.<t>   = subtotal per line-item type (invoices
+  //                           are typed as "membership")
+  //   - revenueBySource.*   = split by transaction origin
+  //                           (POS line items inherit their
+  //                           transaction's source; invoices count
+  //                           as "auto")
   const activeRevenueTiles = (() => {
     if (!activeReport) return null;
     const range = getDateRange(activeReport.dateRange || "month", activeReport.customStartDate, activeReport.customEndDate);
-    const posInRange = allPosTransactions.filter((t: any) => {
-      if (t.status !== "COMPLETED") return false;
-      const date = new Date(t.createdAt);
-      return date >= range.start && date <= range.end;
-    });
-    const posTotal = posInRange.reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
-    const staff = posInRange
-      .filter((t: any) => !t.source || t.source === "STAFF")
-      .reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
-    const portal = posInRange
-      .filter((t: any) => t.source === "PORTAL")
-      .reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
-    const autoPos = posInRange
-      .filter((t: any) => t.source === "AUTO_BILL")
-      .reduce((sum: number, t: any) => sum + (t.totalCents || 0), 0);
+    // Membership data drives the visible-member set. If it hasn't
+    // loaded yet, fall back to counting everything so the tile
+    // isn't stuck at $0 during the initial fetch -- once it lands,
+    // this re-derives and settles on the filtered number.
+    const visibleMemberIds: Set<string> | null = membershipData
+      ? new Set(filterMembersForReport(activeReport, membershipData.membersList).map((m: any) => m.id))
+      : null;
+    const isVisible = (memberId: string | null | undefined) =>
+      !!memberId && (visibleMemberIds === null || visibleMemberIds.has(memberId));
+
+    let totalCents = 0;
+    let rowCount = 0;
     const categoryMap: Record<string, number> = {};
-    posInRange.forEach((t: any) => {
-      (t.POSLineItem || []).forEach((item: any) => {
+    const sourceMap: { staff: number; portal: number; auto: number } = { staff: 0, portal: 0, auto: 0 };
+
+    // 1) POS transactions -- one purchase row per line item. Skip
+    //    $0-total transactions (comped), require a memberId (so
+    //    walk-in POS sales without a linked member don't leak
+    //    into a member-scoped tile), and skip $0 line items.
+    for (const t of allPosTransactions) {
+      if (t.status !== "COMPLETED") continue;
+      if (!t.memberId) continue;
+      if ((t.totalCents || 0) <= 0) continue;
+      if (!isVisible(t.memberId)) continue;
+      const date = new Date(t.createdAt);
+      if (date < range.start || date > range.end) continue;
+      const sourceBucket: "staff" | "portal" | "auto" =
+        t.source === "PORTAL" ? "portal"
+        : t.source === "AUTO_BILL" ? "auto"
+        : "staff";
+      for (const item of (t.POSLineItem || [])) {
+        const amount = item.subtotalCents || 0;
+        if (amount <= 0) continue;
+        totalCents += amount;
+        rowCount += 1;
         const category = item.type || "product";
-        categoryMap[category] = (categoryMap[category] || 0) + (item.subtotalCents || 0);
-      });
-    });
-    const invInRange = allPaidInvoices.filter((inv: any) => {
+        categoryMap[category] = (categoryMap[category] || 0) + amount;
+        sourceMap[sourceBucket] += amount;
+      }
+    }
+    // 2) Paid invoices -- recurring auto-billing cycles that
+    //    handlePaymentSucceeded never mints a POSTransaction for.
+    //    Each paid invoice = one purchase row typed "membership"
+    //    and sourced as "auto".
+    for (const inv of allPaidInvoices) {
+      const memberId = inv.member?.id;
+      if (!memberId) continue;
+      const amount = inv.amountCents || 0;
+      if (amount <= 0) continue;
+      if (!isVisible(memberId)) continue;
       const paidAt = inv.paidAt || inv.createdAt;
-      if (!paidAt) return false;
+      if (!paidAt) continue;
       const date = new Date(paidAt);
-      return date >= range.start && date <= range.end;
-    });
-    const invTotal = invInRange.reduce((sum: number, inv: any) => sum + (inv.amountCents || 0), 0);
-    categoryMap.membership = (categoryMap.membership || 0) + invTotal;
+      if (date < range.start || date > range.end) continue;
+      totalCents += amount;
+      rowCount += 1;
+      categoryMap.membership = (categoryMap.membership || 0) + amount;
+      sourceMap.auto += amount;
+    }
+
     return {
-      totalRevenue: posTotal + invTotal,
-      avgTransactionValue: posInRange.length > 0 ? posTotal / posInRange.length : 0,
-      transactionCount: posInRange.length,
+      totalRevenue: totalCents,
+      avgTransactionValue: rowCount > 0 ? totalCents / rowCount : 0,
+      transactionCount: rowCount,
       revenueByType: categoryMap,
-      revenueBySource: { staff, portal, auto: autoPos + invTotal },
+      revenueBySource: sourceMap,
     };
   })();
 
@@ -2533,154 +2660,13 @@ export default function ReportsPage() {
               {activeReport.fields.showMemberNames && membershipData && (
                 <div className="mb-6">
                   {(() => {
-                    // Filter members based on selected status checkboxes, styles, ranks, and memberships
+                    // Filter members via the shared helper so this
+                    // list and the Revenue Statistics tiles above
+                    // are guaranteed to see the same member set --
+                    // otherwise the tile total can disagree with
+                    // the visible Purchase Price column.
                     const isRecurringReport = activeReport.id === "recurring";
-                    const filteredMembers = membershipData.membersList.filter((m: any) => {
-                      // Recurring Payments report: only members with an upcoming
-                      // recurring charge (next payment date set + nonzero monthly).
-                      if (isRecurringReport) {
-                        if (!m.nextPaymentDate) return false;
-                        if (!m.monthlyPaymentCents || m.monthlyPaymentCents <= 0) return false;
-                      }
-
-                      // Filter by styles if specified (multiple selection).
-                      // Matches ACTIVE styles only -- a member whose
-                      // Hawaiian Kempo entry is toggled inactive drops
-                      // off the Hawaiian Kempo report even if their
-                      // account is still active in another style.
-                      if (activeReport.filterByStyles && activeReport.filterByStyles.length > 0) {
-                        const filterStylesLower = activeReport.filterByStyles.map(s => s.toLowerCase());
-                        const activeNames = getMemberActiveStyleNames(m);
-                        if (!filterStylesLower.some((f) => activeNames.has(f))) return false;
-                      }
-
-                      // Filter by ranks if specified (multiple selection)
-                      // Format is "styleName:rankName" to allow filtering by specific style+rank combinations
-                      if (activeReport.filterByRanks && activeReport.filterByRanks.length > 0) {
-                        let memberHasSelectedRank = false;
-
-                        // Normalize filter ranks to lowercase for case-insensitive comparison
-                        const filterRanksLower = activeReport.filterByRanks.map(r => r.toLowerCase());
-
-                        // Check primary style + rank combination (case-insensitive)
-                        if (m.primaryStyle && m.rank) {
-                          const primaryKey = `${m.primaryStyle}:${m.rank}`.toLowerCase();
-                          if (filterRanksLower.includes(primaryKey)) {
-                            memberHasSelectedRank = true;
-                          }
-                        }
-
-                        // Check ranks in stylesNotes (case-insensitive)
-                        if (!memberHasSelectedRank && m.stylesNotes) {
-                          try {
-                            const stylesArray = JSON.parse(m.stylesNotes);
-                            if (Array.isArray(stylesArray)) {
-                              memberHasSelectedRank = stylesArray.some((s: any) => {
-                                if (s.name && s.rank) {
-                                  const styleRankKey = `${s.name}:${s.rank}`.toLowerCase();
-                                  return filterRanksLower.includes(styleRankKey);
-                                }
-                                return false;
-                              });
-                            }
-                          } catch {}
-                        }
-
-                        if (!memberHasSelectedRank) return false;
-                      }
-
-                      // Filter by membership types if specified
-                      if (activeReport.filterByMembershipTypes && activeReport.filterByMembershipTypes.length > 0) {
-                        const memberMembershipType = m.membershipTypeName || "No Membership";
-                        if (!activeReport.filterByMembershipTypes.includes(memberMembershipType)) {
-                          return false;
-                        }
-                      }
-
-                      // Filter by membership plans if specified
-                      if (activeReport.filterByMembershipPlans && activeReport.filterByMembershipPlans.length > 0) {
-                        const memberMembershipPlan = m.membershipPlanName || "No Plan";
-                        if (!activeReport.filterByMembershipPlans.includes(memberMembershipPlan)) {
-                          return false;
-                        }
-                      }
-
-                      // Filter by coach if specified. Matches on any
-                      // style's `coach` value from stylesNotes -- so a
-                      // multi-style member whose BJJ coach is Cruz but
-                      // Karate coach is John shows up in "Filter to
-                      // Cruz" reports. "No Coach" targets members
-                      // whose stylesNotes has no coach set anywhere.
-                      if (activeReport.filterByCoaches && activeReport.filterByCoaches.length > 0) {
-                        const coaches = new Set<string>();
-                        if (m.stylesNotes) {
-                          try {
-                            const arr = JSON.parse(m.stylesNotes);
-                            if (Array.isArray(arr)) {
-                              for (const s of arr as Array<{ coach?: string | null }>) {
-                                if (s?.coach && String(s.coach).trim()) coaches.add(String(s.coach).trim());
-                              }
-                            }
-                          } catch { /* ignore */ }
-                        }
-                        const memberCoaches = coaches.size > 0 ? Array.from(coaches) : ["No Coach"];
-                        const overlap = memberCoaches.some((c) => activeReport.filterByCoaches!.includes(c));
-                        if (!overlap) return false;
-                      }
-
-                      const status = (m.status || "").toUpperCase();
-                      const statusFilters: boolean[] = [];
-
-                      // Check which status filters are enabled
-                      if (activeReport.fields.showActiveMembers) {
-                        statusFilters.push(status.includes("ACTIVE") && !status.includes("INACTIVE"));
-                      }
-                      if (activeReport.fields.showProspects) {
-                        statusFilters.push(status.includes("PROSPECT"));
-                      }
-                      if (activeReport.fields.showInactiveMembers) {
-                        statusFilters.push(status.includes("INACTIVE"));
-                      }
-                      if (activeReport.fields.showBannedMembers) {
-                        statusFilters.push(status.includes("BANNED"));
-                      }
-                      if (activeReport.fields.showCoaches) {
-                        statusFilters.push(status.includes("COACH"));
-                      }
-                      if (activeReport.fields.showParents) {
-                        statusFilters.push(status.includes("PARENT"));
-                      }
-
-                      // If no status filters are selected, show all members
-                      if (!activeReport.fields.showActiveMembers &&
-                          !activeReport.fields.showProspects &&
-                          !activeReport.fields.showInactiveMembers &&
-                          !activeReport.fields.showBannedMembers &&
-                          !activeReport.fields.showCoaches &&
-                          !activeReport.fields.showParents) {
-                        return true;
-                      }
-
-                      // Member matches if any of the enabled filters match
-                      if (activeReport.fields.showActiveMembers && status.includes("ACTIVE") && !status.includes("INACTIVE")) return true;
-                      if (activeReport.fields.showProspects && status.includes("PROSPECT")) return true;
-                      if (activeReport.fields.showInactiveMembers && status.includes("INACTIVE")) return true;
-                      if (activeReport.fields.showBannedMembers && status.includes("BANNED")) return true;
-                      if (activeReport.fields.showCoaches && status.includes("COACH")) return true;
-                      if (activeReport.fields.showParents && status.includes("PARENT")) return true;
-
-                      // Include members with blank/unrecognized status when "Active" is checked
-                      // This catches members whose status doesn't match any known category
-                      if (activeReport.fields.showActiveMembers) {
-                        const hasKnownStatus = status.includes("ACTIVE") || status.includes("INACTIVE") ||
-                          status.includes("PROSPECT") || status.includes("BANNED") ||
-                          status.includes("COACH") || status.includes("PARENT") ||
-                          status.includes("CANCEL");
-                        if (!hasKnownStatus) return true;
-                      }
-
-                      return false;
-                    });
+                    const filteredMembers = filterMembersForReport(activeReport, membershipData.membersList);
 
                     // Build filter description
                     const activeFilters: string[] = [];
