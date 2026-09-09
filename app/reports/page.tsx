@@ -629,9 +629,9 @@ const COLUMN_LABELS: Record<BaseColumnId, string> = {
   autoRenew: "Auto-Renew",
   expirationDate: "Expiration",
   totalClasses: "Total Classes",
-  salesItems: "Purchases",
-  salesTypes: "Purchase Types",
-  salesAmount: "Total Spent",
+  salesItems: "Purchase",
+  salesTypes: "Purchase Type",
+  salesAmount: "Purchase Price",
 };
 
 // Helper to check if a column is a class type column
@@ -2650,8 +2650,55 @@ export default function ReportsPage() {
                       activeFilters.push(`Coaches: ${activeReport.filterByCoaches.join(", ")}`);
                     }
 
+                    // Hoisted purchase collection so row expansion +
+                    // sort see the same per-line-item entries. Details
+                    // (comments, semantics) mirrored in the second
+                    // reference below.
+                    const _hoistedAnyPurchaseCol =
+                      activeReport.fields.showSalesLogItem
+                      || activeReport.fields.showSalesLogType
+                      || activeReport.fields.showSalesLogAmount;
+                    const _hoistedActiveRange = _hoistedAnyPurchaseCol
+                      ? getDateRange(activeReport.dateRange || "month", activeReport.customStartDate, activeReport.customEndDate)
+                      : null;
+                    type _HoistedPurchaseEntry = { itemName: string; type: string; amountCents: number };
+                    const _hoistedPurchasesByMember: Record<string, _HoistedPurchaseEntry[]> = {};
+                    if (_hoistedActiveRange) {
+                      for (const t of allPosTransactions) {
+                        if (t.status !== "COMPLETED") continue;
+                        if (!t.memberId) continue;
+                        const date = new Date(t.createdAt);
+                        if (date < _hoistedActiveRange.start || date > _hoistedActiveRange.end) continue;
+                        for (const item of (t.POSLineItem || [])) {
+                          const amount = item.subtotalCents || 0;
+                          if (amount <= 0) continue;
+                          (_hoistedPurchasesByMember[t.memberId] = _hoistedPurchasesByMember[t.memberId] || []).push({
+                            itemName: item.itemName || "Unknown",
+                            type: item.type || "product",
+                            amountCents: amount,
+                          });
+                        }
+                      }
+                    }
+                    // Row-expansion: one row per purchase when purchase
+                    // columns are on; drops members with no in-range
+                    // purchases. When no purchase column is on, passes
+                    // the list through unchanged.
+                    const membersToSort = (() => {
+                      if (!_hoistedAnyPurchaseCol) return filteredMembers;
+                      const out: any[] = [];
+                      for (const m of filteredMembers) {
+                        const entries = _hoistedPurchasesByMember[m.id];
+                        if (!entries || entries.length === 0) continue;
+                        for (const purchase of entries) {
+                          out.push({ ...m, _purchase: purchase });
+                        }
+                      }
+                      return out;
+                    })();
+
                     // Sort members if a sort column is selected
-                    const sortedMembers = sortColumn ? [...filteredMembers].sort((a: any, b: any) => {
+                    const sortedMembers = sortColumn ? [...membersToSort].sort((a: any, b: any) => {
                       let aVal: any;
                       let bVal: any;
 
@@ -2842,6 +2889,18 @@ export default function ReportsPage() {
                             aVal = a.attendanceCounts?.total || 0;
                             bVal = b.attendanceCounts?.total || 0;
                             break;
+                          case "salesItems":
+                            aVal = (a._purchase?.itemName || "").toLowerCase();
+                            bVal = (b._purchase?.itemName || "").toLowerCase();
+                            break;
+                          case "salesTypes":
+                            aVal = (a._purchase?.type || "").toLowerCase();
+                            bVal = (b._purchase?.type || "").toLowerCase();
+                            break;
+                          case "salesAmount":
+                            aVal = a._purchase?.amountCents || 0;
+                            bVal = b._purchase?.amountCents || 0;
+                            break;
                           default:
                             aVal = "";
                             bVal = "";
@@ -2857,12 +2916,12 @@ export default function ReportsPage() {
                     }) : (
                       // Default sort for Monthly Payments report: soonest nextPaymentDate first.
                       isRecurringReport
-                        ? [...filteredMembers].sort((a: any, b: any) => {
+                        ? [...membersToSort].sort((a: any, b: any) => {
                             const aT = a.nextPaymentDate ? new Date(a.nextPaymentDate).getTime() : Number.MAX_SAFE_INTEGER;
                             const bT = b.nextPaymentDate ? new Date(b.nextPaymentDate).getTime() : Number.MAX_SAFE_INTEGER;
                             return aT - bT;
                           })
-                        : filteredMembers
+                        : membersToSort
                     );
 
                     // Pagination calculations
@@ -2893,53 +2952,11 @@ export default function ReportsPage() {
                       return out;
                     };
 
-                    // Per-member purchase rollup. Filters allPosTransactions
-                    // to the ACTIVE report's date range (not the revenue-
-                    // type report's -- so a member-type report titled
-                    // e.g. "August Transactions" sees August purchases
-                    // regardless of what any revenue report happens to
-                    // be set to). Only builds when at least one purchase
-                    // column is enabled.
-                    const anyPurchaseCol =
-                      activeReport.fields.showSalesLogItem
-                      || activeReport.fields.showSalesLogType
-                      || activeReport.fields.showSalesLogAmount;
-                    const activeRange = anyPurchaseCol
-                      ? getDateRange(activeReport.dateRange || "month", activeReport.customStartDate, activeReport.customEndDate)
-                      : null;
-                    // Items and types both dedup so the cell reads as a
-                    // clean list ("Hawaiian Kempo & Kore BJJ - Adult"
-                    // once, not "Hawaiian Kempo & Kore BJJ - Adult,
-                    // Hawaiian Kempo & Kore BJJ - Adult, ..."). Total
-                    // Spent still counts every non-zero line so the
-                    // dollar figure stays accurate.
-                    const purchasesByMember: Record<string, { items: Set<string>; types: Set<string>; totalCents: number }> = {};
-                    if (activeRange) {
-                      for (const t of allPosTransactions) {
-                        if (t.status !== "COMPLETED") continue;
-                        if (!t.memberId) continue;
-                        const date = new Date(t.createdAt);
-                        if (date < activeRange.start || date > activeRange.end) continue;
-                        for (const item of (t.POSLineItem || [])) {
-                          // Skip null / $0 line items -- comped
-                          // memberships, first-month-free line splits,
-                          // and other zero-amount rows shouldn't count
-                          // as actual purchases in the sales columns.
-                          const amount = item.subtotalCents || 0;
-                          if (amount <= 0) continue;
-                          const bucket = purchasesByMember[t.memberId] || { items: new Set<string>(), types: new Set<string>(), totalCents: 0 };
-                          bucket.items.add(item.itemName || "Unknown");
-                          bucket.types.add(item.type || "product");
-                          bucket.totalCents += amount;
-                          purchasesByMember[t.memberId] = bucket;
-                        }
-                      }
-                    }
-                    const purchasesFor = (memberId: string): { items: string[]; types: string[]; totalCents: number } | null => {
-                      const b = purchasesByMember[memberId];
-                      if (!b) return null;
-                      return { items: Array.from(b.items), types: Array.from(b.types), totalCents: b.totalCents };
-                    };
+                    // Purchase collection + row expansion happen above
+                    // via the hoisted block near `membersToSort` --
+                    // needed there so sort can key on _purchase.* --
+                    // and sortedMembers is now already expanded, so
+                    // no additional helper is required here.
 
                     // Build enabledColIds + headerFor + cellText ONCE per render
                     // instead of inside every click handler. Both the CSV export
@@ -3148,18 +3165,9 @@ export default function ReportsPage() {
                         case "autoRenew": return m.autoRenew ? "Yes" : "No";
                         case "expirationDate": return formatDateDisplay(m.membershipEndDate);
                         case "totalClasses": return String(m.attendanceCounts?.total || 0);
-                        case "salesItems": {
-                          const p = purchasesFor(m.id);
-                          return p ? p.items.join(", ") : "";
-                        }
-                        case "salesTypes": {
-                          const p = purchasesFor(m.id);
-                          return p ? p.types.join(", ") : "";
-                        }
-                        case "salesAmount": {
-                          const p = purchasesFor(m.id);
-                          return p ? `$${(p.totalCents / 100).toFixed(2)}` : "";
-                        }
+                        case "salesItems": return m._purchase?.itemName || "";
+                        case "salesTypes": return m._purchase?.type || "";
+                        case "salesAmount": return m._purchase ? `$${(m._purchase.amountCents / 100).toFixed(2)}` : "";
                         default: return "";
                       }
                     };
@@ -3782,18 +3790,12 @@ export default function ReportsPage() {
                                           return formatDateDisplay(m.membershipEndDate) || "—";
                                         case "totalClasses":
                                           return m.attendanceCounts?.total || 0;
-                                        case "salesItems": {
-                                          const p = purchasesFor(m.id);
-                                          return p && p.items.length > 0 ? p.items.join(", ") : "—";
-                                        }
-                                        case "salesTypes": {
-                                          const p = purchasesFor(m.id);
-                                          return p && p.types.length > 0 ? p.types.join(", ") : "—";
-                                        }
-                                        case "salesAmount": {
-                                          const p = purchasesFor(m.id);
-                                          return p ? `$${(p.totalCents / 100).toFixed(2)}` : "—";
-                                        }
+                                        case "salesItems":
+                                          return m._purchase?.itemName || "—";
+                                        case "salesTypes":
+                                          return m._purchase?.type || "—";
+                                        case "salesAmount":
+                                          return m._purchase ? `$${(m._purchase.amountCents / 100).toFixed(2)}` : "—";
                                         default:
                                           return "—";
                                       }
