@@ -140,10 +140,11 @@ type ReportDataFields = {
   showRevPosAdmin: boolean;
   showRevMemberPortal: boolean;
   // Per-line-item Sales Log: one row per POS line item in the
-  // report's date range. Three independent columns so admins can
+  // report's date range. Independent column toggles so admins can
   // pick any combination (name only, name + type, name + amount,
-  // all three, etc). Skips rendering the table entirely when none
-  // of the three columns are on.
+  // all four, etc). Skips rendering the table entirely when none
+  // of the columns are on.
+  showSalesLogMember: boolean;
   showSalesLogItem: boolean;
   showSalesLogType: boolean;
   showSalesLogAmount: boolean;
@@ -246,6 +247,7 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showRevCredit: false,
   showRevPosAdmin: false,
   showRevMemberPortal: false,
+  showSalesLogMember: false,
   showSalesLogItem: false,
   showSalesLogType: false,
   showSalesLogAmount: false,
@@ -423,6 +425,7 @@ const STATISTICS_FIELDS = [
       { key: "showRevMemberPortal", label: "Member Portal Revenue" },
       { key: "showTopProducts", label: "Top Products" },
       { key: "showSalesByCategory", label: "Sales by Category (chart)" },
+      { key: "showSalesLogMember", label: "Sales Log · Member (column)" },
       { key: "showSalesLogItem", label: "Sales Log · Item Name (column)" },
       { key: "showSalesLogType", label: "Sales Log · Type (column)" },
       { key: "showSalesLogAmount", label: "Sales Log · Amount (column)" },
@@ -520,8 +523,10 @@ type RevenueSummary = {
   revenueBySource: { staff: number; portal: number; auto: number };
   // Per-line-item sales log for the reporting period. Powers the
   // Sales Log table; each row = one POS line item + its own dated
-  // timestamp. Amount is subtotalCents (post-quantity, pre-tax).
-  salesLog: { date: string; itemName: string; type: string; amountCents: number }[];
+  // timestamp + who bought it. Amount is subtotalCents (post-
+  // quantity, pre-tax). memberName is pulled off the parent
+  // transaction; empty string for walk-in / non-member sales.
+  salesLog: { date: string; memberName: string; itemName: string; type: string; amountCents: number }[];
   avgTransactionValue: number;
   transactionCount: number;
   topProducts: { name: string; revenue: number; quantity: number }[];
@@ -1802,7 +1807,7 @@ export default function ReportsPage() {
           const categoryMap: Record<string, number> = {};
           // Per-line-item log for the Sales Log table. One row per
           // POS line item, timestamped with its parent transaction.
-          const salesLog: { date: string; itemName: string; type: string; amountCents: number }[] = [];
+          const salesLog: { date: string; memberName: string; itemName: string; type: string; amountCents: number }[] = [];
 
           filteredTransactions.forEach((t: any) => {
             (t.POSLineItem || []).forEach((item: any) => {
@@ -1818,6 +1823,7 @@ export default function ReportsPage() {
 
               salesLog.push({
                 date: t.createdAt,
+                memberName: t.memberName || "",
                 itemName: item.itemName || "Unknown",
                 type: item.type || "product",
                 amountCents: item.subtotalCents || 0,
@@ -4242,13 +4248,14 @@ export default function ReportsPage() {
                 </div>
               )}
 
-              {/* Sales Log -- per-line-item feed. Item / Type / Amount
-                  columns each toggleable independently. Only renders
-                  when at least one column is on AND there are rows
-                  in the reporting period. Date is always shown when
-                  the table renders so log entries are anchored in
-                  time. */}
-              {(activeReport.fields.showSalesLogItem || activeReport.fields.showSalesLogType || activeReport.fields.showSalesLogAmount)
+              {/* Sales Log -- per-line-item feed. Member / Item /
+                  Type / Amount columns each toggleable independently.
+                  Only renders when at least one column is on AND
+                  there are rows in the reporting period. Date is
+                  always shown when the table renders so log entries
+                  are anchored in time. */}
+              {(activeReport.fields.showSalesLogMember || activeReport.fields.showSalesLogItem
+                || activeReport.fields.showSalesLogType || activeReport.fields.showSalesLogAmount)
                 && revenueData && revenueData.salesLog.length > 0 && (
                 <div className="mb-6">
                   <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Sales Log</h4>
@@ -4257,6 +4264,7 @@ export default function ReportsPage() {
                       <thead>
                         <tr className="text-left text-xs text-gray-500 uppercase">
                           <th className="pb-2 font-medium">Date</th>
+                          {activeReport.fields.showSalesLogMember && <th className="pb-2 font-medium">Member</th>}
                           {activeReport.fields.showSalesLogItem && <th className="pb-2 font-medium">Item</th>}
                           {activeReport.fields.showSalesLogType && <th className="pb-2 font-medium">Type</th>}
                           {activeReport.fields.showSalesLogAmount && <th className="pb-2 font-medium text-right">Amount</th>}
@@ -4266,6 +4274,7 @@ export default function ReportsPage() {
                         {revenueData.salesLog.map((row, i) => (
                           <tr key={i} className="border-t border-gray-100">
                             <td className="py-2 text-gray-500 text-xs whitespace-nowrap">{formatDateDisplay(row.date)}</td>
+                            {activeReport.fields.showSalesLogMember && <td className="py-2 text-gray-700">{row.memberName || <span className="text-gray-400 italic">Walk-in</span>}</td>}
                             {activeReport.fields.showSalesLogItem && <td className="py-2 text-gray-700">{row.itemName}</td>}
                             {activeReport.fields.showSalesLogType && <td className="py-2 text-gray-600 capitalize">{row.type}</td>}
                             {activeReport.fields.showSalesLogAmount && <td className="py-2 text-right font-medium text-gray-900">{formatCurrency(row.amountCents)}</td>}
