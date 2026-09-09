@@ -2667,6 +2667,12 @@ export default function ReportsPage() {
                       for (const t of allPosTransactions) {
                         if (t.status !== "COMPLETED") continue;
                         if (!t.memberId) continue;
+                        // Skip AUTO_BILL transactions -- those are
+                        // Stripe off-session auto-billing invoice
+                        // fulfillments, not point-of-sale events. The
+                        // purchase log surfaces real sales; auto-bills
+                        // belong in the recurring-payments report.
+                        if (t.source === "AUTO_BILL") continue;
                         const date = new Date(t.createdAt);
                         if (date < _hoistedActiveRange.start || date > _hoistedActiveRange.end) continue;
                         for (const item of (t.POSLineItem || [])) {
