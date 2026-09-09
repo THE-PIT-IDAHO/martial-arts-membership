@@ -2696,8 +2696,13 @@ export default function ReportsPage() {
                       for (const m of filteredMembers) {
                         const entries = _hoistedPurchasesByMember[m.id];
                         if (!entries || entries.length === 0) continue;
-                        for (const purchase of entries) {
-                          out.push({ ...m, _purchase: purchase });
+                        for (let i = 0; i < entries.length; i++) {
+                          // _purchaseIdx keeps rows distinct even when
+                          // the same member buys the same item/amount
+                          // twice -- otherwise two identical-looking
+                          // purchase rows would collide on the React
+                          // key downstream.
+                          out.push({ ...m, _purchase: entries[i], _purchaseIdx: i });
                         }
                       }
                       return out;
@@ -3547,7 +3552,7 @@ export default function ReportsPage() {
                                       if (matching.length === 0) return [];
                                       rows = matching.map((rowStyle) => ({ ...mBase, _reportStyle: rowStyle }));
                                     }
-                                    return rows.map((m: any) => {
+                                    return rows.map((m: any, rowIdx: number) => {
                                     const displayRank = m.rank || "—";
                                     // Determine which status to display based on active filters
                                     let displayStatus = m.status || "—";
@@ -3808,7 +3813,27 @@ export default function ReportsPage() {
                                     };
 
                                     return (
-                                      <tr key={m._reportStyle ? `${m.id}-${m._reportStyle}` : m.id} className="border-t border-gray-100">
+                                      <tr
+                                        key={
+                                          // Compose a key that stays unique
+                                          // when a member is expanded into
+                                          // multiple rows -- by style AND / OR
+                                          // by purchase. Sharing m.id across
+                                          // duplicated rows made React
+                                          // reconcile them as the same node
+                                          // and stack extra copies on every
+                                          // sort click (Cruz's "list gets
+                                          // longer each click" bug).
+                                          [
+                                            m.id,
+                                            m._reportStyle || "",
+                                            m._purchase
+                                              ? `${m._purchase.itemName}|${m._purchase.type}|${m._purchase.amountCents}|${m._purchaseIdx ?? rowIdx}`
+                                              : "",
+                                          ].join("::")
+                                        }
+                                        className="border-t border-gray-100"
+                                      >
                                         {enabledColumns.map((colId) => {
                                           // Cell alignment mirrors the header:
                                           // Member Details columns stay left,
