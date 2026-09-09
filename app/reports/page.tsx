@@ -366,8 +366,13 @@ const STATISTICS_FIELDS = [
     name: "Revenue & Sales",
     fields: [
       { key: "showTotalRevenue", label: "Total Revenue" },
-      { key: "showMembershipRevenue", label: "Membership Revenue" },
-      { key: "showPosRevenue", label: "POS Revenue" },
+      // Legacy keys kept for backwards-compat with saved report
+      // configs. Both now toggle the new "Revenue by Type" tile row
+      // (Memberships, Products, Services, Promotions, ...). Left as
+      // two separate toggles rather than renaming/consolidating so
+      // stored configs don't wipe out.
+      { key: "showMembershipRevenue", label: "Revenue by Type (tiles)" },
+      { key: "showPosRevenue", label: "Revenue by Type (also enables)" },
       { key: "showAvgTransaction", label: "Avg Transaction Value" },
       { key: "showTransactionCount", label: "Transaction Count" },
       { key: "showTopProducts", label: "Top Products" },
@@ -444,8 +449,15 @@ type AttendanceSummary = {
 
 type RevenueSummary = {
   totalRevenue: number;
-  membershipRevenue: number;
-  posRevenue: number;
+  // Revenue split by ITEM TYPE across BOTH POS line items AND paid
+  // invoices (recurring-membership auto-bills). Keys are the POS
+  // line-item types: membership, product, promotion, service,
+  // bundle, credit, gift. Auto-billed invoice amounts fold into
+  // "membership" -- those are always recurring-membership charges.
+  // Replaces the old membershipRevenue / posRevenue split which
+  // classified by SOURCE (invoice vs POS) and misled admins whose
+  // membership sales flow through POS.
+  revenueByType: Record<string, number>;
   avgTransactionValue: number;
   transactionCount: number;
   topProducts: { name: string; revenue: number; quantity: number }[];
@@ -1703,6 +1715,11 @@ export default function ReportsPage() {
           const avgTransactionValue = filteredTransactions.length > 0 ? totalRevenue / filteredTransactions.length : 0;
 
           const productMap: Record<string, { name: string; revenue: number; quantity: number }> = {};
+          // categoryMap accumulates revenue keyed by POS line-item type
+          // (membership, product, promotion, service, bundle, credit,
+          // gift). Auto-billed invoice amounts get added to
+          // "membership" below so the by-type breakdown shows the
+          // FULL membership revenue -- POS-sold + recurring both.
           const categoryMap: Record<string, number> = {};
 
           filteredTransactions.forEach((t: any) => {
@@ -1751,14 +1768,27 @@ export default function ReportsPage() {
             });
           } catch { /* invoices optional */ }
 
+          // Fold invoiced membership revenue into the by-type bucket
+          // so "Memberships" reflects BOTH the POS-sold packs AND the
+          // recurring auto-bills. Without this, the pie chart /
+          // Memberships tile understated by whichever channel wasn't
+          // going through POS at the time.
+          categoryMap.membership = (categoryMap.membership || 0) + membershipRevenueCents;
+
+          const revenueByType = { ...categoryMap };
+          // Rebuild sales-by-category off the same numbers so the pie
+          // chart matches the tiles.
+          const salesByCategoryFinal = Object.entries(revenueByType)
+            .map(([category, revenue]) => ({ category, revenue }))
+            .sort((a, b) => b.revenue - a.revenue);
+
           setRevenueData({
             totalRevenue: totalRevenue + membershipRevenueCents,
-            membershipRevenue: membershipRevenueCents,
-            posRevenue: totalRevenue,
+            revenueByType,
             avgTransactionValue,
             transactionCount: filteredTransactions.length,
             topProducts,
-            salesByCategory,
+            salesByCategory: salesByCategoryFinal,
             refunds: 0,
             outstandingBalance: 0,
             monthlyPosRevenue: posByMonth,
@@ -1767,8 +1797,7 @@ export default function ReportsPage() {
         } catch {
           setRevenueData({
             totalRevenue: 0,
-            membershipRevenue: 0,
-            posRevenue: 0,
+            revenueByType: {},
             avgTransactionValue: 0,
             transactionCount: 0,
             topProducts: [],
@@ -3943,11 +3972,40 @@ export default function ReportsPage() {
                   <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Revenue Statistics</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                     {activeReport.fields.showTotalRevenue && <StatCard label="Total Revenue" value={formatCurrency(revenueData.totalRevenue)} large />}
-                    {activeReport.fields.showMembershipRevenue && <StatCard label="Membership Revenue" value={formatCurrency(revenueData.membershipRevenue)} />}
-                    {activeReport.fields.showPosRevenue && <StatCard label="POS Revenue" value={formatCurrency(revenueData.posRevenue)} />}
                     {activeReport.fields.showAvgTransaction && <StatCard label="Avg Transaction" value={formatCurrency(revenueData.avgTransactionValue)} />}
                     {activeReport.fields.showTransactionCount && <StatCard label="Transactions" value={revenueData.transactionCount} />}
                   </div>
+                  {/* Revenue-by-type tiles: one per non-zero item type
+                      (memberships / products / services / promotions /
+                      bundles / gift / credit). Replaces the old
+                      Membership vs POS split -- classifying by source
+                      hid POS-sold memberships in "POS Revenue" and
+                      confused the pie chart against the tiles. */}
+                  {(activeReport.fields.showMembershipRevenue || activeReport.fields.showPosRevenue) && revenueData.revenueByType && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-3">
+                      {(() => {
+                        const TYPE_LABELS: Record<string, string> = {
+                          membership: "Memberships",
+                          product: "Products",
+                          service: "Services",
+                          promotion: "Promotions",
+                          bundle: "Bundles",
+                          gift: "Gift Cards",
+                          credit: "Account Credit",
+                        };
+                        const TYPE_ORDER = ["membership", "product", "service", "promotion", "bundle", "gift", "credit"];
+                        return TYPE_ORDER
+                          .filter((t) => (revenueData.revenueByType[t] || 0) > 0)
+                          .map((t) => (
+                            <StatCard
+                              key={t}
+                              label={TYPE_LABELS[t] || t}
+                              value={formatCurrency(revenueData.revenueByType[t])}
+                            />
+                          ));
+                      })()}
+                    </div>
+                  )}
                 </div>
               )}
 
