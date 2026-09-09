@@ -145,6 +145,12 @@ type ReportDataFields = {
   showSalesLogItem: boolean;
   showSalesLogType: boolean;
   showSalesLogAmount: boolean;
+  // Include POS sales that weren't linked to a member (walk-in
+  // retail). When on and at least one purchase column is enabled,
+  // each walk-in line item shows as its own row at the bottom of
+  // the Member List with "Walk-in" in the name columns, and gets
+  // folded into the Revenue Statistics tile totals.
+  showNonMemberSales: boolean;
 
   // Classes & Programs
   showClassSchedule: boolean;
@@ -247,6 +253,7 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showSalesLogItem: false,
   showSalesLogType: false,
   showSalesLogAmount: false,
+  showNonMemberSales: false,
   showClassSchedule: false,
   showClassAttendance: false,
   showPopularClasses: false,
@@ -427,6 +434,7 @@ const STATISTICS_FIELDS = [
       { key: "showSalesLogItem", label: "Member List · Purchases (column)" },
       { key: "showSalesLogType", label: "Member List · Purchase Types (column)" },
       { key: "showSalesLogAmount", label: "Member List · Total Spent (column)" },
+      { key: "showNonMemberSales", label: "Member List · Include Walk-in Sales" },
       { key: "showRefunds", label: "Refunds" },
       { key: "showRevenueTrend", label: "Revenue Trend (chart)" },
       // Legacy keys kept for backwards-compat with saved report
@@ -2366,14 +2374,19 @@ export default function ReportsPage() {
     const sourceMap: { staff: number; portal: number; auto: number } = { staff: 0, portal: 0, auto: 0 };
 
     // 1) POS transactions -- one purchase row per line item. Skip
-    //    $0-total transactions (comped), require a memberId (so
-    //    walk-in POS sales without a linked member don't leak
-    //    into a member-scoped tile), and skip $0 line items.
+    //    $0-total transactions (comped) and skip $0 line items.
+    //    Member-linked purchases require the member to be visible
+    //    on this report; walk-in (no memberId) purchases are only
+    //    included when showNonMemberSales is on.
+    const includeWalkIns = !!activeReport.fields.showNonMemberSales;
     for (const t of allPosTransactions) {
       if (t.status !== "COMPLETED") continue;
-      if (!t.memberId) continue;
       if ((t.totalCents || 0) <= 0) continue;
-      if (!isVisible(t.memberId)) continue;
+      if (t.memberId) {
+        if (!isVisible(t.memberId)) continue;
+      } else {
+        if (!includeWalkIns) continue;
+      }
       const date = new Date(t.createdAt);
       if (date < range.start || date > range.end) continue;
       const sourceBucket: "staff" | "portal" | "auto" =
@@ -2760,10 +2773,57 @@ export default function ReportsPage() {
                         });
                       }
                     }
+                    // Walk-in POS purchases (no linked member). Only
+                    // collected when the admin opted in via
+                    // "Include Walk-in Sales" -- most reports are
+                    // member-scoped and shouldn't have anonymous
+                    // rows tacked on. Each line item = one pseudo-
+                    // row, with a synthetic id so React keys stay
+                    // unique and firstName/lastName render as plain
+                    // "Walk-in" / dash instead of a Link.
+                    type _WalkInRow = {
+                      _isWalkIn: true;
+                      id: string;
+                      firstName: string;
+                      lastName: string;
+                      _purchase: _HoistedPurchaseEntry;
+                      _purchaseIdx: number;
+                    };
+                    const _hoistedWalkInRows: _WalkInRow[] = [];
+                    if (_hoistedActiveRange && _hoistedAnyPurchaseCol && activeReport.fields.showNonMemberSales) {
+                      for (const t of allPosTransactions) {
+                        if (t.status !== "COMPLETED") continue;
+                        if (t.memberId) continue;
+                        if ((t.totalCents || 0) <= 0) continue;
+                        const date = new Date(t.createdAt);
+                        if (date < _hoistedActiveRange.start || date > _hoistedActiveRange.end) continue;
+                        const items = (t.POSLineItem || []) as any[];
+                        for (let i = 0; i < items.length; i++) {
+                          const item = items[i];
+                          const amount = item.subtotalCents || 0;
+                          if (amount <= 0) continue;
+                          _hoistedWalkInRows.push({
+                            _isWalkIn: true,
+                            id: `__walkin_${t.id}_${i}`,
+                            firstName: "Walk-in",
+                            lastName: "—",
+                            _purchase: {
+                              itemName: item.itemName || "Unknown",
+                              type: item.type || "product",
+                              amountCents: amount,
+                            },
+                            _purchaseIdx: i,
+                          });
+                        }
+                      }
+                    }
+
                     // Row-expansion: one row per purchase when purchase
                     // columns are on; drops members with no in-range
                     // purchases. When no purchase column is on, passes
-                    // the list through unchanged.
+                    // the list through unchanged. Walk-in pseudo-rows
+                    // (if enabled) get appended so they sort/paginate
+                    // alongside real members.
                     const membersToSort = (() => {
                       if (!_hoistedAnyPurchaseCol) return filteredMembers;
                       const out: any[] = [];
@@ -2779,6 +2839,7 @@ export default function ReportsPage() {
                           out.push({ ...m, _purchase: entries[i], _purchaseIdx: i });
                         }
                       }
+                      for (const w of _hoistedWalkInRows) out.push(w);
                       return out;
                     })();
 
@@ -3824,6 +3885,13 @@ export default function ReportsPage() {
                                       // Handle base columns
                                       switch (colId) {
                                         case "firstName":
+                                          // Walk-in pseudo-rows have no member
+                                          // page to link to -- render plain
+                                          // text in a muted italic so they
+                                          // read as "not a member" at a glance.
+                                          if (m._isWalkIn) {
+                                            return <span className="text-gray-500 italic">{m.firstName}</span>;
+                                          }
                                           return (
                                             <Link
                                               href={`/members/${m.id}?fromReport=${activeReport.id}`}
@@ -3833,6 +3901,9 @@ export default function ReportsPage() {
                                             </Link>
                                           );
                                         case "lastName":
+                                          if (m._isWalkIn) {
+                                            return <span className="text-gray-500 italic">{m.lastName}</span>;
+                                          }
                                           return (
                                             <Link
                                               href={`/members/${m.id}?fromReport=${activeReport.id}`}
