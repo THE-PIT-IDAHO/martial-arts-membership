@@ -1083,6 +1083,12 @@ export default function ReportsPage() {
   // date range on render (rather than being locked to whatever
   // revenue-type report's range the initial revenue fetch used).
   const [allPosTransactions, setAllPosTransactions] = useState<any[]>([]);
+  // Paid invoices for recurring auto-billing. Kept separately from
+  // allPosTransactions because auto-billed cycles live on the Invoice
+  // table (handlePaymentSucceeded just flips status to PAID -- no
+  // POSTransaction is created), so the sales log has to read both
+  // sources to show recurring charges alongside point-of-sale ones.
+  const [allPaidInvoices, setAllPaidInvoices] = useState<any[]>([]);
   const [paymentData, setPaymentData] = useState<PaymentSummary | null>(null);
   const [availableStyles, setAvailableStyles] = useState<{
     id: string;
@@ -1861,6 +1867,10 @@ export default function ReportsPage() {
             const invRes = await fetch("/api/invoices?status=PAID");
             const invJson = await invRes.json();
             const allInvoices = invJson.invoices || [];
+            // Stash the raw list so the member-list purchase columns
+            // can re-filter to the ACTIVE report's date range at
+            // render time (same pattern as allPosTransactions).
+            setAllPaidInvoices(allInvoices);
             const filteredInvoices = allInvoices.filter((inv: any) => {
               const date = new Date(inv.paidAt || inv.createdAt);
               return date >= revDateRange.start && date <= revDateRange.end;
@@ -2664,21 +2674,13 @@ export default function ReportsPage() {
                     type _HoistedPurchaseEntry = { itemName: string; type: string; amountCents: number };
                     const _hoistedPurchasesByMember: Record<string, _HoistedPurchaseEntry[]> = {};
                     if (_hoistedActiveRange) {
+                      // 1) POS transactions (point-of-sale + portal
+                      //    self-checkout). Skip \$0-total (comped) so
+                      //    sticker-price line items on a comped
+                      //    transaction don't leak in.
                       for (const t of allPosTransactions) {
                         if (t.status !== "COMPLETED") continue;
                         if (!t.memberId) continue;
-                        // Skip fully-comped transactions -- the parent
-                        // total is what actually changed hands.
-                        // Otherwise a $195 line item with a 100%
-                        // discount at the transaction level ends up
-                        // in the sales log as a $195 "purchase" even
-                        // though nothing was charged (Nico Gomez /
-                        // family comp).
-                        // Recurring auto-bill invoice fulfillments
-                        // (source=AUTO_BILL) DO count -- each cycle
-                        // is a real charge and belongs in the sales
-                        // log under its proper type (usually
-                        // membership).
                         if ((t.totalCents || 0) <= 0) continue;
                         const date = new Date(t.createdAt);
                         if (date < _hoistedActiveRange.start || date > _hoistedActiveRange.end) continue;
@@ -2691,6 +2693,29 @@ export default function ReportsPage() {
                             amountCents: amount,
                           });
                         }
+                      }
+                      // 2) Paid invoices (recurring auto-billing).
+                      //    handlePaymentSucceeded flips Invoice.status
+                      //    to PAID without minting a POSTransaction,
+                      //    so recurring charges only live here. Each
+                      //    paid invoice = one purchase row typed as
+                      //    "membership".
+                      for (const inv of allPaidInvoices) {
+                        if (inv.status !== "PAID") continue;
+                        const memberId = inv.member?.id;
+                        if (!memberId) continue;
+                        const amount = inv.amountCents || 0;
+                        if (amount <= 0) continue;
+                        const paidAt = inv.paidAt || inv.createdAt;
+                        if (!paidAt) continue;
+                        const date = new Date(paidAt);
+                        if (date < _hoistedActiveRange.start || date > _hoistedActiveRange.end) continue;
+                        const planName = inv.membership?.membershipPlan?.name || "Membership";
+                        (_hoistedPurchasesByMember[memberId] = _hoistedPurchasesByMember[memberId] || []).push({
+                          itemName: planName,
+                          type: "membership",
+                          amountCents: amount,
+                        });
                       }
                     }
                     // Row-expansion: one row per purchase when purchase
