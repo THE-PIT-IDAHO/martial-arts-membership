@@ -2667,10 +2667,6 @@ export default function ReportsPage() {
                       for (const t of allPosTransactions) {
                         if (t.status !== "COMPLETED") continue;
                         if (!t.memberId) continue;
-                        // Skip AUTO_BILL transactions -- those are
-                        // Stripe off-session auto-billing invoice
-                        // fulfillments, not point-of-sale events.
-                        if (t.source === "AUTO_BILL") continue;
                         // Skip fully-comped transactions -- the parent
                         // total is what actually changed hands.
                         // Otherwise a $195 line item with a 100%
@@ -2678,6 +2674,11 @@ export default function ReportsPage() {
                         // in the sales log as a $195 "purchase" even
                         // though nothing was charged (Nico Gomez /
                         // family comp).
+                        // Recurring auto-bill invoice fulfillments
+                        // (source=AUTO_BILL) DO count -- each cycle
+                        // is a real charge and belongs in the sales
+                        // log under its proper type (usually
+                        // membership).
                         if ((t.totalCents || 0) <= 0) continue;
                         const date = new Date(t.createdAt);
                         if (date < _hoistedActiveRange.start || date > _hoistedActiveRange.end) continue;
