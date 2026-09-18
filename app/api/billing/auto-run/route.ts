@@ -611,6 +611,7 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
               lastName: true,
               stripeCustomerId: true,
               defaultPaymentMethodId: true,
+              defaultPaymentMethodSetAt: true,
               paypalPayerId: true,
               squareCustomerId: true,
             },
@@ -643,8 +644,18 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
             dunningRemaining = creditResult.remainingCents;
           }
 
+          // Don't retroactively charge a newly-added card. If the
+          // member's default card was set AFTER this invoice was
+          // created, skip -- Cruz's rule: adding a card must never
+          // silently auto-charge a member's pre-existing outstanding
+          // balance. The invoice stays in dunning; admin can still
+          // clear it manually via the "Charge Now" button.
+          const cardPredatesInvoice =
+            !!inv.member.defaultPaymentMethodSetAt
+            && inv.member.defaultPaymentMethodSetAt <= inv.createdAt;
+
           // Attempt charge via active processor if member has stored payment method
-          if (dunningRemaining > 0 && activeProcessor && inv.member.defaultPaymentMethodId) {
+          if (dunningRemaining > 0 && activeProcessor && inv.member.defaultPaymentMethodId && cardPredatesInvoice) {
             try {
               const chargeResult = await chargeStoredPaymentMethod({
                 memberId: inv.member.id,

@@ -252,6 +252,6 @@ async function handleMemberSetupSession(session: Stripe.Checkout.Session): Promi
   });
   await prisma.member.update({
     where: { id: memberId },
-    data: { defaultPaymentMethodId: pmId },
+    data: { defaultPaymentMethodId: pmId, defaultPaymentMethodSetAt: new Date() },
   });
 }

@@ -37,11 +37,14 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 
     await stripeClient.paymentMethods.detach(paymentMethodId);
 
-    // Clear default if this was the default
+    // Clear default if this was the default. Also clear the
+    // setAt timestamp so if a new card is added later the dunning
+    // loop's "only charge invoices dated ≥ setAt" guard evaluates
+    // against the new card's own add-time, not the previous card's.
     if (member.defaultPaymentMethodId === paymentMethodId) {
       await prisma.member.update({
         where: { id: memberId },
-        data: { defaultPaymentMethodId: null },
+        data: { defaultPaymentMethodId: null, defaultPaymentMethodSetAt: null },
       });
     }
 

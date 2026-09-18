@@ -96,7 +96,7 @@ export async function PUT(_req: NextRequest, { params }: Params) {
     });
     await prisma.member.update({
       where: { id: owner.id },
-      data: { defaultPaymentMethodId: paymentMethodId },
+      data: { defaultPaymentMethodId: paymentMethodId, defaultPaymentMethodSetAt: new Date() },
     });
 
     return NextResponse.json({ success: true, savedOnMemberId: owner.id });

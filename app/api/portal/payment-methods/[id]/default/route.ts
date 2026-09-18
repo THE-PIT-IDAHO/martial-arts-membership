@@ -46,7 +46,7 @@ export async function PUT(
 
     await prisma.member.update({
       where: { id: auth.memberId },
-      data: { defaultPaymentMethodId: paymentMethodId },
+      data: { defaultPaymentMethodId: paymentMethodId, defaultPaymentMethodSetAt: new Date() },
     });
 
     return NextResponse.json({ success: true });

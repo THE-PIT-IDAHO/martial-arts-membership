@@ -279,6 +279,16 @@ model Member {
   linkedUser                   User?                 @relation("MemberAdminUser", fields: [userId], references: [id], onDelete: SetNull)
   stripeCustomerId             String?
   defaultPaymentMethodId       String?
+  // Timestamp of when defaultPaymentMethodId was last set. Used by
+  // the dunning loop to skip PAST_DUE invoices that existed BEFORE
+  // this card was added -- otherwise adding a card to a member
+  // with outstanding balances would silently auto-charge the new
+  // card on the next cron run. Admin retains full control via the
+  // manual "Charge Now" button on individual invoices. Nullable
+  // for legacy rows that never had a card; migration backfills
+  // Member.createdAt for rows that already had defaultPaymentMethodId
+  // so existing behavior is preserved for them.
+  defaultPaymentMethodSetAt    DateTime?
   paypalPayerId                String?
   squareCustomerId             String?
   portalPasswordHash           String?
