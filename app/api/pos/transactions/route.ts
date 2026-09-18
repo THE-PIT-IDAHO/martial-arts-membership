@@ -536,13 +536,6 @@ export async function POST(req: Request) {
             select: { id: true, firstName: true, lastName: true, status: true, stylesNotes: true, styleDocuments: true, primaryStyle: true, rank: true },
           });
 
-          // Snapshot BEFORE the status update so we can decide if this
-          // is a first-time conversion (PROSPECT -> ACTIVE) that
-          // deserves a welcome email. Existing ACTIVE members buying
-          // another membership don't re-trigger a welcome.
-          const wasProspect = member?.status
-            ? member.status.split(",").map((s: string) => s.trim()).includes("PROSPECT")
-            : false;
 
           if (member) {
             // Parse existing statuses (can be comma-separated like "INACTIVE,COACH")
@@ -566,21 +559,17 @@ export async function POST(req: Request) {
               data: { status: newStatus },
             });
 
-            // First membership purchase for a prospect -> welcome
-            // email fires alongside the receipt/contract "Purchase
-            // Complete" email that the checkout flow sends. Awaited
-            // so Vercel serverless doesn't kill the promise before
-            // Resend gets the request.
-            if (wasProspect) {
-              try {
-                const { sendWelcomeEmail } = await import("@/lib/notifications");
-                await sendWelcomeEmail({
-                  memberId: member.id,
-                  memberName: `${member.firstName} ${member.lastName}`,
-                });
-              } catch (err) {
-                console.error("[pos/transactions] welcome email failed:", err);
-              }
+            // First-membership welcome. Idempotent via
+            // sendWelcomeIfFirstMembership -- previously this only
+            // fired when the member happened to be a PROSPECT, so
+            // Cruz saw the "some members never get welcome" bug for
+            // anyone who came into POS already ACTIVE / INACTIVE
+            // without a prior welcome ever having been sent.
+            try {
+              const { sendWelcomeIfFirstMembership } = await import("@/lib/notifications");
+              await sendWelcomeIfFirstMembership({ memberId: member.id });
+            } catch (err) {
+              console.error("[pos/transactions] welcome email failed:", err);
             }
           }
 

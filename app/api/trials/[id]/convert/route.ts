@@ -4,6 +4,7 @@ import { logAudit } from "@/lib/audit";
 import { getClientId } from "@/lib/tenant";
 import { buildMembershipSignupExtras } from "@/lib/membership-signup-extras";
 import { calculateContractEndDate } from "@/lib/contracts";
+import { sendWelcomeIfFirstMembership } from "@/lib/notifications";
 
 export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -77,6 +78,15 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
       summary: `Converted trial to membership "${plan.name}" for ${trial.member.firstName} ${trial.member.lastName}`,
       clientId,
     }).catch(() => {});
+
+    // First-membership welcome. Idempotent -- a converted trial
+    // often belongs to a member who never received a welcome
+    // during their prospect phase.
+    try {
+      await sendWelcomeIfFirstMembership({ memberId: trial.memberId });
+    } catch (err) {
+      console.error("[trials/convert] welcome email failed:", err);
+    }
 
     return NextResponse.json({ membership, trial: { status: "CONVERTED" } });
   } catch (error) {

@@ -19,6 +19,7 @@ import {
 import { calculateNextPaymentDate } from "@/lib/billing";
 import { buildMembershipSignupExtras } from "@/lib/membership-signup-extras";
 import { calculateContractEndDate } from "@/lib/contracts";
+import { sendWelcomeIfFirstMembership } from "@/lib/notifications";
 
 export type ProcessorType = "stripe" | "paypal" | "square";
 
@@ -910,6 +911,16 @@ async function processAdminPOSCheckout(params: {
           where: { id: memberId },
           data: { status: { set: "ACTIVE" } },
         });
+
+        // First-membership welcome. Idempotent -- portal store
+        // Stripe webhook path never fired one before, so anyone
+        // who joined via portal checkout missed the email until
+        // they later got a POS-added upgrade (if ever).
+        try {
+          await sendWelcomeIfFirstMembership({ memberId });
+        } catch (err) {
+          console.error("[payment.processCartItems] welcome email failed:", err);
+        }
       }
     }
 
@@ -1158,6 +1169,13 @@ async function processPortalStoreCheckout(params: {
           }),
         },
       });
+    }
+    // First-membership welcome. Idempotent -- fires once total per
+    // member regardless of how many plans were in the cart.
+    try {
+      await sendWelcomeIfFirstMembership({ memberId });
+    } catch (err) {
+      console.error("[payment.completePortalStore] welcome email failed:", err);
     }
   }
 }

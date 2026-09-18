@@ -362,7 +362,7 @@ export function getDefaultTemplate(eventKey: string): DefaultEmailTemplate | und
 // at a glance when an email actually fires. `wired: false` means the helper
 // exists but nothing in the code calls it yet (toggle is dormant).
 export const TEMPLATE_TRIGGERS: Record<string, { description: string; wired: boolean }> = {
-  welcome: { description: "When a new member is created (POST /api/members or signup flow)", wired: true },
+  welcome: { description: "When a new member is created, or when their first membership is added via any path (POS, admin, trial conversion, portal store, enrollment). Sends once per member — subsequent memberships don't re-trigger.", wired: true },
   enrollment_confirmation: { description: "When a member submits the online waiver form", wired: true },
   birthday: { description: "Daily cron at 13:00 UTC checks every member's DOB and sends a greeting (once per year)", wired: true },
   inactive_reengagement: { description: "Weekly Sunday cron — sends to ACTIVE members with no attendance in 30+ days (60-day cooldown between sends)", wired: true },

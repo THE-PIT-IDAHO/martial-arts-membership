@@ -210,6 +210,43 @@ export async function sendWelcomeEmail(params: {
   await sendEmail({ to: emails, subject, html, memberId: params.memberId, clientId, eventType: "WELCOME" });
 }
 
+/**
+ * Idempotent welcome trigger for every path that creates a
+ * Membership. Cruz reported that some members never got the
+ * welcome email even though their membership was successfully
+ * added -- because only two of the six Membership.create paths
+ * fired one (/api/members POST + /api/pos/transactions, and even
+ * POS only fired when `wasProspect` was true). This wrapper
+ * closes the gap: called after any Membership.create, it looks
+ * up the member's EmailLog and only sends if no prior WELCOME
+ * has succeeded for them. Safe to call multiple times per
+ * membership, from any Membership.create site, without producing
+ * duplicate welcomes.
+ */
+export async function sendWelcomeIfFirstMembership(params: {
+  memberId: string;
+}): Promise<void> {
+  // Skip if a successful WELCOME was already logged for this
+  // member (regardless of which path fired it). Failed prior
+  // attempts don't count -- if Resend rejected or the toggle was
+  // off at the time, a fresh membership add is a reasonable
+  // second chance.
+  const priorSuccess = await prisma.emailLog.findFirst({
+    where: { memberId: params.memberId, eventType: "WELCOME", success: true },
+    select: { id: true },
+  });
+  if (priorSuccess) return;
+  const member = await prisma.member.findUnique({
+    where: { id: params.memberId },
+    select: { firstName: true, lastName: true },
+  });
+  if (!member) return;
+  await sendWelcomeEmail({
+    memberId: params.memberId,
+    memberName: `${member.firstName} ${member.lastName}`.trim(),
+  });
+}
+
 // --- 2. Invoice Created ---
 
 export async function sendInvoiceCreatedEmail(params: {

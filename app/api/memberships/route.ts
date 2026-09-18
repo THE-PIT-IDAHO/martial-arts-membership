@@ -6,6 +6,7 @@ import { calculateContractEndDate } from "@/lib/contracts";
 import { getClientId } from "@/lib/tenant";
 import { getFirstRankFromBeltConfig, addRankPdfsToDocuments, type StyleDocument } from "@/lib/belt-config";
 import { buildMembershipSignupExtras } from "@/lib/membership-signup-extras";
+import { sendWelcomeIfFirstMembership } from "@/lib/notifications";
 
 // Calculate next payment date based on billing cycle
 // calculateNextPaymentDate imported from @/lib/billing
@@ -169,6 +170,16 @@ export async function POST(req: Request) {
         membershipPlan: true,
       },
     });
+
+    // First-membership welcome. Idempotent -- skips if the member
+    // already received one via any other path. Awaited so Vercel
+    // serverless doesn't kill the send mid-flight; wrapped so a
+    // send failure doesn't abort the membership response.
+    try {
+      await sendWelcomeIfFirstMembership({ memberId });
+    } catch (err) {
+      console.error("[memberships] welcome email failed:", err);
+    }
 
     // Auto-assign included styles to the member and reactivate existing inactive styles
     // Only do this if the membership is ACTIVE
