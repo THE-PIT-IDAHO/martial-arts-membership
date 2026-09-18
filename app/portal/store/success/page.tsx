@@ -6,7 +6,13 @@ import Link from "next/link";
 
 export default function StoreSuccessPage() {
   const searchParams = useSearchParams();
+  // Stripe-hosted checkout redirects with ?session_id=…; the new
+  // saved-card path (memberships) navigates here with ?pi=… since
+  // there's no hosted-checkout session -- either signal counts as
+  // a valid confirmation for the "Order Confirmed" screen.
   const sessionId = searchParams.get("session_id");
+  const paymentIntentId = searchParams.get("pi");
+  const orderRef = sessionId || paymentIntentId;
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -23,7 +29,7 @@ export default function StoreSuccessPage() {
     );
   }
 
-  if (!sessionId) {
+  if (!orderRef) {
     return (
       <div className="px-4 pt-6 pb-4 max-w-lg mx-auto text-center">
         <p className="text-gray-500 mb-4">No order found.</p>

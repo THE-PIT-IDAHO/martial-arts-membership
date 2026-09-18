@@ -979,7 +979,13 @@ async function processAdminPOSCheckout(params: {
  * scoped to that tenant so a stray or spoofed cartItem id can't
  * touch another gym's inventory / plan / member.
  */
-async function processPortalStoreCheckout(params: {
+// Exported so the "charge saved card" portal path can reuse the
+// exact same cart -> POSTransaction + Membership + welcome-email
+// flow that the Stripe-hosted-checkout webhook uses. Keeping one
+// implementation avoids the two paths drifting on any of the
+// downstream side effects (inventory decrement, welcome fire,
+// stylesNotes assignment, etc).
+export async function processPortalStoreCheckout(params: {
   externalPaymentId: string;
   processor: ProcessorType;
   metadata: Record<string, string>;

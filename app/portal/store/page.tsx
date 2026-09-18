@@ -127,6 +127,13 @@ export default function PortalStorePage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [features, setFeatures] = useState<Record<string, boolean>>({ store_goods: true, store_services: true });
+  // Saved-card summary drives the membership checkout button:
+  // memberships in the cart route to /checkout-saved-card when
+  // one is on file, and get blocked with an "add a card first"
+  // message when none is. Products stay on the existing hosted
+  // checkout regardless.
+  const [savedCard, setSavedCard] = useState<{ brand: string; last4: string } | null>(null);
+  const [savedCardChecked, setSavedCardChecked] = useState(false);
 
   // Variant selections per item (keyed by item id)
   const [variantSelections, setVariantSelections] = useState<Record<string, { size?: string; color?: string }>>({});
@@ -140,12 +147,13 @@ export default function PortalStorePage() {
   const [signatureName, setSignatureName] = useState("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Load items and features
+  // Load items, features, and the member's saved card (if any)
   useEffect(() => {
     Promise.all([
       fetch("/api/portal/store/items").then((r) => r.json()),
       fetch("/api/portal/features").then((r) => r.json()),
-    ]).then(([itemsData, featuresData]) => {
+      fetch("/api/portal/payment-methods").then((r) => r.json()).catch(() => ({ paymentMethods: [], defaultId: null })),
+    ]).then(([itemsData, featuresData, pmData]) => {
       setItems(itemsData.items || []);
       const f = featuresData.features || {};
       setFeatures(f);
@@ -155,6 +163,13 @@ export default function PortalStorePage() {
       if (f.store_services === false && f.store_goods !== false) {
         setSelectedTab("goods");
       }
+      // Resolve the DEFAULT card only. We don't offer a picker in
+      // the store cart -- the same "default" card the auto-billing
+      // cron uses is what gets charged here.
+      const methods: Array<{ id: string; brand: string; last4: string }> = pmData.paymentMethods || [];
+      const def = methods.find((m) => m.id === pmData.defaultId) || methods[0] || null;
+      setSavedCard(def ? { brand: def.brand, last4: def.last4 } : null);
+      setSavedCardChecked(true);
       setLoading(false);
     });
   }, []);
@@ -233,18 +248,55 @@ export default function PortalStorePage() {
   async function handleCheckout() {
     setCheckingOut(true);
     setError("");
+    const payload = {
+      items: cart.map((ci) => ({
+        itemId: ci.itemId,
+        quantity: ci.quantity,
+        selectedSize: ci.selectedSize || null,
+        selectedColor: ci.selectedColor || null,
+      })),
+    };
+    // Any membership in the cart forces the saved-card route.
+    // Cruz's rule: memberships from the portal require a card on
+    // file, no "enter a new card" option. Products-only carts keep
+    // the existing hosted-checkout flow so walk-in-style merch
+    // buys still work for members without a card.
+    const cartHasMembership = cart.some((ci) => ci.itemId.startsWith("plan_"));
+    if (cartHasMembership) {
+      if (!savedCard) {
+        setError("Add a card in Profile → Payment Methods to purchase memberships from the portal.");
+        setCheckingOut(false);
+        return;
+      }
+      try {
+        const res = await fetch("/api/portal/store/checkout-saved-card", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (data.success) {
+          // Clear the cart and drop into the success screen -- no
+          // Stripe hosted redirect happens on this path, so we
+          // navigate manually.
+          localStorage.removeItem("portal-store-cart");
+          setCart([]);
+          window.location.href = `/portal/store/success?pi=${encodeURIComponent(data.paymentIntentId || "")}`;
+        } else {
+          setError(data.error || "Payment failed");
+          setCheckingOut(false);
+        }
+      } catch {
+        setError("Connection error. Please try again.");
+        setCheckingOut(false);
+      }
+      return;
+    }
     try {
       const res = await fetch("/api/portal/store/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: cart.map((ci) => ({
-            itemId: ci.itemId,
-            quantity: ci.quantity,
-            selectedSize: ci.selectedSize || null,
-            selectedColor: ci.selectedColor || null,
-          })),
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.url) {
@@ -649,12 +701,32 @@ export default function PortalStorePage() {
                   <p className="text-sm text-red-600 mt-2">{error}</p>
                 )}
 
+                {/* Saved-card notice when a membership is in the
+                    cart: memberships MUST be paid on the card on
+                    file. If none is set, block checkout and point
+                    the member at Profile → Payment Methods. */}
+                {savedCardChecked && cart.some((ci) => ci.itemId.startsWith("plan_")) && !savedCard && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-2">
+                    A card on file is required to purchase memberships from the portal. Add one under Profile → Payment Methods.
+                  </p>
+                )}
+
                 <button
                   onClick={handleCheckout}
-                  disabled={checkingOut}
+                  disabled={
+                    checkingOut
+                    || (cart.some((ci) => ci.itemId.startsWith("plan_")) && !savedCard)
+                  }
                   className="w-full mt-3 bg-primary text-white py-3 rounded-xl font-semibold active:scale-[0.98] transition-all disabled:opacity-50"
                 >
-                  {checkingOut ? "Redirecting..." : `Checkout — ${formatCents(cartTotal)}`}
+                  {(() => {
+                    if (checkingOut) return "Processing...";
+                    const cartHasMembership = cart.some((ci) => ci.itemId.startsWith("plan_"));
+                    if (cartHasMembership && savedCard) {
+                      return `Charge ····${savedCard.last4} — ${formatCents(cartTotal)}`;
+                    }
+                    return `Checkout — ${formatCents(cartTotal)}`;
+                  })()}
                 </button>
               </div>
             )}
