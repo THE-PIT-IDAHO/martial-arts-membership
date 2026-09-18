@@ -289,6 +289,14 @@ model Member {
   // Member.createdAt for rows that already had defaultPaymentMethodId
   // so existing behavior is preserved for them.
   defaultPaymentMethodSetAt    DateTime?
+  // Per-member kill switch for the dunning loop. Default TRUE
+  // (current behavior: past-due / failed invoices auto-retry on
+  // the daily cron). When admin flips to FALSE, the retry loop
+  // skips this member entirely -- admin must clear each balance
+  // via the "Charge Now" button. Fresh recurring cycles still
+  // fire (that's the SET auto-pay Cruz explicitly wants preserved);
+  // this only gates the retry-of-past-due behavior.
+  autoChargePastDueEnabled     Boolean               @default(true)
   paypalPayerId                String?
   squareCustomerId             String?
   portalPasswordHash           String?

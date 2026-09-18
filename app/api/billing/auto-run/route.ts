@@ -612,6 +612,7 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
               stripeCustomerId: true,
               defaultPaymentMethodId: true,
               defaultPaymentMethodSetAt: true,
+              autoChargePastDueEnabled: true,
               paypalPayerId: true,
               squareCustomerId: true,
             },
@@ -624,6 +625,16 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
 
       for (const inv of dunningInvoices) {
         try {
+          // Per-member "Auto-charge past-due balances" kill switch.
+          // When admin has flipped this off, don't touch the card
+          // for this member at all -- skip credit drawdown too (a
+          // credit draw is silent and expected, but Cruz wants
+          // manual control over ANY forward motion on this balance
+          // until he decides). Admin clears the balance via the
+          // per-invoice "Charge Now" button (or applies credit
+          // manually elsewhere).
+          if (inv.member.autoChargePastDueEnabled === false) continue;
+
           // Draw down remaining account credit BEFORE hitting the
           // processor again. Someone may have added credit since the
           // invoice went past due; if the credit now covers the

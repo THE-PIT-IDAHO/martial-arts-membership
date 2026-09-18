@@ -739,6 +739,12 @@ export default function MemberProfilePage() {
   const [removingCardId, setRemovingCardId] = useState<string | null>(null);
   const [settingDefaultCardId, setSettingDefaultCardId] = useState<string | null>(null);
   const [cardSetupSuccess, setCardSetupSuccess] = useState(false);
+  // Per-member "Auto-charge past-due balances" kill switch. When
+  // FALSE, the dunning cron skips this member -- admin must clear
+  // each outstanding balance manually via "Charge Now". Fresh
+  // recurring cycles still fire regardless.
+  const [autoChargePastDue, setAutoChargePastDue] = useState(true);
+  const [savingAutoCharge, setSavingAutoCharge] = useState(false);
 
   // pause modal
   const [pauseModalMembershipId, setPauseModalMembershipId] = useState<string | null>(null);
@@ -817,6 +823,12 @@ export default function MemberProfilePage() {
       setInvoices(data.invoices || []);
       setMember(m);
       setTestResults(testResultsData);
+      // Seed the "auto-charge past-due" toggle from the loaded
+      // member row so the switch in the Saved Cards section
+      // reflects the persisted state (default TRUE).
+      setAutoChargePastDue(
+        (m as unknown as { autoChargePastDueEnabled?: boolean }).autoChargePastDueEnabled !== false,
+      );
       hydrateFormFromMember(m);
       seedActivityFromMember(m, testResultsData, transactions, emails);
 
@@ -1009,6 +1021,25 @@ export default function MemberProfilePage() {
       }
     } catch { /* ignore */ }
     setRemovingCardId(null);
+  };
+
+  const handleToggleAutoChargePastDue = async (next: boolean) => {
+    if (!memberId) return;
+    // Optimistic flip so the switch feels responsive; revert on error.
+    const previous = autoChargePastDue;
+    setAutoChargePastDue(next);
+    setSavingAutoCharge(true);
+    try {
+      const res = await fetch(`/api/members/${memberId}/auto-charge-past-due`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+      if (!res.ok) throw new Error("save failed");
+    } catch {
+      setAutoChargePastDue(previous);
+    }
+    setSavingAutoCharge(false);
   };
 
   const handleSetDefaultCard = async (pmId: string) => {
@@ -6390,6 +6421,33 @@ export default function MemberProfilePage() {
                       <>Add Card</>
                     )}
                   </button>
+
+                  {/* Auto-charge past-due kill switch. Default ON =
+                      current behavior (daily cron auto-retries any
+                      PAST_DUE / FAILED invoice). OFF = dunning
+                      skips this member; admin clears each balance
+                      via the per-invoice "Charge Now" button.
+                      Fresh recurring cycles fire either way. */}
+                  <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-gray-800">Auto-charge past-due balances</p>
+                      <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">
+                        When on, the daily cron retries any PAST_DUE / FAILED invoice against the default card. When off, past-due charges wait for a manual "Charge Now" click. Recurring membership cycles auto-charge either way.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleAutoChargePastDue(!autoChargePastDue)}
+                      disabled={savingAutoCharge}
+                      role="switch"
+                      aria-checked={autoChargePastDue}
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50 ${autoChargePastDue ? "bg-primary" : "bg-gray-300"}`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${autoChargePastDue ? "translate-x-4" : "translate-x-0.5"}`}
+                      />
+                    </button>
+                  </div>
                 </div>
 
                 <hr className="border-gray-200 mb-3" />
