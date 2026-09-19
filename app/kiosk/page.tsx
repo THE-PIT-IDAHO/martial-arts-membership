@@ -628,7 +628,14 @@ export default function KioskPage() {
 
   const loadAttendees = useCallback(async (classId: string) => {
     try {
-      const today = new Date().toISOString().split("T")[0];
+      // LOCAL date, not UTC. `toISOString().split("T")[0]` returns
+      // the UTC date, which flips to TOMORROW during evening hours
+      // in any timezone west of UTC (e.g. 6pm Mountain = midnight
+      // UTC). The attendee list would then query tomorrow's rows
+      // and come up empty. Matches the local-YMD pattern used in
+      // manualCheckIn below.
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       const res = await fetch(`/api/attendance?classSessionId=${classId}&date=${today}`);
       if (res.ok) {
         const data = await res.json();
@@ -678,7 +685,14 @@ export default function KioskPage() {
     setSearchQuery("");
     setSearchResults([]);
     try {
-      const today = new Date().toISOString().split("T")[0];
+      // LOCAL date, not UTC. Same bug as loadAttendees above:
+      // `toISOString().split("T")[0]` produced tomorrow's date on
+      // evening scans in any timezone west of UTC, so the attendance
+      // row landed one day out and never surfaced in that day's
+      // dashboard for the admin to confirm. This was Cruz's "2-step
+      // verification sometimes doesn't get confirmed" report.
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       const res = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

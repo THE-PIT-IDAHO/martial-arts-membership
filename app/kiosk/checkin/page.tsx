@@ -41,7 +41,16 @@ export default function KioskCheckinPage() {
         }
         const classesData = await classesRes.json();
         const now = new Date();
-        const today = now.toISOString().split("T")[0];
+        // LOCAL YMD, not UTC. `toISOString().split("T")[0]` returns
+        // the UTC date, which flips to TOMORROW in any timezone
+        // west of UTC during evening hours -- attendance rows
+        // written with that date landed on the next day and never
+        // showed up on the current day's dashboard for the admin
+        // to confirm. Matches Cruz's "sometimes not getting
+        // confirmed" report.
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        const localYmd = (d: Date) =>
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
         // Find classes happening now or soon (within 30 min before/after)
         const activeClasses = (classesData.classes || []).filter((cls: { startsAt: string; endsAt: string; isRecurring?: boolean; kioskEnabled?: boolean }) => {
@@ -59,8 +68,9 @@ export default function KioskCheckinPage() {
             return nowMins >= startMins - 30 && nowMins <= endMins + 15;
           }
 
-          // One-time class — check if today and within time window
-          if (start.toISOString().split("T")[0] !== today) return false;
+          // One-time class -- match on LOCAL YMD both sides so the
+          // switch to local `today` above stays consistent here.
+          if (localYmd(start) !== today) return false;
           const startMins = start.getHours() * 60 + start.getMinutes();
           const endMins = end.getHours() * 60 + end.getMinutes();
           const nowMins = now.getHours() * 60 + now.getMinutes();

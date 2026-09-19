@@ -601,7 +601,12 @@ export default function DashboardPage() {
     } catch { /* ignore */ }
   }
 
-  async function handleBulkMarkAbsent(cls: ClassToday) {
+  // Unconfirm = flip confirmed:true -> false on the existing
+  // attendance row. Row stays put, so the member still counts as
+  // "signed in" for SIGN_IN-mode class packs. Different from
+  // handleBulkDelete which removes the row entirely (member marked
+  // as not present at all). Wired to the "Unconfirm" bulk button.
+  async function handleBulkUnconfirm(cls: ClassToday) {
     const ids = [...checkedMembers].filter((id) =>
       cls.attendees.some((a) => a.memberId === id && a.confirmed)
     );
@@ -999,11 +1004,11 @@ export default function DashboardPage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleBulkMarkAbsent(selectedClass)}
+                              onClick={() => handleBulkUnconfirm(selectedClass)}
                               disabled={checkedMembers.size === 0}
                               className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              Mark Absent
+                              Unconfirm
                             </button>
                             <button
                               type="button"
