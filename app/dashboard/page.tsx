@@ -1233,7 +1233,11 @@ export default function DashboardPage() {
                         No past-due invoices.
                       </div>
                     ) : (
-                      <div className="divide-y divide-gray-50">
+                      // Scroll internally so many past-due rows
+                      // don't blow out the dashboard height. Cap
+                      // matches the Recent Check-Ins card so the
+                      // dashboard's column heights stay balanced.
+                      <div className="divide-y divide-gray-50 max-h-[420px] overflow-y-auto">
                         {data.billing.pastDueInvoices.map((inv) => {
                           // Click routes to the PAYER's profile when
                           // one exists (that's whose card will get

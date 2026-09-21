@@ -522,6 +522,11 @@ export async function GET(req: Request) {
       // silently drop off the dashboard's Past Due card. Cruz's
       // "some past-dues never appear" was rows that hit dunning
       // suspension and flipped to FAILED.
+      //
+      // No `take` cap: Cruz wants every past-due invoice on this
+      // list, not the first 5 by dueDate. The card render scrolls
+      // internally so a long list doesn't blow out the dashboard
+      // layout.
       where: { status: { in: ["PAST_DUE", "FAILED"] }, member: { clientId } },
       select: {
         id: true,
@@ -542,7 +547,6 @@ export async function GET(req: Request) {
         },
       },
       orderBy: { dueDate: "asc" },
-      take: 5,
     });
 
     // Pivot each past-due row's payee onto the payer (PAYS_FOR).
