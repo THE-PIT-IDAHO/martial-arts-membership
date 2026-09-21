@@ -75,19 +75,43 @@ export async function POST(req: Request) {
 
     let tenantIds: string[];
     if (isCronCall) {
-      // Iterate every tenant that has at least one auto-renew membership.
+      // Iterate every tenant that has EITHER an active auto-renew
+      // membership (needs the fresh-invoice loop) OR an open
+      // PENDING / PAST_DUE / FAILED invoice (needs the past-due
+      // sweep + dunning retry). Cruz's report: "some accounts
+      // sit 'Pending Payment' a week past date" -- was tenants
+      // with only manual memberships getting skipped by the
+      // cron entirely, so their PENDING invoices never got
+      // flipped to PAST_DUE.
       const candidates = await prisma.client.findMany({
         where: {
-          members: {
-            some: {
-              memberships: {
+          OR: [
+            {
+              members: {
                 some: {
-                  status: "ACTIVE",
-                  membershipPlan: { autoRenew: true },
+                  memberships: {
+                    some: {
+                      status: "ACTIVE",
+                      membershipPlan: { autoRenew: true },
+                    },
+                  },
                 },
               },
             },
-          },
+            {
+              // Any tenant carrying unpaid invoices needs the
+              // sweep + dunning to run even if none of their
+              // memberships auto-renew right now. Client has no
+              // direct invoices relation; go through Member.
+              members: {
+                some: {
+                  invoices: {
+                    some: { status: { in: ["PENDING", "PAST_DUE", "FAILED"] } },
+                  },
+                },
+              },
+            },
+          ],
         },
         select: { id: true },
       });
@@ -296,6 +320,58 @@ async function runMembershipHousekeeping(clientId: string): Promise<void> {
   }
 }
 
+/**
+ * Sweep PENDING invoices past their dueDate to PAST_DUE. Runs
+ * independently of the fresh-invoice generation so it fires for
+ * every tenant on every cron -- including tenants with only
+ * manual (non-autoRenew) memberships and tenants whose
+ * billing_auto_generate is off. Also covers "already run today"
+ * calls so a re-invocation still promotes anything that crossed
+ * grace since the last run.
+ *
+ * Idempotent: only touches rows currently PENDING with amountCents > 0
+ * and dueDate < now. $0 PENDING invoices get auto-promoted to
+ * PAID/COMPLIMENTARY (legacy data guard).
+ */
+async function sweepPastDueInvoices(clientId: string): Promise<void> {
+  // Zero-dollar PENDING rows shouldn't dun -- flip to PAID/COMPLIMENTARY.
+  await prisma.invoice.updateMany({
+    where: { clientId, status: "PENDING", amountCents: 0 },
+    data: { status: "PAID", paidAt: new Date(), paymentMethod: "COMPLIMENTARY" },
+  });
+
+  const pastDueInvoices = await prisma.invoice.findMany({
+    where: {
+      clientId,
+      status: "PENDING",
+      amountCents: { gt: 0 },
+      dueDate: { lt: new Date() },
+    },
+    include: {
+      member: {
+        select: { id: true, firstName: true, lastName: true },
+      },
+    },
+  });
+
+  for (const invoice of pastDueInvoices) {
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        status: "PAST_DUE",
+        nextRetryDate: calculateNextRetryDate(0),
+      },
+    });
+    sendPastDueAlertEmail({
+      memberId: invoice.member.id,
+      memberName: `${invoice.member.firstName} ${invoice.member.lastName}`,
+      amountCents: invoice.amountCents,
+      invoiceNumber: invoice.invoiceNumber || undefined,
+      dueDate: invoice.dueDate,
+    }).catch(() => {});
+  }
+}
+
 async function processBillingForTenant(clientId: string): Promise<TenantResult> {
   try {
     // Housekeeping runs EVERY call, not once per day. These sweeps
@@ -307,6 +383,20 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
     // the reason a member whose membership just lapsed today stayed
     // on the Active tab despite a second dashboard visit.
     await runMembershipHousekeeping(clientId);
+
+    // Past-due sweep runs EVERY call for this tenant, independent
+    // of the "already run today" guard and the auto-generate
+    // toggle. Cruz's report was "some accounts sit 'Pending Payment'
+    // a week past their date" -- that was invoices whose tenant
+    // either had auto-generate off (skipped the whole function) or
+    // was flagged as already run today (also skipped). The sweep
+    // is idempotent (updateMany with strict filters), so re-running
+    // it is free -- flips only rows whose dueDate has passed.
+    try {
+      await sweepPastDueInvoices(clientId);
+    } catch (err) {
+      console.error(`[past-due sweep ${clientId}] failed:`, err);
+    }
 
     const tz = (await getSetting("timezone", clientId)) || "America/Denver";
     const today = getTodayInTimezone(tz); // YYYY-MM-DD in gym's timezone
@@ -581,47 +671,22 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
     }
 
     // --- Run past-due sweep ---
-    // amountCents > 0 — a $0 invoice has nothing to dun on. If one ever
-    // ended up PENDING (legacy data from before the $0 short-circuit),
-    // upgrade it to PAID/COMPLIMENTARY rather than flipping it PAST_DUE.
-    await prisma.invoice.updateMany({
-      where: { clientId, status: "PENDING", amountCents: 0 },
-      data: { status: "PAID", paidAt: new Date(), paymentMethod: "COMPLIMENTARY" },
-    });
-
-    const pastDueInvoices = await prisma.invoice.findMany({
-      where: {
-        clientId,
-        status: "PENDING",
-        amountCents: { gt: 0 },
-        dueDate: { lt: new Date() },
-      },
-      include: {
-        member: {
-          select: { id: true, firstName: true, lastName: true },
-        },
-      },
-    });
-
+    // The primary sweep already ran at the top of this function
+    // (before the "already run today" and "auto-generate off"
+    // guards). Re-run here so any invoices whose dueDate crossed
+    // during the fresh-invoice loop above (e.g. a grace period of
+    // 0 days on a plan that just cycled) also get flipped in the
+    // same run. Idempotent -- second call is a no-op if the first
+    // already caught everything.
     let pastDueCount = 0;
-    for (const invoice of pastDueInvoices) {
-      await prisma.invoice.update({
-        where: { id: invoice.id },
-        data: {
-          status: "PAST_DUE",
-          nextRetryDate: calculateNextRetryDate(0), // start dunning cycle
-        },
-      });
-      pastDueCount++;
-
-      sendPastDueAlertEmail({
-        memberId: invoice.member.id,
-        memberName: `${invoice.member.firstName} ${invoice.member.lastName}`,
-        amountCents: invoice.amountCents,
-        invoiceNumber: invoice.invoiceNumber || undefined,
-        dueDate: invoice.dueDate,
-      }).catch(() => {});
-    }
+    const beforeCount = await prisma.invoice.count({
+      where: { clientId, status: "PAST_DUE" },
+    });
+    await sweepPastDueInvoices(clientId);
+    const afterCount = await prisma.invoice.count({
+      where: { clientId, status: "PAST_DUE" },
+    });
+    pastDueCount = Math.max(0, afterCount - beforeCount);
 
     // --- Dunning / Payment Retry ---
     let dunningProcessed = 0;
