@@ -226,6 +226,21 @@ export async function GET(_req: Request, { params }: Params) {
         const owed = (r._sum.amountCents || 0) - (r._sum.creditAppliedCents || 0);
         if (owed > 0) owedByMember.set(r.memberId, owed);
       }
+      // Fold in negative accountCreditCents too -- when dunning
+      // maxes out we absorb the debt into accountCreditCents, so
+      // real balances live there and not on an unpaid invoice.
+      // (This was Cruz's "Stela Saltaga has a negative balance
+      // but she's not showing on outstanding" symptom.)
+      const payeeCreditRows = await prisma.member.findMany({
+        where: { id: { in: payeeIds } },
+        select: { id: true, accountCreditCents: true },
+      });
+      for (const p of payeeCreditRows) {
+        const owedFromCredit = Math.max(0, -(p.accountCreditCents || 0));
+        if (owedFromCredit > 0) {
+          owedByMember.set(p.id, (owedByMember.get(p.id) || 0) + owedFromCredit);
+        }
+      }
       payeePastDues = paysForRows
         .map((r) => ({
           memberId: r.toMemberId,

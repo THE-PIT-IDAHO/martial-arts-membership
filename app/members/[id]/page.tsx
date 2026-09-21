@@ -6369,9 +6369,17 @@ export default function MemberProfilePage() {
                        the payee + amount so the payer's profile
                        shows every dollar they're responsible for. */}
                 {(() => {
-                  const ownPastDueCents = invoices
+                  const invoicePastDueCents = invoices
                     .filter((i) => i.status === "PAST_DUE" || i.status === "FAILED")
                     .reduce((sum, i) => sum + Math.max(0, i.amountCents - (i.creditAppliedCents || 0)), 0);
+                  // Negative accountCreditCents = debt absorbed
+                  // from a max-retried invoice (or manually posted
+                  // negative credit). Show it alongside the invoice
+                  // total so the tile matches the outstanding /
+                  // past-due filter in reports.
+                  const memberCreditCents = (member as unknown as { accountCreditCents?: number })?.accountCreditCents || 0;
+                  const negativeCreditOwed = Math.max(0, -memberCreditCents);
+                  const ownPastDueCents = invoicePastDueCents + negativeCreditOwed;
                   const payeePastDueTotalCents = payeePastDues.reduce((sum, p) => sum + p.amountCents, 0);
                   if (ownPastDueCents === 0 && payeePastDueTotalCents === 0) return null;
                   return (

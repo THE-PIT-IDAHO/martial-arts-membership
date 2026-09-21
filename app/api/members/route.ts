@@ -350,6 +350,18 @@ export async function GET(req: Request) {
         }
       }
 
+      // Negative accountCreditCents is a real debt too -- when a
+      // recurring charge exhausts dunning retries the invoice
+      // flips to FAILED AND the amount gets decremented from
+      // accountCreditCents (auto-run/route.ts). If we only count
+      // unpaid invoices, that money "disappears" from the
+      // outstanding/past-due totals -- which is why Cruz saw
+      // members with a real negative balance not showing up on
+      // the Past-Due filter. Fold the negative credit balance
+      // (as a positive owed amount) into both totals.
+      const negativeCreditOwed = Math.max(0, -(m.accountCreditCents || 0));
+      const invoiceOutstanding = outstandingByMember.get(m.id) || 0;
+      const invoicePastDue = pastDueByMember.get(m.id) || 0;
       return {
         ...m,
         monthlyPaymentCents,
@@ -359,8 +371,8 @@ export async function GET(req: Request) {
         membershipEndDate,
         nextPaymentDate,
         lastPaymentDate,
-        outstandingBalanceCents: outstandingByMember.get(m.id) || 0,
-        pastDueBalanceCents: pastDueByMember.get(m.id) || 0,
+        outstandingBalanceCents: invoiceOutstanding + negativeCreditOwed,
+        pastDueBalanceCents: invoicePastDue + negativeCreditOwed,
       };
     });
 
