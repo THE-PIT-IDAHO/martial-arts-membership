@@ -277,6 +277,7 @@ type InvoiceRecord = {
   id: string;
   invoiceNumber: string | null;
   amountCents: number;
+  creditAppliedCents?: number;
   status: string;
   dueDate: string;
   paidAt: string | null;
@@ -284,6 +285,13 @@ type InvoiceRecord = {
   billingPeriodEnd: string;
   paymentMethod: string | null;
   membershipId: string;
+  // Retry + last-decline info surfaces on the profile's activity
+  // feed so admin sees "how many times we tried, and why it fell
+  // over" without having to open Stripe.
+  retryCount?: number;
+  lastRetryDate?: string | null;
+  lastChargeError?: string | null;
+  lastChargeErrorAt?: string | null;
   membership: {
     membershipPlan: { name: string };
   };
@@ -530,6 +538,17 @@ export default function MemberProfilePage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+  // Past-due balances for members THIS profile pays for (PAYS_FOR
+  // rows where fromMemberId == this member). Populated from
+  // /api/members/[id] response's payeePastDues array. Cruz's
+  // rule: "all charges + past dues should be attached to the
+  // payer's account, not the payee".
+  const [payeePastDues, setPayeePastDues] = useState<Array<{
+    memberId: string;
+    firstName: string;
+    lastName: string;
+    amountCents: number;
+  }>>([]);
 
   // Per-member discount rows -- historically populated by an "Add
   // Discount" section on this page that has since been retired.
@@ -821,6 +840,7 @@ export default function MemberProfilePage() {
       const transactions: Transaction[] = data.transactions || [];
       const emails: EmailLogEntry[] = data.emails || [];
       setInvoices(data.invoices || []);
+      setPayeePastDues(Array.isArray(data.payeePastDues) ? data.payeePastDues : []);
       setMember(m);
       setTestResults(testResultsData);
       // Seed the "auto-charge past-due" toggle from the loaded
@@ -830,7 +850,7 @@ export default function MemberProfilePage() {
         (m as unknown as { autoChargePastDueEnabled?: boolean }).autoChargePastDueEnabled !== false,
       );
       hydrateFormFromMember(m);
-      seedActivityFromMember(m, testResultsData, transactions, emails);
+      seedActivityFromMember(m, testResultsData, transactions, emails, data.invoices || []);
 
       // Fetch appointment credits
       fetch(`/api/members/${memberId}/service-credits`)
@@ -1284,7 +1304,7 @@ export default function MemberProfilePage() {
     }
   }
 
-  function seedActivityFromMember(m: Member, testResults: TestResult[] = [], transactions: Transaction[] = [], emails: EmailLogEntry[] = []) {
+  function seedActivityFromMember(m: Member, testResults: TestResult[] = [], transactions: Transaction[] = [], emails: EmailLogEntry[] = [], invoiceRows: InvoiceRecord[] = []) {
     // Base activities from member data (these are always generated fresh)
     const base: ActivityItem[] = [
       {
@@ -1400,6 +1420,36 @@ export default function MemberProfilePage() {
           type: "PAYMENT",
           message: `Payment: $${amount} via ${method}${tx.notes ? ` - ${tx.notes}` : ""}`,
           createdAt: tx.createdAt
+        });
+      });
+    }
+
+    // Invoice charge attempts: surface retryCount + the last
+    // processor-decline reason so the admin sees WHY a charge
+    // didn't go through and HOW MANY times we tried. One entry
+    // per invoice that has been retried at least once or that
+    // carries a decline reason. Anchored on lastRetryDate (falls
+    // back to lastChargeErrorAt or dueDate) so the entry lands
+    // in the right time slot on the activity timeline.
+    if (invoiceRows && invoiceRows.length > 0) {
+      invoiceRows.forEach((inv) => {
+        const attempts = inv.retryCount ?? 0;
+        const err = inv.lastChargeError || null;
+        if (attempts === 0 && !err) return;
+        const amount = (inv.amountCents / 100).toFixed(2);
+        const invLabel = inv.invoiceNumber || inv.id.slice(0, 8);
+        const attemptsPart = attempts > 0
+          ? `${attempts} charge attempt${attempts === 1 ? "" : "s"}`
+          : "Charge attempt";
+        const errPart = err ? ` — ${err}` : "";
+        base.push({
+          id: `invoice-attempt-${inv.id}`,
+          // Reuse EMAIL-FAIL styling so it renders in red; the
+          // profile has no dedicated "charge failure" type yet
+          // and this reads cleanly without a schema addition.
+          type: "EMAIL-FAIL",
+          message: `Invoice ${invLabel} ($${amount}): ${attemptsPart}${errPart}`,
+          createdAt: inv.lastRetryDate || inv.lastChargeErrorAt || inv.dueDate,
         });
       });
     }
@@ -6307,6 +6357,51 @@ export default function MemberProfilePage() {
                     </div>
                   )}
                 </div>
+
+                {/* Past-Due Balance tile. Two parts:
+                    1. This member's OWN past-due (only meaningful
+                       when they pay for themselves -- if they have
+                       a payer, their invoices sum still shows so
+                       the operator sees what's owed on this profile,
+                       but the payer callout above says whose card
+                       is on the hook).
+                    2. Payees this member covers: each row lists
+                       the payee + amount so the payer's profile
+                       shows every dollar they're responsible for. */}
+                {(() => {
+                  const ownPastDueCents = invoices
+                    .filter((i) => i.status === "PAST_DUE" || i.status === "FAILED")
+                    .reduce((sum, i) => sum + Math.max(0, i.amountCents - (i.creditAppliedCents || 0)), 0);
+                  const payeePastDueTotalCents = payeePastDues.reduce((sum, p) => sum + p.amountCents, 0);
+                  if (ownPastDueCents === 0 && payeePastDueTotalCents === 0) return null;
+                  return (
+                    <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="text-xs font-semibold text-red-700 uppercase tracking-wide">Past-Due Balance</h3>
+                        <span className="text-sm font-bold text-red-700">
+                          ${((ownPastDueCents + payeePastDueTotalCents) / 100).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="space-y-0.5">
+                        {ownPastDueCents > 0 && (
+                          <p className="text-[11px] text-red-700">
+                            <span className="font-medium">This member:</span> ${(ownPastDueCents / 100).toFixed(2)}
+                          </p>
+                        )}
+                        {payeePastDues.map((p) => (
+                          <p key={p.memberId} className="text-[11px] text-red-700">
+                            <Link href={`/members/${p.memberId}`} className="font-medium underline hover:text-red-800">
+                              {p.firstName} {p.lastName}
+                            </Link>: ${(p.amountCents / 100).toFixed(2)}
+                          </p>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-[10px] text-red-600/80">
+                        Individual invoices with the "Charge Now" button live below in the invoice list.
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 {/* Saved Cards (Stripe) */}
                 <div className="mb-4">

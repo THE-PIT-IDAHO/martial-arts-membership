@@ -147,6 +147,7 @@ export async function GET(_req: Request, { params }: Params) {
         id: true,
         invoiceNumber: true,
         amountCents: true,
+        creditAppliedCents: true,
         status: true,
         dueDate: true,
         paidAt: true,
@@ -154,6 +155,12 @@ export async function GET(_req: Request, { params }: Params) {
         billingPeriodEnd: true,
         paymentMethod: true,
         membershipId: true,
+        // Feeds the profile's activity feed ("Tried 3 times, last
+        // declined: card_declined") and the past-due balance tile.
+        retryCount: true,
+        lastRetryDate: true,
+        lastChargeError: true,
+        lastChargeErrorAt: true,
         membership: {
           select: {
             membershipPlan: { select: { name: true } },
@@ -180,7 +187,56 @@ export async function GET(_req: Request, { params }: Params) {
       take: 50,
     });
 
-    return NextResponse.json({ member, testResults, transactions, invoices, emails });
+    // Payer attribution: for members THIS profile pays for
+    // (PAYS_FOR: fromMemberId=this member), return each payee's
+    // past-due balance so the profile can show a "You cover $X
+    // past-due for these members" tile. Matches Cruz's rule:
+    // "all charges + past dues should be attached to the payer's
+    // account, not the payee". Scoped to this tenant so a stray
+    // cross-tenant rel row can never leak a foreign gym's payee.
+    const paysForRows = await prisma.memberRelationship.findMany({
+      where: {
+        relationship: "PAYS_FOR",
+        fromMemberId: id,
+        toMember: { clientId },
+      },
+      select: {
+        toMemberId: true,
+        toMember: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+    let payeePastDues: Array<{
+      memberId: string;
+      firstName: string;
+      lastName: string;
+      amountCents: number;
+    }> = [];
+    if (paysForRows.length > 0) {
+      const payeeIds = paysForRows.map((r) => r.toMemberId);
+      const groupedRows = await prisma.invoice.groupBy({
+        by: ["memberId"],
+        where: {
+          memberId: { in: payeeIds },
+          status: { in: ["PAST_DUE", "FAILED"] },
+        },
+        _sum: { amountCents: true, creditAppliedCents: true },
+      });
+      const owedByMember = new Map<string, number>();
+      for (const r of groupedRows) {
+        const owed = (r._sum.amountCents || 0) - (r._sum.creditAppliedCents || 0);
+        if (owed > 0) owedByMember.set(r.memberId, owed);
+      }
+      payeePastDues = paysForRows
+        .map((r) => ({
+          memberId: r.toMemberId,
+          firstName: r.toMember.firstName,
+          lastName: r.toMember.lastName,
+          amountCents: owedByMember.get(r.toMemberId) || 0,
+        }))
+        .filter((p) => p.amountCents > 0);
+    }
+
+    return NextResponse.json({ member, testResults, transactions, invoices, emails, payeePastDues });
   } catch (err) {
     console.error(`GET /api/members/${id} error:`, err);
     return NextResponse.json(

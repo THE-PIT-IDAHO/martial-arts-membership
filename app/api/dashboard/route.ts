@@ -465,8 +465,12 @@ export async function GET(req: Request) {
     });
 
     // --- Billing ---
+    // Count PAST_DUE AND FAILED (max-retries exhausted). Cruz's
+    // report: "some accounts arent making it to past due despite
+    // being past due" -- that was max-retry hits landing on
+    // status FAILED and dropping out of this count entirely.
     const pastDueCount = await prisma.invoice.count({
-      where: { status: "PAST_DUE", member: { clientId } },
+      where: { status: { in: ["PAST_DUE", "FAILED"] }, member: { clientId } },
     });
 
     const sevenDaysFromNow = new Date(todayEnd);
@@ -513,12 +517,21 @@ export async function GET(req: Request) {
       .filter((ms) => ms.displayPriceCents > 0)
       .slice(0, 10);
 
-    const pastDueInvoices = await prisma.invoice.findMany({
-      where: { status: "PAST_DUE", member: { clientId } },
+    const pastDueInvoicesRaw = await prisma.invoice.findMany({
+      // Include FAILED too so max-retry-exhausted invoices don't
+      // silently drop off the dashboard's Past Due card. Cruz's
+      // "some past-dues never appear" was rows that hit dunning
+      // suspension and flipped to FAILED.
+      where: { status: { in: ["PAST_DUE", "FAILED"] }, member: { clientId } },
       select: {
         id: true,
         amountCents: true,
         dueDate: true,
+        status: true,
+        retryCount: true,
+        lastChargeError: true,
+        lastChargeErrorAt: true,
+        memberId: true,
         member: {
           select: { id: true, firstName: true, lastName: true },
         },
@@ -530,6 +543,42 @@ export async function GET(req: Request) {
       },
       orderBy: { dueDate: "asc" },
       take: 5,
+    });
+
+    // Pivot each past-due row's payee onto the payer (PAYS_FOR).
+    // Cruz's rule: "all charges and past dues should be attached
+    // to the payer's account, not the payee". The dashboard now
+    // labels each row with the payer so admins call the right
+    // person when a child's invoice fails.
+    const pastDueMemberIds = pastDueInvoicesRaw.map((i) => i.memberId);
+    const payerRows = pastDueMemberIds.length > 0
+      ? await prisma.memberRelationship.findMany({
+          where: {
+            relationship: "PAYS_FOR",
+            toMemberId: { in: pastDueMemberIds },
+            fromMember: { clientId },
+          },
+          select: {
+            toMemberId: true,
+            fromMember: { select: { id: true, firstName: true, lastName: true } },
+          },
+        })
+      : [];
+    const payerByPayee = new Map(payerRows.map((r) => [r.toMemberId, r.fromMember]));
+    const pastDueInvoices = pastDueInvoicesRaw.map((inv) => {
+      const payer = payerByPayee.get(inv.memberId) || null;
+      return {
+        id: inv.id,
+        amountCents: inv.amountCents,
+        dueDate: inv.dueDate,
+        status: inv.status,
+        retryCount: inv.retryCount,
+        lastChargeError: inv.lastChargeError,
+        lastChargeErrorAt: inv.lastChargeErrorAt,
+        member: inv.member,
+        membership: inv.membership,
+        payer,
+      };
     });
 
     // --- Promotion Eligibility ---

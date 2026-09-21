@@ -32,6 +32,11 @@ type ReportDataFields = {
   showBannedMembers: boolean;
   showCoaches: boolean;
   showParents: boolean;
+  // Include only members with an outstanding PAST_DUE / FAILED
+  // invoice balance. Behaves like the other member-status toggles
+  // (OR-combined with them), reading pastDueBalanceCents from
+  // /api/members. Off by default.
+  showPastDueMembers: boolean;
   showNewMembers: boolean;
   showCanceledMembers: boolean;
   showStatusDistribution: boolean;
@@ -179,6 +184,7 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showBannedMembers: false,
   showCoaches: false,
   showParents: false,
+  showPastDueMembers: false,
   showNewMembers: true,
   showCanceledMembers: true,
   showStatusDistribution: true,
@@ -281,6 +287,7 @@ const FILTER_FIELDS = [
       { key: "showBannedMembers", label: "Banned Members" },
       { key: "showCoaches", label: "Coaches" },
       { key: "showParents", label: "Parents/Guardians" },
+      { key: "showPastDueMembers", label: "Past-Due Members" },
     ],
   },
   {
@@ -2318,7 +2325,8 @@ export default function ReportsPage() {
       const anyStatusToggle =
         report.fields.showActiveMembers || report.fields.showProspects
         || report.fields.showInactiveMembers || report.fields.showBannedMembers
-        || report.fields.showCoaches || report.fields.showParents;
+        || report.fields.showCoaches || report.fields.showParents
+        || report.fields.showPastDueMembers;
       if (!anyStatusToggle) return true;
       if (report.fields.showActiveMembers && status.includes("ACTIVE") && !status.includes("INACTIVE")) return true;
       if (report.fields.showProspects && status.includes("PROSPECT")) return true;
@@ -2326,6 +2334,11 @@ export default function ReportsPage() {
       if (report.fields.showBannedMembers && status.includes("BANNED")) return true;
       if (report.fields.showCoaches && status.includes("COACH")) return true;
       if (report.fields.showParents && status.includes("PARENT")) return true;
+      // Past-due is a billing signal (not stored on Member.status),
+      // so we read it off the pastDueBalanceCents field the members
+      // API adds. OR-combined with the status toggles above, so an
+      // admin can build "active + past-due" or "past-due only".
+      if (report.fields.showPastDueMembers && (m.pastDueBalanceCents || 0) > 0) return true;
       if (report.fields.showActiveMembers) {
         const hasKnownStatus = status.includes("ACTIVE") || status.includes("INACTIVE")
           || status.includes("PROSPECT") || status.includes("BANNED")

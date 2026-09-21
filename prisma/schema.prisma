@@ -1281,6 +1281,15 @@ model Invoice {
   retryCount            Int        @default(0)
   lastRetryDate         DateTime?
   nextRetryDate         DateTime?
+  // Last processor-decline reason -- surfaced on the dashboard's
+  // Past Due card and in the member-profile activity feed so
+  // admins can see WHY the charge didn't go through instead of
+  // seeing an invoice sit in PAST_DUE with no explanation. Set
+  // by every failure branch in the auto-billing cron (both the
+  // fresh-invoice attempt and the dunning retry). Cleared when
+  // the invoice eventually goes PAID.
+  lastChargeError       String?
+  lastChargeErrorAt     DateTime?
   notes                 String?
   clientId              String     @default("default-client")
   createdAt             DateTime   @default(now())

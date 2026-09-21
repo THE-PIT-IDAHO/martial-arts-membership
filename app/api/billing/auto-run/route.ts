@@ -501,12 +501,54 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
                     ...(chargeResult.processor === "stripe"
                       ? { stripePaymentIntentId: chargeResult.externalPaymentId }
                       : {}),
+                    // Clear any prior decline reason so a re-paid
+                    // invoice doesn't keep showing "card declined".
+                    lastChargeError: null,
+                    lastChargeErrorAt: null,
+                  },
+                });
+              } else {
+                // Processor returned success:false. Record the
+                // decline reason + bump retryCount so the dashboard
+                // Past Due card can label it and the activity feed
+                // shows the attempt.
+                await prisma.invoice.update({
+                  where: { id: createdInvoice.id },
+                  data: {
+                    lastChargeError: chargeResult.error || "Charge declined (no reason)",
+                    lastChargeErrorAt: new Date(),
+                    lastRetryDate: new Date(),
+                    retryCount: { increment: 1 },
                   },
                 });
               }
-            } catch {
-              // Charge failed — invoice stays PENDING, will enter dunning if past due
+            } catch (err) {
+              // Charge threw -- likely a network / SDK exception.
+              // Persist so it surfaces the same way a declined
+              // charge does. Invoice stays PENDING; enters dunning
+              // once its dueDate passes.
+              const message = err instanceof Error ? err.message : "Charge attempt threw";
+              await prisma.invoice.update({
+                where: { id: createdInvoice.id },
+                data: {
+                  lastChargeError: message,
+                  lastChargeErrorAt: new Date(),
+                  lastRetryDate: new Date(),
+                  retryCount: { increment: 1 },
+                },
+              }).catch(() => {});
             }
+          } else if (!isZeroDollar && remainingCents > 0 && activeProcessor && !ms.member.defaultPaymentMethodId) {
+            // No card on file -- record why the invoice is sitting
+            // unpaid so the admin sees it on the past-due card
+            // (once the dueDate passes) instead of a silent PENDING.
+            await prisma.invoice.update({
+              where: { id: createdInvoice.id },
+              data: {
+                lastChargeError: "No card on file",
+                lastChargeErrorAt: new Date(),
+              },
+            }).catch(() => {});
           }
 
           sendInvoiceCreatedEmail({
@@ -666,6 +708,7 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
             && inv.member.defaultPaymentMethodSetAt <= inv.createdAt;
 
           // Attempt charge via active processor if member has stored payment method
+          let dunningAttemptError: string | null = null;
           if (dunningRemaining > 0 && activeProcessor && inv.member.defaultPaymentMethodId && cardPredatesInvoice) {
             try {
               const chargeResult = await chargeStoredPaymentMethod({
@@ -689,13 +732,18 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
                       : {}),
                     lastRetryDate: new Date(),
                     nextRetryDate: null,
+                    lastChargeError: null,
+                    lastChargeErrorAt: null,
                   },
                 });
                 dunningProcessed++;
                 continue; // skip further dunning for this invoice
               }
-            } catch {
-              // Charge failed — continue with normal dunning
+              dunningAttemptError = chargeResult.error || "Retry declined (no reason)";
+            } catch (err) {
+              // Charge threw -- persist the message so the dashboard
+              // + profile activity can show it.
+              dunningAttemptError = err instanceof Error ? err.message : "Charge attempt threw";
             }
           }
 
@@ -711,6 +759,9 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
                 retryCount: newRetryCount,
                 lastRetryDate: new Date(),
                 nextRetryDate: null, // stop retrying
+                ...(dunningAttemptError
+                  ? { lastChargeError: dunningAttemptError, lastChargeErrorAt: new Date() }
+                  : {}),
               },
             });
 
@@ -744,6 +795,9 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
                 retryCount: newRetryCount,
                 lastRetryDate: new Date(),
                 nextRetryDate,
+                ...(dunningAttemptError
+                  ? { lastChargeError: dunningAttemptError, lastChargeErrorAt: new Date() }
+                  : {}),
               },
             });
 

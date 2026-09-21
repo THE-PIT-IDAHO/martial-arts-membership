@@ -269,6 +269,27 @@ export async function GET(req: Request) {
       }
     }
 
+    // Past-due balance = sum of amountCents on PAST_DUE + FAILED
+    // invoices only (PENDING that hasn't yet crossed dueDate does
+    // NOT count as "past due"). Feeds the reports "Past Due"
+    // member filter Cruz asked for and the profile's past-due
+    // balance tile so both agree on what "past due" means.
+    const pastDueByMember = new Map<string, number>();
+    if (memberIds.length > 0) {
+      const rows = await prisma.invoice.groupBy({
+        by: ["memberId"],
+        where: {
+          memberId: { in: memberIds },
+          status: { in: ["PAST_DUE", "FAILED"] },
+        },
+        _sum: { amountCents: true, creditAppliedCents: true },
+      });
+      for (const r of rows) {
+        const owed = (r._sum.amountCents || 0) - (r._sum.creditAppliedCents || 0);
+        pastDueByMember.set(r.memberId, Math.max(0, owed));
+      }
+    }
+
     // Calculate monthly payment and extract membership info for each member
     const membersWithMembershipInfo = limitedMembers.map((m) => {
       let monthlyPaymentCents = 0;
@@ -339,6 +360,7 @@ export async function GET(req: Request) {
         nextPaymentDate,
         lastPaymentDate,
         outstandingBalanceCents: outstandingByMember.get(m.id) || 0,
+        pastDueBalanceCents: pastDueByMember.get(m.id) || 0,
       };
     });
 

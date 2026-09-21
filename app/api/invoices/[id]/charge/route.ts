@@ -118,13 +118,17 @@ export async function POST(
             ? { stripePaymentIntentId: chargeResult.externalPaymentId }
             : {}),
           nextRetryDate: null,
+          lastChargeError: null,
+          lastChargeErrorAt: null,
         },
       });
       return NextResponse.json({ success: true, externalPaymentId: chargeResult.externalPaymentId });
     }
 
-    // Charge failed — persist the error to the invoice notes so it shows
-    // in the UI without needing to re-hit the processor.
+    // Charge failed — persist to notes for the invoice-level log AND
+    // to lastChargeError so the dashboard past-due card + profile
+    // activity feed can surface the reason without hitting the
+    // processor again.
     const errMsg = chargeResult.error || "Unknown payment error";
     const stamp = new Date().toISOString();
     const noteLine = `[${stamp}] Charge failed: ${errMsg}`;
@@ -135,6 +139,8 @@ export async function POST(
         notes: updatedNotes,
         lastRetryDate: new Date(),
         retryCount: { increment: 1 },
+        lastChargeError: errMsg,
+        lastChargeErrorAt: new Date(),
       },
     });
 

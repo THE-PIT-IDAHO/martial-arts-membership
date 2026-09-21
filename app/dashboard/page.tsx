@@ -109,8 +109,17 @@ type DashboardData = {
       id: string;
       amountCents: number;
       dueDate: string;
+      status: string;
+      retryCount: number;
+      lastChargeError: string | null;
+      lastChargeErrorAt: string | null;
       member: { id: string; firstName: string; lastName: string };
       membership: { membershipPlan: { name: string } };
+      // If this member has a PAYS_FOR relationship, the payer is
+      // named here. Row is clickable through to the payer's
+      // profile so the admin follows up with whoever's card
+      // will actually be charged next.
+      payer: { id: string; firstName: string; lastName: string } | null;
     }>;
   };
   expiringMemberships: Array<{
@@ -1225,24 +1234,52 @@ export default function DashboardPage() {
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-50">
-                        {data.billing.pastDueInvoices.map((inv) => (
-                          <div
-                            key={inv.id}
-                            className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
-                            onClick={() => router.push(`/members/${inv.member.id}`)}
-                          >
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">
-                                {inv.member.firstName} {inv.member.lastName}
-                              </p>
-                              <p className="text-xs text-gray-400">{inv.membership.membershipPlan.name}</p>
+                        {data.billing.pastDueInvoices.map((inv) => {
+                          // Click routes to the PAYER's profile when
+                          // one exists (that's whose card will get
+                          // charged and who the admin needs to reach).
+                          // Falls back to the payee's profile otherwise.
+                          const routeTargetId = inv.payer?.id || inv.member.id;
+                          return (
+                            <div
+                              key={inv.id}
+                              className="flex items-start justify-between gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer"
+                              onClick={() => router.push(`/members/${routeTargetId}`)}
+                            >
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-900 truncate">
+                                  {inv.member.firstName} {inv.member.lastName}
+                                </p>
+                                <p className="text-xs text-gray-400 truncate">{inv.membership.membershipPlan.name}</p>
+                                {inv.payer && (
+                                  <p className="text-[10px] text-gray-500 truncate">
+                                    Paid by <span className="font-medium">{inv.payer.firstName} {inv.payer.lastName}</span>
+                                  </p>
+                                )}
+                                {inv.lastChargeError && (
+                                  <p className="text-[10px] text-red-500 truncate" title={inv.lastChargeError}>
+                                    {inv.lastChargeError}
+                                    {inv.retryCount > 0 && ` · ${inv.retryCount} attempt${inv.retryCount === 1 ? "" : "s"}`}
+                                  </p>
+                                )}
+                                {!inv.lastChargeError && inv.retryCount > 0 && (
+                                  <p className="text-[10px] text-gray-500">
+                                    {inv.retryCount} attempt{inv.retryCount === 1 ? "" : "s"}
+                                  </p>
+                                )}
+                                {inv.status === "FAILED" && (
+                                  <span className="mt-0.5 inline-block text-[10px] font-semibold text-red-700 bg-red-100 rounded px-1 py-0.5">
+                                    Suspended
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="text-xs font-semibold text-red-600">{formatCents(inv.amountCents)}</p>
+                                <p className="text-[10px] text-gray-400">Due {formatShortDate(inv.dueDate)}</p>
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <p className="text-xs font-semibold text-red-600">{formatCents(inv.amountCents)}</p>
-                              <p className="text-[10px] text-gray-400">Due {formatShortDate(inv.dueDate)}</p>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
