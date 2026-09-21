@@ -32,11 +32,17 @@ type ReportDataFields = {
   showBannedMembers: boolean;
   showCoaches: boolean;
   showParents: boolean;
-  // Include only members with an outstanding PAST_DUE / FAILED
-  // invoice balance. Behaves like the other member-status toggles
-  // (OR-combined with them), reading pastDueBalanceCents from
-  // /api/members. Off by default.
+  // Revenue Filter toggles. OR-combined with each other AND with
+  // the Member Status Filter, so an admin can build things like
+  // "Active + Past-Due" or "Past-Due only" or "Everyone owing
+  // money" without needing intersect semantics. All read from
+  // fields the /api/members endpoint already computes
+  // (pastDueBalanceCents, outstandingBalanceCents, autoRenew).
   showPastDueMembers: boolean;
+  showMembersWithBalance: boolean;
+  showMembersInGoodStanding: boolean;
+  showAutoRenewMembers: boolean;
+  showNonAutoRenewMembers: boolean;
   showNewMembers: boolean;
   showCanceledMembers: boolean;
   showStatusDistribution: boolean;
@@ -185,6 +191,10 @@ const DEFAULT_FIELDS: ReportDataFields = {
   showCoaches: false,
   showParents: false,
   showPastDueMembers: false,
+  showMembersWithBalance: false,
+  showMembersInGoodStanding: false,
+  showAutoRenewMembers: false,
+  showNonAutoRenewMembers: false,
   showNewMembers: true,
   showCanceledMembers: true,
   showStatusDistribution: true,
@@ -287,7 +297,17 @@ const FILTER_FIELDS = [
       { key: "showBannedMembers", label: "Banned Members" },
       { key: "showCoaches", label: "Coaches" },
       { key: "showParents", label: "Parents/Guardians" },
+    ],
+  },
+  {
+    name: "Revenue Filter",
+    description: "Include members based on their billing / payment state (OR-combined with each other and with Member Status Filter)",
+    fields: [
       { key: "showPastDueMembers", label: "Past-Due Members" },
+      { key: "showMembersWithBalance", label: "Members With Outstanding Balance" },
+      { key: "showMembersInGoodStanding", label: "Members In Good Standing (no balance)" },
+      { key: "showAutoRenewMembers", label: "Members On Auto-Renew" },
+      { key: "showNonAutoRenewMembers", label: "Members Not On Auto-Renew" },
     ],
   },
   {
@@ -2326,7 +2346,11 @@ export default function ReportsPage() {
         report.fields.showActiveMembers || report.fields.showProspects
         || report.fields.showInactiveMembers || report.fields.showBannedMembers
         || report.fields.showCoaches || report.fields.showParents
-        || report.fields.showPastDueMembers;
+        || report.fields.showPastDueMembers
+        || report.fields.showMembersWithBalance
+        || report.fields.showMembersInGoodStanding
+        || report.fields.showAutoRenewMembers
+        || report.fields.showNonAutoRenewMembers;
       if (!anyStatusToggle) return true;
       if (report.fields.showActiveMembers && status.includes("ACTIVE") && !status.includes("INACTIVE")) return true;
       if (report.fields.showProspects && status.includes("PROSPECT")) return true;
@@ -2334,11 +2358,15 @@ export default function ReportsPage() {
       if (report.fields.showBannedMembers && status.includes("BANNED")) return true;
       if (report.fields.showCoaches && status.includes("COACH")) return true;
       if (report.fields.showParents && status.includes("PARENT")) return true;
-      // Past-due is a billing signal (not stored on Member.status),
-      // so we read it off the pastDueBalanceCents field the members
-      // API adds. OR-combined with the status toggles above, so an
-      // admin can build "active + past-due" or "past-due only".
+      // Revenue filters are billing signals, not stored on
+      // Member.status. Read from the fields /api/members already
+      // computes (pastDueBalanceCents, outstandingBalanceCents,
+      // autoRenew). OR-combined with the status toggles above.
       if (report.fields.showPastDueMembers && (m.pastDueBalanceCents || 0) > 0) return true;
+      if (report.fields.showMembersWithBalance && (m.outstandingBalanceCents || 0) > 0) return true;
+      if (report.fields.showMembersInGoodStanding && (m.outstandingBalanceCents || 0) === 0) return true;
+      if (report.fields.showAutoRenewMembers && m.autoRenew === true) return true;
+      if (report.fields.showNonAutoRenewMembers && m.autoRenew !== true) return true;
       if (report.fields.showActiveMembers) {
         const hasKnownStatus = status.includes("ACTIVE") || status.includes("INACTIVE")
           || status.includes("PROSPECT") || status.includes("BANNED")
