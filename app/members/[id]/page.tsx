@@ -764,6 +764,11 @@ export default function MemberProfilePage() {
   // recurring cycles still fire regardless.
   const [autoChargePastDue, setAutoChargePastDue] = useState(true);
   const [savingAutoCharge, setSavingAutoCharge] = useState(false);
+  // "Charge Balance" button state -- one per member id (this
+  // member's own, or any payee). Value is the in-flight state
+  // for the button click.
+  const [chargingBalanceMemberId, setChargingBalanceMemberId] = useState<string | null>(null);
+  const [chargeBalanceResult, setChargeBalanceResult] = useState<{ memberId: string; message: string; kind: "success" | "partial" | "error" } | null>(null);
 
   // pause modal
   const [pauseModalMembershipId, setPauseModalMembershipId] = useState<string | null>(null);
@@ -1060,6 +1065,63 @@ export default function MemberProfilePage() {
       setAutoChargePastDue(previous);
     }
     setSavingAutoCharge(false);
+  };
+
+  // "Charge Balance" bulk action -- runs every PAST_DUE / FAILED
+  // invoice on that member through chargeStoredPaymentMethod
+  // (which pivots to the PAYS_FOR payer's card automatically).
+  // Called from BOTH the "This member" row and each payee row
+  // in the payer's Past-Due tile so any account listed in the
+  // tile can be cleared in one click.
+  const handleChargeBalance = async (targetMemberId: string, label: string) => {
+    setChargingBalanceMemberId(targetMemberId);
+    setChargeBalanceResult(null);
+    try {
+      const res = await fetch(`/api/members/${targetMemberId}/charge-past-due`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setChargeBalanceResult({
+          memberId: targetMemberId,
+          message: data.error || "Charge failed",
+          kind: "error",
+        });
+      } else {
+        const paid = data.chargedCount || 0;
+        const total = data.totalInvoices || 0;
+        const paidStr = `$${((data.totalChargedCents || 0) / 100).toFixed(2)}`;
+        if (paid === total) {
+          setChargeBalanceResult({
+            memberId: targetMemberId,
+            message: paid === 0
+              ? `${label}: nothing past-due to charge.`
+              : `${label}: charged ${paidStr} across ${paid} invoice${paid === 1 ? "" : "s"}.`,
+            kind: "success",
+          });
+        } else {
+          // Partial success -- surface the FIRST decline reason
+          // so the operator sees what the card did.
+          const firstFail = (data.results || []).find((r: { status: string }) => r.status === "failed");
+          const errPart = firstFail?.error ? ` — ${firstFail.error}` : "";
+          setChargeBalanceResult({
+            memberId: targetMemberId,
+            message: `${label}: charged ${paid} of ${total}${errPart}`,
+            kind: "partial",
+          });
+        }
+      }
+      // Refresh the profile so the balance tile + invoice list
+      // reflect the new state.
+      fetchMember();
+    } catch (err) {
+      setChargeBalanceResult({
+        memberId: targetMemberId,
+        message: err instanceof Error ? err.message : "Charge failed",
+        kind: "error",
+      });
+    }
+    setChargingBalanceMemberId(null);
   };
 
   const handleSetDefaultCard = async (pmId: string) => {
@@ -6401,30 +6463,56 @@ export default function MemberProfilePage() {
                           ${((ownPastDueCents + payeePastDueTotalCents) / 100).toFixed(2)}
                         </span>
                       </div>
-                      <div className="space-y-0.5">
+                      <div className="space-y-1">
                         {ownPastDueCents > 0 && (
-                          <p className="text-[11px] text-red-700">
-                            <span className="font-medium">This member:</span> ${(ownPastDueCents / 100).toFixed(2)}
-                            {ownOnlyAbsorbedCredit && (
-                              <span className="text-red-600/70"> · absorbed into account credit (no open invoice)</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] text-red-700">
+                              <span className="font-medium">This member:</span> ${(ownPastDueCents / 100).toFixed(2)}
+                              {ownOnlyAbsorbedCredit && (
+                                <span className="text-red-600/70"> · absorbed into account credit (no open invoice)</span>
+                              )}
+                            </p>
+                            {hasOwnInvoices && (
+                              <button
+                                type="button"
+                                onClick={() => handleChargeBalance(memberId!, "This member")}
+                                disabled={chargingBalanceMemberId === memberId}
+                                className="shrink-0 rounded bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                                title="Charge every past-due / failed invoice for this member using the card on file (payer's card via PAYS_FOR if applicable)."
+                              >
+                                {chargingBalanceMemberId === memberId ? "Charging..." : "Charge Balance"}
+                              </button>
                             )}
-                          </p>
+                          </div>
                         )}
                         {payeePastDues.map((p) => (
-                          <p key={p.memberId} className="text-[11px] text-red-700">
-                            <Link href={`/members/${p.memberId}`} className="font-medium underline hover:text-red-800">
-                              {p.firstName} {p.lastName}
-                            </Link>: ${(p.amountCents / 100).toFixed(2)}
-                            <span className="text-red-600/70"> · </span>
-                            <Link
-                              href={`/members/${p.memberId}#invoices`}
-                              className="text-red-600/80 underline hover:text-red-800"
+                          <div key={p.memberId} className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] text-red-700 min-w-0">
+                              <Link href={`/members/${p.memberId}`} className="font-medium underline hover:text-red-800">
+                                {p.firstName} {p.lastName}
+                              </Link>: ${(p.amountCents / 100).toFixed(2)}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleChargeBalance(p.memberId, `${p.firstName} ${p.lastName}`)}
+                              disabled={chargingBalanceMemberId === p.memberId}
+                              className="shrink-0 rounded bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                              title="Charge every past-due / failed invoice for this payee. Pivots to the payer's card automatically."
                             >
-                              open invoices
-                            </Link>
-                          </p>
+                              {chargingBalanceMemberId === p.memberId ? "Charging..." : "Charge Balance"}
+                            </button>
+                          </div>
                         ))}
                       </div>
+                      {chargeBalanceResult && (
+                        <p className={`mt-1 text-[10px] ${
+                          chargeBalanceResult.kind === "success" ? "text-green-700"
+                          : chargeBalanceResult.kind === "partial" ? "text-amber-700"
+                          : "text-red-700"
+                        }`}>
+                          {chargeBalanceResult.message}
+                        </p>
+                      )}
                       <p className="mt-1 text-[10px] text-red-600/80">
                         {hasOwnInvoices && !hasPayees && (
                           <>Use "Charge Now" on each open invoice in the list below.</>
