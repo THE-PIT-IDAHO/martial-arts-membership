@@ -452,7 +452,21 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
             paypalPayerId: true,
             squareCustomerId: true,
             relationshipsFrom: { select: { toMemberId: true } },
-            relationshipsTo: { select: { fromMemberId: true } },
+            // Also pull relationship + payer card so the initial
+            // charge gate below can honor the PAYS_FOR pivot
+            // (payee has no card of their own but payer does).
+            relationshipsTo: {
+              select: {
+                fromMemberId: true,
+                relationship: true,
+                fromMember: {
+                  select: {
+                    defaultPaymentMethodId: true,
+                    defaultPaymentMethodSetAt: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -569,8 +583,21 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
             remainingCents = creditResult.remainingCents;
           }
 
+          // Resolve the billing source honoring PAYS_FOR. When
+          // Isabella (payee) has no card of her own but Colten
+          // (payer) does, treat her invoice as chargeable using
+          // Colten's card. chargeStoredPaymentMethod pivots
+          // internally -- the bug was gating on the payee's
+          // card here and skipping the call entirely.
+          const _payerRel = ms.member.relationshipsTo.find(
+            (r) => r.relationship === "PAYS_FOR",
+          );
+          const _billingCardId =
+            _payerRel?.fromMember?.defaultPaymentMethodId
+            || ms.member.defaultPaymentMethodId;
+
           // Attempt auto-charge on the remaining balance only.
-          if (!isZeroDollar && remainingCents > 0 && activeProcessor && ms.member.defaultPaymentMethodId) {
+          if (!isZeroDollar && remainingCents > 0 && activeProcessor && _billingCardId) {
             try {
               const chargeResult = await chargeStoredPaymentMethod({
                 memberId: ms.member.id,
@@ -628,10 +655,12 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
                 },
               }).catch(() => {});
             }
-          } else if (!isZeroDollar && remainingCents > 0 && activeProcessor && !ms.member.defaultPaymentMethodId) {
-            // No card on file -- record why the invoice is sitting
-            // unpaid so the admin sees it on the past-due card
-            // (once the dueDate passes) instead of a silent PENDING.
+          } else if (!isZeroDollar && remainingCents > 0 && activeProcessor && !_billingCardId) {
+            // No card on file -- checked via the resolved billing
+            // source (payer's card via PAYS_FOR, or the member's
+            // own). Record why the invoice is sitting unpaid so
+            // the admin sees it on the past-due card (once the
+            // dueDate passes) instead of a silent PENDING.
             await prisma.invoice.update({
               where: { id: createdInvoice.id },
               data: {
@@ -730,6 +759,38 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
         },
       });
 
+      // Payer-pivot lookup for PAYS_FOR. When Isabella (payee) has
+      // no card of her own but Colten (payer) does, the gates
+      // below must treat her invoice as chargeable using Colten's
+      // card. chargeStoredPaymentMethod already pivots internally
+      // -- the bug was in the pre-charge gates rejecting the
+      // invoice before it ever got called. Batch-lookup so this
+      // stays a single extra query regardless of dunning volume.
+      const dunningMemberIds = Array.from(new Set(dunningInvoices.map((i) => i.member.id)));
+      const dunningPayerRows = dunningMemberIds.length > 0
+        ? await prisma.memberRelationship.findMany({
+            where: {
+              relationship: "PAYS_FOR",
+              toMemberId: { in: dunningMemberIds },
+              fromMember: { clientId },
+            },
+            select: { toMemberId: true, fromMemberId: true },
+          })
+        : [];
+      const payerIds = Array.from(new Set(dunningPayerRows.map((r) => r.fromMemberId)));
+      const payerRows = payerIds.length > 0
+        ? await prisma.member.findMany({
+            where: { id: { in: payerIds } },
+            select: {
+              id: true,
+              defaultPaymentMethodId: true,
+              defaultPaymentMethodSetAt: true,
+            },
+          })
+        : [];
+      const payerById = new Map(payerRows.map((p) => [p.id, p]));
+      const payerByPayee = new Map(dunningPayerRows.map((r) => [r.toMemberId, payerById.get(r.fromMemberId) || null]));
+
       for (const inv of dunningInvoices) {
         try {
           // Per-member "Auto-charge past-due balances" kill switch.
@@ -762,19 +823,29 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
             dunningRemaining = creditResult.remainingCents;
           }
 
+          // Resolve the actual billing source for this invoice.
+          // If a PAYS_FOR relationship exists, the PAYER's card
+          // is what will get charged (chargeStoredPaymentMethod
+          // pivots internally). Use the payer's fields for the
+          // gate too so we don't reject the invoice at this
+          // check based on the payee's (usually empty) card row.
+          const payer = payerByPayee.get(inv.member.id) || null;
+          const billingCardId = payer?.defaultPaymentMethodId || inv.member.defaultPaymentMethodId;
+          const billingCardSetAt = payer?.defaultPaymentMethodSetAt || inv.member.defaultPaymentMethodSetAt;
+
           // Don't retroactively charge a newly-added card. If the
-          // member's default card was set AFTER this invoice was
-          // created, skip -- Cruz's rule: adding a card must never
-          // silently auto-charge a member's pre-existing outstanding
-          // balance. The invoice stays in dunning; admin can still
+          // billing source's default card was set AFTER this
+          // invoice was created, skip -- Cruz's rule: adding a
+          // card must never silently auto-charge a member's
+          // pre-existing outstanding balance. Admin can still
           // clear it manually via the "Charge Now" button.
           const cardPredatesInvoice =
-            !!inv.member.defaultPaymentMethodSetAt
-            && inv.member.defaultPaymentMethodSetAt <= inv.createdAt;
+            !!billingCardSetAt && billingCardSetAt <= inv.createdAt;
 
-          // Attempt charge via active processor if member has stored payment method
+          // Attempt charge via active processor if the billing
+          // source has a stored payment method
           let dunningAttemptError: string | null = null;
-          if (dunningRemaining > 0 && activeProcessor && inv.member.defaultPaymentMethodId && cardPredatesInvoice) {
+          if (dunningRemaining > 0 && activeProcessor && billingCardId && cardPredatesInvoice) {
             try {
               const chargeResult = await chargeStoredPaymentMethod({
                 memberId: inv.member.id,

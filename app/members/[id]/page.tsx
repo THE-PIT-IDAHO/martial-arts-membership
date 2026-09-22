@@ -6382,6 +6382,17 @@ export default function MemberProfilePage() {
                   const ownPastDueCents = invoicePastDueCents + negativeCreditOwed;
                   const payeePastDueTotalCents = payeePastDues.reduce((sum, p) => sum + p.amountCents, 0);
                   if (ownPastDueCents === 0 && payeePastDueTotalCents === 0) return null;
+                  // What to tell the admin about how to actually
+                  // clear the balance. Depends on where it came from:
+                  //   - own invoices → Charge Now button lives below
+                  //   - own absorbed credit only → no invoice; adjust
+                  //     via a comp-credit or new invoice manually
+                  //   - payees → click through to each payee's
+                  //     profile (Charge Now buttons live on THEIR
+                  //     invoice list, not on this payer's profile)
+                  const hasOwnInvoices = invoicePastDueCents > 0;
+                  const ownOnlyAbsorbedCredit = ownPastDueCents > 0 && !hasOwnInvoices;
+                  const hasPayees = payeePastDues.length > 0;
                   return (
                     <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2">
                       <div className="flex items-center justify-between mb-1">
@@ -6394,6 +6405,9 @@ export default function MemberProfilePage() {
                         {ownPastDueCents > 0 && (
                           <p className="text-[11px] text-red-700">
                             <span className="font-medium">This member:</span> ${(ownPastDueCents / 100).toFixed(2)}
+                            {ownOnlyAbsorbedCredit && (
+                              <span className="text-red-600/70"> · absorbed into account credit (no open invoice)</span>
+                            )}
                           </p>
                         )}
                         {payeePastDues.map((p) => (
@@ -6401,11 +6415,32 @@ export default function MemberProfilePage() {
                             <Link href={`/members/${p.memberId}`} className="font-medium underline hover:text-red-800">
                               {p.firstName} {p.lastName}
                             </Link>: ${(p.amountCents / 100).toFixed(2)}
+                            <span className="text-red-600/70"> · </span>
+                            <Link
+                              href={`/members/${p.memberId}#invoices`}
+                              className="text-red-600/80 underline hover:text-red-800"
+                            >
+                              open invoices
+                            </Link>
                           </p>
                         ))}
                       </div>
                       <p className="mt-1 text-[10px] text-red-600/80">
-                        Individual invoices with the "Charge Now" button live below in the invoice list.
+                        {hasOwnInvoices && !hasPayees && (
+                          <>Use "Charge Now" on each open invoice in the list below.</>
+                        )}
+                        {hasOwnInvoices && hasPayees && (
+                          <>Own invoices with "Charge Now" are in the list below. For the payees above, open their profile.</>
+                        )}
+                        {!hasOwnInvoices && hasPayees && !ownOnlyAbsorbedCredit && (
+                          <>Open each payee's profile to charge their invoices individually.</>
+                        )}
+                        {!hasOwnInvoices && hasPayees && ownOnlyAbsorbedCredit && (
+                          <>This member's own balance is absorbed account credit -- add a comp-credit or new invoice to clear. Payee balances live on their profiles.</>
+                        )}
+                        {ownOnlyAbsorbedCredit && !hasPayees && (
+                          <>Balance is absorbed account credit from a maxed-out invoice. Clear it via a comp-credit adjustment or by adding a new invoice.</>
+                        )}
                       </p>
                     </div>
                   );
