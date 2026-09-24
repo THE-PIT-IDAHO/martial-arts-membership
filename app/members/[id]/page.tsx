@@ -1101,12 +1101,18 @@ export default function MemberProfilePage() {
           });
         } else {
           // Partial success -- surface the FIRST decline reason
-          // so the operator sees what the card did.
-          const firstFail = (data.results || []).find((r: { status: string }) => r.status === "failed");
-          const errPart = firstFail?.error ? ` — ${firstFail.error}` : "";
+          // so the operator sees what the card did. Check both
+          // the per-invoice results AND the standalone credit-
+          // charge result (the absorbed-debt row doesn't live in
+          // `results`).
+          const firstInvFail = (data.results || []).find((r: { status: string }) => r.status === "failed");
+          const creditFail = data.creditCharge && data.creditCharge.status === "failed" ? data.creditCharge : null;
+          const errText = firstInvFail?.error || creditFail?.error;
+          const errPart = errText ? ` — ${errText}` : "";
+          const totalTargets = (data.totalInvoices || 0) + (data.creditCharge ? 1 : 0);
           setChargeBalanceResult({
             memberId: targetMemberId,
-            message: `${label}: charged ${paid} of ${total}${errPart}`,
+            message: `${label}: charged ${paid} of ${totalTargets}${errPart}`,
             kind: "partial",
           });
         }
@@ -6472,17 +6478,21 @@ export default function MemberProfilePage() {
                                 <span className="text-red-600/70"> · absorbed into account credit (no open invoice)</span>
                               )}
                             </p>
-                            {hasOwnInvoices && (
-                              <button
-                                type="button"
-                                onClick={() => handleChargeBalance(memberId!, "This member")}
-                                disabled={chargingBalanceMemberId === memberId}
-                                className="shrink-0 rounded bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-                                title="Charge every past-due / failed invoice for this member using the card on file (payer's card via PAYS_FOR if applicable)."
-                              >
-                                {chargingBalanceMemberId === memberId ? "Charging..." : "Charge Balance"}
-                              </button>
-                            )}
+                            {/* Charge Balance is now available for
+                                absorbed-credit-only balances too --
+                                the endpoint charges the negative
+                                accountCreditCents portion after any
+                                open invoices, then increments the
+                                credit row back up on success. */}
+                            <button
+                              type="button"
+                              onClick={() => handleChargeBalance(memberId!, "This member")}
+                              disabled={chargingBalanceMemberId === memberId}
+                              className="shrink-0 rounded bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                              title="Charge every past-due / failed invoice AND any absorbed account credit for this member using the card on file (payer's card via PAYS_FOR if applicable)."
+                            >
+                              {chargingBalanceMemberId === memberId ? "Charging..." : "Charge Balance"}
+                            </button>
                           </div>
                         )}
                         {payeePastDues.map((p) => (

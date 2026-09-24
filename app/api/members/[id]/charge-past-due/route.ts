@@ -27,7 +27,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
   const member = await prisma.member.findUnique({
     where: { id: memberId },
-    select: { id: true, clientId: true, firstName: true, lastName: true },
+    select: { id: true, clientId: true, firstName: true, lastName: true, accountCreditCents: true },
   });
   if (!member || member.clientId !== clientId) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
@@ -48,12 +48,20 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     orderBy: { dueDate: "asc" },
   });
 
-  if (invoices.length === 0) {
+  // Absorbed-debt case: a maxed-out invoice moves the amount off
+  // Invoice.amountCents and DECREMENTS Member.accountCreditCents,
+  // so the real owed balance ends up on the member's credit row
+  // (as a negative number). Cruz's Stela case: $30 past-due sits
+  // there with no open invoice, so the invoice-only endpoint had
+  // nothing to charge and the profile tile had no button.
+  const negativeCreditOwed = Math.max(0, -(member.accountCreditCents || 0));
+
+  if (invoices.length === 0 && negativeCreditOwed === 0) {
     return NextResponse.json({
       success: true,
       chargedCount: 0,
       results: [],
-      message: "No past-due invoices to charge.",
+      message: "No past-due balance to charge.",
     });
   }
 
@@ -173,11 +181,70 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     }
   }
 
+  // After invoices, tackle the negative-credit portion. Charging
+  // this amount and, on success, incrementing accountCreditCents
+  // back up brings the balance to zero. Only fires if there's
+  // still a negative balance -- an invoice-only charge above may
+  // have already lifted the credit through applyAccountCreditToInvoice
+  // side effects, so re-read fresh.
+  let creditChargeResult: {
+    amountCents: number;
+    status: "paid" | "failed" | "skipped";
+    error?: string;
+    externalPaymentId?: string;
+  } | null = null;
+  if (negativeCreditOwed > 0) {
+    const fresh = await prisma.member.findUnique({
+      where: { id: memberId },
+      select: { accountCreditCents: true },
+    });
+    const remaining = Math.max(0, -(fresh?.accountCreditCents || 0));
+    if (remaining > 0) {
+      try {
+        const chargeResult = await chargeStoredPaymentMethod({
+          memberId,
+          amountCents: remaining,
+          currency,
+          description: `Account balance -- ${member.firstName} ${member.lastName}`,
+        });
+        if (chargeResult.success && chargeResult.externalPaymentId) {
+          // Bring accountCreditCents back up by the charged
+          // amount. On a full-payment case this lands it at 0.
+          await prisma.member.update({
+            where: { id: memberId },
+            data: { accountCreditCents: { increment: remaining } },
+          });
+          creditChargeResult = {
+            amountCents: remaining,
+            status: "paid",
+            externalPaymentId: chargeResult.externalPaymentId,
+          };
+          chargedCount++;
+          totalChargedCents += remaining;
+        } else {
+          creditChargeResult = {
+            amountCents: remaining,
+            status: "failed",
+            error: chargeResult.error || "Charge declined",
+          };
+        }
+      } catch (err) {
+        creditChargeResult = {
+          amountCents: remaining,
+          status: "failed",
+          error: err instanceof Error ? err.message : "Charge attempt threw",
+        };
+      }
+    }
+  }
+
+  const totalTargets = invoices.length + (negativeCreditOwed > 0 ? 1 : 0);
+
   logAudit({
     entityType: "Member",
     entityId: memberId,
     action: "UPDATE",
-    summary: `Manual charge of past-due balance for ${member.firstName} ${member.lastName}: ${chargedCount}/${invoices.length} invoices paid ($${(totalChargedCents / 100).toFixed(2)})`,
+    summary: `Manual charge of past-due balance for ${member.firstName} ${member.lastName}: ${chargedCount}/${totalTargets} target${totalTargets === 1 ? "" : "s"} paid ($${(totalChargedCents / 100).toFixed(2)})`,
     clientId,
   }).catch(() => {});
 
@@ -187,5 +254,6 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     totalInvoices: invoices.length,
     totalChargedCents,
     results,
+    creditCharge: creditChargeResult,
   });
 }
