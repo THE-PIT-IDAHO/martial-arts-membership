@@ -6839,6 +6839,45 @@ export default function MemberProfilePage() {
                               }`}>
                                 {inv.status === "PAST_DUE" ? "Past Due" : inv.status}
                               </span>
+                              {/* Why-is-this-still-PENDING helper.
+                                  Cruz's confusion around Devyn +
+                                  Bennett: their charge either
+                                  declined (lastChargeError set) or
+                                  the invoice is still within grace
+                                  and hasn't been swept to Past Due
+                                  yet. Surface the reason inline so
+                                  it's not a mystery. */}
+                              {(inv.status === "PENDING" || inv.status === "PAST_DUE" || inv.status === "FAILED") && (
+                                (() => {
+                                  const dueMs = new Date(inv.dueDate).getTime();
+                                  const stillInGrace = inv.status === "PENDING" && dueMs > Date.now();
+                                  const daysUntilDue = Math.max(0, Math.ceil((dueMs - Date.now()) / (24 * 60 * 60 * 1000)));
+                                  if (inv.lastChargeError) {
+                                    const attemptsSuffix = (inv.retryCount || 0) > 0 ? ` · ${inv.retryCount} attempt${inv.retryCount === 1 ? "" : "s"}` : "";
+                                    return (
+                                      <div className="mt-0.5 text-[10px] text-red-600 max-w-[220px] leading-tight" title={inv.lastChargeError}>
+                                        {inv.lastChargeError}
+                                        {attemptsSuffix}
+                                      </div>
+                                    );
+                                  }
+                                  if (stillInGrace) {
+                                    return (
+                                      <div className="mt-0.5 text-[10px] text-gray-500 leading-tight">
+                                        In grace{daysUntilDue > 0 ? ` — ${daysUntilDue} day${daysUntilDue === 1 ? "" : "s"} left` : ""}
+                                      </div>
+                                    );
+                                  }
+                                  if (inv.status === "PENDING") {
+                                    return (
+                                      <div className="mt-0.5 text-[10px] text-gray-500 leading-tight">
+                                        Awaiting next past-due sweep
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()
+                              )}
                             </td>
                             <td className="py-2 pr-3 text-gray-500">{new Date(inv.dueDate).toLocaleDateString()}</td>
                             <td className="py-2">
