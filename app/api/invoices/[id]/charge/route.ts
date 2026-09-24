@@ -78,14 +78,34 @@ export async function POST(
       }
     }
 
-    if (!invoice.member.defaultPaymentMethodId) {
+    // PAYS_FOR pivot: when Isabella (payee) has no card of her own
+    // but Colten (payer) does, the "no card on file" gate below
+    // was rejecting the charge before chargeStoredPaymentMethod
+    // (which pivots internally) ever ran. Look up the payer's
+    // card here so the gate honors the family relationship.
+    let effectiveCardId = invoice.member.defaultPaymentMethodId;
+    if (!effectiveCardId) {
+      const payerRow = await prisma.memberRelationship.findFirst({
+        where: {
+          relationship: "PAYS_FOR",
+          toMemberId: invoice.memberId,
+          fromMember: { clientId },
+        },
+        select: {
+          fromMember: { select: { defaultPaymentMethodId: true } },
+        },
+      });
+      effectiveCardId = payerRow?.fromMember?.defaultPaymentMethodId || null;
+    }
+
+    if (!effectiveCardId) {
       // Credit only partially covered (or member had no credit) and
-      // there is no card on file to charge the remainder.
+      // neither this member nor their payer has a card on file.
       return NextResponse.json(
         {
           error: creditApplied > 0
-            ? `Applied $${(creditApplied / 100).toFixed(2)} from account credit, but member has no default payment method for the remaining $${(remainingCents / 100).toFixed(2)}`
-            : "Member has no default payment method on file",
+            ? `Applied $${(creditApplied / 100).toFixed(2)} from account credit, but no card on file (member's or their payer's) for the remaining $${(remainingCents / 100).toFixed(2)}`
+            : "No card on file for this member or their payer",
         },
         { status: 400 },
       );

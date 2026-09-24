@@ -340,12 +340,33 @@ async function sweepPastDueInvoices(clientId: string): Promise<void> {
     data: { status: "PAID", paidAt: new Date(), paymentMethod: "COMPLIMENTARY" },
   });
 
+  // Cruz shortened his grace period from 7 to 3 days, but old
+  // invoices already had dueDate = billingPeriodStart + 7 baked
+  // in. The stored dueDate would still be in the future even
+  // though today is well past the new 3-day grace, so the sweep
+  // kept skipping them. Re-derive the effective past-due cutoff
+  // from the CURRENT setting: any PENDING invoice whose payment
+  // date + current grace has passed gets flipped, regardless of
+  // the dueDate the row was created with.
+  const graceSetting = await prisma.settings.findFirst({
+    where: { key: "billing_grace_period_days", clientId },
+  });
+  const gracePeriodDays = graceSetting ? parseInt(graceSetting.value) || 7 : 7;
+  const now = new Date();
+  const graceCutoff = new Date(now.getTime() - gracePeriodDays * 24 * 60 * 60 * 1000);
+
   const pastDueInvoices = await prisma.invoice.findMany({
     where: {
       clientId,
       status: "PENDING",
       amountCents: { gt: 0 },
-      dueDate: { lt: new Date() },
+      // EITHER the stored dueDate has passed (normal path) OR the
+      // billingPeriodStart is older than the current grace window
+      // (catches invoices created before the setting was tightened).
+      OR: [
+        { dueDate: { lt: now } },
+        { billingPeriodStart: { lte: graceCutoff } },
+      ],
     },
     include: {
       member: {
