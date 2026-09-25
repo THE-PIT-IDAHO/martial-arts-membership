@@ -4656,7 +4656,25 @@ export default function ReportsPage() {
                 <div className="mb-6">
                   <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Payment Information</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    <StatCard label="Monthly Payments" value={formatCurrency(paymentData.monthlyPayments)} />
+                    {(() => {
+                      // Compute the Monthly Payments tile from the
+                      // filtered member set for THIS report -- the
+                      // fetch-time paymentData.monthlyPayments sums
+                      // every member regardless of filters, which
+                      // made the tile disagree with the visible
+                      // list total (Cruz's "$7,978 tile vs $6,631
+                      // list total"). Reads through the same
+                      // filterMembersForReport helper the list uses,
+                      // so tile and list always match.
+                      const list = membershipData
+                        ? filterMembersForReport(activeReport, membershipData.membersList)
+                        : [];
+                      const total = list.reduce(
+                        (sum: number, m: any) => sum + (m.monthlyPaymentCents || 0),
+                        0,
+                      );
+                      return <StatCard label="Monthly Payments" value={formatCurrency(total)} />;
+                    })()}
                   </div>
                 </div>
               )}
