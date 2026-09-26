@@ -229,7 +229,13 @@ export async function POST(req: Request) {
       success: true,
       gymName: result.client.name,
       slug: result.client.slug,
-      loginUrl: `https://${result.client.slug}.dojostormsoftware.com/login`,
+      // Admin login lives on admin.<slug>.dojostormsoftware.com
+      // now -- the bare gym subdomain is the MEMBER PORTAL. The
+      // OWNER credentials the signup form just set up will only
+      // authenticate on the admin subdomain. Previously sent
+      // owners to the portal URL, where their creds never
+      // matched (nothing on the portal knows about User rows).
+      loginUrl: `https://admin.${result.client.slug}.dojostormsoftware.com/login`,
     }, { status: 201 });
   } catch (error) {
     console.error("Error creating gym account:", error);
