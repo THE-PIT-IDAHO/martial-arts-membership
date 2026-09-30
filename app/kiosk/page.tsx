@@ -664,7 +664,18 @@ export default function KioskPage() {
     // mobile -- only real user gestures do -- so this stays quiet
     // between check-ins. Tapping the input directly still pops the
     // keyboard, which is what we want for name-typing.
-    setTimeout(() => searchInputRef.current?.focus(), 100);
+    //
+    // Call .focus() SYNCHRONOUSLY (no setTimeout). Purpose is to
+    // keep the barcode scanner's keystrokes going into the input
+    // after an incidental tap on chrome; delaying by 100ms puts
+    // it outside any user-gesture context AND creates a race with
+    // the tablet keyboard opening from the user's own tap on the
+    // input -- some mobile browsers see the deferred programmatic
+    // focus as a "cancel" and never pop the keyboard. Also skip
+    // if the input already has focus so we don't blur/refocus the
+    // element the browser is actively animating a keyboard onto.
+    if (document.activeElement === searchInputRef.current) return;
+    searchInputRef.current?.focus();
   }
 
   // Auto check-in from QR scan — skip confirm screen
@@ -949,13 +960,26 @@ export default function KioskPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col select-none overflow-hidden" onClick={() => {
+    <div className="min-h-screen bg-gray-50 flex flex-col select-none overflow-hidden" onClick={(e) => {
       // Skip the auto-refocus when the exit-PIN modal is open --
       // otherwise every tap (including taps on the PIN input itself)
       // bubbles here and yanks focus back to the name search input
       // 100ms later, which drops the numeric keypad and pops the
       // QWERTY keyboard because the search input is type="text".
       if (showPinModal) return;
+      // Skip refocus when the tap already landed on the search
+      // input (or a form control inside it). The browser is about
+      // to open the tablet's virtual keyboard from that tap, and
+      // any competing programmatic .focus() from here confuses
+      // the keyboard-pop lifecycle -- was Cruz's "keyboard only
+      // pops half the time" symptom on the kiosk. Let the browser
+      // handle direct taps naturally; refocus only exists to keep
+      // barcode scanner keystrokes flowing after an incidental
+      // tap on chrome.
+      const target = e.target as HTMLElement | null;
+      if (target && (target === searchInputRef.current || target.closest("input, textarea, select, button, a"))) {
+        return;
+      }
       if (checkInState === "idle" || checkInState === "search") refocusInput();
     }}>
       {/* Header */}
