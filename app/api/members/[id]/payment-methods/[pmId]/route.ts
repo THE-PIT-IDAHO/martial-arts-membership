@@ -19,8 +19,35 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Member not found" }, { status: 404 });
   }
 
-  if (!member?.stripeCustomerId) {
-    return NextResponse.json({ error: "No Stripe customer" }, { status: 400 });
+  // PAYS_FOR pivot: when viewing a payee's profile (e.g. Isabella)
+  // and removing a card, the card actually lives on the PAYER's
+  // (e.g. Colten's) Stripe customer. Resolve the owner here so
+  // the detach + default-clear target the right Member row.
+  // Scoped to this tenant so a cross-tenant PAYS_FOR row can't
+  // reach a foreign gym's customer.
+  let ownerMemberId = memberId;
+  let ownerStripeCustomerId = member.stripeCustomerId;
+  let ownerDefaultPaymentMethodId = member.defaultPaymentMethodId;
+  const payerRow = await prisma.memberRelationship.findFirst({
+    where: {
+      relationship: "PAYS_FOR",
+      toMemberId: memberId,
+      fromMember: { clientId },
+    },
+    select: {
+      fromMember: {
+        select: { id: true, stripeCustomerId: true, defaultPaymentMethodId: true },
+      },
+    },
+  });
+  if (payerRow?.fromMember?.stripeCustomerId) {
+    ownerMemberId = payerRow.fromMember.id;
+    ownerStripeCustomerId = payerRow.fromMember.stripeCustomerId;
+    ownerDefaultPaymentMethodId = payerRow.fromMember.defaultPaymentMethodId;
+  }
+
+  if (!ownerStripeCustomerId) {
+    return NextResponse.json({ error: "No Stripe customer on file for this member or their payer" }, { status: 400 });
   }
 
   const stripeClient = await getStripeClient(clientId);
@@ -29,21 +56,24 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   }
 
   try {
-    // Verify this payment method belongs to the member's customer
+    // Verify this payment method belongs to the owner's customer
     const pm = await stripeClient.paymentMethods.retrieve(paymentMethodId);
-    if (pm.customer !== member.stripeCustomerId) {
-      return NextResponse.json({ error: "Payment method does not belong to this member" }, { status: 403 });
+    if (pm.customer !== ownerStripeCustomerId) {
+      return NextResponse.json({ error: "Payment method does not belong to this member or their payer" }, { status: 403 });
     }
 
     await stripeClient.paymentMethods.detach(paymentMethodId);
 
-    // Clear default if this was the default. Also clear the
-    // setAt timestamp so if a new card is added later the dunning
-    // loop's "only charge invoices dated ≥ setAt" guard evaluates
-    // against the new card's own add-time, not the previous card's.
-    if (member.defaultPaymentMethodId === paymentMethodId) {
+    // Clear default if this was the owner's default. Also clear
+    // the setAt timestamp so if a new card is added later the
+    // dunning loop's "only charge invoices dated ≥ setAt" guard
+    // evaluates against the new card's own add-time, not the
+    // previous card's. Writes to the OWNER's row (the payer, if
+    // we pivoted) because that's where defaultPaymentMethodId
+    // lives for the family billing.
+    if (ownerDefaultPaymentMethodId === paymentMethodId) {
       await prisma.member.update({
-        where: { id: memberId },
+        where: { id: ownerMemberId },
         data: { defaultPaymentMethodId: null, defaultPaymentMethodSetAt: null },
       });
     }
@@ -51,6 +81,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error removing payment method:", error);
-    return NextResponse.json({ error: "Failed to remove card" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Failed to remove card";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

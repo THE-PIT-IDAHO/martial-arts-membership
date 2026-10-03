@@ -1043,8 +1043,18 @@ export default function MemberProfilePage() {
       if (res.ok) {
         setPaymentMethods((prev) => prev.filter((pm) => pm.id !== pmId));
         if (defaultPaymentId === pmId) setDefaultPaymentId(null);
+      } else {
+        // Surface the server-side reason instead of swallowing it --
+        // Cruz hit a case where Remove silently did nothing because
+        // the DELETE endpoint rejected it (PAYS_FOR customer
+        // mismatch); the admin had no feedback and thought the
+        // button was dead.
+        const data = await res.json().catch(() => ({}));
+        alert(`Could not remove card: ${data.error || `HTTP ${res.status}`}`);
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      alert(`Could not remove card: ${err instanceof Error ? err.message : "network error"}`);
+    }
     setRemovingCardId(null);
   };
 
