@@ -22,6 +22,26 @@ import { prisma } from "@/lib/prisma";
  * time, lifecycle expiry sweep) so the members list stays in sync
  * with the profile view.
  */
+/**
+ * Single source of truth for "does this membership still keep the
+ * member on the Active list". A CANCELED membership only counts while
+ * its notice period (cancellationEffectiveDate) or paid-through date
+ * (endDate) is still in the future. Every status writer uses this so
+ * the cancel endpoint, the housekeeping sweep, and the lifecycle
+ * reconcile can't disagree and flip a member back and forth.
+ */
+export function isMembershipCurrent(
+  ms: { status: string; endDate?: Date | null; cancellationEffectiveDate?: Date | null },
+  now: Date = new Date(),
+): boolean {
+  if (ms.status === "ACTIVE") return true;
+  if (ms.status === "CANCELED") {
+    if (ms.cancellationEffectiveDate && ms.cancellationEffectiveDate > now) return true;
+    if (ms.endDate && ms.endDate > now) return true;
+  }
+  return false;
+}
+
 export async function syncMemberStatusFromMemberships(memberId: string): Promise<boolean> {
   const member = await prisma.member.findUnique({
     where: { id: memberId },
@@ -29,13 +49,16 @@ export async function syncMemberStatusFromMemberships(memberId: string): Promise
   });
   if (!member) return false;
 
-  const hasActive = await prisma.membership.findFirst({
-    where: {
-      memberId,
-      status: { in: ["ACTIVE", "CANCELED"] },
-    },
-    select: { id: true },
+  const memberships = await prisma.membership.findMany({
+    where: { memberId, status: { in: ["ACTIVE", "CANCELED"] } },
+    select: { status: true, endDate: true, cancellationEffectiveDate: true },
   });
+  const now = new Date();
+  const current = memberships.filter((ms) => isMembershipCurrent(ms, now));
+  const hasActive = current.length > 0;
+  // Keep the CANCELED tag while the member is only current because of
+  // a cancelled-but-not-yet-effective membership.
+  const onlyCancelledCurrent = hasActive && current.every((ms) => ms.status === "CANCELED");
 
   const currentTokens = (member.status || "")
     .split(/[^A-Z_]+/i)
@@ -48,7 +71,7 @@ export async function syncMemberStatusFromMemberships(memberId: string): Promise
   const AXIS = new Set(["ACTIVE", "INACTIVE", "PROSPECT", "CANCELED"]);
   const preserved = currentTokens.filter((t) => !AXIS.has(t));
   const rebuilt = hasActive
-    ? ["ACTIVE", ...preserved]
+    ? ["ACTIVE", ...preserved, ...(onlyCancelledCurrent ? ["CANCELED"] : [])]
     : ["INACTIVE", ...preserved];
 
   const newStatus = rebuilt.join(",");

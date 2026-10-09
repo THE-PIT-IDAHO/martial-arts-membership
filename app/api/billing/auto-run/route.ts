@@ -17,6 +17,7 @@ import { getActiveProcessor, chargeStoredPaymentMethod, getCurrency, type Proces
 import { getClientId } from "@/lib/tenant";
 import { applyMemberDiscounts, markDiscountsUsed } from "@/lib/member-discounts";
 import { syncMemberStyles } from "@/lib/member-styles";
+import { isMembershipCurrent } from "@/lib/member-status-sync";
 import { isStaging } from "@/lib/env";
 
 // Vercel cron sends a GET request to the path on its schedule. The
@@ -223,16 +224,12 @@ async function runMembershipHousekeeping(clientId: string): Promise<void> {
       select: {
         id: true,
         status: true,
-        memberships: { select: { status: true, endDate: true } },
+        memberships: { select: { status: true, endDate: true, cancellationEffectiveDate: true } },
       },
     });
     let deactivated = 0;
     for (const m of activeMembers) {
-      const stillCurrent = m.memberships.some((ms) => {
-        if (ms.status === "ACTIVE") return true;
-        if (ms.status === "CANCELED" && ms.endDate && ms.endDate > now) return true;
-        return false;
-      });
+      const stillCurrent = m.memberships.some((ms) => isMembershipCurrent(ms, now));
       if (stillCurrent) continue;
 
       const currentTags = (m.status || "").split(",").map((s) => s.trim()).filter(Boolean);

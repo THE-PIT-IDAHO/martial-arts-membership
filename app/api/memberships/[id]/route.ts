@@ -13,6 +13,7 @@ import {
   type StyleDocument,
 } from "@/lib/belt-config";
 import { syncMemberStyles } from "@/lib/member-styles";
+import { syncMemberStatusFromMemberships } from "@/lib/member-status-sync";
 
 // Helper function to set attendance reset date for specific styles when membership expires/pauses
 // This resets the attendance count toward rank requirements
@@ -687,25 +688,12 @@ export async function PATCH(
         // Membership deactivated (PAUSED, CANCELED, EXPIRED)
 
         if (status === "CANCELED") {
-          // CANCELED: Member stays ACTIVE (membership valid until expiration), just add CANCELED tag
-          // Check if member has ACTIVE status, if not add it
-          if (!currentStatuses.includes("ACTIVE")) {
-            currentStatuses.unshift("ACTIVE");
-          }
-          // Remove INACTIVE/PROSPECT if present
-          const filteredStatuses = currentStatuses.filter(
-            (s: string) => !["INACTIVE", "PROSPECT"].includes(s)
-          );
-          // Add CANCELED if not already present
-          if (!filteredStatuses.includes("CANCELED")) {
-            filteredStatuses.push("CANCELED");
-          }
-          const newStatus = filteredStatuses.join(",");
-
-          await prisma.member.update({
-            where: { id: membership.memberId },
-            data: { status: newStatus },
-          });
+          // Member stays ACTIVE only while the cancellation's notice
+          // period (or a paid-through endDate) is still running.
+          // A cancellation with no notice days takes effect now, so
+          // the member drops to INACTIVE immediately. Shared rule with
+          // the daily sweeps so they can't flip the member back.
+          await syncMemberStatusFromMemberships(membership.memberId);
         } else {
           // PAUSED or EXPIRED - check if member has any other active/canceled memberships
           const otherActiveMemberships = await prisma.membership.findFirst({
