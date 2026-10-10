@@ -615,11 +615,44 @@ export default function WaiversPage() {
               {totalMembers > 0 ? Math.round((signedCount / totalMembers) * 100) : 0}% complete
             </div>
           </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <button
+            type="button"
+            onClick={() => setFilter(filter === "unsigned" ? "all" : "unsigned")}
+            className={`text-left bg-white border rounded-lg p-4 hover:border-orange-400 transition-colors ${filter === "unsigned" ? "border-orange-400 ring-1 ring-orange-300" : "border-gray-200"}`}
+          >
             <div className="text-sm text-gray-500">Pending Signatures</div>
             <div className="text-2xl font-bold text-orange-600">{unsignedCount}</div>
-          </div>
+            <div className="text-xs text-gray-400">{filter === "unsigned" ? "Hide list" : "Click to view"}</div>
+          </button>
         </div>
+
+        {/* Unsigned members. These never appear in the per-template
+            buckets below (buckets are grouped by what was signed), so
+            without this list the Pending count had no way to be seen. */}
+        {filter === "unsigned" && (
+          <div className="bg-white border border-gray-200 rounded-lg">
+            <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold">
+              Members without a signed waiver ({unsignedCount})
+            </div>
+            {unsignedCount === 0 ? (
+              <p className="p-4 text-sm text-gray-500">Everyone has signed.</p>
+            ) : (
+              <div className="divide-y divide-gray-100 max-h-[480px] overflow-y-auto">
+                {members
+                  .filter((m) => !m.waiverSigned)
+                  .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`))
+                  .map((m) => (
+                    <div key={m.id} className="flex items-center justify-between px-4 py-2">
+                      <Link href={`/members/${m.id}`} className="text-sm text-primary hover:underline">
+                        {m.firstName} {m.lastName}
+                      </Link>
+                      <span className="text-xs text-gray-400">{m.status || "—"}</span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Waiver Buckets — one button per template type. Members live on
             the per-type list page so they're grouped by what they signed. */}

@@ -70,9 +70,29 @@ export async function syncMemberStatusFromMemberships(memberId: string): Promise
   // in its original position.
   const AXIS = new Set(["ACTIVE", "INACTIVE", "PROSPECT", "CANCELED"]);
   const preserved = currentTokens.filter((t) => !AXIS.has(t));
+
+  // A member who has NEVER had a membership is a prospect, not an
+  // inactive member. Waiver signups land as PROSPECT with no
+  // membership; the daily reconcile was flipping every one of them to
+  // INACTIVE. Only members whose memberships have ended go INACTIVE.
+  // Conservative: only keeps an existing PROSPECT (or a member with no
+  // axis token at all) as PROSPECT -- doesn't promote old INACTIVE
+  // members, since legacy imports may have no membership rows.
+  let noCurrentToken = "INACTIVE";
+  const wasProspectOrBlank =
+    currentTokens.includes("PROSPECT")
+    || !currentTokens.some((t) => AXIS.has(t));
+  if (!hasActive && wasProspectOrBlank) {
+    const everHadMembership = await prisma.membership.findFirst({
+      where: { memberId },
+      select: { id: true },
+    });
+    if (!everHadMembership) noCurrentToken = "PROSPECT";
+  }
+
   const rebuilt = hasActive
     ? ["ACTIVE", ...preserved, ...(onlyCancelledCurrent ? ["CANCELED"] : [])]
-    : ["INACTIVE", ...preserved];
+    : [noCurrentToken, ...preserved];
 
   const newStatus = rebuilt.join(",");
   if (newStatus === member.status) return false;
