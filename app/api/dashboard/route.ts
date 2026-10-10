@@ -396,10 +396,45 @@ export async function GET(req: Request) {
     // and they drifted (dashboard normalized by billing cycle but
     // counted every ACTIVE row; reports skipped normalization but
     // filtered out non-renewing, out-of-contract rows).
+    //
+    // Member-level filter matches the reports "Monthly Payments" list:
+    // only members on the Active list (or with no recognized status)
+    // who have an upcoming payment date. Previously the dashboard summed
+    // every ACTIVE membership, so members marked Inactive or with no
+    // next payment date inflated MRR versus the report.
+    const mrrMembers = activeMembershipMemberIds.length > 0
+      ? await prisma.member.findMany({
+          where: { id: { in: activeMembershipMemberIds } },
+          select: {
+            id: true,
+            status: true,
+            memberships: {
+              where: { status: { in: ["ACTIVE", "CANCELED", "CANCELLED"] }, nextPaymentDate: { not: null } },
+              select: { id: true },
+              take: 1,
+            },
+          },
+        })
+      : [];
+    const KNOWN_STATUS = ["ACTIVE", "INACTIVE", "PROSPECT", "BANNED", "COACH", "PARENT", "CANCEL"];
+    const mrrEligibleMemberIds = new Set(
+      mrrMembers
+        .filter((m) => {
+          if (m.memberships.length === 0) return false;
+          const s = (m.status || "").toUpperCase();
+          if (s.includes("ACTIVE") && !s.includes("INACTIVE")) return true;
+          return !KNOWN_STATUS.some((k) => s.includes(k));
+        })
+        .map((m) => m.id),
+    );
     let monthlyRecurringRevenue = 0;
+    let mrrMembershipCount = 0;
     for (const ms of activeMemberships) {
+      if (!mrrEligibleMemberIds.has(ms.memberId)) continue;
       const discounts = membershipDiscountsByMember.get(ms.memberId) ?? [];
-      monthlyRecurringRevenue += computeMembershipMonthlyRecurringCents(ms, discounts, now);
+      const cents = computeMembershipMonthlyRecurringCents(ms, discounts, now);
+      if (cents > 0) mrrMembershipCount += 1;
+      monthlyRecurringRevenue += cents;
     }
 
     // --- Expired non-recurring memberships ---
@@ -907,7 +942,7 @@ export async function GET(req: Request) {
         monthPosCents: monthTransactions._sum.totalCents || 0,
         monthTransactionCount: monthTransactions._count,
         monthlyRecurringRevenue,
-        activeMembershipCount: activeMemberships.length,
+        activeMembershipCount: mrrMembershipCount,
       },
       billing: {
         pastDueCount,
