@@ -4,6 +4,7 @@ import { generatePasswordResetToken } from "@/lib/portal-auth";
 import { sendPasswordResetEmail } from "@/lib/notifications";
 import { getClientId } from "@/lib/tenant";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { findMembersByEmail } from "@/lib/member-email";
 
 // POST /api/portal/auth/forgot-password — Member requests their own password reset
 export async function POST(request: NextRequest) {
@@ -31,10 +32,16 @@ export async function POST(request: NextRequest) {
     // but log every outcome so admins/devs can diagnose why a member said
     // "it didn't work." Each branch below console.log()s with a [forgot-password]
     // prefix; check Vercel function logs to see what happened.
-    const member = await prisma.member.findFirst({
-      where: { email: cleanEmail, clientId },
-      select: { id: true, firstName: true, lastName: true, email: true },
-    });
+    // Case/whitespace-insensitive and deterministic when a family
+    // shares one email (prefers the profile that already has a portal
+    // password, then the parent over the child).
+    const [bestId] = await findMembersByEmail(cleanEmail, clientId);
+    const member = bestId
+      ? await prisma.member.findUnique({
+          where: { id: bestId },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        })
+      : null;
 
     if (!member) {
       // Was the email registered at a DIFFERENT gym? Common failure mode:

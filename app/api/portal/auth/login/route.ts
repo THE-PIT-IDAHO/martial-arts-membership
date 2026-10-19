@@ -9,6 +9,7 @@ import {
 import { sendMagicLinkEmail } from "@/lib/notifications";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { getClientId } from "@/lib/tenant";
+import { findMembersByEmail } from "@/lib/member-email";
 
 export async function POST(req: NextRequest) {
   try {
@@ -45,19 +46,24 @@ export async function POST(req: NextRequest) {
     // billing / booking still runs inside the portal on top of a
     // valid session.
     const cleanEmail = email.toLowerCase().trim();
-    const member = await prisma.member.findFirst({
-      where: {
-        email: cleanEmail,
-        ...(clientId ? { clientId } : {}),
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        portalPasswordHash: true,
-      },
-    });
+    // Case/whitespace-insensitive, ordered best-candidate-first. When a
+    // family shares one email, every matching profile is a candidate
+    // and the password is checked against each below.
+    const candidateIds = await findMembersByEmail(cleanEmail, clientId);
+    const candidates = candidateIds.length > 0
+      ? await prisma.member.findMany({
+          where: { id: { in: candidateIds } },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            portalPasswordHash: true,
+          },
+        })
+      : [];
+    candidates.sort((a, b) => candidateIds.indexOf(a.id) - candidateIds.indexOf(b.id));
+    const member = candidates[0] || null;
     // Diagnostics: log every no-member outcome with a clear reason.
     // Match forgot-password's cross-tenant hint so an admin can tell
     // the member "you're on the wrong gym subdomain."
@@ -82,15 +88,22 @@ export async function POST(req: NextRequest) {
 
     // --- Password login path ---
     if (password && typeof password === "string") {
-      if (!member || !member.portalPasswordHash) {
-        return NextResponse.json(
-          { error: "Invalid email or password" },
-          { status: 401 }
-        );
+      // Try every profile sharing this email -- the password may have
+      // been set on any one of them.
+      let matched: (typeof candidates)[number] | null = null;
+      for (const c of candidates) {
+        if (c.portalPasswordHash && (await verifyPassword(password, c.portalPasswordHash))) {
+          matched = c;
+          break;
+        }
       }
-
-      const valid = await verifyPassword(password, member.portalPasswordHash);
-      if (!valid) {
+      if (!matched) {
+        if (candidates.length > 0) {
+          console.warn(
+            `[portal-login] email=${cleanEmail} matched ${candidates.length} member(s); ` +
+            `${candidates.filter((c) => c.portalPasswordHash).length} have a password; none verified`,
+          );
+        }
         return NextResponse.json(
           { error: "Invalid email or password" },
           { status: 401 }
@@ -98,7 +111,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Create session and set cookie
-      const sessionToken = await createMemberSession(member.id);
+      const sessionToken = await createMemberSession(matched.id);
       const response = NextResponse.json({ success: true, session: true });
       setSessionCookie(response, sessionToken);
       return response;

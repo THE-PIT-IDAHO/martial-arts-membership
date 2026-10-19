@@ -10,6 +10,59 @@ export function normalizeEmail(email: string | null | undefined): string | null 
   return trimmed === "" ? null : trimmed;
 }
 
+/**
+ * Every member in a tenant whose email matches, ignoring case AND
+ * surrounding whitespace. Legacy / imported rows weren't always
+ * normalized, so an exact-match lookup missed members whose stored
+ * email had a capital letter or a trailing space -- they'd get
+ * "Invalid email or password" with an email that looked identical.
+ *
+ * Ordered so the most likely portal owner comes first: members who
+ * already have a portal password, then non-children (not the target
+ * of a PARENT/GUARDIAN relationship), then oldest. Families sharing
+ * one email no longer get an arbitrary row.
+ */
+export async function findMembersByEmail(
+  email: string,
+  clientId?: string,
+): Promise<string[]> {
+  const clean = normalizeEmail(email);
+  if (!clean) return [];
+  const rows = clientId
+    ? await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "Member"
+        WHERE LOWER(TRIM(email)) = ${clean} AND "clientId" = ${clientId}`
+    : await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "Member" WHERE LOWER(TRIM(email)) = ${clean}`;
+  if (rows.length <= 1) return rows.map((r) => r.id);
+
+  const ids = rows.map((r) => r.id);
+  const [members, childRels] = await Promise.all([
+    prisma.member.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, portalPasswordHash: true, createdAt: true },
+    }),
+    prisma.memberRelationship.findMany({
+      where: {
+        toMemberId: { in: ids },
+        relationship: { in: ["PARENT", "GUARDIAN", "Parent of", "Guardian of"] },
+      },
+      select: { toMemberId: true },
+    }),
+  ]);
+  const childIds = new Set(childRels.map((r) => r.toMemberId));
+  members.sort((a, b) => {
+    const pa = a.portalPasswordHash ? 0 : 1;
+    const pb = b.portalPasswordHash ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    const ca = childIds.has(a.id) ? 1 : 0;
+    const cb = childIds.has(b.id) ? 1 : 0;
+    if (ca !== cb) return ca - cb;
+    return a.createdAt.getTime() - b.createdAt.getTime();
+  });
+  return members.map((m) => m.id);
+}
+
 // Family relationship types that are allowed to share an email with the
 // existing holder. Anything else is treated as a strict duplicate.
 const FAMILY_TYPES = new Set([
