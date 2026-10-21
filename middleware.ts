@@ -288,6 +288,14 @@ export async function middleware(request: NextRequest) {
         return attachCleanup(NextResponse.redirect(url));
       }
       if (BARE_PORTAL_PATHS.has(pathname)) {
+        // Portal home ("/") requires a session like every other portal
+        // page. Previously it rewrote straight to /portal without the
+        // cookie check, so a member whose browser dropped the session
+        // cookie saw the home shell, then got bounced to /login on the
+        // first button click -- looked like being signed out on click.
+        if (pathname === "/" && !request.cookies.get(PORTAL_COOKIE)?.value) {
+          return attachCleanup(NextResponse.redirect(new URL("/login", request.url)));
+        }
         const url = request.nextUrl.clone();
         url.pathname = pathname === "/" ? "/portal" : `/portal${pathname}`;
         // Inject the tenant slug into the REQUEST headers forwarded to

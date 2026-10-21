@@ -19,8 +19,12 @@ export async function POST(request: NextRequest) {
     }
 
     const portalPasswordHash = await hashPassword(password);
+    // sessionMemberId (the person signed in), NOT memberId -- memberId
+    // is the "viewing as" child when a parent has switched accounts,
+    // which saved the parent's password onto the child's profile and
+    // left the parent stuck on the set-password prompt.
     await prisma.member.update({
-      where: { id: auth.memberId },
+      where: { id: auth.sessionMemberId },
       data: { portalPasswordHash },
     });
 

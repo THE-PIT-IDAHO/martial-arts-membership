@@ -63,6 +63,20 @@ export default function PortalLoginPage() {
       const data = await res.json();
 
       if (res.ok && data.session) {
+        // Confirm the browser actually kept the session cookie. Some
+        // in-app browsers (Gmail / Facebook / Instagram / text-message
+        // previews) and strict cookie settings silently drop it, which
+        // otherwise looks like "signed in, then signed out on every
+        // click".
+        const check = await fetch("/api/portal/auth/me", { cache: "no-store" });
+        if (!check.ok) {
+          setError(
+            "Your password worked, but this browser blocked the sign-in cookie. " +
+            "Open this page in Safari or Chrome (not inside an app like Gmail or Facebook), " +
+            "and make sure cookies aren't blocked, then sign in again.",
+          );
+          return;
+        }
         // "/" not "/portal" -- middleware rewrites the bare gym
         // root to the portal home, so the URL bar stays clean.
         router.push("/");
