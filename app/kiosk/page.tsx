@@ -1124,6 +1124,20 @@ export default function KioskPage() {
                         }
                       }}
                       ref={searchInputRef}
+                      // The box is usually ALREADY focused (autoFocus +
+                      // refocus after each check-in, so the barcode
+                      // scanner can type into it). Tablets don't reopen
+                      // the keyboard when you tap an input that already
+                      // has focus. Blur it on the press so the tap's own
+                      // focus is a fresh, user-initiated one -- that's
+                      // what makes Android/iOS show the keyboard.
+                      onPointerDown={(e) => {
+                        if (document.activeElement === e.currentTarget) {
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      inputMode="text"
+                      enterKeyHint="search"
                       placeholder="Scan barcode or tap to type your name"
                       autoFocus
                       className="w-full text-xl md:text-2xl px-6 py-4 rounded-2xl border-2 border-gray-200 focus:border-primary focus:outline-none transition-colors"
