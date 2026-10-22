@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import { isMinor, getMinorChildren } from "@/lib/minor";
+import { getHiddenTestResultUrls } from "@/lib/test-result-visibility";
 
 // GET /api/portal/documents
 // Returns the member's documents for the portal. Behavior depends on age/role:
@@ -76,12 +77,15 @@ export async function GET(req: NextRequest) {
 
   // Manually uploaded docs in member.styleDocuments (excluding anything tagged as a rank/curriculum doc)
   if (member.styleDocuments) {
+    const hiddenResultUrls = await getHiddenTestResultUrls(auth.memberId);
     try {
       const docs: Array<{ id: string; name: string; url: string; uploadedAt?: string; fromRank?: string }> =
         JSON.parse(member.styleDocuments);
       for (const doc of docs) {
         if (rankDocIds.has(doc.id)) continue;
         if (doc.fromRank) continue;
+        // Test-result PDF whose test isn't completed / published yet.
+        if (hiddenResultUrls.has(doc.url)) continue;
         documents.push({
           id: doc.id,
           name: doc.name,

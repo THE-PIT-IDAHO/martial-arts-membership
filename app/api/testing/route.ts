@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     // Accept either single styleId/styleName (legacy) or styleIds/styleNames
     // arrays (multi-style). Normalize so both are saved for backward compat.
-    const { name, date, time, location, notes } = body;
+    const { name, date, endDate, time, location, notes } = body;
     let { styleId, styleName, styleIds, styleNames } = body as {
       styleId?: string; styleName?: string; styleIds?: string[]; styleNames?: string[];
     };
@@ -51,12 +51,17 @@ export async function POST(req: Request) {
       return new NextResponse("Name, date, styleId, and styleName are required", { status: 400 });
     }
 
+    if (endDate && new Date(endDate) < new Date(date)) {
+      return new NextResponse("End date can't be before the start date", { status: 400 });
+    }
+
     const clientId = await getClientId(req);
 
     const event = await prisma.testingEvent.create({
       data: {
         name: name.trim(),
         date: new Date(date),
+        endDate: endDate && endDate !== date ? new Date(endDate) : null,
         time: time || null,
         styleId,
         styleName,

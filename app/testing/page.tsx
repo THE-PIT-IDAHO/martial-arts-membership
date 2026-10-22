@@ -138,6 +138,7 @@ type TestingEvent = {
   id: string;
   name: string;
   date: string;
+  endDate?: string | null;
   time?: string | null;
   styleId: string;
   styleName: string;
@@ -181,6 +182,8 @@ export default function TestingPage() {
   const [editingEvent, setEditingEvent] = useState<TestingEvent | null>(null);
   const [testName, setTestName] = useState("");
   const [testDate, setTestDate] = useState(getTodayString());
+  // Last day of the testing window; "" = single-day test.
+  const [testEndDate, setTestEndDate] = useState("");
   const [testTime, setTestTime] = useState("10:00");
   const [testLocation, setTestLocation] = useState("");
   const [testNotes, setTestNotes] = useState("");
@@ -485,17 +488,20 @@ export default function TestingPage() {
     });
   };
 
+  // A multi-day test stays "upcoming" through its LAST day.
+  const lastDay = (e: TestingEvent) => new Date(e.endDate || e.date);
   const upcomingEvents = events.filter(e =>
-    e.status === "SCHEDULED" && new Date(e.date) >= new Date(new Date().setHours(0, 0, 0, 0))
+    e.status === "SCHEDULED" && lastDay(e) >= new Date(new Date().setHours(0, 0, 0, 0))
   );
   const pastEvents = events.filter(e =>
-    e.status === "COMPLETED" || new Date(e.date) < new Date(new Date().setHours(0, 0, 0, 0))
+    e.status === "COMPLETED" || lastDay(e) < new Date(new Date().setHours(0, 0, 0, 0))
   );
 
   const openEditEventModal = (event: TestingEvent) => {
     setEditingEvent(event);
     setTestName(event.name);
     setTestDate(event.date.split("T")[0]);
+    setTestEndDate(event.endDate ? event.endDate.split("T")[0] : "");
     setTestTime(event.time || "10:00");
     setTestLocation(event.location || "");
     setTestNotes(event.notes || "");
@@ -519,6 +525,7 @@ export default function TestingPage() {
     setEditingEvent(null);
     setTestName("");
     setTestDate("");
+    setTestEndDate("");
     setTestTime("10:00");
     setTestLocation("");
     setTestNotes("");
@@ -550,6 +557,7 @@ export default function TestingPage() {
         body: JSON.stringify({
           name: testName,
           date: testDate,
+          endDate: testEndDate || null,
           time: testTime,
           styleId: effectiveStyleIds[0],
           styleName: effectiveStyleNames[0] || "",
@@ -2108,6 +2116,9 @@ export default function TestingPage() {
       day: "numeric",
     });
   };
+  // "Mon, Oct 20, 2026" or "Mon, Oct 20, 2026 – Sat, Oct 25, 2026"
+  const formatEventDates = (ev: { date: string; endDate?: string | null }) =>
+    ev.endDate ? `${formatDate(ev.date)} – ${formatDate(ev.endDate)}` : formatDate(ev.date);
 
   // Pretty-print the styles for an event: prefer the multi-style names array
   // when present, fall back to the single styleName.
@@ -2224,7 +2235,7 @@ export default function TestingPage() {
                     <div>
                       <h2 className="text-xl font-bold">{selectedEvent.name}</h2>
                       <p className="text-sm text-gray-600">
-                        {formatDate(selectedEvent.date)}
+                        {formatEventDates(selectedEvent)}
                         {selectedEvent.time && ` at ${selectedEvent.time}`}
                         {selectedEvent.location && ` • ${selectedEvent.location}`}
                       </p>
@@ -2636,7 +2647,7 @@ export default function TestingPage() {
                       <div>
                         <h3 className="font-semibold text-lg">{event.name}</h3>
                         <p className="text-sm text-gray-600">
-                          {formatDate(event.date)}
+                          {formatEventDates(event)}
                           {event.time && ` at ${event.time}`}
                         </p>
                         <p className="text-sm text-gray-500">
@@ -2796,7 +2807,7 @@ export default function TestingPage() {
                         </span>
                       </div>
                       <p className="text-sm text-gray-600">
-                        {formatDate(selectedEvent.date)}
+                        {formatEventDates(selectedEvent)}
                         {selectedEvent.time && ` at ${selectedEvent.time}`}
                         {selectedEvent.location && ` • ${selectedEvent.location}`}
                       </p>
@@ -3114,7 +3125,7 @@ export default function TestingPage() {
                             {event.status}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-600">{formatDate(event.date)}</p>
+                        <p className="text-sm text-gray-600">{formatEventDates(event)}</p>
                         <p className="text-sm text-gray-500">{formatEventStyles(event)}</p>
                         <div className="flex gap-4 mt-2 text-sm">
                           <span className="text-green-600">
@@ -3228,17 +3239,34 @@ export default function TestingPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Date *
+                      Start Date *
                     </label>
                     <input
                       type="date"
                       value={testDate}
-                      onChange={(e) => setTestDate(e.target.value)}
+                      onChange={(e) => {
+                        setTestDate(e.target.value);
+                        // Keep the range valid if start moves past end.
+                        if (testEndDate && e.target.value > testEndDate) setTestEndDate(e.target.value);
+                      }}
                       className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={testEndDate}
+                      min={testDate || undefined}
+                      onChange={(e) => setTestEndDate(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <p className="mt-0.5 text-[10px] text-gray-400">Leave blank for a one-day test</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">

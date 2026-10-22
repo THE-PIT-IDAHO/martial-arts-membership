@@ -53,11 +53,18 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { name, date, time, location, notes, status, styleId, styleName, styleIds, styleNames } = body;
+    const { name, date, endDate, time, location, notes, status, styleId, styleName, styleIds, styleNames } = body;
 
     const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name.trim();
     if (date !== undefined) updateData.date = new Date(date);
+    if (endDate !== undefined) {
+      // Empty or same-as-start = single-day test.
+      updateData.endDate = endDate && endDate !== date ? new Date(endDate) : null;
+      if (updateData.endDate && date && (updateData.endDate as Date) < new Date(date)) {
+        return new NextResponse("End date can't be before the start date", { status: 400 });
+      }
+    }
     if (time !== undefined) updateData.time = time || null;
     if (location !== undefined) updateData.location = location?.trim() || null;
     if (notes !== undefined) updateData.notes = notes?.trim() || null;

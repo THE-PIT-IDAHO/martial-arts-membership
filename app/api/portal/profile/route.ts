@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
 import { parseLocalDate } from "@/lib/dates";
+import { getHiddenTestResultUrls } from "@/lib/test-result-visibility";
 import { getStyleProgress, attendanceCountsForStyle, type AttendanceRow } from "@/lib/rank-progress";
 
 export async function GET(req: NextRequest) {
@@ -316,8 +317,12 @@ export async function GET(req: NextRequest) {
   // Match by document ID against each style's beltConfig pdfDocuments (not by rank name,
   // since different styles can share rank names like "White Belt")
   if (member.styleDocuments) {
+    const hiddenResultUrls = await getHiddenTestResultUrls(auth.memberId);
     try {
-      const memberDocs: Array<{ id: string; name: string; url: string; fromRank?: string }> = JSON.parse(member.styleDocuments);
+      // Drop test-result PDFs whose test isn't completed / published.
+      const memberDocs: Array<{ id: string; name: string; url: string; fromRank?: string }> =
+        (JSON.parse(member.styleDocuments) as Array<{ id: string; name: string; url: string; fromRank?: string }>)
+          .filter((d) => !hiddenResultUrls.has(d.url));
 
       // Build set of doc IDs that belong to ANY other style's beltConfig
       for (const ri of rankInfo) {

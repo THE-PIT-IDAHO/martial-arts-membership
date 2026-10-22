@@ -1018,7 +1018,10 @@ model Settings {
 model TestingEvent {
   id           String               @id @default(cuid())
   name         String
-  date         DateTime
+  date         DateTime // start date of the testing window
+  // Last day of the testing window. Null = single-day test (legacy
+  // rows and tests that really are one day).
+  endDate      DateTime?
   time         String?
   styleId      String // legacy single style — mirrors first entry of styleIds when multi
   styleName    String

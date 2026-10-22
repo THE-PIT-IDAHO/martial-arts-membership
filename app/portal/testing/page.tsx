@@ -6,6 +6,7 @@ interface TestingEvent {
   id: string;
   name: string;
   date: string;
+  endDate?: string | null;
   time: string | null;
   location: string | null;
   styleName: string;
@@ -18,6 +19,7 @@ interface TestResult {
   id: string;
   eventName: string;
   eventDate: string;
+  eventEndDate?: string | null;
   styleName: string;
   testingForRank: string | null;
   currentRank: string | null;
@@ -110,6 +112,7 @@ export default function PortalTestingPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
                       </svg>
                       {eventDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                      {event.endDate && ` – ${new Date(event.endDate).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`}
                     </span>
                     {event.time && (
                       <span className="flex items-center gap-1">
@@ -177,7 +180,10 @@ export default function PortalTestingPage() {
                   </div>
                   <div className="flex items-center gap-3 text-xs text-gray-500">
                     <span>{result.styleName}</span>
-                    <span>{new Date(result.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                    <span>
+                      {new Date(result.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      {result.eventEndDate && ` – ${new Date(result.eventEndDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
+                    </span>
                     {result.testingForRank && <span>Testing for: {result.testingForRank}</span>}
                     {result.score !== null && <span>Score: {result.score}%</span>}
                   </div>

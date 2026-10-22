@@ -102,6 +102,7 @@ export async function POST(req: Request) {
     // gym's testing/promotion event to their own board.
     let title = "";
     let date: Date = new Date();
+    let endDate: Date | null = null; // last day of a multi-day testing window
     let time: string | null = null;
     let styleName = "";
 
@@ -112,6 +113,7 @@ export async function POST(req: Request) {
       }
       title = event.name;
       date = event.date;
+      endDate = event.endDate;
       time = event.time;
       styleName = event.styleName;
     } else if (sourceType === "promotion") {
@@ -127,7 +129,10 @@ export async function POST(req: Request) {
 
     const label = sourceType === "testing" ? "Belt Testing" : "Rank Promotion";
     const tz = (await getSetting("timezone", clientId)) || "America/Denver";
-    const dateStr = formatInTimezone(date, tz, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    const fmt = { weekday: "long", month: "long", day: "numeric", year: "numeric" } as const;
+    const dateStr = endDate
+      ? `${formatInTimezone(date, tz, fmt)} – ${formatInTimezone(endDate, tz, fmt)}`
+      : formatInTimezone(date, tz, fmt);
     const timeStr = time ? ` at ${formatTime12h(time)}` : "";
 
     // Find the target channel within THIS tenant — use provided channelId
@@ -163,8 +168,8 @@ export async function POST(req: Request) {
         authorName: "Admin",
         authorInitials: "A",
         isPriority: true,
-        // Pin until end-of-event-day in gym TZ
-        pinnedUntil: new Date(localMidnightUtc(formatDateInTimezone(new Date(date), tz), tz) + 24 * 60 * 60 * 1000 - 1),
+        // Pin until the end of the event's LAST day in gym TZ.
+        pinnedUntil: new Date(localMidnightUtc(formatDateInTimezone(new Date(endDate || date), tz), tz) + 24 * 60 * 60 * 1000 - 1),
         channelId: targetChannelId,
       },
     });

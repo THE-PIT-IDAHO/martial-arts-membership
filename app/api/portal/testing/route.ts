@@ -38,11 +38,13 @@ export async function GET(request: NextRequest) {
   // Upcoming testing events for member's styles -- also scoped by
   // clientId, so a legacy dangling styleId can't surface a foreign
   // gym's event.
+  const now = new Date();
   const upcomingEvents = await prisma.testingEvent.findMany({
     where: {
       styleId: { in: styleIds },
       clientId: memberTenant,
-      date: { gte: new Date() },
+      // Multi-day tests stay listed until their last day.
+      OR: [{ date: { gte: now } }, { endDate: { gte: now } }],
       status: "SCHEDULED",
     },
     orderBy: { date: "asc" },
@@ -50,6 +52,7 @@ export async function GET(request: NextRequest) {
       id: true,
       name: true,
       date: true,
+      endDate: true,
       time: true,
       location: true,
       styleId: true,
@@ -62,27 +65,35 @@ export async function GET(request: NextRequest) {
 
   // Map style names to events
   const styleMap = Object.fromEntries(styles.map((s) => [s.id, s.name]));
-  const events = upcomingEvents.map((e) => ({
-    id: e.id,
-    name: e.name,
-    date: e.date,
-    time: e.time,
-    location: e.location,
-    styleName: styleMap[e.styleId] || "Unknown",
-    isRegistered: e.participants.length > 0,
-    registrationId: e.participants[0]?.id || null,
-    registrationStatus: e.participants[0]?.status || null,
-  }));
+  // Grading on a not-yet-completed test must not leak: mask any graded
+  // status (PASSED / FAILED / INCOMPLETE ...) back to REGISTERED.
+  const GRADED = new Set(["PASSED", "FAILED", "INCOMPLETE"]);
+  const events = upcomingEvents.map((e) => {
+    const raw = e.participants[0]?.status || null;
+    return {
+      id: e.id,
+      name: e.name,
+      date: e.date,
+      endDate: e.endDate,
+      time: e.time,
+      location: e.location,
+      styleName: styleMap[e.styleId] || "Unknown",
+      isRegistered: e.participants.length > 0,
+      registrationId: e.participants[0]?.id || null,
+      registrationStatus: raw && GRADED.has(raw) ? "REGISTERED" : raw,
+    };
+  });
 
-  // Past test results -- only rows the admin has explicitly Mark
-  // Completed (resultsPublishedAt IS NOT NULL). Draft grades stay
-  // invisible so a member never sees a partially-scored test before
-  // the coach signs off. The PDF url is only surfaced for the same
-  // reason.
+  // Past test results -- only when BOTH the test is marked COMPLETED
+  // and the participant's result was published. The event-status check
+  // closes two gaps: a single participant published while the test is
+  // still in progress, and a test re-opened after completion (its
+  // results go hidden again until it's re-completed).
   const pastResults = await prisma.testingParticipant.findMany({
     where: {
       memberId: auth.memberId,
       resultsPublishedAt: { not: null },
+      testingEvent: { status: "COMPLETED" },
     },
     orderBy: { resultsPublishedAt: "desc" },
     take: 10,
@@ -97,7 +108,7 @@ export async function GET(request: NextRequest) {
       resultsPublishedAt: true,
       createdAt: true,
       testingEvent: {
-        select: { name: true, date: true, styleId: true },
+        select: { name: true, date: true, endDate: true, styleId: true },
       },
     },
   });
@@ -106,6 +117,7 @@ export async function GET(request: NextRequest) {
     id: r.id,
     eventName: r.testingEvent.name,
     eventDate: r.testingEvent.date,
+    eventEndDate: r.testingEvent.endDate,
     styleName: styleMap[r.testingEvent.styleId] || "Unknown",
     testingForRank: r.testingForRank,
     currentRank: r.currentRank,
@@ -143,7 +155,7 @@ export async function POST(request: NextRequest) {
   // Get event -- scoped to this member's tenant.
   const event = await prisma.testingEvent.findUnique({
     where: { id: testingEventId },
-    select: { id: true, date: true, status: true, styleId: true, clientId: true },
+    select: { id: true, date: true, endDate: true, status: true, styleId: true, clientId: true },
   });
   if (!event || event.clientId !== member.clientId) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
@@ -151,7 +163,8 @@ export async function POST(request: NextRequest) {
   if (event.status !== "SCHEDULED") {
     return NextResponse.json({ error: "Event is not open for registration" }, { status: 400 });
   }
-  if (event.date < new Date()) {
+  // Registration stays open through the last day of a multi-day test.
+  if ((event.endDate || event.date) < new Date()) {
     return NextResponse.json({ error: "Event has already passed" }, { status: 400 });
   }
 

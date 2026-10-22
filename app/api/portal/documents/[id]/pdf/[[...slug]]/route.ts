@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import jsPDF from "jspdf";
 import { fetchContractPdf } from "@/lib/contract-storage";
 import { isMinor, isMinorChildOf } from "@/lib/minor";
+import { getHiddenTestResultUrls } from "@/lib/test-result-visibility";
 
 function generateWaiverPdf(opts: {
   gymName: string;
@@ -329,6 +330,11 @@ export async function GET(
     try {
       const docs: Array<{ id: string; name?: string; url?: string }> = JSON.parse(member.styleDocuments);
       const found = docs.find((d) => d.id === id);
+      // Block direct-URL access to a test-result PDF whose test isn't
+      // completed / published yet (the list hides it too).
+      if (found?.url && (await getHiddenTestResultUrls(auth.memberId)).has(found.url)) {
+        return new NextResponse("Not found", { status: 404 });
+      }
       if (found?.url) {
         dataUri = found.url;
         displayName = found.name || displayName;
