@@ -653,6 +653,10 @@ export default function TestingPage() {
       "This publishes every graded participant's result: members can now view + download their test PDF from the portal, and the grade shows up as an indicator on the promotions page. Ungraded participants are left alone."
     )) return;
     try {
+      // Turn every graded participant's draft grades into a final
+      // result + PDF before the event is marked complete (Save no
+      // longer does this).
+      await finalizeParticipants(eventId);
       const res = await fetch(`/api/testing/${eventId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -696,6 +700,8 @@ export default function TestingPage() {
   const handlePublishParticipant = async (participantId: string) => {
     if (!selectedEvent) return;
     try {
+      // Final result + PDF are built here, at Mark Complete -- not on Save.
+      const fresh = await finalizeParticipants(selectedEvent.id, [participantId]);
       const res = await fetch(`/api/testing/${selectedEvent.id}/participants`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -708,8 +714,8 @@ export default function TestingPage() {
       // Now that this participant is officially published, copy their
       // result PDF into their member documents so it shows up in the
       // portal alongside their other files.
-      const p = selectedEvent.participants.find((x) => x.id === participantId);
-      if (p) await publishPdfToMemberDocs(p, selectedEvent);
+      const p = (fresh || selectedEvent).participants.find((x) => x.id === participantId);
+      if (p) await publishPdfToMemberDocs(p, fresh || selectedEvent);
       const eventRes = await fetch(`/api/testing/${selectedEvent.id}`);
       if (eventRes.ok) {
         const eventData = await eventRes.json();
@@ -725,6 +731,7 @@ export default function TestingPage() {
   const handlePublishParticipants = async (participantIds: string[]) => {
     if (!selectedEvent || participantIds.length === 0) return;
     try {
+      const fresh = await finalizeParticipants(selectedEvent.id, participantIds);
       await Promise.all(
         participantIds.map((participantId) =>
           fetch(`/api/testing/${selectedEvent.id}/participants`, {
@@ -738,8 +745,8 @@ export default function TestingPage() {
       // member documents. Runs sequentially so a slow member update
       // can't corrupt another member's styleDocuments JSON blob.
       for (const pid of participantIds) {
-        const p = selectedEvent.participants.find((x) => x.id === pid);
-        if (p) await publishPdfToMemberDocs(p, selectedEvent);
+        const p = (fresh || selectedEvent).participants.find((x) => x.id === pid);
+        if (p) await publishPdfToMemberDocs(p, fresh || selectedEvent);
       }
       const eventRes = await fetch(`/api/testing/${selectedEvent.id}`);
       if (eventRes.ok) {
@@ -1441,33 +1448,115 @@ export default function TestingPage() {
     return pdf.output("datauristring");
   };
 
-  // Save PDF data URL to participant/member records
-  const uploadAndSavePdf = async (
-    pdfDataUrl: string,
-    participant: TestingParticipant,
-    event: TestingEvent
-  ): Promise<string | null> => {
-    try {
-      // Save to participant record so the admin can preview it in the
-      // results grid. Deliberately does NOT push the PDF into the
-      // member's styleDocuments -- that would leak an un-signed-off
-      // grade to the member's portal before the admin has officially
-      // marked the participant / event Complete. The document copy
-      // happens during handlePublishParticipant(s) + handleCompleteEvent.
-      await fetch(`/api/testing/${event.id}/participants`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          participantId: participant.id,
-          resultPdfUrl: pdfDataUrl,
-        }),
-      });
-
-      return pdfDataUrl;
-    } catch (err) {
-      console.error("Error saving PDF:", err);
-      return null;
+  // Load the curriculum (rank test) a participant is graded against.
+  // Same lookup as the grading sheet, but tries every style on a
+  // multi-style test.
+  const loadCurriculumFor = async (participant: TestingParticipant, event: TestingEvent): Promise<RankTest | null> => {
+    let styleIdsForEvent: string[] = [];
+    if (event.styleIds) {
+      try {
+        const parsed = JSON.parse(event.styleIds);
+        if (Array.isArray(parsed)) styleIdsForEvent = parsed.filter((v): v is string => typeof v === "string");
+      } catch { /* ignore */ }
     }
+    if (styleIdsForEvent.length === 0 && event.styleId) styleIdsForEvent = [event.styleId];
+    for (const sid of styleIdsForEvent) {
+      const style = styles.find((s) => s.id === sid);
+      if (!style) continue;
+      const rankName = (style.testNamingConvention || "INTO_RANK") === "FROM_RANK"
+        ? participant.currentRank
+        : participant.testingForRank;
+      if (!rankName) continue;
+      const rank = style.ranks?.find((r) => r.name.toLowerCase().trim() === rankName.toLowerCase().trim());
+      if (!rank) continue;
+      try {
+        const res = await fetch(`/api/rank-tests?rankId=${rank.id}&styleId=${sid}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.rankTests && data.rankTests.length > 0) return data.rankTests[0];
+        }
+      } catch { /* try next style */ }
+    }
+    return null;
+  };
+
+  // Turn saved draft grades into a final result. Runs ONLY when a test
+  // is marked complete (per participant or whole event) -- never on
+  // Save. For each graded participant: keep an explicit Pass / Fail,
+  // otherwise derive PASSED / FAILED / INCOMPLETE from their item
+  // grades; then generate the result PDF. Ungraded (nothing scored,
+  // no explicit status) participants are skipped. Returns the fresh
+  // event so callers work from up-to-date participant rows.
+  const finalizeParticipants = async (eventId: string, onlyIds?: string[]): Promise<TestingEvent | null> => {
+    const freshRes = await fetch(`/api/testing/${eventId}`);
+    if (!freshRes.ok) return null;
+    const fresh: TestingEvent = (await freshRes.json()).event;
+    const targets = fresh.participants.filter((p) => {
+      if (onlyIds && !onlyIds.includes(p.id)) return false;
+      if (!onlyIds && p.resultsPublishedAt) return false;
+      const explicit = p.status === "PASSED" || p.status === "FAILED";
+      let anyGraded = false;
+      if (p.itemScores) {
+        try {
+          const s = JSON.parse(p.itemScores) as ItemScores;
+          anyGraded = Object.values(s).some((v) => v?.passed || v?.failed);
+        } catch { /* ignore */ }
+      }
+      return explicit || anyGraded;
+    });
+    if (targets.length === 0) return fresh;
+
+    setGeneratingPdf(true);
+    try {
+      for (const p of targets) {
+        const curriculum = await loadCurriculumFor(p, fresh);
+        let scores: ItemScores = {};
+        try { scores = p.itemScores ? JSON.parse(p.itemScores) : {}; } catch { /* ignore */ }
+        let total = 0, passed = 0, failed = 0, ungraded = 0, requiredFailed = false;
+        if (curriculum) {
+          visibleCategories(curriculum.categories).forEach((cat) => {
+            cat.items.forEach((item) => {
+              total++;
+              const sc = scores[item.id];
+              if (sc?.passed) passed++;
+              else if (sc?.failed) { failed++; if (item.required) requiredFailed = true; }
+              else ungraded++;
+            });
+          });
+        }
+        const percent = total > 0 ? Math.round((passed / total) * 100) : (p.score ?? 0);
+        const status: "PASSED" | "FAILED" | "INCOMPLETE" =
+          p.status === "PASSED" || p.status === "FAILED"
+            ? p.status
+            : requiredFailed
+              ? "FAILED"
+              : total > 0 && ungraded === 0 && failed === 0
+                ? "PASSED"
+                : "INCOMPLETE";
+        let pdf: string | null = null;
+        if (curriculum) {
+          try {
+            pdf = generateTestResultPdf({ ...p, status }, fresh, curriculum, scores, percent, status);
+          } catch (err) {
+            console.error(`Error generating PDF for ${p.memberName}:`, err);
+          }
+        }
+        await fetch(`/api/testing/${eventId}/participants`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            participantId: p.id,
+            status,
+            score: percent,
+            ...(pdf ? { resultPdfUrl: pdf } : {}),
+          }),
+        });
+      }
+    } finally {
+      setGeneratingPdf(false);
+    }
+    const afterRes = await fetch(`/api/testing/${eventId}`);
+    return afterRes.ok ? (await afterRes.json()).event : fresh;
   };
 
   // Copy a participant's result PDF into their member documents. Called
@@ -1713,12 +1802,19 @@ export default function TestingPage() {
       //   - any required item failed  -> FAILED
       //   - all items graded + passed -> PASSED
       //   - anything else             -> INCOMPLETE
-      const derivedStatus: "PASSED" | "FAILED" | "INCOMPLETE" = anyRequiredFailed
-        ? "FAILED"
-        : ungradedItems === 0 && failedItems === 0 && totalItems > 0
-          ? "PASSED"
-          : "INCOMPLETE";
-      const finalStatus = manualStatus || derivedStatus;
+      // Save is a DRAFT save: store the grades, score and notes only.
+      // No PDF, no derived PASSED / FAILED / INCOMPLETE status -- those
+      // are produced when the test is marked complete
+      // (finalizeParticipants). A Pass / Fail the admin explicitly picked
+      // is kept. A leftover auto "INCOMPLETE" from the old save behavior
+      // is reset to REGISTERED, and any draft PDF on an unpublished
+      // result is cleared so nothing half-graded is attached.
+      const statusUpdate = manualStatus
+        ? { status: manualStatus }
+        : gradingParticipant.status === "INCOMPLETE"
+          ? { status: "REGISTERED" }
+          : {};
+      const clearDraftPdf = !gradingParticipant.resultsPublishedAt ? { resultPdfUrl: null } : {};
 
       const res = await fetch(`/api/testing/${selectedEvent.id}/participants`, {
         method: "PATCH",
@@ -1727,32 +1823,14 @@ export default function TestingPage() {
           participantId: gradingParticipant.id,
           itemScores: JSON.stringify(itemScores),
           score: percentScore,
-          status: finalStatus,
+          ...statusUpdate,
+          ...clearDraftPdf,
           notes: individualNotes || null,
           adminNotes: individualAdminNotes || null,
         }),
       });
 
       if (res.ok) {
-        // Generate and upload PDF
-        if (rankTestCurriculum) {
-          setGeneratingPdf(true);
-          try {
-            const pdfBlob = generateTestResultPdf(
-              gradingParticipant,
-              selectedEvent,
-              rankTestCurriculum,
-              itemScores,
-              percentScore,
-              finalStatus as "PASSED" | "FAILED" | "INCOMPLETE"
-            );
-            await uploadAndSavePdf(pdfBlob, gradingParticipant, selectedEvent);
-          } catch (pdfErr) {
-            console.error("Error generating PDF:", pdfErr);
-          } finally {
-            setGeneratingPdf(false);
-          }
-        }
 
         // Refresh event data
         const eventRes = await fetch(`/api/testing/${selectedEvent.id}`);
@@ -1989,14 +2067,19 @@ export default function TestingPage() {
           }
           const percentScore = totalItems > 0 ? Math.round((passedItems / totalItems) * 100) : 0;
 
-          // Derived status mirrors the individual grading sheet: manual
-          // override wins, else pass/fail/incomplete comes from grades.
-          const derivedStatus: "PASSED" | "FAILED" | "INCOMPLETE" = anyRequiredFailed
-            ? "FAILED"
-            : ungradedItems === 0 && failedItems === 0 && totalItems > 0
-              ? "PASSED"
-              : "INCOMPLETE";
-          const finalStatus = bulkManualStatus[p.id] || derivedStatus;
+          // DRAFT save (same rule as the single grading sheet): grades,
+          // score and notes only. No PDF and no derived status -- those
+          // come from finalizeParticipants when the test is completed.
+          // An explicit Pass / Fail is kept; a leftover auto
+          // "INCOMPLETE" resets to REGISTERED; an unpublished draft PDF
+          // is cleared.
+          const manual = bulkManualStatus[p.id];
+          const statusUpdate = manual
+            ? { status: manual }
+            : p.status === "INCOMPLETE"
+              ? { status: "REGISTERED" }
+              : {};
+          const clearDraftPdf = !p.resultsPublishedAt ? { resultPdfUrl: null } : {};
 
           const res = await fetch(`/api/testing/${selectedEvent.id}/participants`, {
             method: "PATCH",
@@ -2005,54 +2088,20 @@ export default function TestingPage() {
               participantId: p.id,
               itemScores: JSON.stringify(participantScores),
               score: percentScore,
-              status: finalStatus,
+              ...statusUpdate,
+              ...clearDraftPdf,
               notes: bulkParticipantNotes[p.id] || null,
               adminNotes: bulkAdminNotes[p.id] || null,
             }),
           });
 
-          return {
-            participant: p,
-            curriculum,
-            ok: res.ok,
-            scores: participantScores,
-            percentScore,
-            status: finalStatus as "PASSED" | "FAILED" | "INCOMPLETE",
-          };
+          return { participant: p, curriculum, ok: res.ok };
         }),
       );
 
       const failed = results.filter((r) => !r.ok);
       if (failed.length > 0) {
         alert(`Failed to save grades for ${failed.length} participant(s)`);
-      }
-
-      // Generate PDFs for all successfully saved participants. Each PDF uses
-      // its sheet's curriculum so multi-rank tests don't mis-render.
-      setGeneratingPdf(true);
-      try {
-        const successfulResults = results.filter((r) => r.ok && r.curriculum);
-        await Promise.all(
-          successfulResults.map(async (result) => {
-            try {
-              const pdfBlob = generateTestResultPdf(
-                result.participant,
-                selectedEvent,
-                result.curriculum!,
-                result.scores,
-                result.percentScore,
-                result.status,
-              );
-              await uploadAndSavePdf(pdfBlob, result.participant, selectedEvent);
-            } catch (pdfErr) {
-              console.error(`Error generating PDF for ${result.participant.memberName}:`, pdfErr);
-            }
-          }),
-        );
-      } catch (pdfErr) {
-        console.error("Error generating PDFs:", pdfErr);
-      } finally {
-        setGeneratingPdf(false);
       }
 
       // Refresh event data
@@ -4693,20 +4742,18 @@ export default function TestingPage() {
                   onClick={async () => {
                     if (!confirm(
                       "Save all grades and mark every graded participant complete?\n\n" +
-                      "Their results become visible on the member portal and show up as grades on the promotions page. Ungraded (REGISTERED) rows are left as drafts."
+                      "Results become visible to the member once the test itself is marked Completed. Anyone with nothing graded is left as a draft."
                     )) return;
                     await saveBulkGrades();
+                    // Publish anyone with an explicit Pass / Fail or at
+                    // least one graded item. (Save no longer writes a
+                    // status, so we can't key on p.status here.)
                     const idsToPublish = bulkSheets
                       .flatMap((s) => s.participants)
                       .filter((p) => {
                         const manual = bulkManualStatus[p.id];
-                        return (
-                          manual === "PASSED" ||
-                          manual === "FAILED" ||
-                          p.status === "PASSED" ||
-                          p.status === "FAILED" ||
-                          p.status === "INCOMPLETE"
-                        );
+                        const graded = Object.values(bulkItemScores[p.id] || {}).some((v) => v?.passed || v?.failed);
+                        return manual === "PASSED" || manual === "FAILED" || graded;
                       })
                       .filter((p) => !p.resultsPublishedAt)
                       .map((p) => p.id);
