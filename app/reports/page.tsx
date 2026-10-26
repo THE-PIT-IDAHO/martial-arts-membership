@@ -2551,6 +2551,12 @@ export default function ReportsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/reports/belt-order"
+              className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
+            >
+              Belt Order
+            </Link>
             <button
               type="button"
               onClick={() => setShowManageModal(true)}
