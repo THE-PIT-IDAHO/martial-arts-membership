@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
+import BeltOrderPanel from "@/components/reports/BeltOrderPanel";
 import { generateReportPdf } from "@/lib/report-pdf";
 import { formatDateDisplay } from "@/lib/dates";
 import {
@@ -20,7 +21,7 @@ import {
 
 type ReportDateRange = "today" | "week" | "month" | "quarter" | "year" | "custom";
 
-type ReportType = "membership" | "attendance" | "revenue" | "retention" | "recurring" | "custom";
+type ReportType = "membership" | "attendance" | "revenue" | "retention" | "recurring" | "beltOrder" | "custom";
 
 // All possible data fields that can be included in reports
 type ReportDataFields = {
@@ -1104,6 +1105,17 @@ const DEFAULT_REPORTS: ReportConfig[] = [
       showTransactionCount: false,
       showTopProducts: false,
     },
+  },
+  {
+    // Built-in belt order sheet (Belt | Size | Count). Renders its own
+    // panel with simple choices instead of the field-driven report body.
+    id: "belt-order",
+    name: "Belt Order",
+    description: "How many of each belt and size to order, from a testing event or a style",
+    type: "beltOrder",
+    enabled: true,
+    dateRange: "year", // unused -- the panel has its own choices
+    fields: { ...DEFAULT_FIELDS },
   },
 ];
 
@@ -2551,12 +2563,6 @@ export default function ReportsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Link
-              href="/reports/belt-order"
-              className="text-xs rounded-md bg-primary px-3 py-1 font-semibold text-white hover:bg-primaryDark"
-            >
-              Belt Order
-            </Link>
             <button
               type="button"
               onClick={() => setShowManageModal(true)}
@@ -2610,7 +2616,20 @@ export default function ReportsPage() {
         )}
 
         {/* Loading */}
-        {loading ? (
+        {activeReport?.type === "beltOrder" ? (
+          // Built-in Belt Order report: its own simple choices, not the
+          // field-driven report body (no Edit / Duplicate -- nothing to
+          // configure beyond the choices on the panel itself).
+          <div className="space-y-4 report-print-area">
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold">{activeReport.name}</h3>
+                <p className="text-xs text-gray-500">How many of each belt and size to order.</p>
+              </div>
+              <BeltOrderPanel />
+            </div>
+          </div>
+        ) : loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="text-sm text-gray-500">Loading report data...</div>
           </div>
