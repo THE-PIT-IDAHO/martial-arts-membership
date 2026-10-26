@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { syncMemberRankNames } from "@/lib/rank-rename";
 
 type RouteParams = {
   params: Promise<{
@@ -176,6 +177,16 @@ export async function PATCH(req: Request, { params }: RouteParams) {
           }
         }
 
+        // Belts renamed in this save (same DB rank, new name). Carried to
+        // every member below so nobody is left on a name that no longer
+        // exists.
+        const renames: Array<{ from: string; to: string }> = [];
+        for (const { rank, existing } of pass1Result) {
+          if (existing && rank.name && existing.name !== rank.name) {
+            renames.push({ from: existing.name, to: rank.name });
+          }
+        }
+
         // Update or create ranks
         for (const { rank, existing } of pass1Result) {
           // Calculate total class requirement from classRequirements array
@@ -232,6 +243,27 @@ export async function PATCH(req: Request, { params }: RouteParams) {
           where: { id },
           data: { beltConfig: JSON.stringify(config) },
         });
+
+        // Keep members' saved belts in line with the belt list: apply
+        // renames from this save, and repair anyone already stuck on an
+        // old name ("Orange" -> "Orange Belt"). Only the rank name changes;
+        // every other per-style detail (size, coach, dates) is kept.
+        try {
+          const result = await syncMemberRankNames({
+            clientId,
+            styleName: style.name,
+            rankNames: config.ranks.map((r: { name: string }) => r.name).filter(Boolean),
+            renames,
+          });
+          if (result.updatedMembers > 0 || result.unmatched.length > 0) {
+            console.log(
+              `[styles] ${style.name}: updated belt name on ${result.updatedMembers} member(s); ` +
+              `${result.unmatched.length} still unmatched`,
+            );
+          }
+        } catch (err) {
+          console.error("[styles] member rank-name sync failed:", err);
+        }
       }
     }
 
