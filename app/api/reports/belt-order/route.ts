@@ -214,9 +214,14 @@ export async function GET(req: Request) {
     // style -- unless "combine" is on, in which case the same belt name
     // across styles is one line and the style is dropped from the label.
     const multiStyle = !combine && new Set(counted.map((c) => c.style.toLowerCase())).size > 1;
+    // When combining, styles often name the same belt differently
+    // ("Orange Belt" for adults, "Orange" for kids). Drop the word
+    // "belt" so they match, and show the plain color.
+    const plainColor = (rank: string) =>
+      rank.replace(/\bbelt\b/gi, " ").replace(/\s+/g, " ").replace(/\s+([-/])/g, " $1").trim().replace(/^[-\s]+|[-\s]+$/g, "") || rank.trim();
     const tally = new Map<string, Row>();
     for (const c of counted) {
-      const belt = multiStyle ? `${c.belt} (${c.style})` : c.belt;
+      const belt = combine ? plainColor(c.belt) : multiStyle ? `${c.belt} (${c.style})` : c.belt;
       const key = `${belt.trim().toLowerCase()}|||${c.size.trim().toLowerCase()}`;
       const order = rankOrder(c.style, c.belt);
       const row = tally.get(key);

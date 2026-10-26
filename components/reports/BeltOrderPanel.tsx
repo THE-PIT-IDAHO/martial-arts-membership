@@ -31,7 +31,7 @@ export default function BeltOrderPanel() {
   const [belt, setBelt] = useState<"current" | "next">("next");
   const [membersScope, setMembersScope] = useState<"active" | "all">("active");
   // Same belt name across styles = one line (Adult + Kids Kempo yellow).
-  const [combine, setCombine] = useState(false);
+  const [combine, setCombine] = useState(true);
 
   const toggleIn = (list: string[], id: string) =>
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
@@ -222,11 +222,11 @@ export default function BeltOrderPanel() {
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Styles in the count</p>
               <div className="flex flex-wrap gap-2">
-                <button type="button" className={pill(!combine)} onClick={() => setCombine(false)}>Keep styles separate</button>
                 <button type="button" className={pill(combine)} onClick={() => setCombine(true)}>Combine styles</button>
+                <button type="button" className={pill(!combine)} onClick={() => setCombine(false)}>Keep styles separate</button>
               </div>
               <p className="text-[11px] text-gray-400 mt-1">
-                Combine counts the same belt as one line across styles (e.g. an Adult and a Kids Kempo yellow belt in size 3 count together).
+                Combine counts the same color as one line across styles, ignoring the word &quot;Belt&quot; (an Adult &quot;Orange Belt&quot; and a Kids &quot;Orange&quot; in size 3 count together).
               </p>
             </div>
           )}
