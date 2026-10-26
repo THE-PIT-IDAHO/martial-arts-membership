@@ -14,6 +14,29 @@ export async function GET(req: Request) {
     if (status) where.status = status.toUpperCase();
     if (styleId) where.styleId = styleId;
 
+    // ?lite=1 -- roster-only shape for the reports page. Skips the
+    // participant result PDFs (base64 data URLs) that make the full
+    // payload heavy.
+    if (searchParams.get("lite") === "1") {
+      const events = await prisma.testingEvent.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          date: true,
+          endDate: true,
+          status: true,
+          styleName: true,
+          styleNames: true,
+          participants: {
+            select: { memberId: true, currentRank: true, testingForRank: true, status: true },
+          },
+        },
+        orderBy: { date: "desc" },
+      });
+      return NextResponse.json({ events });
+    }
+
     const events = await prisma.testingEvent.findMany({
       where,
       include: {

@@ -340,6 +340,12 @@ const FILTER_FIELDS = [
     fields: [],
     hasCoachFilter: true,
   },
+  {
+    name: "Testing Event Filter",
+    description: "Only include members signed up for specific testing events (Belt Order Tally then counts the belt they're testing FOR)",
+    fields: [],
+    hasTestingEventFilter: true,
+  },
 ];
 
 // COLUMN FIELDS - Control what information columns are displayed in the member list
@@ -899,6 +905,10 @@ type ReportConfig = {
   // Special value "No Coach" targets members with no coach set on any
   // style, mirroring the "No Membership" convention above.
   filterByCoaches?: string[];
+  // TestingEvent ids. When set, only members signed up for one of
+  // these tests are included, and the Belt Order Tally counts the rank
+  // they're testing FOR instead of their current rank.
+  filterByTestingEvents?: string[];
   selectedClassTypes?: string[]; // Class types to show as columns (e.g., ["Regular", "Sparring"])
   columnOrder?: ColumnId[]; // Order of columns in the member list table
 };
@@ -1148,6 +1158,25 @@ export default function ReportsPage() {
   const [classTypeAliases, setClassTypeAliases] = useState<Record<string, string>>({});
   const [availableMembershipTypes, setAvailableMembershipTypes] = useState<{ id: string; name: string }[]>([]);
   const [availableMembershipPlans, setAvailableMembershipPlans] = useState<{ id: string; name: string }[]>([]);
+  // Testing events (roster only) for the Testing Event Filter + the
+  // belt-order-by-test tally.
+  type ReportTestingEvent = {
+    id: string;
+    name: string;
+    date: string;
+    endDate: string | null;
+    status: string;
+    styleName: string;
+    styleNames: string | null;
+    participants: Array<{ memberId: string; currentRank: string | null; testingForRank: string | null; status: string }>;
+  };
+  const [availableTestingEvents, setAvailableTestingEvents] = useState<ReportTestingEvent[]>([]);
+  useEffect(() => {
+    fetch("/api/testing?lite=1")
+      .then((r) => (r.ok ? r.json() : { events: [] }))
+      .then((d) => setAvailableTestingEvents(d.events || []))
+      .catch(() => {});
+  }, []);
 
   // Map<memberId, "Style1, Style2"> of members currently promotion-
   // eligible (from /api/promotions/eligible). Powers the optional
@@ -2341,6 +2370,16 @@ export default function ReportsPage() {
         const overlap = memberCoaches.some((c) => report.filterByCoaches!.includes(c));
         if (!overlap) return false;
       }
+      // Testing Event Filter: member must be on one of the picked tests'
+      // rosters. Acts as a hard scope (like style/coach), and the status
+      // toggles below still apply on top.
+      if (report.filterByTestingEvents && report.filterByTestingEvents.length > 0) {
+        const onRoster = availableTestingEvents.some(
+          (ev) => report.filterByTestingEvents!.includes(ev.id)
+            && ev.participants.some((p) => p.memberId === m.id),
+        );
+        if (!onRoster) return false;
+      }
       const status = (m.status || "").toUpperCase();
       const anyStatusToggle =
         report.fields.showActiveMembers || report.fields.showProspects
@@ -2759,6 +2798,12 @@ export default function ReportsPage() {
                     }
                     if (activeReport.filterByCoaches && activeReport.filterByCoaches.length > 0) {
                       activeFilters.push(`Coaches: ${activeReport.filterByCoaches.join(", ")}`);
+                    }
+                    if (activeReport.filterByTestingEvents && activeReport.filterByTestingEvents.length > 0) {
+                      const names = availableTestingEvents
+                        .filter((ev) => activeReport.filterByTestingEvents!.includes(ev.id))
+                        .map((ev) => ev.name);
+                      activeFilters.push(`Testing: ${names.join(", ") || "(deleted test)"}`);
                     }
 
                     // Hoisted purchase collection so row expansion +
@@ -4206,7 +4251,53 @@ export default function ReportsPage() {
 
                           type Enrol = { memberId: string; memberName: string; style: string; rank: string; size: string };
                           const enrolments: Enrol[] = [];
-                          for (const m of sortedMembers) {
+
+                          // Testing-event mode: order the belt each person is
+                          // testing FOR (testingForRank), in that test's style,
+                          // at their belt size. Skips FAILED / NO_SHOW /
+                          // CANCELLED so a completed test only counts passers.
+                          const pickedTests = (activeReport.filterByTestingEvents || []).length > 0
+                            ? availableTestingEvents.filter((ev) => activeReport.filterByTestingEvents!.includes(ev.id))
+                            : [];
+                          if (pickedTests.length > 0) {
+                            const inReport = new Map<string, any>(sortedMembers.map((m: any) => [m.id, m]));
+                            const SKIP = new Set(["FAILED", "NO_SHOW", "CANCELLED", "CANCELED"]);
+                            for (const ev of pickedTests) {
+                              let evStyles: string[] = [];
+                              if (ev.styleNames) {
+                                try { const p = JSON.parse(ev.styleNames); if (Array.isArray(p)) evStyles = p; } catch {}
+                              }
+                              if (evStyles.length === 0 && ev.styleName) evStyles = [ev.styleName];
+                              const evStylesLower = new Set(evStyles.map((s) => s.toLowerCase()));
+                              for (const p of ev.participants) {
+                                if (SKIP.has((p.status || "").toUpperCase())) continue;
+                                const m = inReport.get(p.memberId);
+                                if (!m) continue;
+                                let notes: Array<{ name?: string; rank?: string; beltSize?: string }> = [];
+                                if (m.stylesNotes) {
+                                  try { const parsed = JSON.parse(m.stylesNotes); if (Array.isArray(parsed)) notes = parsed; } catch {}
+                                }
+                                // Multi-style test: pick the member's entry in one of
+                                // the test's styles, preferring the one whose current
+                                // rank matches what they were registered at.
+                                const candidates = notes.filter((n) => n?.name && evStylesLower.has(n.name.toLowerCase()));
+                                const entry =
+                                  candidates.find((n) => p.currentRank && n.rank && n.rank.toLowerCase() === p.currentRank.toLowerCase())
+                                  || candidates[0];
+                                const styleForRow = entry?.name || evStyles[0] || m.primaryStyle || "—";
+                                if (!styleAllowed(styleForRow)) continue;
+                                enrolments.push({
+                                  memberId: m.id,
+                                  memberName: `${m.firstName} ${m.lastName}`.trim(),
+                                  style: styleForRow,
+                                  rank: p.testingForRank || p.currentRank || "—",
+                                  size: (entry?.beltSize || "").trim() || "—",
+                                });
+                              }
+                            }
+                          }
+
+                          for (const m of (pickedTests.length > 0 ? [] : sortedMembers)) {
                             let notes: Array<{ name?: string; rank?: string; beltSize?: string; active?: boolean }> = [];
                             if (m.stylesNotes) {
                               try { const parsed = JSON.parse(m.stylesNotes); if (Array.isArray(parsed)) notes = parsed; } catch {}
@@ -4267,6 +4358,11 @@ export default function ReportsPage() {
                               <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
                                 Belt Order Tally ({buckets.length} unique {buckets.length === 1 ? "combination" : "combinations"})
                               </h4>
+                              {pickedTests.length > 0 && (
+                                <p className="text-[11px] text-gray-500 mb-2">
+                                  Belts members are testing <span className="font-semibold">for</span> in: {pickedTests.map((t) => t.name).join(", ")}. Failed / no-shows excluded.
+                                </p>
+                              )}
                               <div className="overflow-x-auto">
                                 <table className="min-w-full text-sm">
                                   <thead>
@@ -4870,6 +4966,9 @@ export default function ReportsPage() {
                       } else if ((category as any).hasCoachFilter) {
                         const count = (editingConfig.filterByCoaches || []).length;
                         filterSummary = count > 0 ? `${count} selected` : "All";
+                      } else if ((category as any).hasTestingEventFilter) {
+                        const count = (editingConfig.filterByTestingEvents || []).length;
+                        filterSummary = count > 0 ? `${count} selected` : "Off";
                       }
 
                       return (
@@ -5334,6 +5433,59 @@ export default function ReportsPage() {
                                       {(editingConfig.filterByCoaches || []).length === 0
                                         ? "No filter - showing all members regardless of coach"
                                         : `Showing ${(editingConfig.filterByCoaches || []).length} coach(es)`}
+                                    </p>
+                                  </div>
+                                );
+                              })()}
+
+                              {(category as any).hasTestingEventFilter && (() => {
+                                const selected = editingConfig.filterByTestingEvents || [];
+                                const fmt = (d: string) =>
+                                  new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                                if (availableTestingEvents.length === 0) {
+                                  return <p className="text-xs text-gray-500">No testing events yet.</p>;
+                                }
+                                return (
+                                  <div>
+                                    <div className="flex items-center justify-end mb-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => updateEditingConfig({ filterByTestingEvents: [] })}
+                                        className="text-[10px] text-gray-500 hover:text-gray-700"
+                                      >
+                                        Clear
+                                      </button>
+                                    </div>
+                                    <div className="space-y-1 max-h-60 overflow-y-auto">
+                                      {availableTestingEvents.map((ev) => (
+                                        <label key={ev.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer hover:text-gray-900">
+                                          <input
+                                            type="checkbox"
+                                            checked={selected.includes(ev.id)}
+                                            onChange={(e) => {
+                                              updateEditingConfig({
+                                                filterByTestingEvents: e.target.checked
+                                                  ? [...selected, ev.id]
+                                                  : selected.filter((id) => id !== ev.id),
+                                              });
+                                            }}
+                                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                          />
+                                          <span className="text-xs">
+                                            {ev.name}
+                                            <span className="text-gray-400">
+                                              {" · "}{fmt(ev.date)}{ev.endDate ? ` – ${fmt(ev.endDate)}` : ""}
+                                              {" · "}{ev.participants.length} signed up
+                                              {ev.status === "COMPLETED" ? " · Completed" : ""}
+                                            </span>
+                                          </span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-1">
+                                      {selected.length === 0
+                                        ? "No filter - includes members regardless of testing"
+                                        : "Only members on these tests' rosters. Turn on Belt Order Tally (Section 2) to get the order for the belts they're testing for."}
                                     </p>
                                   </div>
                                 );
