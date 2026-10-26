@@ -4262,30 +4262,61 @@ export default function ReportsPage() {
                           if (pickedTests.length > 0) {
                             const inReport = new Map<string, any>(sortedMembers.map((m: any) => [m.id, m]));
                             const SKIP = new Set(["FAILED", "NO_SHOW", "CANCELLED", "CANCELED"]);
+                            // Does this style's rank list contain the given rank?
+                            // Used to tell which style a multi-style tester is
+                            // actually testing in.
+                            const styleHasRank = (styleName: string, rankName: string | null) => {
+                              if (!rankName) return false;
+                              const def = availableStyles.find((s) => s.name.toLowerCase() === styleName.toLowerCase()) as
+                                { beltConfig?: string | null; ranks?: Array<{ name: string }> } | undefined;
+                              if (!def) return false;
+                              const target = rankName.toLowerCase();
+                              if (def.beltConfig) {
+                                try {
+                                  const cfg = JSON.parse(def.beltConfig);
+                                  if (Array.isArray(cfg?.ranks) && cfg.ranks.some((r: { name?: string }) => r?.name?.toLowerCase() === target)) return true;
+                                } catch {}
+                              }
+                              return !!def.ranks?.some((r) => r.name?.toLowerCase() === target);
+                            };
                             for (const ev of pickedTests) {
                               let evStyles: string[] = [];
                               if (ev.styleNames) {
                                 try { const p = JSON.parse(ev.styleNames); if (Array.isArray(p)) evStyles = p; } catch {}
                               }
                               if (evStyles.length === 0 && ev.styleName) evStyles = [ev.styleName];
-                              const evStylesLower = new Set(evStyles.map((s) => s.toLowerCase()));
+                              // Only the test's styles that the report allows.
+                              // Never falls back to a style outside this set.
+                              const usableStyles = evStyles.filter((s) => styleAllowed(s));
+                              if (usableStyles.length === 0) continue;
+                              const usableLower = new Set(usableStyles.map((s) => s.toLowerCase()));
                               for (const p of ev.participants) {
                                 if (SKIP.has((p.status || "").toUpperCase())) continue;
                                 const m = inReport.get(p.memberId);
                                 if (!m) continue;
-                                let notes: Array<{ name?: string; rank?: string; beltSize?: string }> = [];
+                                let notes: Array<{ name?: string; rank?: string; beltSize?: string; active?: boolean }> = [];
                                 if (m.stylesNotes) {
                                   try { const parsed = JSON.parse(m.stylesNotes); if (Array.isArray(parsed)) notes = parsed; } catch {}
                                 }
-                                // Multi-style test: pick the member's entry in one of
-                                // the test's styles, preferring the one whose current
-                                // rank matches what they were registered at.
-                                const candidates = notes.filter((n) => n?.name && evStylesLower.has(n.name.toLowerCase()));
+                                // Member's enrolments in the usable test styles.
+                                const candidates = notes.filter((n) => n?.name && usableLower.has(n.name.toLowerCase()));
+                                // Pick the style they're really testing in:
+                                // 1. the one whose rank list has the rank they're testing FOR
+                                // 2. the one whose current rank matches their registration
+                                // 3. single usable style on the test
                                 const entry =
-                                  candidates.find((n) => p.currentRank && n.rank && n.rank.toLowerCase() === p.currentRank.toLowerCase())
-                                  || candidates[0];
-                                const styleForRow = entry?.name || evStyles[0] || m.primaryStyle || "—";
-                                if (!styleAllowed(styleForRow)) continue;
+                                  candidates.find((n) => styleHasRank(n.name!, p.testingForRank))
+                                  || candidates.find((n) => p.currentRank && n.rank && n.rank.toLowerCase() === p.currentRank.toLowerCase())
+                                  || (candidates.length === 1 ? candidates[0] : undefined);
+                                let styleForRow = entry?.name;
+                                if (!styleForRow) {
+                                  // Not enrolled in any usable style: only place them
+                                  // if the rank pins down exactly one usable style.
+                                  const byRank = usableStyles.filter((s) => styleHasRank(s, p.testingForRank));
+                                  if (byRank.length === 1) styleForRow = byRank[0];
+                                  else if (usableStyles.length === 1) styleForRow = usableStyles[0];
+                                }
+                                if (!styleForRow) continue;
                                 enrolments.push({
                                   memberId: m.id,
                                   memberName: `${m.firstName} ${m.lastName}`.trim(),
