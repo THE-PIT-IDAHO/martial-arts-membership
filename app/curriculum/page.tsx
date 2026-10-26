@@ -28,7 +28,12 @@ type RankTest = { id: string; name: string; rankId: string; categories: Category
 //   workout       -> every item gets a stopwatch (Gatekeeper, Fitness)
 //   information   -> check-only knowledge section, no time / notes inputs
 type CategoryType = "demonstration" | "workout" | "information";
-type Category = { id: string; name: string; sortOrder: number; visibleOnTest?: boolean; type?: CategoryType; items: Item[] };
+// Workout sections can also show a total time for the whole section:
+//   none   -> no total
+//   single -> one stopwatch timing the whole section
+//   sum    -> each item keeps its stopwatch; the times are added up
+type SectionTimer = "none" | "single" | "sum";
+type Category = { id: string; name: string; sortOrder: number; visibleOnTest?: boolean; type?: CategoryType; sectionTimer?: SectionTimer; items: Item[] };
 
 // Optional child exercises grouped under a single workout item so one
 // stopwatch + one checkmark cover the whole set (e.g. "Circuit 1" =
@@ -254,6 +259,8 @@ function SectionHeader({
   name,
   sectionType,
   onChangeSectionType,
+  sectionTimer,
+  onChangeSectionTimer,
   itemCount,
   visibleOnTest,
   onToggleVisibleOnTest,
@@ -265,6 +272,8 @@ function SectionHeader({
   name: string;
   sectionType: CategoryType;
   onChangeSectionType: (t: CategoryType) => void | Promise<void>;
+  sectionTimer: SectionTimer;
+  onChangeSectionTimer: (t: SectionTimer) => void | Promise<void>;
   itemCount: number;
   visibleOnTest: boolean;
   onToggleVisibleOnTest: () => void;
@@ -304,6 +313,23 @@ function SectionHeader({
             <option value="information">Information (check only)</option>
           </select>
         </label>
+        {sectionType === "workout" && (
+          <label
+            className="flex items-center gap-1.5"
+            title="Show a total time for this whole section on the grading sheet and the result PDF."
+          >
+            <span className="text-[10px] font-semibold uppercase text-gray-500">Section timer</span>
+            <select
+              value={sectionTimer}
+              onChange={(e) => onChangeSectionTimer(e.target.value as SectionTimer)}
+              className="rounded border border-gray-300 bg-white px-1 py-0.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="none">Off</option>
+              <option value="single">One stopwatch for the whole section</option>
+              <option value="sum">Add up the item times</option>
+            </select>
+          </label>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <span className="text-xs text-gray-400">{itemCount} items</span>
@@ -432,9 +458,10 @@ function RichInput({ defaultValue, onSave, className, onEditClick }: { defaultVa
   );
 }
 
-function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSectionType, rankTests, selectedStyleId, selectedRankId, selectedCategoryId, onReload, getCategoryType, onDeleteCategory, onDeleteFromAllRanks, ranks }: {
+function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSectionType, sectionTimer, onChangeSectionTimer, rankTests, selectedStyleId, selectedRankId, selectedCategoryId, onReload, getCategoryType, onDeleteCategory, onDeleteFromAllRanks, ranks }: {
   categoryId: string; categoryName: string;
   sectionType: CategoryType; onChangeSectionType: (t: CategoryType) => Promise<void>;
+  sectionTimer: SectionTimer; onChangeSectionTimer: (t: SectionTimer) => Promise<void>;
   rankTests: RankTest[];
   selectedStyleId: string; selectedRankId: string; selectedCategoryId: string;
   onReload: () => Promise<void>; getCategoryType: () => string; onDeleteCategory: () => void; onDeleteFromAllRanks: () => void;
@@ -786,6 +813,8 @@ function CategorySpreadsheet({ categoryId, categoryName, sectionType, onChangeSe
         name={categoryName}
         sectionType={sectionType}
         onChangeSectionType={onChangeSectionType}
+        sectionTimer={sectionTimer}
+        onChangeSectionTimer={onChangeSectionTimer}
         itemCount={items.length}
         visibleOnTest={visibleOnTest}
         onToggleVisibleOnTest={toggleVisibleOnThisRank}
@@ -2220,12 +2249,32 @@ export default function CurriculumV2Page() {
   // rankTests since allCategories only carries id/name/testId.
   let topSectionType: CategoryType = "demonstration";
   let topVisibleOnTest = true;
+  let topSectionTimer: SectionTimer = "none";
   for (const test of rankTests) {
     const c = test.categories.find((tc) => tc.id === selectedCategoryId);
     if (c) {
       if (c.type) topSectionType = c.type;
+      if (c.sectionTimer) topSectionTimer = c.sectionTimer;
       topVisibleOnTest = c.visibleOnTest !== false;
       break;
+    }
+  }
+  // Optimistic local update + persist; on failure reload the server copy.
+  async function changeSectionTimer(categoryId: string, next: SectionTimer) {
+    setRankTests((prev) => prev.map((t) => ({
+      ...t,
+      categories: t.categories.map((c) => (c.id === categoryId ? { ...c, sectionTimer: next } : c)),
+    })));
+    const testId = rankTests.find((t) => t.categories.some((c) => c.id === categoryId))?.id;
+    if (!testId) return;
+    const res = await fetch(`/api/rank-tests/${testId}/categories`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ categoryId, sectionTimer: next }),
+    });
+    if (!res.ok) {
+      const r = await fetch(`/api/rank-tests?styleId=${selectedStyleId}&rankId=${selectedRankId}`);
+      if (r.ok) { const d = await r.json(); setRankTests(d.rankTests || d.tests || []); }
     }
   }
   async function changeTopSectionType(nextType: CategoryType) {
@@ -2503,6 +2552,8 @@ export default function CurriculumV2Page() {
               name={selectedCategory?.name || ""}
               sectionType={topSectionType}
               onChangeSectionType={changeTopSectionType}
+              sectionTimer={topSectionTimer}
+              onChangeSectionTimer={(t) => { if (selectedCategoryId) void changeSectionTimer(selectedCategoryId, t); }}
               itemCount={rows.filter(r => r.description?.trim()).length}
               visibleOnTest={topVisibleOnTest}
               onToggleVisibleOnTest={toggleTopVisibleOnTest}
@@ -2864,9 +2915,10 @@ export default function CurriculumV2Page() {
                 // Category (with `type`) lives on rankTests. Look it up
                 // once here so we can pass the current type down.
                 let liveType: CategoryType = "demonstration";
+                let liveTimer: SectionTimer = "none";
                 for (const test of rankTests) {
                   const c = test.categories.find((tc) => tc.id === cat.id);
-                  if (c?.type) { liveType = c.type; break; }
+                  if (c) { if (c.type) liveType = c.type; if (c.sectionTimer) liveTimer = c.sectionTimer; break; }
                 }
                 const count = itemCountFor(cat.id);
                 return (
@@ -2895,6 +2947,8 @@ export default function CurriculumV2Page() {
                   categoryId={cat.id}
                   categoryName={cat.name}
                   sectionType={liveType}
+                  sectionTimer={liveTimer}
+                  onChangeSectionTimer={(t) => changeSectionTimer(cat.id, t)}
                   onChangeSectionType={async (nextType) => {
                     // Optimistic: patch the local rankTests tree so the
                     // dropdown flips instantly, then persist. On failure

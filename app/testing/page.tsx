@@ -89,6 +89,47 @@ type ParsedSubExercise = {
   timed?: boolean;
 };
 
+// Section-timer support. A "single" section's time is stored in the
+// same itemScores blob under this key (it isn't a curriculum item, so
+// the pass/fail counts never see it).
+const sectionTimeKey = (categoryId: string) => `__section:${categoryId}`;
+
+// "M:SS" / "H:MM:SS" -> seconds; null if it isn't a time.
+function parseClock(v: string | null | undefined): number | null {
+  const m = (v || "").trim().match(/^(?:(d+):)?(d+):(d{1,2})$/);
+  if (!m) return null;
+  return (Number(m[1] || 0) * 3600) + Number(m[2]) * 60 + Number(m[3]);
+}
+
+function formatClock(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const sec = totalSeconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+// The section's total time, or null when the section has no timer or
+// nothing has been timed yet. "sum" adds each item's time; an item
+// with no time of its own counts its timed sub-exercises instead.
+function sectionTotalTime(category: RankTestCategory, scores: ItemScores): string | null {
+  if (category.type !== "workout") return null;
+  if (category.sectionTimer === "single") return scores[sectionTimeKey(category.id)]?.notes || null;
+  if (category.sectionTimer !== "sum") return null;
+  let total = 0;
+  let any = false;
+  for (const item of category.items) {
+    const s = scores[item.id];
+    const own = parseClock(s?.notes);
+    if (own !== null) { total += own; any = true; continue; }
+    for (const t of s?.subTimes || []) {
+      const v = parseClock(t);
+      if (v !== null) { total += v; any = true; }
+    }
+  }
+  return any ? formatClock(total) : null;
+}
+
 // Local parser so this page doesn't reach into the curriculum module.
 function parseSubExercisesForGrading(raw: string | null | undefined): ParsedSubExercise[] {
   if (!raw) return [];
@@ -110,6 +151,9 @@ type RankTestCategory = {
   // "information" -> knowledge-only, no time or notes inputs;
   // "demonstration" -> default per-item scoring.
   type?: "demonstration" | "workout" | "information";
+  // Workout sections only: "single" = one stopwatch for the whole
+  // section, "sum" = total of the item times, "none" = no total.
+  sectionTimer?: "none" | "single" | "sum";
   items: RankTestItem[];
 };
 
@@ -1340,8 +1384,14 @@ export default function TestingPage() {
       pdf.text(category.name.toUpperCase(), margin + 5, yPos + 5.5);
       pdf.setFontSize(9);
       setInk(catStatus);
-      pdf.text(`${catPassed}/${items.length}`, pageWidth - margin - 2, yPos + 5.5, { align: "right" });
+      const tallyText = `${catPassed}/${items.length}`;
+      pdf.text(tallyText, pageWidth - margin - 2, yPos + 5.5, { align: "right" });
       setInk(inkRGB);
+      const sectionTime = sectionTotalTime(category, scores);
+      if (sectionTime) {
+        pdf.setFont("helvetica", "bold");
+        pdf.text(`Total time: ${sectionTime}`, pageWidth - margin - 2 - pdf.getTextWidth(tallyText) - 6, yPos + 5.5, { align: "right" });
+      }
       yPos += headerH;
 
       // Two-column item grid
@@ -3986,6 +4036,26 @@ export default function TestingPage() {
                             );
                           })}
                         </div>
+                        {isWorkoutCat && category.sectionTimer === "single" && (
+                          <div className="px-3 py-2 sm:px-4 bg-primary/5 border-t flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold text-gray-700">Section time:</span>
+                            <input
+                              type="text"
+                              value={itemScores[sectionTimeKey(category.id)]?.notes || ""}
+                              onChange={(e) => handleItemTimeInput(sectionTimeKey(category.id), e.target.value)}
+                              placeholder="0:00"
+                              className="w-20 sm:w-24 rounded border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            />
+                            <Stopwatch onStop={(formatted) => handleItemTimeInput(sectionTimeKey(category.id), formatted)} />
+                          </div>
+                        )}
+                        {isWorkoutCat && category.sectionTimer === "sum" && (
+                          <div className="px-3 py-2 sm:px-4 bg-primary/5 border-t flex items-center gap-2">
+                            <span className="text-sm font-semibold text-gray-700">Section total:</span>
+                            <span className="text-sm font-mono font-semibold">{sectionTotalTime(category, itemScores) || "0:00"}</span>
+                            <span className="text-xs text-gray-500">(adds up the times above)</span>
+                          </div>
+                        )}
                       </div>
                       );
                     })}
@@ -4383,6 +4453,26 @@ export default function TestingPage() {
                                 );
                               })}
                             </div>
+                            {category.type === "workout" && category.sectionTimer === "single" && (
+                              <div className="px-3 py-2 bg-primary/5 border-t flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-semibold text-gray-700">Section time:</span>
+                                <input
+                                  type="text"
+                                  value={bulkItemScores[mobileSelectedParticipant]?.[sectionTimeKey(category.id)]?.notes || ""}
+                                  onChange={(e) => handleTimeInput(mobileSelectedParticipant, sectionTimeKey(category.id), e.target.value)}
+                                  placeholder="0:00"
+                                  inputMode="numeric"
+                                  className="w-20 rounded border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                                />
+                                <Stopwatch onStop={(formatted) => handleTimeInput(mobileSelectedParticipant, sectionTimeKey(category.id), formatted)} />
+                              </div>
+                            )}
+                            {category.type === "workout" && category.sectionTimer === "sum" && (
+                              <div className="px-3 py-2 bg-primary/5 border-t flex items-center gap-2">
+                                <span className="text-sm font-semibold text-gray-700">Section total:</span>
+                                <span className="text-sm font-mono font-semibold">{sectionTotalTime(category, bulkItemScores[mobileSelectedParticipant] || {}) || "0:00"}</span>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -4604,6 +4694,32 @@ export default function TestingPage() {
                                   </tr>
                                 );
                               })}
+                              {category.type === "workout" && (category.sectionTimer === "single" || category.sectionTimer === "sum") && (
+                                <tr className="bg-primary/5">
+                                  <td className="sticky left-0 z-10 bg-gray-50 border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700">
+                                    {category.sectionTimer === "single" ? "Section time" : "Section total"}
+                                  </td>
+                                  {sheetParticipants.map((p) => (
+                                    <td key={p.id} className="border border-gray-300 px-1 py-1 text-center align-middle">
+                                      {category.sectionTimer === "single" ? (
+                                        <div className="flex flex-col items-center gap-1">
+                                          <input
+                                            type="text"
+                                            value={bulkItemScores[p.id]?.[sectionTimeKey(category.id)]?.notes || ""}
+                                            onChange={(e) => handleTimeInput(p.id, sectionTimeKey(category.id), e.target.value)}
+                                            placeholder="0:00"
+                                            inputMode="numeric"
+                                            className="w-full max-w-[50px] text-center text-[10px] border border-gray-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                                          />
+                                          <Stopwatch onStop={(formatted) => handleTimeInput(p.id, sectionTimeKey(category.id), formatted)} />
+                                        </div>
+                                      ) : (
+                                        <span className="text-xs font-mono font-semibold">{sectionTotalTime(category, bulkItemScores[p.id] || {}) || "—"}</span>
+                                      )}
+                                    </td>
+                                  ))}
+                                </tr>
+                              )}
                             </React.Fragment>
                           ))}
 

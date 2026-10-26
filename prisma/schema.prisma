@@ -687,6 +687,9 @@ model RankTestCategory {
   // "demonstration" is the default per-item scoring used by
   // Techniques / Forms / Katas.
   type          String         @default("demonstration")
+  // Workout sections only. "none" = no section total, "single" = one
+  // stopwatch timing the whole section, "sum" = add up the item times.
+  sectionTimer  String         @default("none")
   rankTestId    String
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
