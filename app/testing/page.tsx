@@ -760,6 +760,38 @@ export default function TestingPage() {
     }
   };
 
+  // Put a published result's PDF back on the member's documents -- e.g.
+  // after it was deleted from their profile. Re-sends the stored PDF; if
+  // that's gone too, rebuilds it from the saved grades first. Only for
+  // published results (the member is already allowed to see them).
+  const handleResendPdf = async (participantId: string) => {
+    if (!selectedEvent) return;
+    try {
+      let fresh: TestingEvent | null = null;
+      const r = await fetch(`/api/testing/${selectedEvent.id}`);
+      if (r.ok) fresh = (await r.json()).event;
+      let p = fresh?.participants.find((x) => x.id === participantId);
+      if (!p || !p.resultsPublishedAt) {
+        alert("This result hasn't been marked complete yet.");
+        return;
+      }
+      if (!p.resultPdfUrl) {
+        fresh = await finalizeParticipants(selectedEvent.id, [participantId]);
+        p = fresh?.participants.find((x) => x.id === participantId);
+      }
+      if (!p?.resultPdfUrl || !fresh) {
+        alert("Couldn't rebuild the PDF -- no curriculum found for this rank.");
+        return;
+      }
+      await publishPdfToMemberDocs(p, fresh);
+      setSelectedEvent(fresh);
+      alert(`${p.memberName}'s test PDF is back on their documents.`);
+    } catch (err) {
+      console.error("Error re-sending PDF:", err);
+      alert("Failed to send the PDF");
+    }
+  };
+
   const handleReopenEvent = async (eventId: string) => {
     try {
       const res = await fetch(`/api/testing/${eventId}`, {
@@ -2550,6 +2582,15 @@ export default function TestingPage() {
                                       ) : (
                                         <span className="text-gray-400 text-xs">-</span>
                                       )}
+                                      {p.resultsPublishedAt && (
+                                        <button
+                                          onClick={() => handleResendPdf(p.id)}
+                                          title="Put this result PDF back on the member's documents"
+                                          className="ml-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                                        >
+                                          Send to member
+                                        </button>
+                                      )}
                                     </td>
                                     <td className="py-2 px-2 text-right">
                                       <button
@@ -3040,6 +3081,15 @@ export default function TestingPage() {
                                                   </button>
                                                 ) : (
                                                   <span className="text-gray-400 text-xs">-</span>
+                                                )}
+                                                {p.resultsPublishedAt && (
+                                                  <button
+                                                    onClick={() => handleResendPdf(p.id)}
+                                                    title="Put this result PDF back on the member's documents"
+                                                    className="ml-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                                                  >
+                                                    Send to member
+                                                  </button>
                                                 )}
                                               </td>
                                               <td className="py-2 px-2 text-right">
