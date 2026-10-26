@@ -22,13 +22,19 @@ export default function BeltOrderPanel() {
   const [events, setEvents] = useState<TestingEventLite[]>([]);
   const [styles, setStyles] = useState<StyleLite[]>([]);
 
-  const [testingEventId, setTestingEventId] = useState("");
+  const [testingEventIds, setTestingEventIds] = useState<string[]>([]);
   const [include, setInclude] = useState<"all" | "passed">("all");
-  const [onlyStyleId, setOnlyStyleId] = useState("");
+  // Narrow the picked tests to these styles (empty = all their styles).
+  const [onlyStyleIds, setOnlyStyleIds] = useState<string[]>([]);
 
-  const [styleId, setStyleId] = useState("");
+  const [styleIds, setStyleIds] = useState<string[]>([]);
   const [belt, setBelt] = useState<"current" | "next">("next");
   const [membersScope, setMembersScope] = useState<"active" | "all">("active");
+  // Same belt name across styles = one line (Adult + Kids Kempo yellow).
+  const [combine, setCombine] = useState(false);
+
+  const toggleIn = (list: string[], id: string) =>
+    list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 
   const [result, setResult] = useState<Result | null>(null);
   const [loading, setLoading] = useState(false);
@@ -39,31 +45,40 @@ export default function BeltOrderPanel() {
     fetch("/api/styles").then((r) => (r.ok ? r.json() : { styles: [] })).then((d) => setStyles((d.styles || []).map((s: StyleLite) => ({ id: s.id, name: s.name })))).catch(() => {});
   }, []);
 
-  const selectedEvent = events.find((e) => e.id === testingEventId);
-  const eventStyleNames: string[] = (() => {
-    if (!selectedEvent) return [];
-    try {
-      const p = selectedEvent.styleNames ? JSON.parse(selectedEvent.styleNames) : null;
-      if (Array.isArray(p) && p.length > 0) return p;
-    } catch { /* ignore */ }
-    return selectedEvent.styleName ? [selectedEvent.styleName] : [];
-  })();
+  // Every style covered by the picked tests.
+  const eventStyleNames: string[] = Array.from(new Set(
+    events
+      .filter((e) => testingEventIds.includes(e.id))
+      .flatMap((e) => {
+        try {
+          const p = e.styleNames ? JSON.parse(e.styleNames) : null;
+          if (Array.isArray(p) && p.length > 0) return p as string[];
+        } catch { /* ignore */ }
+        return e.styleName ? [e.styleName] : [];
+      }),
+  ));
   const eventStyles = styles.filter((s) => eventStyleNames.some((n) => n.toLowerCase() === s.name.toLowerCase()));
+
+  // How many styles are in play -- the Combine option only matters with 2+.
+  const stylesInPlay = source === "test"
+    ? (onlyStyleIds.length > 0 ? onlyStyleIds.length : eventStyles.length)
+    : styleIds.length;
 
   // Re-run whenever a choice changes -- no "apply" step to forget.
   useEffect(() => {
     const params = new URLSearchParams();
     if (source === "test") {
-      if (!testingEventId) { setResult(null); return; }
-      params.set("testingEventId", testingEventId);
+      if (testingEventIds.length === 0) { setResult(null); return; }
+      params.set("testingEventIds", testingEventIds.join(","));
       params.set("include", include);
-      if (onlyStyleId) params.set("onlyStyleId", onlyStyleId);
+      if (onlyStyleIds.length > 0) params.set("onlyStyleIds", onlyStyleIds.join(","));
     } else {
-      if (!styleId) { setResult(null); return; }
-      params.set("styleId", styleId);
+      if (styleIds.length === 0) { setResult(null); return; }
+      params.set("styleIds", styleIds.join(","));
       params.set("belt", belt);
       params.set("members", membersScope);
     }
+    if (combine) params.set("combine", "1");
     setLoading(true);
     setError("");
     fetch(`/api/reports/belt-order?${params}`)
@@ -74,7 +89,7 @@ export default function BeltOrderPanel() {
       })
       .catch((e) => { setError(e.message); setResult(null); })
       .finally(() => setLoading(false));
-  }, [source, testingEventId, include, onlyStyleId, styleId, belt, membersScope]);
+  }, [source, testingEventIds, include, onlyStyleIds, styleIds, belt, membersScope, combine]);
 
   const downloadCsv = () => {
     if (!result) return;
@@ -116,19 +131,30 @@ export default function BeltOrderPanel() {
           {source === "test" ? (
             <>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Testing event</label>
-                <select
-                  value={testingEventId}
-                  onChange={(e) => { setTestingEventId(e.target.value); setOnlyStyleId(""); }}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Choose a test…</option>
-                  {events.map((ev) => (
-                    <option key={ev.id} value={ev.id}>
-                      {ev.name} — {fmtDate(ev.date)}{ev.endDate ? ` to ${fmtDate(ev.endDate)}` : ""} ({ev.participants.length} signed up{ev.status === "COMPLETED" ? ", completed" : ""})
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Testing events <span className="normal-case font-normal text-gray-400">(pick one or more)</span></label>
+                {events.length === 0 ? (
+                  <p className="text-sm text-gray-500">No testing events yet.</p>
+                ) : (
+                  <div className="max-h-52 overflow-y-auto rounded-md border border-gray-200 divide-y divide-gray-50">
+                    {events.map((ev) => (
+                      <label key={ev.id} className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={testingEventIds.includes(ev.id)}
+                          onChange={() => { setTestingEventIds((l) => toggleIn(l, ev.id)); setOnlyStyleIds([]); }}
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        <span>
+                          {ev.name}
+                          <span className="text-xs text-gray-400">
+                            {" · "}{fmtDate(ev.date)}{ev.endDate ? ` – ${fmtDate(ev.endDate)}` : ""}
+                            {" · "}{ev.participants.length} signed up{ev.status === "COMPLETED" ? " · completed" : ""}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Who to count</p>
@@ -140,22 +166,40 @@ export default function BeltOrderPanel() {
               </div>
               {eventStyles.length > 1 && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Style</label>
-                  <select value={onlyStyleId} onChange={(e) => setOnlyStyleId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-                    <option value="">All styles on this test</option>
-                    {eventStyles.map((s) => <option key={s.id} value={s.id}>{s.name} only</option>)}
-                  </select>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Styles <span className="normal-case font-normal text-gray-400">(none checked = all styles on these tests)</span></label>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {eventStyles.map((s) => (
+                      <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={onlyStyleIds.includes(s.id)}
+                          onChange={() => setOnlyStyleIds((l) => toggleIn(l, s.id))}
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        {s.name}
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
             </>
           ) : (
             <>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Style</label>
-                <select value={styleId} onChange={(e) => setStyleId(e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-                  <option value="">Choose a style…</option>
-                  {styles.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Styles <span className="normal-case font-normal text-gray-400">(pick one or more)</span></label>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {styles.map((s) => (
+                    <label key={s.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={styleIds.includes(s.id)}
+                        onChange={() => setStyleIds((l) => toggleIn(l, s.id))}
+                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      {s.name}
+                    </label>
+                  ))}
+                </div>
               </div>
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Which belt</p>
@@ -172,6 +216,19 @@ export default function BeltOrderPanel() {
                 </div>
               </div>
             </>
+          )}
+
+          {stylesInPlay > 1 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Styles in the count</p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className={pill(!combine)} onClick={() => setCombine(false)}>Keep styles separate</button>
+                <button type="button" className={pill(combine)} onClick={() => setCombine(true)}>Combine styles</button>
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Combine counts the same belt as one line across styles (e.g. an Adult and a Kids Kempo yellow belt in size 3 count together).
+              </p>
+            </div>
           )}
         </div>
 

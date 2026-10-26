@@ -58,9 +58,15 @@ export async function GET(req: Request) {
   try {
     const clientId = await getClientId(req);
     const { searchParams } = new URL(req.url);
-    const testingEventId = searchParams.get("testingEventId");
-    const styleId = searchParams.get("styleId");
-    const onlyStyleId = searchParams.get("onlyStyleId");
+    // Comma-separated lists; the singular params still work.
+    const list = (plural: string, singular: string) =>
+      (searchParams.get(plural) || searchParams.get(singular) || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const testingEventIds = list("testingEventIds", "testingEventId");
+    const styleIds = list("styleIds", "styleId");
+    const onlyStyleIds = list("onlyStyleIds", "onlyStyleId");
+    // Combine = same belt name across styles counts as one line
+    // (e.g. Adult Kempo + Kids Kempo yellow belts are the same belt).
+    const combine = searchParams.get("combine") === "1";
 
     const allStyles = await prisma.style.findMany({
       where: { clientId },
@@ -79,10 +85,10 @@ export async function GET(req: Request) {
     const skipped: Skipped[] = [];
     let title = "";
 
-    if (testingEventId) {
+    if (testingEventIds.length > 0) {
       const include = searchParams.get("include") === "passed" ? "passed" : "all";
-      const ev = await prisma.testingEvent.findFirst({
-        where: { id: testingEventId, clientId },
+      const events = await prisma.testingEvent.findMany({
+        where: { id: { in: testingEventIds }, clientId },
         select: {
           name: true,
           styleName: true,
@@ -90,25 +96,24 @@ export async function GET(req: Request) {
           participants: { select: { memberId: true, memberName: true, currentRank: true, testingForRank: true, status: true } },
         },
       });
-      if (!ev) return NextResponse.json({ error: "Testing event not found" }, { status: 404 });
-      title = ev.name;
+      if (events.length === 0) return NextResponse.json({ error: "Testing event not found" }, { status: 404 });
+      title = events.map((e) => e.name).join(" + ");
+      const onlyNames = onlyStyleIds.map((id) => styleById.get(id)?.name).filter((n): n is string => !!n);
 
+      const members = await prisma.member.findMany({
+        where: { id: { in: events.flatMap((e) => e.participants.map((p) => p.memberId)) }, clientId },
+        select: { id: true, firstName: true, lastName: true, stylesNotes: true },
+      });
+      const memberById = new Map(members.map((m) => [m.id, m]));
+      const SKIP_ALL = new Set(["FAILED", "NO_SHOW", "CANCELLED", "CANCELED"]);
+
+      for (const ev of events) {
       let evStyles: string[] = [];
       if (ev.styleNames) {
         try { const p = JSON.parse(ev.styleNames); if (Array.isArray(p)) evStyles = p; } catch { /* ignore */ }
       }
       if (evStyles.length === 0 && ev.styleName) evStyles = [ev.styleName];
-      if (onlyStyleId) {
-        const only = styleById.get(onlyStyleId);
-        evStyles = only ? evStyles.filter((s) => eq(s, only.name)) : [];
-      }
-
-      const members = await prisma.member.findMany({
-        where: { id: { in: ev.participants.map((p) => p.memberId) }, clientId },
-        select: { id: true, firstName: true, lastName: true, stylesNotes: true },
-      });
-      const memberById = new Map(members.map((m) => [m.id, m]));
-      const SKIP_ALL = new Set(["FAILED", "NO_SHOW", "CANCELLED", "CANCELED"]);
+      if (onlyNames.length > 0) evStyles = evStyles.filter((s) => onlyNames.some((n) => eq(n, s)));
 
       for (const p of ev.participants) {
         const m = memberById.get(p.memberId);
@@ -147,6 +152,9 @@ export async function GET(req: Request) {
           continue;
         }
         const entry = notes.find((n) => eq(n.name, style));
+        // Same person on two of the picked tests in the same style/belt
+        // is one belt, not two.
+        if (counted.some((c) => c.memberId === p.memberId && eq(c.style, style) && eq(c.belt, p.testingForRank))) continue;
         counted.push({
           memberId: p.memberId,
           name,
@@ -155,17 +163,19 @@ export async function GET(req: Request) {
           size: (entry?.beltSize || "").trim() || "No size",
         });
       }
-    } else if (styleId) {
-      const style = styleById.get(styleId);
-      if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
+      }
+    } else if (styleIds.length > 0) {
+      const pickedStyles = styleIds.map((id) => styleById.get(id)).filter((s): s is StyleDef => !!s);
+      if (pickedStyles.length === 0) return NextResponse.json({ error: "Style not found" }, { status: 404 });
       const which = searchParams.get("belt") === "next" ? "next" : "current";
       const activeOnly = searchParams.get("members") !== "all";
-      title = `${style.name} — ${which === "next" ? "next belt" : "current belt"}`;
+      title = `${pickedStyles.map((s) => s.name).join(" + ")} — ${which === "next" ? "next belt" : "current belt"}`;
 
       const members = await prisma.member.findMany({
         where: { clientId },
         select: { id: true, firstName: true, lastName: true, status: true, stylesNotes: true, primaryStyle: true, rank: true },
       });
+      for (const style of pickedStyles)
       for (const m of members) {
         const name = `${m.firstName} ${m.lastName}`.trim();
         const notes = parseNotes(m.stylesNotes);
@@ -200,16 +210,22 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Pick a testing event or a style" }, { status: 400 });
     }
 
-    // Tally Belt + Size. A test can span styles, so the belt label carries
-    // the style only when more than one style is present.
-    const multiStyle = new Set(counted.map((c) => c.style.toLowerCase())).size > 1;
+    // Tally Belt + Size. With several styles the belt label carries the
+    // style -- unless "combine" is on, in which case the same belt name
+    // across styles is one line and the style is dropped from the label.
+    const multiStyle = !combine && new Set(counted.map((c) => c.style.toLowerCase())).size > 1;
     const tally = new Map<string, Row>();
     for (const c of counted) {
       const belt = multiStyle ? `${c.belt} (${c.style})` : c.belt;
-      const key = `${belt}|||${c.size}`;
+      const key = `${belt.trim().toLowerCase()}|||${c.size.trim().toLowerCase()}`;
+      const order = rankOrder(c.style, c.belt);
       const row = tally.get(key);
-      if (row) row.count++;
-      else tally.set(key, { belt, size: c.size, count: 1, order: rankOrder(c.style, c.belt) });
+      if (row) {
+        row.count++;
+        row.order = Math.min(row.order, order);
+      } else {
+        tally.set(key, { belt, size: c.size, count: 1, order });
+      }
     }
     const sizeKey = (s: string) => {
       const n = parseFloat(s);
