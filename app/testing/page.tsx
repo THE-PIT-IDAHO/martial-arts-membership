@@ -3961,7 +3961,10 @@ export default function TestingPage() {
                             // In a workout category every item gets a
                             // stopwatch, even when the coach didn't set an
                             // explicit timeLimit / duration on the row.
-                            const hasTimeLimit = isWorkoutCat || item.timeLimit || item.duration;
+                            // With a section timer on, only exercises that have a time set
+                            // in the curriculum get their own stopwatch.
+                            const noSectionTimer = !category.sectionTimer || category.sectionTimer === "none";
+                            const hasTimeLimit = (isWorkoutCat && noSectionTimer) || item.timeLimit || item.duration;
                             const bundle = isWorkoutCat ? parseSubExercisesForGrading(item.subExercises) : [];
                             return (
                               <div key={item.id}>
@@ -4111,6 +4114,10 @@ export default function TestingPage() {
                           <div className="px-3 py-2 sm:px-4 bg-primary/5 border-t flex items-center gap-2">
                             <span className="text-sm font-semibold text-gray-700">Section total:</span>
                             <span className="text-sm font-mono font-semibold">{sectionTotalTime(category, itemScores) || "0:00"}</span>
+                            <Stopwatch
+                              onStart={() => stampSection(category, "start")}
+                              onStop={() => stampSection(category, "stop")}
+                            />
                             <span className="text-xs text-gray-500">(first stopwatch start to last stopwatch stop)</span>
                             {itemScores[sectionTimeKey(category.id)] && (
                               <button
@@ -4447,9 +4454,9 @@ export default function TestingPage() {
                             </div>
                             <div className="divide-y">
                               {category.items.map((item) => {
-                                // "sum" sections time every item so the run time can be taken.
+                                // "sum" sections: timed exercises also feed the section run time.
                                 const runTimed = category.type === "workout" && category.sectionTimer === "sum";
-                                const hasTimeInput = item.timeLimit || item.duration || runTimed;
+                                const hasTimeInput = item.timeLimit || item.duration;
                                 const hasRepsInput = item.reps;
                                 const hasInputField = hasTimeInput || hasRepsInput;
                                 const isKnowledge = item.type === "knowledge";
@@ -4549,6 +4556,10 @@ export default function TestingPage() {
                               <div className="px-3 py-2 bg-primary/5 border-t flex items-center gap-2">
                                 <span className="text-sm font-semibold text-gray-700">Section total:</span>
                                 <span className="text-sm font-mono font-semibold">{sectionTotalTime(category, bulkItemScores[mobileSelectedParticipant] || {}) || "0:00"}</span>
+                                <Stopwatch
+                                  onStart={() => stampBulkSection(mobileSelectedParticipant, category, "start")}
+                                  onStop={() => stampBulkSection(mobileSelectedParticipant, category, "stop")}
+                                />
                                 {bulkItemScores[mobileSelectedParticipant]?.[sectionTimeKey(category.id)] && (
                                   <button
                                     type="button"
@@ -4677,7 +4688,7 @@ export default function TestingPage() {
                               </tr>
                               {category.items.map((item) => {
                                 const runTimed = category.type === "workout" && category.sectionTimer === "sum";
-                                const hasTimeInput = item.timeLimit || item.duration || runTimed;
+                                const hasTimeInput = item.timeLimit || item.duration;
                                 const hasRepsInput = item.reps;
                                 const hasInputField = hasTimeInput || hasRepsInput;
                                 const isKnowledge = item.type === "knowledge";
@@ -4813,6 +4824,10 @@ export default function TestingPage() {
                                       ) : (
                                         <div className="flex flex-col items-center gap-0.5">
                                           <span className="text-xs font-mono font-semibold">{sectionTotalTime(category, bulkItemScores[p.id] || {}) || "—"}</span>
+                                          <Stopwatch
+                                            onStart={() => stampBulkSection(p.id, category, "start")}
+                                            onStop={() => stampBulkSection(p.id, category, "stop")}
+                                          />
                                           {bulkItemScores[p.id]?.[sectionTimeKey(category.id)] && (
                                             <button
                                               type="button"
