@@ -31,9 +31,12 @@ function fmt(totalSeconds: number): string {
  */
 export function Stopwatch({
   onStop,
+  onStart,
   className,
 }: {
   onStop: (formatted: string, elapsedSeconds: number) => void;
+  // Fired each time the timer starts (or resumes).
+  onStart?: () => void;
   className?: string;
 }) {
   const [running, setRunning] = useState(false);
@@ -67,6 +70,7 @@ export function Stopwatch({
       onStop(fmt(total), total);
     } else {
       setRunning(true);
+      onStart?.();
     }
   }
 

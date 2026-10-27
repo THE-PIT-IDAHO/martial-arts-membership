@@ -109,13 +109,29 @@ function formatClock(totalSeconds: number): string {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
+// Record a stopwatch start/stop on a "sum" section's total entry.
+// The total runs from the FIRST start to the LAST stop in the section.
+function stampSectionEntry(prev: ItemScore | undefined, kind: "start" | "stop", at: number): ItemScore {
+  const cur = prev || { passed: false };
+  const startedAt = kind === "start" ? (cur.startedAt ?? at) : cur.startedAt;
+  const endedAt = kind === "stop" ? Math.max(cur.endedAt ?? 0, at) : cur.endedAt;
+  const notes = startedAt != null && endedAt != null && endedAt >= startedAt
+    ? formatClock(Math.floor((endedAt - startedAt) / 1000))
+    : cur.notes;
+  return { ...cur, startedAt, endedAt, notes };
+}
+
 // The section's total time, or null when the section has no timer or
-// nothing has been timed yet. "sum" adds each item's time; an item
+// nothing has been timed yet. "sum" = first stopwatch start to last
+// stopwatch stop; if the times were typed in by hand (no stopwatch
+// readings) it falls back to adding up the item times, where an item
 // with no time of its own counts its timed sub-exercises instead.
 function sectionTotalTime(category: RankTestCategory, scores: ItemScores): string | null {
   if (category.type !== "workout") return null;
-  if (category.sectionTimer === "single") return scores[sectionTimeKey(category.id)]?.notes || null;
+  const entry = scores[sectionTimeKey(category.id)];
+  if (category.sectionTimer === "single") return entry?.notes || null;
   if (category.sectionTimer !== "sum") return null;
+  if (entry?.startedAt != null && entry?.endedAt != null) return entry.notes || null;
   let total = 0;
   let any = false;
   for (const item of category.items) {
@@ -174,6 +190,10 @@ type ItemScore = {
   // blob so it persists / restores with the rest of the score set --
   // no schema change needed.
   subTimes?: string[];
+  // Section-total entries only (key sectionTimeKey): when the first
+  // stopwatch in the section started and the last one stopped (ms).
+  startedAt?: number;
+  endedAt?: number;
 };
 
 type ItemScores = Record<string, ItemScore>;
@@ -1830,6 +1850,22 @@ export default function TestingPage() {
     setItemNotes(itemId, formatted);
   };
 
+  // "sum" sections: item stopwatches also feed the section's run time.
+  const stampSection = (category: RankTestCategory, kind: "start" | "stop") => {
+    if (category.type !== "workout" || category.sectionTimer !== "sum") return;
+    const key = sectionTimeKey(category.id);
+    const at = Date.now();
+    setItemScores((prev) => ({ ...prev, [key]: stampSectionEntry(prev[key], kind, at) }));
+  };
+  const resetSectionTime = (categoryId: string) => {
+    const key = sectionTimeKey(categoryId);
+    setItemScores((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
   // Write a single child's stopwatch reading into the parent's
   // subTimes array. Preserves existing sibling times and pads with
   // empty strings so array indexes stay aligned to the sub-exercise
@@ -2104,6 +2140,24 @@ export default function TestingPage() {
   const handleTimeInput = (participantId: string, itemId: string, value: string) => {
     const formatted = formatTimeInput(value);
     setBulkItemValue(participantId, itemId, formatted);
+  };
+
+  const stampBulkSection = (participantId: string, category: RankTestCategory, kind: "start" | "stop") => {
+    if (category.type !== "workout" || category.sectionTimer !== "sum") return;
+    const key = sectionTimeKey(category.id);
+    const at = Date.now();
+    setBulkItemScores((prev) => ({
+      ...prev,
+      [participantId]: { ...prev[participantId], [key]: stampSectionEntry(prev[participantId]?.[key], kind, at) },
+    }));
+  };
+  const resetBulkSectionTime = (participantId: string, categoryId: string) => {
+    const key = sectionTimeKey(categoryId);
+    setBulkItemScores((prev) => {
+      const mine = { ...(prev[participantId] || {}) };
+      delete mine[key];
+      return { ...prev, [participantId]: mine };
+    });
   };
 
   const saveBulkGrades = async () => {
@@ -3954,7 +4008,10 @@ export default function TestingPage() {
                                                 placeholder="0:00"
                                                 className="w-16 rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                                               />
-                                              <Stopwatch onStop={(formatted) => setItemSubTime(item.id, i, formatted)} />
+                                              <Stopwatch
+                                                onStart={() => stampSection(category, "start")}
+                                                onStop={(formatted) => { setItemSubTime(item.id, i, formatted); stampSection(category, "stop"); }}
+                                              />
                                             </span>
                                           )}
                                         </li>
@@ -4009,7 +4066,8 @@ export default function TestingPage() {
                                         className="w-20 sm:w-24 rounded border border-gray-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                                       />
                                       <Stopwatch
-                                        onStop={(formatted) => handleItemTimeInput(item.id, formatted)}
+                                        onStart={() => stampSection(category, "start")}
+                                        onStop={(formatted) => { handleItemTimeInput(item.id, formatted); stampSection(category, "stop"); }}
                                       />
                                     </div>
                                   ) : (
@@ -4053,7 +4111,17 @@ export default function TestingPage() {
                           <div className="px-3 py-2 sm:px-4 bg-primary/5 border-t flex items-center gap-2">
                             <span className="text-sm font-semibold text-gray-700">Section total:</span>
                             <span className="text-sm font-mono font-semibold">{sectionTotalTime(category, itemScores) || "0:00"}</span>
-                            <span className="text-xs text-gray-500">(adds up the times above)</span>
+                            <span className="text-xs text-gray-500">(first stopwatch start to last stopwatch stop)</span>
+                            {itemScores[sectionTimeKey(category.id)] && (
+                              <button
+                                type="button"
+                                onClick={() => resetSectionTime(category.id)}
+                                className="ml-auto rounded-md border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
+                                title="Clear the section total and start over"
+                              >
+                                ↺ Reset
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -4379,7 +4447,9 @@ export default function TestingPage() {
                             </div>
                             <div className="divide-y">
                               {category.items.map((item) => {
-                                const hasTimeInput = item.timeLimit || item.duration;
+                                // "sum" sections time every item so the run time can be taken.
+                                const runTimed = category.type === "workout" && category.sectionTimer === "sum";
+                                const hasTimeInput = item.timeLimit || item.duration || runTimed;
                                 const hasRepsInput = item.reps;
                                 const hasInputField = hasTimeInput || hasRepsInput;
                                 const isKnowledge = item.type === "knowledge";
@@ -4429,14 +4499,22 @@ export default function TestingPage() {
                                       </div>
                                       {hasInputField && !isKnowledge && (
                                         hasTimeInput ? (
-                                          <input
-                                            type="text"
-                                            value={score?.notes || ""}
-                                            onChange={(e) => handleTimeInput(mobileSelectedParticipant, item.id, e.target.value)}
-                                            placeholder="0:00"
-                                            inputMode="numeric"
-                                            className="mt-1 w-full max-w-[150px] text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
-                                          />
+                                          <div className="mt-1 flex items-center gap-2">
+                                            <input
+                                              type="text"
+                                              value={score?.notes || ""}
+                                              onChange={(e) => handleTimeInput(mobileSelectedParticipant, item.id, e.target.value)}
+                                              placeholder="0:00"
+                                              inputMode="numeric"
+                                              className="w-full max-w-[150px] text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
+                                            />
+                                            {runTimed && (
+                                              <Stopwatch
+                                                onStart={() => stampBulkSection(mobileSelectedParticipant, category, "start")}
+                                                onStop={(formatted) => { handleTimeInput(mobileSelectedParticipant, item.id, formatted); stampBulkSection(mobileSelectedParticipant, category, "stop"); }}
+                                              />
+                                            )}
+                                          </div>
                                         ) : (
                                           <input
                                             type="text"
@@ -4471,6 +4549,16 @@ export default function TestingPage() {
                               <div className="px-3 py-2 bg-primary/5 border-t flex items-center gap-2">
                                 <span className="text-sm font-semibold text-gray-700">Section total:</span>
                                 <span className="text-sm font-mono font-semibold">{sectionTotalTime(category, bulkItemScores[mobileSelectedParticipant] || {}) || "0:00"}</span>
+                                {bulkItemScores[mobileSelectedParticipant]?.[sectionTimeKey(category.id)] && (
+                                  <button
+                                    type="button"
+                                    onClick={() => resetBulkSectionTime(mobileSelectedParticipant, category.id)}
+                                    className="ml-auto rounded-md border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
+                                    title="Clear the section total and start over"
+                                  >
+                                    ↺ Reset
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
@@ -4588,7 +4676,8 @@ export default function TestingPage() {
                                 </td>
                               </tr>
                               {category.items.map((item) => {
-                                const hasTimeInput = item.timeLimit || item.duration;
+                                const runTimed = category.type === "workout" && category.sectionTimer === "sum";
+                                const hasTimeInput = item.timeLimit || item.duration || runTimed;
                                 const hasRepsInput = item.reps;
                                 const hasInputField = hasTimeInput || hasRepsInput;
                                 const isKnowledge = item.type === "knowledge";
@@ -4646,14 +4735,22 @@ export default function TestingPage() {
                                                 )}
                                               </button>
                                               {hasTimeInput ? (
-                                                <input
-                                                  type="text"
-                                                  value={score?.notes || ""}
-                                                  onChange={(e) => handleTimeInput(p.id, item.id, e.target.value)}
-                                                  placeholder="0:00"
-                                                  inputMode="numeric"
-                                                  className="w-full max-w-[50px] text-center text-[10px] border border-gray-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
-                                                />
+                                                <>
+                                                  <input
+                                                    type="text"
+                                                    value={score?.notes || ""}
+                                                    onChange={(e) => handleTimeInput(p.id, item.id, e.target.value)}
+                                                    placeholder="0:00"
+                                                    inputMode="numeric"
+                                                    className="w-full max-w-[50px] text-center text-[10px] border border-gray-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                                                  />
+                                                  {runTimed && (
+                                                    <Stopwatch
+                                                      onStart={() => stampBulkSection(p.id, category, "start")}
+                                                      onStop={(formatted) => { handleTimeInput(p.id, item.id, formatted); stampBulkSection(p.id, category, "stop"); }}
+                                                    />
+                                                  )}
+                                                </>
                                               ) : (
                                                 <input
                                                   type="text"
@@ -4714,7 +4811,19 @@ export default function TestingPage() {
                                           <Stopwatch onStop={(formatted) => handleTimeInput(p.id, sectionTimeKey(category.id), formatted)} />
                                         </div>
                                       ) : (
-                                        <span className="text-xs font-mono font-semibold">{sectionTotalTime(category, bulkItemScores[p.id] || {}) || "—"}</span>
+                                        <div className="flex flex-col items-center gap-0.5">
+                                          <span className="text-xs font-mono font-semibold">{sectionTotalTime(category, bulkItemScores[p.id] || {}) || "—"}</span>
+                                          {bulkItemScores[p.id]?.[sectionTimeKey(category.id)] && (
+                                            <button
+                                              type="button"
+                                              onClick={() => resetBulkSectionTime(p.id, category.id)}
+                                              className="text-[10px] text-gray-500 hover:text-gray-700"
+                                              title="Clear the section total and start over"
+                                            >
+                                              ↺ Reset
+                                            </button>
+                                          )}
+                                        </div>
                                       )}
                                     </td>
                                   ))}

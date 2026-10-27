@@ -326,7 +326,7 @@ function SectionHeader({
             >
               <option value="none">Off</option>
               <option value="single">One stopwatch for the whole section</option>
-              <option value="sum">Add up the item times</option>
+              <option value="sum">Item stopwatches — total from first start to last stop</option>
             </select>
           </label>
         )}
