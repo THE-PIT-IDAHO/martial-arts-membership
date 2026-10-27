@@ -17,6 +17,7 @@ interface ClassSession {
   startsAt: string;
   endsAt: string;
   classType: string | null;
+  classTypes?: string | null; // JSON array; a class can carry several types
   styleId: string | null;
   styleIds: string | null;
   styleNames: string | null;
@@ -338,6 +339,19 @@ export default function CalendarPage() {
   // Edit form states
   const [name, setName] = useState("");
   const [classType, setClassType] = useState("");
+  // Types added in Classes > Manage Class Types (saved in settings).
+  const [customClassTypes, setCustomClassTypes] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/settings?key=custom_class_types")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        try {
+          const parsed = d?.setting?.value ? JSON.parse(d.setting.value) : [];
+          if (Array.isArray(parsed)) setCustomClassTypes(parsed.filter((t: unknown) => typeof t === "string" && t));
+        } catch { /* ignore */ }
+      })
+      .catch(() => {});
+  }, []);
   const [selectedStyleIds, setSelectedStyleIds] = useState<string[]>([""]);
   const [minRankId, setMinRankId] = useState("");
   const [minRankIds, setMinRankIds] = useState<string[]>([""]);
@@ -1356,6 +1370,32 @@ export default function CalendarPage() {
     return null;
   }
 
+  // Every class type the gym has made: types on existing classes plus
+  // ones added in Manage Class Types. "Imported" is internal only.
+  const classTypeOptions = (() => {
+    const all = new Set<string>();
+    for (const c of allClasses) {
+      if (c.classType && c.classType !== "Imported") all.add(c.classType);
+      if (c.classTypes) {
+        try {
+          for (const t of JSON.parse(c.classTypes) as string[]) if (t && t !== "Imported") all.add(t);
+        } catch { /* ignore */ }
+      }
+    }
+    for (const t of customClassTypes) all.add(t);
+    if (classType) all.add(classType);
+    return [...all].sort((a, b) => a.localeCompare(b));
+  })();
+
+  // A class with several types is managed on the Classes page; for the
+  // usual single-type class keep classTypes in step with the dropdown.
+  function classTypesFor(existing: string | null | undefined): string | null | undefined {
+    let list: string[] = [];
+    try { list = existing ? JSON.parse(existing) : []; } catch { list = []; }
+    if (Array.isArray(list) && list.length > 1) return undefined; // leave as-is
+    return classType ? JSON.stringify([classType]) : null;
+  }
+
   function handleContinueToEdit() {
     if (!selectedClass) return;
 
@@ -1484,6 +1524,7 @@ export default function CalendarPage() {
         const sharedFields = {
           name,
           classType,
+          classTypes: classTypesFor(selectedClass.classTypes) ?? selectedClass.classTypes ?? null,
           styleIds: activeStyleIds.length > 0 ? JSON.stringify(activeStyleIds) : null,
           styleNames: styleNames.length > 0 ? JSON.stringify(styleNames) : null,
           styleId: activeStyleIds[0] || null,
@@ -1573,6 +1614,7 @@ export default function CalendarPage() {
           body: JSON.stringify({
             name,
             classType,
+            classTypes: classTypesFor(selectedClass.classTypes),
             coachId: selectedCoachId || null,
             coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
             bookingEnabled,
@@ -3664,12 +3706,16 @@ export default function CalendarPage() {
                         <label className="mb-1 block text-xs font-medium text-gray-700">
                           Class Type
                         </label>
-                        <input
-                          type="text"
+                        <select
                           value={classType}
                           onChange={(e) => setClassType(e.target.value)}
-                          className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
-                        />
+                          className="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="">— No type —</option>
+                          {classTypeOptions.map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
 

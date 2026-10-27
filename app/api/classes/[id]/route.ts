@@ -193,7 +193,20 @@ export async function PATCH(req: Request, { params }: Params) {
     // previously the migration ran over every gym's styles whose
     // beltConfig JSON happened to reference the same label.
     const newClassType = classType?.trim() || null;
+    // Only treat it as a rename when no other class still uses the old
+    // type. Moving one class onto another existing type (e.g. Kids ->
+    // Adults) must not relabel the old type's belt requirements.
+    let oldTypeStillUsed = false;
     if (oldClassType && newClassType && oldClassType !== newClassType) {
+      oldTypeStillUsed = (await prisma.classSession.count({
+        where: {
+          clientId,
+          id: { not: id },
+          OR: [{ classType: oldClassType }, { classTypes: { contains: JSON.stringify(oldClassType) } }],
+        },
+      })) > 0;
+    }
+    if (oldClassType && newClassType && oldClassType !== newClassType && !oldTypeStillUsed) {
       const styles = await prisma.style.findMany({
         where: {
           clientId,
