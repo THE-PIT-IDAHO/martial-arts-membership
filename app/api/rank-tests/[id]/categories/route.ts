@@ -162,6 +162,15 @@ export async function PATCH(
       updateData.sectionTimer = sectionTimer;
     }
 
+    // Switching a section to Workout / Information retags its exercises
+    // to match, so test sheets stop showing the old per-item type.
+    if (updateData.type === "workout" || updateData.type === "information") {
+      await prisma.rankTestItem.updateMany({
+        where: { categoryId },
+        data: { type: updateData.type === "workout" ? "workout" : "knowledge" },
+      });
+    }
+
     const category = await prisma.rankTestCategory.update({
       where: { id: categoryId },
       data: updateData,

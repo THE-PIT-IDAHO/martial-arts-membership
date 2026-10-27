@@ -1683,6 +1683,9 @@ export default function CurriculumV2Page() {
 
   // Map category name to item type
   function getCategoryType(): string {
+    // The section's type wins over guessing from its name.
+    if (topSectionType === "workout") return "workout";
+    if (topSectionType === "information") return "knowledge";
     const catName = selectedCategory?.name?.toLowerCase() || "";
     if (catName.includes("technique")) return "technique";
     if (catName.includes("combo")) return "skill";
@@ -2984,6 +2987,8 @@ export default function CurriculumV2Page() {
                     if (res.ok) { const d = await res.json(); const tests = d.rankTests || d.tests || []; setRankTests(tests); buildRowsForCategory(tests, selectedCategoryId); }
                   }}
                   getCategoryType={() => {
+                    if (liveType === "workout") return "workout";
+                    if (liveType === "information") return "knowledge";
                     const name = cat.name.toLowerCase();
                     if (name.includes("technique")) return "technique";
                     if (name.includes("combo")) return "skill";
