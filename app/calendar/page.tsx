@@ -1487,6 +1487,43 @@ export default function CalendarPage() {
     setSaving(true);
 
     try {
+      // Fields from the edit form, shared by the single-day and
+      // date-range saves.
+      const selectedCoach = coaches.find(c => c.id === selectedCoachId);
+      const activeStyleIds = selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE");
+      const styleNames = activeStyleIds
+        .map(id => styles.find(s => s.id === id)?.name)
+        .filter((n): n is string => !!n);
+      const minRankIdsAligned = (() => {
+        if (activeStyleIds.length === 0) return null;
+        const aligned = activeStyleIds.map(id => {
+          const i = selectedStyleIds.indexOf(id);
+          return minRankIds[i] || "";
+        });
+        return aligned.some(v => v) ? JSON.stringify(aligned) : null;
+      })();
+
+      const sharedFields = {
+        name,
+        classType,
+        classTypes: classTypesFor(selectedClass.classTypes) ?? selectedClass.classTypes ?? null,
+        styleIds: activeStyleIds.length > 0 ? JSON.stringify(activeStyleIds) : null,
+        styleNames: styleNames.length > 0 ? JSON.stringify(styleNames) : null,
+        styleId: activeStyleIds[0] || null,
+        styleName: styleNames[0] || null,
+        minRankId: minRankId || null,
+        minRankIds: minRankIdsAligned,
+        coachId: selectedCoachId || null,
+        coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
+        bookingEnabled,
+        kioskEnabled,
+        maxCapacity: maxCapacity || null,
+        bookingCutoffMins: bookingCutoffMins || null,
+        bookingAdvanceDays: bookingAdvanceDays || null,
+        locationId: selectedLocationId || null,
+        spaceId: selectedSpaceId || null,
+      };
+
       // Handle different edit options
       if (editOption === "single") {
         if (!selectedDate) {
@@ -1507,40 +1544,6 @@ export default function CalendarPage() {
         const newEndsAt = new Date(selectedDate);
         newEndsAt.setHours(eh, em, 0, 0);
 
-        const selectedCoach = coaches.find(c => c.id === selectedCoachId);
-        const activeStyleIds = selectedStyleIds.filter(id => id !== "" && id !== "NO_STYLE");
-        const styleNames = activeStyleIds
-          .map(id => styles.find(s => s.id === id)?.name)
-          .filter((n): n is string => !!n);
-        const minRankIdsAligned = (() => {
-          if (activeStyleIds.length === 0) return null;
-          const aligned = activeStyleIds.map(id => {
-            const i = selectedStyleIds.indexOf(id);
-            return minRankIds[i] || "";
-          });
-          return aligned.some(v => v) ? JSON.stringify(aligned) : null;
-        })();
-
-        const sharedFields = {
-          name,
-          classType,
-          classTypes: classTypesFor(selectedClass.classTypes) ?? selectedClass.classTypes ?? null,
-          styleIds: activeStyleIds.length > 0 ? JSON.stringify(activeStyleIds) : null,
-          styleNames: styleNames.length > 0 ? JSON.stringify(styleNames) : null,
-          styleId: activeStyleIds[0] || null,
-          styleName: styleNames[0] || null,
-          minRankId: minRankId || null,
-          minRankIds: minRankIdsAligned,
-          coachId: selectedCoachId || null,
-          coachName: selectedCoach ? `${selectedCoach.firstName} ${selectedCoach.lastName}` : null,
-          bookingEnabled,
-          kioskEnabled,
-          maxCapacity: maxCapacity || null,
-          bookingCutoffMins: bookingCutoffMins || null,
-          bookingAdvanceDays: bookingAdvanceDays || null,
-          locationId: selectedLocationId || null,
-          spaceId: selectedSpaceId || null,
-        };
 
         if (selectedClass.isRecurring) {
           // Fork: exclude this date from the recurring parent + create a new
@@ -1602,8 +1605,38 @@ export default function CalendarPage() {
         // Update all classes on this day
         alert("Editing all classes on this day - implementation needed");
       } else if (editOption === "range") {
-        // Update classes within the range
-        alert("Editing date range - implementation needed");
+        // Temporary change: the original class skips these dates and a
+        // copy with the changes runs only inside the range, so once the
+        // end date passes the class is back to how it was.
+        if (!rangeStartDate || !rangeEndDate || rangeStartDate > rangeEndDate) {
+          alert("Pick a start and end date for the range.");
+          return;
+        }
+        if (!selectedClass.isRecurring) {
+          alert("This class only happens once. Use \"Edit this class only\" to change it.");
+          return;
+        }
+        const time = daySchedules[0]?.times[0];
+        if (!time) {
+          alert("No start/end time set.");
+          return;
+        }
+        const res = await fetch(`/api/classes/${selectedClass.id}/range-override`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...sharedFields,
+            startDate: rangeStartDate,
+            endDate: rangeEndDate,
+            startTime: time.startTime,
+            endTime: time.endTime,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          alert(err?.error || "Failed to change the class for that range");
+          return;
+        }
       } else if (editOption === "future") {
         // Update all future occurrences
         // This would update the recurring class settings
@@ -3604,7 +3637,7 @@ export default function CalendarPage() {
                           Edit date range
                         </div>
                         <div className="text-[10px] text-gray-600">
-                          Choose specific start and end dates
+                          Temporary change between two dates. After the end date the class goes back to how it was.
                         </div>
                         {editOption === "range" && (
                           <div className="mt-2 space-y-2">
