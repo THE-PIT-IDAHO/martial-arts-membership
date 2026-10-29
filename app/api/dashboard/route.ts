@@ -4,6 +4,7 @@ import { getClientId } from "@/lib/tenant";
 import { getGymTimezone, getDayOfWeekInTimezone, localMidnightUtc, formatDateInTimezone, getLocalParts } from "@/lib/dates";
 import { getStyleProgress, attendanceCountsForStyle, type AttendanceRow } from "@/lib/rank-progress";
 import { getEffectivePriceAfterDiscountCents } from "@/lib/billing";
+import { classRunsOnDate } from "@/lib/class-occurrence";
 import { computeMembershipMonthlyRecurringCents } from "@/lib/member-discount-math";
 
 // GET /api/dashboard
@@ -110,51 +111,10 @@ export async function GET(req: Request) {
         );
       }
 
-      // Recurring: check if today falls within the schedule
-      const scheduleStart = cls.scheduleStartDate
-        ? new Date(cls.scheduleStartDate)
-        : null;
-      const scheduleEnd = cls.scheduleEndDate
-        ? new Date(cls.scheduleEndDate)
-        : null;
-
-      if (scheduleStart && todayStart < scheduleStart) return false;
-      if (scheduleEnd && !cls.isOngoing && todayStart > scheduleEnd) return false;
-
-      // Check excluded dates (compare in gym's local date, not server's)
-      if (cls.excludedDates) {
-        try {
-          const excluded: string[] = JSON.parse(cls.excludedDates);
-          if (excluded.includes(todayLocalYmd)) return false;
-        } catch { /* ignore */ }
-      }
-
-      // Day of week must match (in gym TZ, not server TZ)
-      const classDow = getDayOfWeekInTimezone(classStart, tz);
-      if (classDow !== dayOfWeek) return false;
-
-      const freq = cls.frequencyNumber || 1;
-
-      // Weekly recurring: check interval
-      if (cls.frequencyUnit === "Week") {
-        if (freq === 1) return true;
-        // Check if the right number of weeks have elapsed
-        const refDate = scheduleStart || classStart;
-        const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-        const weeksDiff = Math.floor((todayStart.getTime() - refDate.getTime()) / msPerWeek);
-        return weeksDiff % freq === 0;
-      }
-
-      // Daily recurring
-      if (cls.frequencyUnit === "Day") {
-        if (freq === 1) return true;
-        const refDate = scheduleStart || classStart;
-        const msPerDay = 24 * 60 * 60 * 1000;
-        const daysDiff = Math.floor((todayStart.getTime() - refDate.getTime()) / msPerDay);
-        return daysDiff % freq === 0;
-      }
-
-      return false;
+      // Recurring: same rules the portal and bookings use, compared on
+      // the gym's local date (schedule windows can be stored at local
+      // noon, which a midnight-vs-timestamp check wrongly skipped).
+      return classRunsOnDate(cls, todayLocalYmd, tz);
     });
 
     // Get today's attendance records per class for interactive features.
