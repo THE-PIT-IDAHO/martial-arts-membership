@@ -1158,7 +1158,17 @@ function EventDetailModal(props: {
     rank: string | null;
   };
   const [styleMembers, setStyleMembers] = useState<Record<string, BrowseMember[]>>({});
+  // Roster-only additions per style (see loadStyleMembers).
+  const [rosterStyleExtras, setRosterStyleExtras] = useState<Record<string, BrowseMember[]>>({});
   const [loadingStyleMembers, setLoadingStyleMembers] = useState(false);
+  const rosterMemberIdsKey = event.participants.map((p) => p.memberId).sort().join(",");
+  function memberHasStyle(m: BrowseMember, styleName: string): boolean {
+    if ((m.primaryStyle || "").toLowerCase() === styleName.toLowerCase()) return true;
+    try {
+      const arr: Array<{ name?: string }> = JSON.parse(m.stylesNotes || "[]");
+      return Array.isArray(arr) && arr.some((e) => (e.name || "").toLowerCase() === styleName.toLowerCase());
+    } catch { return false; }
+  }
 
   // Stable dep key for the styleIds array — useCallback would otherwise
   // re-create every render and re-fire the effect.
@@ -1182,10 +1192,34 @@ function EventDetailModal(props: {
       const next: Record<string, BrowseMember[]> = {};
       for (const r of results) next[r.styleId] = r.members;
       setStyleMembers(next);
+
+      // Roster members who aren't on an active plan for the style (lapsed /
+      // needs renewal) but still have the style on their profile -- even
+      // marked inactive -- belong in that style's section, sorted by belt
+      // like everyone else, not dumped into "Other roster members".
+      const rosterIds = new Set(rosterMemberIdsKey ? rosterMemberIdsKey.split(",") : []);
+      const extras: Record<string, BrowseMember[]> = {};
+      await Promise.all(
+        ids.map(async (styleId) => {
+          const name = styles.find((s) => s.id === styleId)?.name;
+          if (!name || rosterIds.size === 0) return;
+          const covered = new Set((next[styleId] || []).map((m) => m.id));
+          try {
+            const r = await fetch(`/api/members?styleName=${encodeURIComponent(name)}&limit=1000`);
+            if (!r.ok) return;
+            const d = await r.json();
+            extras[styleId] = ((d.members || []) as BrowseMember[]).filter(
+              (m) => rosterIds.has(m.id) && !covered.has(m.id) && memberHasStyle(m, name),
+            );
+          } catch { /* ignore */ }
+        }),
+      );
+      setRosterStyleExtras(extras);
     } finally {
       setLoadingStyleMembers(false);
     }
-  }, [eventStyleIdsKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventStyleIdsKey, rosterMemberIdsKey, styles.length]);
   useEffect(() => { loadStyleMembers(); }, [loadStyleMembers]);
 
   // Per-style collapse state for the bottom "All members of {style}"
@@ -1433,7 +1467,7 @@ function EventDetailModal(props: {
             // and members with no current rank set — both of which the
             // eligible API skips. That's why this list, not `eligible`,
             // is the source of truth for "who belongs to this style".
-            const candidates = styleMembers[styleId] || [];
+            const candidates = [...(styleMembers[styleId] || []), ...(rosterStyleExtras[styleId] || [])];
             const rostered: DisplayRow[] = [];
             for (const m of candidates) {
               if (!rosterMemberIdSet.has(m.id)) continue;

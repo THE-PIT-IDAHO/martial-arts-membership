@@ -235,7 +235,17 @@ export async function GET(req: Request) {
       }
 
       for (const es of enrolled) {
-        if (!es.name || es.active === false || !es.rank) continue;
+        if (!es.name || !es.rank) continue;
+        // Inactive style entries normally don't count. For an event roster
+        // they do (admin chose this member, e.g. membership lapsed), unless
+        // the member is active in another of the event's styles.
+        if (es.active === false) {
+          if (!event) continue;
+          const activeElsewhere = enrolled.some(
+            (o) => o !== es && o.active !== false && o.rank && styleByName.has((o.name || "").toLowerCase()),
+          );
+          if (activeElsewhere) continue;
+        }
         const style = styleByName.get(es.name.toLowerCase());
         if (!style || !style.beltConfig) continue;
 

@@ -162,7 +162,17 @@ export async function POST(
         const entry = styleEntries.find(
           (e) => (e.name || "").toLowerCase() === styleLower,
         );
-        if (entry && entry.active === false) continue;
+        // An inactive entry still counts -- the admin put this member on
+        // the roster (e.g. membership lapsed, renewing). Exception: they're
+        // active in a different style on this event (moved on from this
+        // one), so only promote them there.
+        if (entry && entry.active === false) {
+          const activeElsewhere = styleEntries.some(
+            (e) => e.active !== false && e.rank && (e.name || "").toLowerCase() !== styleLower &&
+              eventStyleNamesLower.has((e.name || "").toLowerCase()),
+          );
+          if (activeElsewhere) continue;
+        }
         let currentRankName: string | null = entry?.rank || null;
 
         // Fallback: no stylesNotes entry for this style, but the member is
