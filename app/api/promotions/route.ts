@@ -7,7 +7,8 @@
 // Side effects per promotion:
 //   - Computes the fee (per-member > per-style > global, then plan discount)
 //   - Creates a POSTransaction line item "Promotion: <rank>" with the fee
-//   - Decrements member.accountCreditCents if paymentMethod is ACCOUNT
+//   - ACCOUNT / CARD: charges the card on file first; falls back to
+//     decrementing member.accountCreditCents if no card or it declines
 //   - Updates the member's stylesNotes: bumps rank, sets lastPromotionDate,
 //     resets attendanceResetDate for that style (so progress restarts from
 //     today against the new next-rank's requirements)
@@ -17,6 +18,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { computePromotionFee } from "@/lib/promotion-fee";
 import { markDiscountsUsed } from "@/lib/member-discounts";
+import { chargeStoredPaymentMethod, getActiveProcessor, getCurrency } from "@/lib/payment";
 
 export type PromoteInput = {
   memberId: string;
@@ -44,6 +46,22 @@ function toLocalDateString(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+// True when the member (or the member paying for them via PAYS_FOR) has a
+// saved payment method AND the gym has a processor configured -- i.e. an
+// off-session charge is worth attempting.
+async function memberHasCardOnFile(memberId: string, clientId: string): Promise<boolean> {
+  if (!(await getActiveProcessor(clientId))) return false;
+  const payerRow = await prisma.memberRelationship.findFirst({
+    where: { relationship: "PAYS_FOR", toMemberId: memberId },
+    select: { fromMemberId: true },
+  });
+  const billed = await prisma.member.findUnique({
+    where: { id: payerRow?.fromMemberId || memberId },
+    select: { clientId: true, defaultPaymentMethodId: true },
+  });
+  return !!billed && billed.clientId === clientId && !!billed.defaultPaymentMethodId;
 }
 
 export async function applyOnePromotion(
@@ -128,15 +146,50 @@ export async function applyOnePromotion(
   }
   const fromRank = input.fromRank ?? prevRank;
 
-  // POS transaction — created only when there's a cost. paymentStatus on
-  // the Promotion is set based on what the admin selected (we don't actually
-  // hit Stripe here; the existing POS POST handles that for CARD, but for
-  // simplicity here we just record the sale and let staff verify the charge
-  // separately).
+  // POS transaction — created only when there's a cost.
+  //
+  // ACCOUNT and CARD both mean "bill the member": look for a card on file
+  // (the member's, or their PAYS_FOR payer's) and charge it off-session
+  // first. Only when there's no card, no processor, or the card declines
+  // does the fee fall back to the account balance (accountCreditCents,
+  // which can go negative). CASH / CHECK are recorded as paid in hand.
   let posTransactionId: string | null = null;
   let paymentStatus: "PAID" | "UNPAID" | "CARD_FAILED" = "PAID";
+  let recordedMethod: string | undefined;
   if (finalCostCents > 0) {
-    const method = (input.paymentMethod || "CASH").toUpperCase();
+    const requested = (input.paymentMethod || "CASH").toUpperCase();
+    let method = requested;
+    let paymentIntentId: string | null = null;
+    let paymentProcessor: string | null = null;
+    let chargeNote = "";
+
+    if (requested === "ACCOUNT" || requested === "CARD") {
+      const hasCard = await memberHasCardOnFile(member.id, clientId);
+      if (hasCard) {
+        const currency = await getCurrency(clientId);
+        const charge = await chargeStoredPaymentMethod({
+          memberId: member.id,
+          amountCents: finalCostCents,
+          currency,
+          description: `Promotion: ${input.toRank} (${style.name})`,
+        });
+        if (charge.success) {
+          method = "CARD";
+          paymentIntentId = charge.externalPaymentId ?? null;
+          paymentProcessor = charge.processor ?? null;
+        } else {
+          // Declined / processor error -> owe it on the account.
+          method = "ACCOUNT";
+          paymentStatus = "CARD_FAILED";
+          chargeNote = ` — card declined: ${charge.error || "unknown error"}; added to account balance`;
+        }
+      } else {
+        // No card on file -> account balance.
+        method = "ACCOUNT";
+        if (requested === "CARD") chargeNote = " — no card on file; added to account balance";
+      }
+    }
+
     const txn = await prisma.pOSTransaction.create({
       data: {
         id: crypto.randomUUID(),
@@ -149,7 +202,9 @@ export async function applyOnePromotion(
         discountCents: totalDiscountForTxn,
         totalCents: finalCostCents,
         paymentMethod: method,
-        notes: `Promotion: ${input.toRank} (${style.name})`,
+        paymentIntentId: paymentIntentId ?? undefined,
+        paymentProcessor: paymentProcessor ?? undefined,
+        notes: `Promotion: ${input.toRank} (${style.name})${chargeNote}`,
         source: "STAFF",
         updatedAt: new Date(),
         POSLineItem: {
@@ -165,6 +220,7 @@ export async function applyOnePromotion(
       },
     });
     posTransactionId = txn.id;
+    recordedMethod = method;
 
     // ACCOUNT method draws from the member's stored credit (can go negative).
     if (method === "ACCOUNT") {
@@ -173,10 +229,6 @@ export async function applyOnePromotion(
         data: { accountCreditCents: { decrement: finalCostCents } },
       });
     }
-    // CARD/CASH/CHECK assumed paid here. CARD_FAILED handling (auto-charge
-    // declines → debit accountCreditCents) is wired in the dedicated POS
-    // charge endpoint when that gets built; for the manual modal, admin
-    // selects the actual outcome.
   }
 
   // Save the new stylesNotes + denormalized primaryStyle/rank if this is
@@ -216,7 +268,7 @@ export async function applyOnePromotion(
       costCents: finalCostCents,
       discountSourcePlanId: fee.discountSourcePlanId ?? undefined,
       paymentStatus,
-      paymentMethod: finalCostCents > 0 ? (input.paymentMethod || "CASH").toUpperCase() : undefined,
+      paymentMethod: recordedMethod,
       posTransactionId: posTransactionId ?? undefined,
       notes: input.notes || undefined,
       clientId,

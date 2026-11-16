@@ -19,13 +19,14 @@
 //     arrived. Skipped participants stay REGISTERED so admin can finish
 //     them manually later.
 //
-// Payment method defaults to "ACCOUNT" so members are charged against
-// their stored credit (matches the existing legacy /charge endpoint
-// default). Failures don't roll back successful promotions — the route
+// Payment method defaults to "ACCOUNT": applyOnePromotion charges the
+// member's card on file first and only falls back to the account balance
+// when there's no card or it declines. Failures don't roll back successful promotions — the route
 // returns a per-participant result array so admin can retry the failures.
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
+import { rankKey } from "@/lib/rank-rename";
 import { applyOnePromotion, type PromoteInput } from "@/app/api/promotions/route";
 
 type BeltConfigRank = { name: string; order: number };
@@ -49,7 +50,11 @@ export async function POST(
     if (!event || event.clientId !== clientId) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
-    if (event.finishedAt) {
+    // A finished event can be re-run manually to pick up participants the
+    // first run skipped (still REGISTERED). Already-PROMOTED participants
+    // are filtered out below, so nobody is promoted or charged twice.
+    // The daily cron never re-runs a finished event.
+    if (event.finishedAt && mode === "auto") {
       return NextResponse.json({ error: "Event already finished" }, { status: 400 });
     }
 
@@ -79,7 +84,7 @@ export async function POST(
       // empty event cleanly (it counts as "ran with no one to promote").
       await prisma.promotionEvent.update({
         where: { id: event.id },
-        data: { status: "COMPLETED", finishedAt: new Date() },
+        data: { status: "COMPLETED", finishedAt: event.finishedAt ?? new Date() },
       });
       return NextResponse.json({ results: [], finished: true });
     }
@@ -89,9 +94,32 @@ export async function POST(
     const memberIds = participants.map((p) => p.memberId);
     const members = await prisma.member.findMany({
       where: { id: { in: memberIds }, clientId },
-      select: { id: true, stylesNotes: true },
+      select: {
+        id: true,
+        stylesNotes: true,
+        rank: true,
+        primaryStyle: true,
+        memberships: {
+          where: { status: "ACTIVE" },
+          select: { membershipPlan: { select: { allowedStyles: true } } },
+        },
+      },
     });
     const stylesByMember = new Map<string, StyleEntry[]>();
+    const memberById = new Map(members.map((m) => [m.id, m]));
+    // Style ids each member's active plans cover -- the same rule the
+    // event roster uses to put a member in a style section.
+    const planStylesByMember = new Map<string, Set<string>>();
+    for (const m of members) {
+      const set = new Set<string>();
+      for (const ms of m.memberships) {
+        try {
+          const arr = JSON.parse(ms.membershipPlan?.allowedStyles || "[]");
+          if (Array.isArray(arr)) arr.forEach((x) => typeof x === "string" && set.add(x));
+        } catch { /* ignore */ }
+      }
+      planStylesByMember.set(m.id, set);
+    }
     for (const m of members) {
       let arr: StyleEntry[] = [];
       if (m.stylesNotes) {
@@ -105,38 +133,79 @@ export async function POST(
       memberId: string;
       promoted: Array<{ styleId: string; toRank: string }>;
       errors: Array<{ styleId: string; error: string }>;
+      skipped?: string;
     }> = [];
+
+    const eventStyleNamesLower = new Set(eventStyles.map((s) => s.name.toLowerCase()));
 
     for (const p of participants) {
       const styleEntries = stylesByMember.get(p.memberId) || [];
+      const memberRow = memberById.get(p.memberId);
+      const planStyles = planStylesByMember.get(p.memberId) || new Set<string>();
       const promoted: Array<{ styleId: string; toRank: string }> = [];
       const errors: Array<{ styleId: string; error: string }> = [];
+      const skipReasons: string[] = [];
+      // member.rank may stand in for at most one style per member.
+      let usedMemberRankFallback = false;
 
       for (const styleId of eventStyleIds) {
         const style = styleById.get(styleId);
         if (!style || !style.beltConfig) continue;
 
-        // Find this style's entry in the member's stylesNotes (case-
-        // insensitive name match). Skip if the member isn't enrolled.
-        const entry = styleEntries.find(
-          (e) => (e.name || "").toLowerCase() === style.name.toLowerCase(),
-        );
-        if (!entry || entry.active === false || !entry.rank) continue;
-
-        // Look up the next rank from beltConfig.
         let parsed: { ranks?: BeltConfigRank[] } = {};
         try { parsed = JSON.parse(style.beltConfig); } catch { continue; }
         const ranks = (parsed.ranks || []).slice().sort((a, b) => a.order - b.order);
-        const currentIdx = ranks.findIndex(
-          (r) => r.name.toLowerCase() === entry.rank!.toLowerCase(),
+        const styleLower = style.name.toLowerCase();
+
+        // Current rank in this style. Prefer the member's stylesNotes entry
+        // for this style (case-insensitive name match).
+        const entry = styleEntries.find(
+          (e) => (e.name || "").toLowerCase() === styleLower,
         );
-        if (currentIdx < 0 || currentIdx >= ranks.length - 1) continue;
+        if (entry && entry.active === false) continue;
+        let currentRankName: string | null = entry?.rank || null;
+
+        // Fallback: no stylesNotes entry for this style, but the member is
+        // in the style through their plan (or it's their primary style) --
+        // the roster shows them under this style using member.rank, so use
+        // it here too, as long as that belt actually exists in this style.
+        // Skipped when member.rank belongs to a different event style the
+        // member has its own entry for (avoids double-promoting).
+        if (!currentRankName && memberRow?.rank && !usedMemberRankFallback) {
+          const primaryLower = (memberRow.primaryStyle || "").toLowerCase();
+          const tiedToStyle = primaryLower === styleLower || planStyles.has(style.id);
+          const primaryIsOtherEventStyle =
+            !!primaryLower && primaryLower !== styleLower && eventStyleNamesLower.has(primaryLower) &&
+            styleEntries.some((e) => (e.name || "").toLowerCase() === primaryLower && e.rank);
+          const rankInStyle = ranks.some((r) => rankKey(r.name) === rankKey(memberRow.rank));
+          if (tiedToStyle && rankInStyle && !primaryIsOtherEventStyle) {
+            currentRankName = memberRow.rank;
+            usedMemberRankFallback = true;
+          }
+        }
+
+        if (!currentRankName) {
+          if (planStyles.has(style.id)) skipReasons.push(`${style.name}: no current belt on file`);
+          continue;
+        }
+
+        const currentIdx = ranks.findIndex(
+          (r) => rankKey(r.name) === rankKey(currentRankName), // "WHITE" matches "White Belt"
+        );
+        if (currentIdx < 0) {
+          skipReasons.push(`${style.name}: belt "${currentRankName}" isn't in this style's belt list`);
+          continue;
+        }
+        if (currentIdx >= ranks.length - 1) {
+          skipReasons.push(`${style.name}: already at the top belt`);
+          continue;
+        }
         const nextRank = ranks[currentIdx + 1];
 
         const input: PromoteInput = {
           memberId: p.memberId,
           styleId: style.id,
-          fromRank: entry.rank,
+          fromRank: currentRankName,
           toRank: nextRank.name,
           date: event.date.toISOString(),
           paymentMethod,
@@ -173,14 +242,22 @@ export async function POST(
         });
       }
 
-      results.push({ participantId: p.id, memberId: p.memberId, promoted, errors });
+      results.push({
+        participantId: p.id,
+        memberId: p.memberId,
+        promoted,
+        errors,
+        ...(promoted.length === 0 && errors.length === 0
+          ? { skipped: skipReasons.join("; ") || "not enrolled in any of this event's styles" }
+          : {}),
+      });
     }
 
     // Mark the event finished regardless — the per-participant results
     // surface any failures so admin sees them in the response.
     await prisma.promotionEvent.update({
       where: { id: event.id },
-      data: { status: "COMPLETED", finishedAt: new Date() },
+      data: { status: "COMPLETED", finishedAt: event.finishedAt ?? new Date() },
     });
 
     return NextResponse.json({ results, finished: true });

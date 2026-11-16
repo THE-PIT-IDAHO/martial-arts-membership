@@ -86,6 +86,13 @@ type StyleOption = {
   ranks?: Array<{ name: string; order: number }>;
 };
 
+// Belt-name key for ordering: "White", "WHITE", "White Belt" all match, so
+// members still saved under an older belt name sort in the right place
+// (same rule as rankKey in lib/rank-rename.ts, which is server-only).
+function beltKey(name: string | null | undefined): string {
+  return (name || "").replace(/\bbelt\b/gi, " ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 type PaymentMethod = "CARD" | "CASH" | "ACCOUNT" | "CHECK";
 type TestResult = "PASSED" | "FAILED" | "NA";
 
@@ -1068,8 +1075,20 @@ function EventDetailModal(props: {
         body: JSON.stringify({ mode: "manual", paymentMethod: "ACCOUNT" }),
       });
       if (res.ok) {
-        setShowFinishConfirm(false);
+        const d = await res.json().catch(() => null);
+        type FinishResult = { memberId: string; promoted: unknown[]; errors: Array<{ error: string }>; skipped?: string };
+        const problems = ((d?.results || []) as FinishResult[])
+          .filter((r) => r.promoted.length === 0)
+          .map((r) => {
+            const name = event.participants.find((p) => p.memberId === r.memberId)?.memberName || "Member";
+            return `${name}: ${r.skipped || r.errors.map((e) => e.error).join("; ") || "not promoted"}`;
+          });
         await onChange();
+        if (problems.length > 0) {
+          setFinishError(`${problems.length} not promoted (no charge):\n${problems.join("\n")}`);
+        } else {
+          setShowFinishConfirm(false);
+        }
       } else {
         const d = await res.json().catch(() => null);
         setFinishError(d?.error || `Failed (HTTP ${res.status})`);
@@ -1406,7 +1425,7 @@ function EventDetailModal(props: {
             // Build rank-name → order map so members sort low → high.
             const rankOrderByName = new Map<string, number>();
             for (const r of styleOption?.ranks || []) {
-              rankOrderByName.set(r.name.toLowerCase(), r.order);
+              rankOrderByName.set(beltKey(r.name), r.order);
             }
 
             // Candidates for this style = members the plan covers
@@ -1424,7 +1443,7 @@ function EventDetailModal(props: {
               const eligibleRow = eligibleByKey.get(`${styleId}|${m.id}`);
               const rankOrder = eligibleRow
                 ? eligibleRow.fromRankOrder
-                : rankOrderByName.get(rankName.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+                : rankOrderByName.get(beltKey(rankName)) ?? Number.MAX_SAFE_INTEGER;
               rostered.push({
                 participantId: participant.id,
                 memberId: m.id,
@@ -1642,7 +1661,7 @@ function EventDetailModal(props: {
               // ranks (or members with no rank in stylesNotes) sort last.
               const rankOrderByName = new Map<string, number>();
               for (const r of styleOption?.ranks || []) {
-                rankOrderByName.set(r.name.toLowerCase(), r.order);
+                rankOrderByName.set(beltKey(r.name), r.order);
               }
               const rosterIdSet = new Set(event.participants.map((p) => p.memberId));
               const list = (styleMembers[styleId] || [])
@@ -1651,8 +1670,8 @@ function EventDetailModal(props: {
                 .filter((m) => !rosterIdSet.has(m.id))
                 .slice()
                 .sort((a, b) => {
-                  const ra = rankOrderByName.get(rankForStyle(a, styleName).toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
-                  const rb = rankOrderByName.get(rankForStyle(b, styleName).toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+                  const ra = rankOrderByName.get(beltKey(rankForStyle(a, styleName))) ?? Number.MAX_SAFE_INTEGER;
+                  const rb = rankOrderByName.get(beltKey(rankForStyle(b, styleName))) ?? Number.MAX_SAFE_INTEGER;
                   if (ra !== rb) return ra - rb;
                   return `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`);
                 });
@@ -1731,6 +1750,16 @@ function EventDetailModal(props: {
                 Finish Event
               </button>
             )}
+            {event.finishedAt && event.participants.some((p) => p.status === "REGISTERED") && (
+              <button
+                type="button"
+                onClick={() => setShowFinishConfirm(true)}
+                className={BTN_PRIMARY}
+                title="Promote + charge roster members the first finish skipped. Already-promoted members are not touched."
+              >
+                Finish remaining ({event.participants.filter((p) => p.status === "REGISTERED").length})
+              </button>
+            )}
           </div>
           <button type="button" onClick={deleteEvent} className={BTN_NEUTRAL}>
             Delete event
@@ -1746,14 +1775,15 @@ function EventDetailModal(props: {
               <h3 className="text-lg font-semibold mb-2">Finish event?</h3>
               <p className="text-sm text-gray-700 mb-3">
                 This will promote every member on the roster ({event.participants.length}) in each of their event-eligible styles,
-                charge the listed fee (per-member override or computed) against their account credit, and mark the event finished.
+                charge the listed fee (per-member override or computed) to their card on file (or their account balance if there&apos;s
+                no card or it declines), and mark the event finished. Members already promoted are skipped.
               </p>
               <p className="text-xs text-gray-500 mb-4">
                 Members with their Auto checkbox off will still be promoted by this manual run.
                 To skip them, remove them from the roster first.
               </p>
               {finishError && (
-                <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <div className="mb-3 max-h-60 overflow-y-auto whitespace-pre-line rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                   {finishError}
                 </div>
               )}

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { syncMemberRankNames } from "@/lib/rank-rename";
+import { renameStyleReferences, repairOrphanStyleEntries } from "@/lib/style-rename";
 
 type RouteParams = {
   params: Promise<{
@@ -65,7 +66,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     // any admin could overwrite beltConfig on any gym's style.
     const existing = await prisma.style.findUnique({
       where: { id },
-      select: { clientId: true },
+      select: { clientId: true, name: true },
     });
     if (!existing || existing.clientId !== clientId) {
       return new NextResponse("Style not found", { status: 404 });
@@ -118,6 +119,22 @@ export async function PATCH(req: Request, { params }: RouteParams) {
       where: { id },
       data,
     });
+
+    // Members, classes and tests reference the style by NAME. Carry a
+    // rename through to all of them, then repair anyone left behind by an
+    // earlier rename (plan covers this style but their entry still has a
+    // name no style uses anymore). Runs before the belt sync below, which
+    // finds members by the style's current name.
+    try {
+      if (existing.name !== style.name) {
+        const r = await renameStyleReferences({ clientId, styleId: id, oldName: existing.name, newName: style.name });
+        console.log(`[styles] renamed "${existing.name}" -> "${style.name}": ${r.members} member(s), ${r.classes} class(es), ${r.tests} test(s), ${r.events} event(s)`);
+      }
+      const { repaired } = await repairOrphanStyleEntries({ clientId, styleId: id, styleName: style.name });
+      if (repaired > 0) console.log(`[styles] ${style.name}: repaired style name on ${repaired} member(s)`);
+    } catch (err) {
+      console.error("[styles] style-name sync failed:", err);
+    }
 
     // Sync ranks from beltConfig to Rank table.
     //
