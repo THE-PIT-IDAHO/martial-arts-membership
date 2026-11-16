@@ -53,6 +53,7 @@ type HistoryRow = {
   paymentStatus: string;
   paymentMethod: string | null;
   member: { id: string; firstName: string; lastName: string };
+  style?: { id: string; name: string } | null;
 };
 
 type EventRow = {
@@ -409,13 +410,20 @@ export default function PromotionsPage() {
 
         {tab === "events" && (
           <EventsTab
-            events={events}
+            events={events.filter((e) => !isPastEvent(e))}
             styles={styles}
             onChange={refresh}
           />
         )}
 
-        {tab === "history" && <HistoryTab history={history} />}
+        {tab === "history" && (
+          <HistoryTab
+            history={history}
+            events={events.filter(isPastEvent)}
+            styles={styles}
+            onChange={refresh}
+          />
+        )}
       </div>
 
       {drafts.length > 0 && (
@@ -675,12 +683,25 @@ function EligibleTab(props: {
 // Events tab
 // ─────────────────────────────────────────────────────────────────────────
 
+// A finished event moves to Past Events once its date is behind us (the
+// day after the event). Unfinished events stay on Events regardless of date
+// so they can still be finished.
+function isPastEvent(e: EventRow): boolean {
+  if (!e.finishedAt) return false;
+  const d = new Date(e.date);
+  const eventDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return eventDay < today;
+}
+
 function EventsTab(props: {
   events: EventRow[];
   styles: StyleOption[];
   onChange: () => Promise<void>;
+  past?: boolean;
 }) {
-  const { events, styles, onChange } = props;
+  const { events, styles, onChange, past } = props;
   const [showCreate, setShowCreate] = useState(false);
   const [openEventId, setOpenEventId] = useState<string | null>(null);
 
@@ -688,15 +709,17 @@ function EventsTab(props: {
 
   return (
     <>
-      <div className="flex items-center justify-end mb-3 gap-2">
-        <button type="button" onClick={() => setShowCreate(true)} className={BTN_PRIMARY}>
-          Create Event
-        </button>
-      </div>
+      {!past && (
+        <div className="flex items-center justify-end mb-3 gap-2">
+          <button type="button" onClick={() => setShowCreate(true)} className={BTN_PRIMARY}>
+            Create Event
+          </button>
+        </div>
+      )}
 
       {events.length === 0 ? (
         <div className="bg-white border-2 border-dashed border-gray-300 rounded-2xl p-12 text-center">
-          <p className="text-sm text-gray-500">No promotion events yet.</p>
+          <p className="text-sm text-gray-500">No upcoming promotion events. Finished events move to Past Events the day after.</p>
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -1851,60 +1874,168 @@ function EventDetailModal(props: {
 // History tab
 // ─────────────────────────────────────────────────────────────────────────
 
-function HistoryTab({ history }: { history: HistoryRow[] }) {
-  if (history.length === 0) {
+function localDay(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+// Past Events: one collapsible card per finished event with the promotions
+// it produced, then promotions done outside an event (Quick Promote).
+// Promotions aren't linked to an event in the DB, so an event "owns" a
+// promotion when the member was on its roster, the style is one of the
+// event's styles, and it was recorded on the event's date (Finish records
+// every promotion with the event date).
+function HistoryTab(props: {
+  history: HistoryRow[];
+  events: EventRow[];
+  styles: StyleOption[];
+  onChange: () => Promise<void>;
+}) {
+  const { history, events, styles, onChange } = props;
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [openEventId, setOpenEventId] = useState<string | null>(null);
+  const openEvent = events.find((e) => e.id === openEventId);
+
+  const sortedEvents = [...events].sort((x, y) => new Date(y.date).getTime() - new Date(x.date).getTime());
+  const claimed = new Set<string>();
+  const groups = sortedEvents.map((ev) => {
+    const roster = new Set(ev.participants.map((p) => p.memberId));
+    const styleIds = new Set(parseEventStyleIds(ev));
+    const day = localDay(ev.date);
+    const rows = history.filter((h) =>
+      !claimed.has(h.id) &&
+      roster.has(h.member.id) &&
+      localDay(h.promotedAt) === day &&
+      (styleIds.size === 0 || !h.style?.id || styleIds.has(h.style.id)),
+    );
+    rows.forEach((h) => claimed.add(h.id));
+    return { ev, rows };
+  });
+  const individual = history.filter((h) => !claimed.has(h.id));
+
+  if (groups.length === 0 && individual.length === 0) {
     return (
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-12 text-center text-sm text-gray-500">
         No promotions recorded yet.
       </div>
     );
   }
+
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-          <tr>
-            <th className="px-3 py-2 text-left">Date</th>
-            <th className="px-3 py-2 text-left">Member</th>
-            <th className="px-3 py-2 text-left">Style</th>
-            <th className="px-3 py-2 text-left">Promotion</th>
-            <th className="px-3 py-2 text-left">Test</th>
-            <th className="px-3 py-2 text-right">Fee</th>
-            <th className="px-3 py-2 text-left">Payment</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {history.map((h) => (
-            <tr key={h.id}>
-              <td className="px-3 py-2 text-xs text-gray-700">{new Date(h.promotedAt).toLocaleDateString()}</td>
-              <td className="px-3 py-2 text-xs">
-                <Link href={`/members/${h.member.id}`} className="text-gray-900 hover:text-primary font-medium">
-                  {h.member.firstName} {h.member.lastName}
-                </Link>
-              </td>
-              <td className="px-3 py-2 text-xs text-gray-700">{h.styleName}</td>
-              <td className="px-3 py-2 text-xs text-gray-700">
-                {h.fromRank || "—"} <span className="text-gray-400">→</span> <span className="font-medium">{h.toRank}</span>
-              </td>
-              <td className="px-3 py-2 text-xs">
-                {h.testResult === "PASSED" ? <span className="text-green-700 font-medium">Passed</span>
-                  : h.testResult === "FAILED" ? <span className="text-red-700 font-medium">Failed</span>
-                  : <span className="text-gray-400">—</span>}
-              </td>
-              <td className="px-3 py-2 text-xs text-right text-gray-700">{dollars(h.costCents)}</td>
-              <td className="px-3 py-2 text-xs text-gray-700">
-                {h.paymentMethod || "—"}
-                {h.paymentStatus !== "PAID" && (
-                  <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-red-100 text-red-700">
-                    {h.paymentStatus}
-                  </span>
+    <div className="space-y-3">
+      {groups.map(({ ev, rows }) => {
+        const isOpen = !!expanded[ev.id];
+        const total = rows.reduce((sum, h) => sum + h.costCents, 0);
+        const unpaid = rows.filter((h) => h.paymentStatus !== "PAID").length;
+        const styleNames = parseEventStyleIds(ev)
+          .map((id) => styles.find((s) => s.id === id)?.name)
+          .filter(Boolean)
+          .join(", ") || ev.styleName || "—";
+        return (
+          <div key={ev.id} className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setExpanded((p) => ({ ...p, [ev.id]: !isOpen }))}
+                className="flex-1 min-w-0 text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-xs w-3">{isOpen ? "▾" : "▸"}</span>
+                  <span className="text-sm font-semibold text-gray-900 truncate">{ev.name}</span>
+                  <span className="text-xs text-gray-500">{new Date(ev.date).toLocaleDateString()}</span>
+                </div>
+                <div className="ml-5 text-xs text-gray-500 truncate">
+                  {styleNames} · {rows.length} promoted · {dollars(total)}
+                  {unpaid > 0 && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-red-100 text-red-700">
+                      {unpaid} unpaid
+                    </span>
+                  )}
+                </div>
+              </button>
+              <button type="button" onClick={() => setOpenEventId(ev.id)} className={BTN_SECONDARY}>
+                Open
+              </button>
+            </div>
+            {isOpen && (
+              <div className="border-t border-gray-200">
+                {rows.length === 0 ? (
+                  <div className="px-4 py-3 text-xs text-gray-500">No promotions recorded for this event.</div>
+                ) : (
+                  <PromotionTable rows={rows} showDate={false} />
                 )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {individual.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700 mt-4 mb-2">Individual promotions</h2>
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+            <PromotionTable rows={individual} showDate />
+          </div>
+        </div>
+      )}
+
+      {openEvent && (
+        <EventDetailModal
+          event={openEvent}
+          styles={styles}
+          onClose={() => setOpenEventId(null)}
+          onChange={onChange}
+        />
+      )}
     </div>
+  );
+}
+
+function PromotionTable({ rows, showDate }: { rows: HistoryRow[]; showDate: boolean }) {
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+        <tr>
+          {showDate && <th className="px-3 py-2 text-left">Date</th>}
+          <th className="px-3 py-2 text-left">Member</th>
+          <th className="px-3 py-2 text-left">Style</th>
+          <th className="px-3 py-2 text-left">Promotion</th>
+          <th className="px-3 py-2 text-left">Test</th>
+          <th className="px-3 py-2 text-right">Fee</th>
+          <th className="px-3 py-2 text-left">Payment</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-gray-100">
+        {rows.map((h) => (
+          <tr key={h.id}>
+            {showDate && <td className="px-3 py-2 text-xs text-gray-700">{new Date(h.promotedAt).toLocaleDateString()}</td>}
+            <td className="px-3 py-2 text-xs">
+              <Link href={`/members/${h.member.id}`} className="text-gray-900 hover:text-primary font-medium">
+                {h.member.firstName} {h.member.lastName}
+              </Link>
+            </td>
+            <td className="px-3 py-2 text-xs text-gray-700">{h.styleName}</td>
+            <td className="px-3 py-2 text-xs text-gray-700">
+              {h.fromRank || "—"} <span className="text-gray-400">→</span> <span className="font-medium">{h.toRank}</span>
+            </td>
+            <td className="px-3 py-2 text-xs">
+              {h.testResult === "PASSED" ? <span className="text-green-700 font-medium">Passed</span>
+                : h.testResult === "FAILED" ? <span className="text-red-700 font-medium">Failed</span>
+                : <span className="text-gray-400">—</span>}
+            </td>
+            <td className="px-3 py-2 text-xs text-right text-gray-700">{dollars(h.costCents)}</td>
+            <td className="px-3 py-2 text-xs text-gray-700">
+              {h.paymentMethod || "—"}
+              {h.paymentStatus !== "PAID" && (
+                <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-red-100 text-red-700">
+                  {h.paymentStatus}
+                </span>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
