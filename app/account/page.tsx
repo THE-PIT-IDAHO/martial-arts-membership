@@ -101,6 +101,7 @@ export default function AccountPage() {
     notify_inactive_reengagement: true,
     notify_renewal_reminder: true,
     notify_trial_expiring: true,
+    notify_board_activity: true,
   });
   const [savingNotifications, setSavingNotifications] = useState(false);
 
@@ -215,6 +216,7 @@ export default function AccountPage() {
               notify_inactive_reengagement: map.notify_inactive_reengagement !== "false",
               notify_renewal_reminder: map.notify_renewal_reminder !== "false",
               notify_trial_expiring: map.notify_trial_expiring !== "false",
+              notify_board_activity: map.notify_board_activity !== "false",
             });
             // Load display settings
             setDateFormat(map.display_date_format || "MM/DD/YYYY");
@@ -1557,6 +1559,7 @@ export default function AccountPage() {
                   { key: "notify_inactive_reengagement", label: "Inactive re-engagement", desc: "Sent to members who haven't attended in 30+ days" },
                   { key: "notify_renewal_reminder", label: "Renewal reminders", desc: "Sent before non-recurring memberships expire" },
                   { key: "notify_trial_expiring", label: "Trial expiring", desc: "Sent when trial passes are about to expire" },
+                  { key: "notify_board_activity", label: "Dojo Board activity", desc: "Admin email (to the gym email) when a member posts or replies on Dojo Board" },
                 ].map((item) => (
                   <label key={item.key} className="flex items-center justify-between">
                     <div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
+import { sendBoardActivityAlertEmail } from "@/lib/notifications";
 
 // POST /api/portal/board/replies — create a reply as the logged-in member
 export async function POST(req: NextRequest) {
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
     // member could reply to another gym's board post by guessing the id.
     const post = await prisma.boardPost.findUnique({
       where: { id: postId },
-      select: { channel: { select: { clientId: true } } },
+      select: { title: true, channel: { select: { clientId: true, name: true } } },
     });
     if (!post || post.channel?.clientId !== member.clientId) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
@@ -49,6 +50,20 @@ export async function POST(req: NextRequest) {
         postId,
       },
     });
+
+    // Let the gym know by email. Never fails the reply.
+    try {
+      await sendBoardActivityAlertEmail({
+        kind: "reply",
+        memberName: authorName,
+        channelName: post.channel?.name,
+        postTitle: post.title,
+        content: reply.content,
+        clientId: member.clientId,
+      });
+    } catch (err) {
+      console.error("Board reply alert email failed:", err);
+    }
 
     return NextResponse.json({ reply }, { status: 201 });
   } catch (error) {

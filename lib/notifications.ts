@@ -696,6 +696,52 @@ export async function sendLowStockAlertEmail(params: {
   await sendEmail({ to: [gymEmail], subject, html, clientId: params.clientId, eventType: "LOW_STOCK" });
 }
 
+// --- 14b. Dojo Board activity (sent to admin) ---
+// A member posted or replied on Dojo Board from the portal. Goes to the
+// gym's contact email (Settings "gymEmail"). Toggle: notify_board_activity
+// (on by default).
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export async function sendBoardActivityAlertEmail(params: {
+  kind: "post" | "reply";
+  memberName: string;
+  channelName?: string | null;
+  postTitle: string;
+  content: string;
+  clientId: string;
+}) {
+  if (!(await isEnabled("notify_board_activity", { clientId: params.clientId }))) return;
+  const brand = await getGymBranding(params.clientId);
+  const gymEmail = brand.gymEmail;
+  if (!gymEmail) return;
+
+  const who = escapeHtml(params.memberName || "A member");
+  const title = escapeHtml(params.postTitle || "(untitled)");
+  const channel = params.channelName ? escapeHtml(params.channelName) : "";
+  const body = escapeHtml((params.content || "").slice(0, 2000)).replace(/\n/g, "<br>");
+  const action = params.kind === "post" ? "posted on Dojo Board" : "replied on Dojo Board";
+
+  const subject = params.kind === "post"
+    ? `Dojo Board: new post from ${params.memberName || "a member"}`
+    : `Dojo Board: ${params.memberName || "a member"} replied to "${params.postTitle || "a post"}"`;
+
+  const bodyHtml = `
+    <p><strong>${who}</strong> ${action}${channel ? ` in <strong>${channel}</strong>` : ""}.</p>
+    <p style="margin:0 0 4px 0;color:#6b7280;font-size:13px;">${params.kind === "post" ? "Post" : "Reply to"}: <strong>${title}</strong></p>
+    ${body ? `<div style="border-left:3px solid #e5e7eb;padding:8px 12px;margin:8px 0;color:#111827;">${body}</div>` : ""}
+    <p style="color:#6b7280;font-size:13px;">Open Dojo Board in ${escapeHtml(brand.gymName)}'s admin to respond.</p>`;
+
+  const html = wrapInTemplate(brand, bodyHtml);
+  await sendEmail({ to: [gymEmail], subject, html, clientId: params.clientId, eventType: "BOARD_ACTIVITY" });
+}
+
 // --- 15. Dunning / Payment Retry ---
 
 export async function sendDunningEmail(params: {

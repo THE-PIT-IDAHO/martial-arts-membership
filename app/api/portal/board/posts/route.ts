@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedMember } from "@/lib/portal-auth";
 import { prisma } from "@/lib/prisma";
+import { sendBoardActivityAlertEmail } from "@/lib/notifications";
 
 interface ChannelVisibility {
   type: "all" | "styles" | "ranks" | "statuses" | "specific" | "combined";
@@ -194,7 +195,7 @@ export async function POST(req: NextRequest) {
   try {
     const member = await prisma.member.findUnique({
       where: { id: auth.memberId },
-      select: { id: true, firstName: true, lastName: true },
+      select: { id: true, firstName: true, lastName: true, clientId: true },
     });
 
     if (!member) {
@@ -244,6 +245,20 @@ export async function POST(req: NextRequest) {
       where: { id: channelId },
       data: { hasUpdates: true },
     });
+
+    // Let the gym know by email. Never fails the post.
+    try {
+      await sendBoardActivityAlertEmail({
+        kind: "post",
+        memberName: authorName,
+        channelName: post.channel?.name,
+        postTitle: post.title,
+        content: post.content,
+        clientId: member.clientId,
+      });
+    } catch (err) {
+      console.error("Board post alert email failed:", err);
+    }
 
     return NextResponse.json({ post }, { status: 201 });
   } catch (error) {
