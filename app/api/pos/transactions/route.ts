@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolvePaidBy } from "@/lib/paid-by";
 import { getClientId } from "@/lib/tenant";
 import { parseLocalDate } from "@/lib/dates";
 import { calculateNextPaymentDate } from "@/lib/billing";
@@ -315,6 +316,24 @@ export async function POST(req: Request) {
     // Generate transaction number
     const transactionNumber = `TXN-${Date.now()}`;
 
+    // Saved card charged to a PAYS_FOR payer's card -> label "Member via
+    // Payer" and attribute to the payer's activity. Only honored when that
+    // relationship actually exists, so a client can't attribute a sale to
+    // an arbitrary member.
+    let txnMemberName: string | null = memberName || null;
+    let paidByMemberId: string | null = null;
+    if (memberId && typeof body.billedMemberId === "string" && body.billedMemberId !== memberId) {
+      const rel = await prisma.memberRelationship.findFirst({
+        where: { relationship: "PAYS_FOR", fromMemberId: body.billedMemberId, toMemberId: memberId },
+        select: { id: true },
+      });
+      if (rel) {
+        const paidBy = await resolvePaidBy({ memberId, billedMemberId: body.billedMemberId, clientId, memberName });
+        txnMemberName = paidBy.memberName;
+        paidByMemberId = paidBy.paidByMemberId;
+      }
+    }
+
     // Create transaction with line items
     const transaction = await prisma.pOSTransaction.create({
       data: {
@@ -322,7 +341,8 @@ export async function POST(req: Request) {
         transactionNumber,
         clientId,
         memberId: memberId || null,
-        memberName: memberName || null,
+        memberName: txnMemberName,
+        paidByMemberId,
         subtotalCents,
         taxCents,
         discountCents: finalDiscountCents,

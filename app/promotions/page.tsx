@@ -54,6 +54,7 @@ type HistoryRow = {
   paymentMethod: string | null;
   member: { id: string; firstName: string; lastName: string };
   style?: { id: string; name: string } | null;
+  paidByName?: string | null; // set when a parent's (PAYS_FOR) card paid
 };
 
 type EventRow = {
@@ -2026,6 +2027,7 @@ function PromotionTable({ rows, showDate }: { rows: HistoryRow[]; showDate: bool
             <td className="px-3 py-2 text-xs text-right text-gray-700">{dollars(h.costCents)}</td>
             <td className="px-3 py-2 text-xs text-gray-700">
               {h.paymentMethod || "—"}
+              {h.paidByName && <span className="text-gray-500"> via {h.paidByName}</span>}
               {h.paymentStatus !== "PAID" && (
                 <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase bg-red-100 text-red-700">
                   {h.paymentStatus}

@@ -126,8 +126,17 @@ export async function GET(_req: Request, { params }: Params) {
     });
 
     // Fetch POS transactions for this member (last 20)
+    // Payments show on whoever's card paid: this member's own purchases
+    // (unless someone else's card paid via PAYS_FOR) plus anything this
+    // member paid for someone else (memberName reads "Kid via Parent").
     const transactions = await prisma.pOSTransaction.findMany({
-      where: { memberId: id, status: "COMPLETED" },
+      where: {
+        status: "COMPLETED",
+        OR: [
+          { memberId: id, OR: [{ paidByMemberId: null }, { paidByMemberId: id }] },
+          { paidByMemberId: id },
+        ],
+      },
       select: {
         id: true,
         transactionNumber: true,
@@ -135,6 +144,8 @@ export async function GET(_req: Request, { params }: Params) {
         paymentMethod: true,
         notes: true,
         createdAt: true,
+        memberName: true,
+        paidByMemberId: true,
       },
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -205,6 +216,7 @@ export async function GET(_req: Request, { params }: Params) {
         toMember: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+
     let payeePastDues: Array<{
       memberId: string;
       firstName: string;

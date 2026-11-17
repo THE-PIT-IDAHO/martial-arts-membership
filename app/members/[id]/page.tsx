@@ -271,6 +271,9 @@ type Transaction = {
   paymentMethod: string;
   notes: string | null;
   createdAt: string;
+  // "Kid via Parent" when paid on someone else's card (paidByMemberId set).
+  memberName?: string | null;
+  paidByMemberId?: string | null;
 };
 
 type InvoiceRecord = {
@@ -1496,7 +1499,7 @@ export default function MemberProfilePage() {
         base.push({
           id: `payment-${tx.id}`,
           type: "PAYMENT",
-          message: `Payment: $${amount} via ${method}${tx.notes ? ` - ${tx.notes}` : ""}`,
+          message: `Payment: $${amount} via ${method}${tx.paidByMemberId && tx.memberName ? ` (${tx.memberName})` : ""}${tx.notes ? ` - ${tx.notes}` : ""}`,
           createdAt: tx.createdAt
         });
       });

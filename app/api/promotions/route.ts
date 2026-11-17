@@ -19,6 +19,7 @@ import { getClientId } from "@/lib/tenant";
 import { computePromotionFee } from "@/lib/promotion-fee";
 import { markDiscountsUsed } from "@/lib/member-discounts";
 import { chargeStoredPaymentMethod, getActiveProcessor, getCurrency } from "@/lib/payment";
+import { resolvePaidBy } from "@/lib/paid-by";
 
 export type PromoteInput = {
   memberId: string;
@@ -161,6 +162,7 @@ export async function applyOnePromotion(
     let method = requested;
     let paymentIntentId: string | null = null;
     let paymentProcessor: string | null = null;
+    let billedMemberId: string | null = null;
     let chargeNote = "";
 
     if (requested === "ACCOUNT" || requested === "CARD") {
@@ -177,6 +179,7 @@ export async function applyOnePromotion(
           method = "CARD";
           paymentIntentId = charge.externalPaymentId ?? null;
           paymentProcessor = charge.processor ?? null;
+          billedMemberId = charge.billedMemberId ?? null;
         } else {
           // Declined / processor error -> owe it on the account.
           method = "ACCOUNT";
@@ -190,13 +193,23 @@ export async function applyOnePromotion(
       }
     }
 
+    // Paid on a parent's (PAYS_FOR) card -> "Kid via Parent", shows on the
+    // parent's activity.
+    const paidBy = await resolvePaidBy({
+      memberId: member.id,
+      billedMemberId,
+      clientId,
+      memberName: `${member.firstName} ${member.lastName}`.trim(),
+    });
+
     const txn = await prisma.pOSTransaction.create({
       data: {
         id: crypto.randomUUID(),
         transactionNumber: `PROMO-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         clientId,
         memberId: member.id,
-        memberName: `${member.firstName} ${member.lastName}`.trim(),
+        memberName: paidBy.memberName,
+        paidByMemberId: paidBy.paidByMemberId,
         subtotalCents: finalCostCents,
         taxCents: 0,
         discountCents: totalDiscountForTxn,
@@ -302,7 +315,32 @@ export async function GET(req: Request) {
       },
     });
 
-    return NextResponse.json({ promotions });
+    // Who paid, when it went on someone else's card (PAYS_FOR payer).
+    const txnIds = promotions.map((p) => p.posTransactionId).filter((x): x is string => !!x);
+    const paidByTxns = txnIds.length
+      ? await prisma.pOSTransaction.findMany({
+          where: { id: { in: txnIds }, clientId, paidByMemberId: { not: null } },
+          select: { id: true, paidByMemberId: true },
+        })
+      : [];
+    const payerIds = Array.from(new Set(paidByTxns.map((t) => t.paidByMemberId!)));
+    const payers = payerIds.length
+      ? await prisma.member.findMany({
+          where: { id: { in: payerIds }, clientId },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const payerNameById = new Map(payers.map((m) => [m.id, `${m.firstName} ${m.lastName}`.trim()]));
+    const paidByNameByTxn = new Map(
+      paidByTxns.map((t) => [t.id, payerNameById.get(t.paidByMemberId!) || null]),
+    );
+
+    return NextResponse.json({
+      promotions: promotions.map((p) => ({
+        ...p,
+        paidByName: p.posTransactionId ? paidByNameByTxn.get(p.posTransactionId) || null : null,
+      })),
+    });
   } catch (err) {
     console.error("GET /api/promotions error:", err);
     return NextResponse.json({ error: "Failed to load promotions" }, { status: 500 });

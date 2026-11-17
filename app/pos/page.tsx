@@ -2058,6 +2058,7 @@ export default function POSPage() {
             appliedDiscounts: appliedDiscountsPayload,
             paymentIntentId: chargeData.paymentIntentId,
             paymentProcessor: "stripe",
+            billedMemberId: chargeData.billedMemberId || null,
             redeemedGiftCode: redeemedGift?.code || null,
             redeemedGiftAmountCents: redeemedGift?.appliedCents || 0,
           }),

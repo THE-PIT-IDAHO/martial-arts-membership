@@ -949,6 +949,11 @@ model POSTransaction {
   notes             String?
   paymentIntentId   String?
   paymentProcessor  String?
+  // Set when the charge went to someone else's card through a PAYS_FOR
+  // relationship (e.g. a kid's fee on the parent's card). The sale stays
+  // on memberId (the kid); memberName reads "Kid via Parent", and the
+  // payment shows on the payer's activity instead of the kid's.
+  paidByMemberId    String?
   receiptUrl        String?
   // Where this sale was initiated. Nullable for historical rows.
   //   STAFF     -- admin rang it up in the POS panel

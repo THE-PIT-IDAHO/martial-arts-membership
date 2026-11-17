@@ -417,7 +417,7 @@ export async function chargeStoredPaymentMethod(params: {
   currency: string;
   description?: string;
   invoiceId?: string;
-}): Promise<{ success: boolean; externalPaymentId?: string; processor?: ProcessorType; error?: string }> {
+}): Promise<{ success: boolean; externalPaymentId?: string; processor?: ProcessorType; error?: string; billedMemberId?: string }> {
   // Resolve the caller-tenant from the member, then use that clientId
   // for EVERY processor / credential lookup below. This is what makes
   // sure gym A's charge routes to gym A's Stripe/PayPal/Square keys
@@ -489,6 +489,7 @@ export async function chargeStoredPaymentMethod(params: {
           success: true,
           externalPaymentId: paymentIntent.id,
           processor: "stripe",
+          billedMemberId,
         };
       }
       return { success: false, error: `Payment status: ${paymentIntent.status}` };
@@ -515,6 +516,7 @@ export async function chargeStoredPaymentMethod(params: {
           success: true,
           externalPaymentId: result.captureId,
           processor: "paypal",
+          billedMemberId,
         };
       }
       return { success: false, error: `PayPal status: ${result.status}` };
@@ -542,6 +544,7 @@ export async function chargeStoredPaymentMethod(params: {
           success: true,
           externalPaymentId: result.paymentId,
           processor: "square",
+          billedMemberId,
         };
       }
       return { success: false, error: `Square status: ${result.status}` };

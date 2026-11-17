@@ -113,6 +113,9 @@ export async function POST(req: Request) {
       return NextResponse.json({
         success: true,
         paymentIntentId: paymentIntent.id,
+        // Lets the POS record the sale as "Member via Payer" when a
+        // PAYS_FOR payer's card was charged.
+        billedMemberId,
       });
     } else {
       return NextResponse.json({
