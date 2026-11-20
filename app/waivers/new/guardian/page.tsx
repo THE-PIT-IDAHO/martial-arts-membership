@@ -165,6 +165,9 @@ export default function GuardianWaiverPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  // Names of the kids on the waiver that just went through, shown on the
+  // confirmation screen so the parent knows exactly who was added.
+  const [submittedChildNames, setSubmittedChildNames] = useState<string[]>([]);
   const [error, setError] = useState("");
 
   // Dependent (Minor) fields — one entry per child, up to MAX_CHILDREN.
@@ -812,6 +815,11 @@ export default function GuardianWaiverPage() {
       });
 
       if (res.ok) {
+        setSubmittedChildNames(
+          children
+            .map((c) => `${c.firstName} ${c.lastName}`.trim())
+            .filter(Boolean),
+        );
         setSuccess(true);
       } else {
         const text = await res.text().catch(() => "");
@@ -857,15 +865,19 @@ export default function GuardianWaiverPage() {
     }, 50);
   }
 
-  // Auto-reset after 3 seconds on success
+  // Auto-reset after 3 seconds on success -- for the front-desk tablet,
+  // so the next family gets a blank form. NOT when a parent opened their
+  // emailed "Add Child" link (parentMemberId): they're on their own
+  // phone, and wiping the confirmation after 3s made it look like the
+  // submit failed, so the confirmation stays up.
   useEffect(() => {
-    if (success) {
+    if (success && !parentMemberId) {
       const timer = setTimeout(() => {
         resetForm();
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [success]);
+  }, [success, parentMemberId]);
 
   if (loading) {
     return (
@@ -913,9 +925,18 @@ export default function GuardianWaiverPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Waiver Signed!</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              {parentMemberId ? "Child Added!" : "Waiver Signed!"}
+            </h2>
+            {submittedChildNames.length > 0 && (
+              <p className="text-lg font-semibold text-gray-900 mb-2">
+                {submittedChildNames.join(", ")}
+              </p>
+            )}
             <p className="text-gray-600 mb-4">
-              Thank you for completing the liability waiver. Your dependent is all set to participate.
+              {parentMemberId
+                ? `${submittedChildNames.length > 1 ? "Have" : "Has"} been added to your account and the waiver is signed. You're all set, you can close this page.`
+                : "Thank you for completing the liability waiver. Your dependent is all set to participate."}
             </p>
             <p className="text-sm text-gray-500">
               Signed on {new Date().toLocaleDateString()}
