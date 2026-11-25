@@ -13,7 +13,7 @@ import { sendInvoiceCreatedEmail, sendPastDueAlertEmail, sendDunningEmail, sendP
 import { calculateNextRetryDate, getDunningEmailLevel, shouldSuspendMembership } from "@/lib/dunning";
 import { getTodayInTimezone } from "@/lib/dates";
 import { getSetting } from "@/lib/email";
-import { getActiveProcessor, chargeStoredPaymentMethod, getCurrency, type ProcessorType } from "@/lib/payment";
+import { getActiveProcessor, chargeStoredPaymentMethod, ensureDefaultStripeCard, getCurrency, type ProcessorType } from "@/lib/payment";
 import { getClientId } from "@/lib/tenant";
 import { applyMemberDiscounts, markDiscountsUsed } from "@/lib/member-discounts";
 import { syncMemberStyles } from "@/lib/member-styles";
@@ -610,9 +610,14 @@ async function processBillingForTenant(clientId: string): Promise<TenantResult> 
           const _payerRel = ms.member.relationshipsTo.find(
             (r) => r.relationship === "PAYS_FOR",
           );
-          const _billingCardId =
+          let _billingCardId =
             _payerRel?.fromMember?.defaultPaymentMethodId
             || ms.member.defaultPaymentMethodId;
+          // Card saved in Stripe but no default recorded -- pick it
+          // up so the renewal charges instead of going past due.
+          if (!_billingCardId && !isZeroDollar && remainingCents > 0 && activeProcessor === "stripe") {
+            _billingCardId = await ensureDefaultStripeCard(_payerRel?.fromMemberId || ms.member.id);
+          }
 
           // Attempt auto-charge on the remaining balance only.
           if (!isZeroDollar && remainingCents > 0 && activeProcessor && _billingCardId) {

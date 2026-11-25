@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getStripeClient } from "@/lib/stripe";
 import { getClientId } from "@/lib/tenant";
+import { ensureDefaultStripeCard } from "@/lib/payment";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -75,9 +76,17 @@ export async function GET(_req: NextRequest, { params }: Params) {
       expYear: pm.card?.exp_year,
     }));
 
+    // Cards on file but no default recorded -> every charge would say
+    // "No stored Stripe payment method". Pick one now so the profile
+    // and every charge path agree.
+    let defaultId = billedMember.defaultPaymentMethodId;
+    if (!defaultId && paymentMethods.length > 0) {
+      defaultId = await ensureDefaultStripeCard(billedMemberId);
+    }
+
     return NextResponse.json({
       paymentMethods,
-      defaultId: billedMember.defaultPaymentMethodId,
+      defaultId,
       paidByMember,
     });
   } catch (error) {

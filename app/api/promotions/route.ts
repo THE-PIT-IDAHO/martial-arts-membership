@@ -18,7 +18,7 @@ import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { computePromotionFee } from "@/lib/promotion-fee";
 import { markDiscountsUsed } from "@/lib/member-discounts";
-import { chargeStoredPaymentMethod, getActiveProcessor, getCurrency } from "@/lib/payment";
+import { chargeStoredPaymentMethod, ensureDefaultStripeCard, getActiveProcessor, getCurrency } from "@/lib/payment";
 import { resolvePaidBy } from "@/lib/paid-by";
 
 export type PromoteInput = {
@@ -62,7 +62,10 @@ async function memberHasCardOnFile(memberId: string, clientId: string): Promise<
     where: { id: payerRow?.fromMemberId || memberId },
     select: { clientId: true, defaultPaymentMethodId: true },
   });
-  return !!billed && billed.clientId === clientId && !!billed.defaultPaymentMethodId;
+  if (!billed || billed.clientId !== clientId) return false;
+  if (billed.defaultPaymentMethodId) return true;
+  // Card saved in Stripe but no default recorded -- pick it up.
+  return !!(await ensureDefaultStripeCard(payerRow?.fromMemberId || memberId));
 }
 
 export async function applyOnePromotion(

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
-import { chargeStoredPaymentMethod, getCurrency } from "@/lib/payment";
+import { chargeStoredPaymentMethod, ensureDefaultStripeCard, getCurrency } from "@/lib/payment";
 import { applyAccountCreditToInvoice } from "@/lib/billing";
 
 // POST /api/invoices/[id]/charge — retry an auto-charge against the stored
@@ -92,10 +92,16 @@ export async function POST(
           fromMember: { clientId },
         },
         select: {
+          fromMemberId: true,
           fromMember: { select: { defaultPaymentMethodId: true } },
         },
       });
       effectiveCardId = payerRow?.fromMember?.defaultPaymentMethodId || null;
+      // Card saved in Stripe but no default recorded -- pick it up
+      // (payer's card when someone pays for this member).
+      if (!effectiveCardId) {
+        effectiveCardId = await ensureDefaultStripeCard(payerRow?.fromMemberId || invoice.memberId);
+      }
     }
 
     if (!effectiveCardId) {

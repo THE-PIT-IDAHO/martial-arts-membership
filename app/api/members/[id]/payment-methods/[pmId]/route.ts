@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getStripeClient } from "@/lib/stripe";
 import { getClientId } from "@/lib/tenant";
+import { ensureDefaultStripeCard } from "@/lib/payment";
 
 type Params = { params: Promise<{ id: string; pmId: string }> };
 
@@ -76,6 +77,9 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
         where: { id: ownerMemberId },
         data: { defaultPaymentMethodId: null, defaultPaymentMethodSetAt: null },
       });
+      // Another card still on file? Make it the default instead of
+      // leaving the member with a listed card that nothing charges.
+      await ensureDefaultStripeCard(ownerMemberId);
     }
 
     return NextResponse.json({ success: true });

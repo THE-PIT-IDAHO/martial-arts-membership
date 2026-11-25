@@ -1,4 +1,15 @@
-import { formatDateInTimezone, getDayOfWeekInTimezone } from "@/lib/dates";
+// Self-contained (no lib/dates import -- that module pulls in Prisma) so
+// the kiosk page can run the exact same check in the browser.
+function formatDateInTimezone(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(date); // YYYY-MM-DD
+}
+function getDayOfWeekInTimezone(date: Date, timezone: string): number {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long" }).format(date);
+  const map: Record<string, number> = {
+    Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6,
+  };
+  return map[name] ?? date.getDay();
+}
 
 /**
  * Shared "does this class actually run on this local date?" check.

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientId } from "@/lib/tenant";
 import { getStripeClient } from "@/lib/stripe";
+import { ensureDefaultStripeCard } from "@/lib/payment";
 
 // Same helper as create-payment-intent -- Stripe rejects any metadata
 // value > 500 chars; the POS's serialized `cartItems` (with new
@@ -73,6 +74,9 @@ export async function POST(req: Request) {
   });
   if (!member || member.clientId !== clientId) {
     return NextResponse.json({ error: "Payer not found" }, { status: 404 });
+  }
+  if (member.stripeCustomerId && !member.defaultPaymentMethodId) {
+    member.defaultPaymentMethodId = await ensureDefaultStripeCard(billedMemberId);
   }
   if (!member.stripeCustomerId || !member.defaultPaymentMethodId) {
     return NextResponse.json({

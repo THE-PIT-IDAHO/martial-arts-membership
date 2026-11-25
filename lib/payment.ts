@@ -411,6 +411,68 @@ export async function createRefund(
 // Charge stored payment method (off-session: auto-billing, dunning)
 // ---------------------------------------------------------------------------
 
+/**
+ * Self-heal a member whose card is saved in Stripe but who has no
+ * default card recorded (defaultPaymentMethodId null). That happens
+ * when the "save as default" step after adding a card failed, or when
+ * the default card was removed while another card stayed on file --
+ * the profile lists the card, but every charge said "No stored Stripe
+ * payment method".
+ *
+ * Picks the Stripe customer's own default if it has one, otherwise the
+ * newest saved card, records it as the member's default, and returns
+ * its id. Returns the existing default untouched when one is set, and
+ * null when there's genuinely no card. `memberId` is the member who
+ * owns the card (the PAYS_FOR payer, if any) -- no pivot happens here.
+ */
+export async function ensureDefaultStripeCard(memberId: string): Promise<string | null> {
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { clientId: true, stripeCustomerId: true, defaultPaymentMethodId: true },
+  });
+  if (!member) return null;
+  if (member.defaultPaymentMethodId) return member.defaultPaymentMethodId;
+  if (!member.stripeCustomerId) return null;
+
+  try {
+    const stripeClient = await getStripeClient(member.clientId);
+    if (!stripeClient) return null;
+
+    const customer = await stripeClient.customers.retrieve(member.stripeCustomerId);
+    if ((customer as { deleted?: boolean }).deleted) return null;
+    const custDefault = (customer as { invoice_settings?: { default_payment_method?: string | { id: string } | null } })
+      .invoice_settings?.default_payment_method;
+    const custDefaultId = typeof custDefault === "string" ? custDefault : custDefault?.id || null;
+
+    // Stripe lists newest first.
+    const cards = await stripeClient.paymentMethods.list({ customer: member.stripeCustomerId, type: "card" });
+    const chosen = cards.data.find((pm) => pm.id === custDefaultId) || cards.data[0];
+    if (!chosen) return null;
+
+    if (custDefaultId !== chosen.id) {
+      await stripeClient.customers.update(member.stripeCustomerId, {
+        invoice_settings: { default_payment_method: chosen.id },
+      });
+    }
+    // setAt = when the card was actually saved, not now. The dunning
+    // guard ("never auto-charge invoices older than the card") should
+    // see the card's real age, same as if the default had been
+    // recorded correctly in the first place.
+    await prisma.member.update({
+      where: { id: memberId },
+      data: {
+        defaultPaymentMethodId: chosen.id,
+        defaultPaymentMethodSetAt: new Date(chosen.created * 1000),
+      },
+    });
+    console.log(`[payment] member ${memberId}: no default card recorded, using saved card ${chosen.id}`);
+    return chosen.id;
+  } catch (err) {
+    console.error(`[payment] ensureDefaultStripeCard failed for ${memberId}:`, err);
+    return null;
+  }
+}
+
 export async function chargeStoredPaymentMethod(params: {
   memberId: string;
   amountCents: number;
@@ -462,6 +524,9 @@ export async function chargeStoredPaymentMethod(params: {
 
   try {
     if (processor === "stripe") {
+      if (member.stripeCustomerId && !member.defaultPaymentMethodId) {
+        member.defaultPaymentMethodId = await ensureDefaultStripeCard(billedMemberId);
+      }
       if (!member.stripeCustomerId || !member.defaultPaymentMethodId) {
         return { success: false, error: "No stored Stripe payment method" };
       }

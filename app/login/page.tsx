@@ -44,7 +44,10 @@ export default function LoginPage() {
       return;
     }
 
-    window.location.href = "/dashboard";
+    // ?next=/kiosk etc. -- return to where they were sent from (the kiosk
+    // bounces here when its login expires). Same-site paths only.
+    const next = new URLSearchParams(window.location.search).get("next");
+    window.location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
   }
 
   async function handleSubmit(e: React.FormEvent) {

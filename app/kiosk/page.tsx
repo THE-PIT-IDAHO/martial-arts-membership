@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { filterAndRankMembers } from "@/lib/member-search";
+import { classRunsOnDate } from "@/lib/class-occurrence";
 
 type GymSettings = {
   name: string;
@@ -79,6 +80,97 @@ type ClassSession = {
   scheduleStartDate?: string | null;
   scheduleEndDate?: string | null;
 };
+
+// Which classes the kiosk offers today: kiosk-enabled, not imported, and
+// actually running today. Uses the SAME check as the calendar and
+// dashboard (lib/class-occurrence) against the GYM's timezone, not the
+// device's -- a tablet with its clock/timezone set differently from the
+// gym's was hiding classes (edited one-offs and date-range copies first,
+// since those are stored as exact dates) that showed fine on the PC.
+function computeKioskClasses(
+  allClasses: ClassSession[],
+  allowedStyleIds: string[],
+  tz: string,
+): { kioskClasses: ClassSession[]; todayClasses: ClassSession[] } {
+  const nonImportedClasses = allClasses.filter((c: ClassSession) => {
+    const nameHasImported = c.name.toLowerCase().includes("imported");
+    const classTypeIsImported = c.classType?.toLowerCase() === "imported";
+    if (nameHasImported || classTypeIsImported) return false;
+    if (!c.kioskEnabled) return false;
+    return true;
+  });
+
+  const todayYmd = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+  const gymMinutes = (iso: string) => {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hour: "numeric", minute: "numeric", hourCycle: "h23",
+    }).formatToParts(new Date(iso));
+    const get = (t: string) => parseInt(parts.find((p) => p.type === t)?.value || "0", 10);
+    return get("hour") * 60 + get("minute");
+  };
+
+  let todayClasses = nonImportedClasses
+    .filter((c: ClassSession) =>
+      classRunsOnDate(
+        {
+          startsAt: new Date(c.startsAt),
+          isRecurring: !!c.isRecurring,
+          isOngoing: !!c.isOngoing,
+          scheduleStartDate: c.scheduleStartDate ? new Date(c.scheduleStartDate) : null,
+          scheduleEndDate: c.scheduleEndDate ? new Date(c.scheduleEndDate) : null,
+          excludedDates: c.excludedDates ?? null,
+          frequencyNumber: c.frequencyNumber ?? null,
+          frequencyUnit: c.frequencyUnit ?? null,
+          classType: c.classType,
+        },
+        todayYmd,
+        tz,
+      ),
+    )
+    .sort((a: ClassSession, b: ClassSession) => gymMinutes(a.startsAt) - gymMinutes(b.startsAt));
+
+  // Apply style filter from kiosk settings
+  if (allowedStyleIds.length > 0) {
+    todayClasses = todayClasses.filter((c: ClassSession) => {
+      // Check styleIds JSON array
+      if (c.styleIds) {
+        try {
+          const ids: string[] = JSON.parse(c.styleIds);
+          if (ids.some((id: string) => allowedStyleIds.includes(id))) return true;
+        } catch { /* ignore */ }
+      }
+      // Check legacy styleId
+      if (c.styleId && allowedStyleIds.includes(c.styleId)) return true;
+      // Classes with no style pass through
+      if (!c.styleIds && !c.styleId) return true;
+      return false;
+    });
+  }
+
+  return { kioskClasses: nonImportedClasses, todayClasses };
+}
+
+// The class to land on: whatever is running (or about to start within
+// the auto-change window), else the next one today, else the first.
+function pickDefaultClass(todayClasses: ClassSession[], autoChangeMins: number): ClassSession | null {
+  if (todayClasses.length === 0) return null;
+  const nowDate = new Date();
+  const now = nowDate.getHours() * 60 + nowDate.getMinutes();
+  const current = todayClasses.find((c) => {
+    const start = new Date(c.startsAt);
+    const end = new Date(c.endsAt);
+    const startMins = start.getHours() * 60 + start.getMinutes();
+    const endMins = end.getHours() * 60 + end.getMinutes();
+    return now >= startMins - autoChangeMins && now <= endMins;
+  });
+  if (current) return current;
+  const next = todayClasses.find((c) => {
+    const start = new Date(c.startsAt);
+    return start.getHours() * 60 + start.getMinutes() > now;
+  });
+  return next || todayClasses[0];
+}
+
 
 type CheckInState = "idle" | "search" | "confirm" | "success" | "error";
 
@@ -188,6 +280,10 @@ export default function KioskPage() {
     return () => clearInterval(timer);
   }, [todaysClasses, kioskSettings.autoChangeMinutes, selectedClass, manualSelectionExpiresAt]);
 
+  // Gym's timezone (Settings "timezone"), so "today's classes" follows
+  // the gym's calendar day, not whatever the tablet's clock is set to.
+  const gymTzRef = useRef("America/Denver");
+
   // Load initial data
   useEffect(() => {
     async function loadData() {
@@ -198,6 +294,14 @@ export default function KioskPage() {
           fetch("/api/settings?key=kiosk_settings"),
           fetch("/api/settings"),
         ]);
+        // Login expired on this device: the page itself is public, but
+        // every data call is refused, so the kiosk used to sit there as
+        // "Martial Arts Academy" with "No classes scheduled today". Send
+        // them to log in and come straight back here.
+        if ([gymRes, kioskRes, allSettingsRes].some((r) => r.status === 401)) {
+          window.location.href = "/login?next=/kiosk";
+          return;
+        }
         if (gymRes.ok) {
           const gymData = await gymRes.json();
           if (gymData.setting?.value) {
@@ -212,6 +316,8 @@ export default function KioskPage() {
           const allData = await allSettingsRes.json();
           if (allData.settings && Array.isArray(allData.settings)) {
             const get = (key: string) => allData.settings.find((s: { key: string; value: string }) => s.key === key)?.value || "";
+            const gymTz = get("timezone");
+            if (gymTz) gymTzRef.current = gymTz;
             const gymName = get("gymName");
             if (gymName) setGymSettings(prev => ({ ...prev, name: gymName }));
             const logoSetting = allData.settings.find((s: { key: string; value: string }) => s.key === "gymLogo");
@@ -249,132 +355,15 @@ export default function KioskPage() {
         const classesRes = await fetch("/api/classes");
         if (classesRes.ok) {
           const classesData = await classesRes.json();
-          const allClasses = classesData.classes || [];
-          // Filter out imported classes and classes not enabled for kiosk
-          const nonImportedClasses = allClasses.filter((c: ClassSession) => {
-            const nameHasImported = c.name.toLowerCase().includes("imported");
-            const classTypeIsImported = c.classType?.toLowerCase() === "imported";
-            if (nameHasImported || classTypeIsImported) return false;
-            if (!c.kioskEnabled) return false;
-            return true;
-          });
-          setClasses(nonImportedClasses);
-
-          // Filter to today's classes. Previously this only checked
-          // day-of-week, so it ignored excludedDates (e.g. Memorial Day),
-          // schedule start/end, and frequency intervals — meaning the
-          // kiosk kept showing the normal Monday schedule on a holiday
-          // even after the admin had excluded those classes from the date.
-          //
-          // Now mirrors the calendar/portal logic: day-of-week match AND
-          // not in excludedDates AND within schedule range AND on the
-          // right frequency cadence. One-off classes are matched by exact
-          // date.
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const dayOfWeek = today.getDay();
-          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-
-          let todayClasses = nonImportedClasses.filter((c: ClassSession) => {
-            // Excluded by admin for this specific date (calendar's
-            // "delete this class only" writes the date into excludedDates).
-            if (c.excludedDates) {
-              try {
-                const ex: string[] = JSON.parse(c.excludedDates);
-                if (ex.includes(todayStr)) return false;
-              } catch { /* ignore */ }
-            }
-
-            const classStart = new Date(c.startsAt);
-
-            // One-off class — must be on today's date exactly.
-            if (!c.isRecurring) {
-              const cs = new Date(classStart);
-              cs.setHours(0, 0, 0, 0);
-              return cs.getTime() === today.getTime();
-            }
-
-            // Recurring — day-of-week must match.
-            if (classStart.getDay() !== dayOfWeek) return false;
-
-            // Within schedule window.
-            const schedStart = c.scheduleStartDate
-              ? new Date(c.scheduleStartDate)
-              : null;
-            if (schedStart) {
-              schedStart.setHours(0, 0, 0, 0);
-              if (today < schedStart) return false;
-            }
-            const schedEnd = c.scheduleEndDate && !c.isOngoing
-              ? new Date(c.scheduleEndDate)
-              : null;
-            if (schedEnd) {
-              schedEnd.setHours(23, 59, 59, 999);
-              if (today > schedEnd) return false;
-            }
-
-            // Frequency cadence (e.g. every-other-week, every 3 days).
-            const freq = c.frequencyNumber || 1;
-            const unit = (c.frequencyUnit || "Week").toLowerCase();
-            if (freq <= 1) return true;
-            const refDate = schedStart || classStart;
-            if (unit === "week") {
-              const weeks = Math.floor((today.getTime() - refDate.getTime()) / (7 * 24 * 60 * 60 * 1000));
-              return weeks % freq === 0;
-            }
-            if (unit === "day") {
-              const days = Math.floor((today.getTime() - refDate.getTime()) / (24 * 60 * 60 * 1000));
-              return days % freq === 0;
-            }
-            return true;
-          }).sort((a: ClassSession, b: ClassSession) => {
-            const aTime = new Date(a.startsAt);
-            const bTime = new Date(b.startsAt);
-            return aTime.getHours() * 60 + aTime.getMinutes() - (bTime.getHours() * 60 + bTime.getMinutes());
-          });
-
-          // Apply style filter from kiosk settings
-          if (loadedKioskSettings.allowedStyleIds.length > 0) {
-            todayClasses = todayClasses.filter((c: ClassSession) => {
-              // Check styleIds JSON array
-              if (c.styleIds) {
-                try {
-                  const ids: string[] = JSON.parse(c.styleIds);
-                  if (ids.some((id: string) => loadedKioskSettings.allowedStyleIds.includes(id))) return true;
-                } catch { /* ignore */ }
-              }
-              // Check legacy styleId
-              if (c.styleId && loadedKioskSettings.allowedStyleIds.includes(c.styleId)) return true;
-              // Classes with no style pass through
-              if (!c.styleIds && !c.styleId) return true;
-              return false;
-            });
-          }
-
+          const { kioskClasses, todayClasses } = computeKioskClasses(
+            classesData.classes || [],
+            loadedKioskSettings.allowedStyleIds,
+            gymTzRef.current,
+          );
+          setClasses(kioskClasses);
           setTodaysClasses(todayClasses);
-
           // Auto-select the current or next upcoming class
-          const autoChangeMins = loadedKioskSettings.autoChangeMinutes || 10;
-          const now = today.getHours() * 60 + today.getMinutes();
-          const currentClass = todayClasses.find((c: ClassSession) => {
-            const start = new Date(c.startsAt);
-            const end = new Date(c.endsAt);
-            const startMins = start.getHours() * 60 + start.getMinutes();
-            const endMins = end.getHours() * 60 + end.getMinutes();
-            return now >= startMins - autoChangeMins && now <= endMins;
-          });
-
-          if (currentClass) {
-            setSelectedClass(currentClass);
-          } else if (todayClasses.length > 0) {
-            // Select the next upcoming class
-            const nextClass = todayClasses.find((c: ClassSession) => {
-              const start = new Date(c.startsAt);
-              const startMins = start.getHours() * 60 + start.getMinutes();
-              return startMins > now;
-            });
-            setSelectedClass(nextClass || todayClasses[0]);
-          }
+          setSelectedClass(pickDefaultClass(todayClasses, loadedKioskSettings.autoChangeMinutes || 10));
         }
       } catch (err) {
         console.error("Failed to load kiosk data:", err);
@@ -384,6 +373,52 @@ export default function KioskPage() {
     }
     loadData();
   }, []);
+
+  // Keep the class list fresh. The kiosk tablet stays open for days, and
+  // it used to load classes once -- so classes edited (or added) on the
+  // calendar never showed up, and after midnight it kept offering the
+  // previous day's schedule. Re-fetch every 5 minutes and whenever the
+  // tablet wakes up. The selected class is kept unless it's no longer
+  // on today's schedule (e.g. it was just edited into a new class).
+  const kioskSettingsRef = useRef(kioskSettings);
+  kioskSettingsRef.current = kioskSettings;
+  useEffect(() => {
+    let cancelled = false;
+    async function refreshClasses() {
+      try {
+        const res = await fetch("/api/classes", { cache: "no-store" });
+        if (res.status === 401) {
+          // Login ran out while the kiosk sat open -- re-login, come back.
+          window.location.href = "/login?next=/kiosk";
+          return;
+        }
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const settings = kioskSettingsRef.current;
+        const { kioskClasses, todayClasses } = computeKioskClasses(data.classes || [], settings.allowedStyleIds, gymTzRef.current);
+        if (cancelled) return;
+        setClasses(kioskClasses);
+        setTodaysClasses(todayClasses);
+        setSelectedClass((prev) => {
+          const still = prev ? todayClasses.find((c) => c.id === prev.id) : undefined;
+          return still || pickDefaultClass(todayClasses, settings.autoChangeMinutes || 10);
+        });
+      } catch {
+        /* offline for a moment -- try again next tick */
+      }
+    }
+    const timer = setInterval(refreshClasses, 5 * 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshClasses();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
 
   // Parse member's styles from stylesNotes JSON
   const getMemberStyles = (member: Member): StyleEntry[] => {
